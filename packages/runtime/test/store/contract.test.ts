@@ -701,16 +701,38 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
-    it.effect("deleteMessage removes only the record itself when it is not an assistant message", () =>
+    it.effect("deleteMessage removes the tool results of a user message that lists their call ids", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        const [userWithCalls] = yield* store.appendMessages(thread.id, [
-          { role: "user", content: "pasted", tool_calls: toolCalls("call-1") },
-          { role: "tool", content: "1", tool_call_id: "call-1" },
+        const [first, , second] = yield* store.appendMessages(thread.id, [
+          { role: "user", content: "side B call", tool_calls: toolCalls("call-1") },
+          { role: "tool", content: "first result", tool_call_id: "call-1" },
+          { role: "user", content: "side B again", tool_calls: toolCalls("call-1") },
+          { role: "tool", content: "second result", tool_call_id: "call-1" },
         ])
-        expect(yield* store.deleteMessage(thread.id, userWithCalls?.id ?? "")).toBe(true)
-        expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["1"])
+        expect(yield* store.deleteMessage(thread.id, first?.id ?? "")).toBe(true)
+        const left = yield* store.getMessages(thread.id, { order: "asc" })
+        expect(left.messages.map((m) => m.content)).toEqual(["side B again", "second result"])
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        expect((yield* store.getMessages(thread.id)).total).toBe(0)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("deleteMessage removes only the record itself for a tool message or a message without tool calls", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [, result, plain] = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: "calls", tool_calls: toolCalls("call-1") },
+          { role: "tool", content: "1", tool_call_id: "call-1" },
+          { role: "user", content: "plain" },
+          { role: "tool", content: "2", tool_call_id: "call-1" },
+        ])
+        expect(yield* store.deleteMessage(thread.id, result?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, plain?.id ?? "")).toBe(true)
+        const left = yield* store.getMessages(thread.id, { order: "asc" })
+        expect(left.messages.map((m) => m.content)).toEqual(["calls", "2"])
       }).pipe(Effect.provide(inMemory)),
     )
   })

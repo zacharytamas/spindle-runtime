@@ -4807,15 +4807,16 @@
 		"reason": ""
 	},
 	"specification:threads/messages:96307380": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage keeps the results of a later assistant message that reuses a tool call id",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes only the record itself when it is not an assistant message",
-			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes the tool results of a user message that lists their call ids",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes only the record itself for a tool message or a message without tool calls",
+			"packages/runtime/test/conformance.test.ts > step loop > S33b deletes a side B model turn together with the tool results of its calls"
 		],
-		"reason": "The cascade runs for the calls of a prompt side on side A. A prompt side on side B stores its turns with role user, and the store cascades only from an assistant message. Appendix A of the plan records the open reading."
+		"reason": ""
 	},
 	"specification:agents:bf19dc18": {
 		"status": "covered",

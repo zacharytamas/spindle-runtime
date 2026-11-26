@@ -202,9 +202,10 @@ export const layer = Layer.effect(
               RETURNING seq, ${sql.literal(messageColumns)}`
             if (deleted[0] === undefined) return false
             const parent = { ...toMessage(deleted[0]), seq: deleted[0].seq }
-            // A provider may reuse a call id in a later turn or under another parent message, so a result
-            // belongs to the nearest earlier assistant message with the same parent that lists its id.
-            if (parent.role === "assistant" && parent.tool_calls !== null)
+            // A message owns the results of the calls it lists, whatever its role, because a side B model
+            // turn is stored as user. A provider may reuse a call id in a later turn or under another parent
+            // message, so a result belongs to the nearest earlier message with the same parent that lists its id.
+            if (parent.tool_calls !== null)
               yield* sql`
                 DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
                 AND parent_id IS ${parent.parent_id}
@@ -213,7 +214,7 @@ export const layer = Layer.effect(
                 AND NOT EXISTS (
                   SELECT 1 FROM messages AS later,
                     json_each(CASE WHEN json_valid(later.tool_calls) THEN later.tool_calls ELSE '[]' END)
-                  WHERE later.thread_id = result.thread_id AND later.role = 'assistant'
+                  WHERE later.thread_id = result.thread_id AND later.tool_calls IS NOT NULL
                   AND later.parent_id IS result.parent_id
                   AND later.seq > ${parent.seq} AND later.seq < result.seq
                   AND CASE WHEN json_each.type = 'object' THEN json_extract(json_each.value, '$.id') END = result.tool_call_id)`

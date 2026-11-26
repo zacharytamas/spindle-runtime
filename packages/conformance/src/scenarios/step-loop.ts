@@ -2010,7 +2010,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S33 passes ThreadState message reads, updates, and deletes through to thread storage",
-    requirements: ["79171656", "37e69561", "3489685d", "f67424cd", "bd122f30", "7f464a24", "1edbcdb1", "96307380"],
+    requirements: ["79171656", "37e69561", "3489685d", "f67424cd", "bd122f30", "7f464a24", "1edbcdb1"],
     run: async (driver) => {
       const seen: Record<string, unknown> = {}
       const tools = {
@@ -2059,6 +2059,39 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         updated: { seen: true },
         deleted: [true, false],
         after: ["first", "quiet", "nested", "go", null],
+      })
+    },
+  },
+  {
+    name: "S33b deletes a side B model turn together with the tool results of its calls",
+    requirements: ["96307380"],
+    run: async (driver) => {
+      const tools = {
+        note: defineTool({ description: "Returns a note", execute: async () => ok("noted") }),
+        eraser: defineTool({
+          description: "Deletes the model turn that called note",
+          execute: async (state: ThreadState) => {
+            const { messages } = await state.getMessages({ order: "asc" })
+            const turn = messages.find((m) => callsOf(m).some((call) => call.id === "c1"))
+            return ok(String(await state.deleteMessage(turn?.id ?? "")))
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "note", arguments: {} }] },
+        { toolCalls: [{ id: "c2", name: "eraser", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools, humanOn: "a" }, async (session, thread) => {
+        await send(session, thread, "go")
+        const stored = await session.messages(thread)
+        expect(stored.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : callsOf(m).map((c) => c.id)])).toEqual([
+          ["assistant", []],
+          ["user", ["c2"]],
+          ["tool", "c2"],
+          ["user", []],
+        ])
+        expect(stored.find((m) => m.tool_call_id === "c2")?.content).toBe("true")
       })
     },
   },
