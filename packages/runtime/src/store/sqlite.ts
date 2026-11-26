@@ -197,11 +197,11 @@ export const layer = Layer.effect(
       deleteMessage: (threadId, messageId) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            const deleted = yield* sql<Pick<MessageRow, "role" | "tool_calls" | "parent_id"> & { seq: number }>`
+            const deleted = yield* sql<MessageRow & { seq: number }>`
               DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId}
-              RETURNING seq, role, tool_calls, parent_id`
-            const parent = deleted[0]
-            if (parent === undefined) return false
+              RETURNING seq, ${sql.literal(messageColumns)}`
+            if (deleted[0] === undefined) return false
+            const parent = { ...toMessage(deleted[0]), seq: deleted[0].seq }
             // A provider may reuse a call id in a later turn or under another parent message, so a result
             // belongs to the nearest earlier assistant message with the same parent that lists its id.
             if (parent.role === "assistant" && parent.tool_calls !== null)

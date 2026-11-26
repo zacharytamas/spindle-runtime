@@ -630,6 +630,28 @@ describe("ThreadStore", () => {
         }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("deleteMessage removes only the results under its own parent when a parent id holds a NUL", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const survivorAfterDeleting = (parent: "p" | "p\u0000suffix") =>
+          Effect.gen(function* () {
+            const thread = yield* store.createThread({ agentId: "assistant" })
+            const [short, long] = yield* store.appendMessages(thread.id, [
+              { role: "assistant", content: null, tool_calls: toolCalls("shared"), parent_id: "p" },
+              { role: "assistant", content: null, tool_calls: toolCalls("shared"), parent_id: "p\u0000suffix" },
+              { role: "tool", content: "short result", tool_call_id: "shared", parent_id: "p" },
+              { role: "tool", content: "long result", tool_call_id: "shared", parent_id: "p\u0000suffix" },
+            ])
+            const deleted = parent === "p" ? short : long
+            expect(yield* store.deleteMessage(thread.id, deleted?.id ?? "")).toBe(true)
+            const left = yield* store.getMessages(thread.id, { order: "asc" })
+            return left.messages.filter((m) => m.role === "tool").map((m) => m.content)
+          })
+        expect(yield* survivorAfterDeleting("p\u0000suffix")).toEqual(["short result"])
+        expect(yield* survivorAfterDeleting("p")).toEqual(["long result"])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("getMessages fails with InvalidMessagesQuery for a maxDepth that is not a non-negative integer", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
