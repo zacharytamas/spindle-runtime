@@ -2,6 +2,7 @@ import type { Message, MessageUpdates } from "@standardagents/spec"
 import { Clock, Effect } from "effect"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
+import type { History } from "./history.ts"
 import { type HookCall, type HookScope, NestedWriteLimit, NestedWriteTooDeep, runHooks, TEXT_FIELDS } from "./hooks.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
@@ -12,6 +13,8 @@ export interface WriteContext {
   readonly secrets: Secrets
   // The hook call whose ThreadState writes, when a hook writes.
   readonly call: HookCall | undefined
+  // The history of the execution that writes, when an execution writes.
+  readonly history: History | undefined
 }
 
 // A write from a hook is one level deeper than the write or the step that called the hook.
@@ -134,10 +137,12 @@ export const createMessage = Effect.fn("createMessage")(function* (
     original,
     essential ? { depth, essential, check: taken } : { depth },
   )
-  const { message: stored } = yield* store.insertMessage(
+  const inserted = yield* store.insertMessage(
     write.threadId,
     redactWrite(writer, original, hooked, redactor(write.secrets.values)),
   )
+  write.history?.inserted(inserted)
+  const stored = inserted.message
   yield* runHooks(write.hooks, "after_create_message", [], stored, { depth })
   return stored
 })

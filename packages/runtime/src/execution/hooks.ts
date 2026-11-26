@@ -25,7 +25,7 @@ export const NestedWriteLimit = Context.Reference<number>("spindle/NestedWriteLi
 export interface Values {
   readonly after_thread_created: undefined
   readonly after_system_message: string
-  readonly filter_messages: Array<Message>
+  readonly filter_messages: ReadonlyArray<Message>
   readonly prefilter_llm_history: Array<LLMMessage>
   readonly before_create_message: Message
   readonly after_create_message: Message

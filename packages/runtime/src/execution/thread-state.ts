@@ -4,6 +4,7 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
+import type { History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
 import { lookup, type Side } from "./turn.ts"
@@ -16,6 +17,7 @@ export interface ExecutionRecord {
   sideBStepCount: number
   readonly abort: AbortController
   readonly promptPath: ReadonlyArray<string>
+  readonly history: History
 }
 
 export interface StateContext {
@@ -57,7 +59,6 @@ const executionState = (record: ExecutionRecord, readHistory: () => Array<Messag
     return record.sideBStepCount
   },
   stopped: false,
-  // Execution State section 2.2: every read is the thread's persisted history at that moment, whoever wrote it.
   get messageHistory() {
     return readHistory()
   },
@@ -81,12 +82,12 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const registry = Context.get(state.services, Registry)
   const store = Context.get(state.services, ThreadStore)
   const threadId = state.thread.id
-  // A read of the store finishes in the call that starts it, because no transaction spans an await.
-  const readHistory = () => {
+  // A read of the store finishes in the call that starts it, because no transaction spans an await. Each read gets
+  // its own copy, so a tool or a hook that changes it changes nothing that a later read sees.
+  const readHistory = (history: History) => () => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    return Effect.runSyncWith(state.services)(store.getMessages(threadId, { order: "asc", includeSilent: true }))
-      .messages
+    return structuredClone(Effect.runSyncWith(state.services)(history.read)) as Array<Message>
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
@@ -98,7 +99,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () =>
     registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
-  const write = { threadId, hooks: state.hooks, secrets: state.secrets, call }
+  const write = { threadId, hooks: state.hooks, secrets: state.secrets, call, history: state.execution?.history }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
     else state.secrets.values.add(value)
@@ -113,7 +114,8 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     terminated: state.thread.terminated,
     arguments: structuredClone(state.thread.arguments) as Record<string, unknown>,
     context: state.context,
-    execution: state.execution === undefined ? null : executionState(state.execution, readHistory),
+    execution:
+      state.execution === undefined ? null : executionState(state.execution, readHistory(state.execution.history)),
 
     getMessages: (options) => run(store.getMessages(threadId, options)),
     getMessage: (messageId) => run(store.getMessage(threadId, messageId)),

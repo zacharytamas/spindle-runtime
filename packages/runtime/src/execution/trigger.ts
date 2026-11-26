@@ -75,7 +75,7 @@ export const sendMessage = (threadId: string, content: string, options: Executio
       ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
     })
     const message = yield* createMessage(
-      { threadId, hooks: rest.hooks, secrets: rest.secrets, call: undefined },
+      { threadId, hooks: rest.hooks, secrets: rest.secrets, call: undefined, history: undefined },
       { role: roleOf(human), content, status: "completed" },
       "turn",
     )
