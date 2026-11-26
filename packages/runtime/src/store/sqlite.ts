@@ -52,14 +52,18 @@ const runColumns = `run_state, run_since, ${runReasonColumn}, flow_id, claim_seq
 
 // A store call never yields to another fiber while it holds the one connection. Code outside Effect, such as a tool
 // that calls queueTool, runs only between fibers, so it always finds the connection free and its synchronous call
-// completes before it returns.
+// completes before it returns. A fiber that already prevents yields skips the cost of providing the reference.
 const unyielding = <S extends object>(service: S): S =>
   Object.fromEntries(
     Object.entries(service).map(([key, member]) => [
       key,
       typeof member === "function"
         ? (...args: ReadonlyArray<unknown>) =>
-            Effect.provideService(member(...args), Scheduler.PreventSchedulerYield, true)
+            Effect.flatMap(Effect.service(Scheduler.PreventSchedulerYield), (prevented) =>
+              prevented
+                ? member(...args)
+                : Effect.provideService(member(...args), Scheduler.PreventSchedulerYield, true),
+            )
         : member,
     ]),
   ) as S
