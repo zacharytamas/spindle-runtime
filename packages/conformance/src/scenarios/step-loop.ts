@@ -1836,6 +1836,29 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
         instance,
       )
+      const echoing = new ScriptedProvider([
+        {
+          text: "the token is Q7z",
+          reasoning: "it said Q7z",
+          toolCalls: [{ id: "e1", name: "reveal", arguments: { note: "Q7z" } }],
+        },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider: echoing, tools },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const model = (await session.messages(thread)).find((m) => m.role === "assistant")
+          expect([model?.content, model?.reasoning_content, callsOf(model)[0]?.function.arguments]).toEqual([
+            "the token is [redacted]",
+            "it said [redacted]",
+            '{"note":"[redacted]"}',
+          ])
+          expect(JSON.stringify(echoing.requests[1])).not.toContain("Q7z")
+        },
+        instance,
+      )
     },
   },
   {

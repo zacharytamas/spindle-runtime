@@ -96,7 +96,14 @@ const reasoningSource = (turn: Turn) => ({
   model: turn.model.value.model,
 })
 
-const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
+// The text, reasoning text, and call arguments that the model returned are stored with secrets redacted. The
+// opaque reasoning details are stored as returned, because a provider may sign them.
+const responseMessage = (
+  turn: Turn,
+  response: ModelResponse,
+  calls: ReadonlyArray<ToolCall>,
+  redact: (text: string) => string,
+): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
       call.extraContent === undefined ? [] : [[call.id, call.extraContent] as const],
@@ -104,7 +111,7 @@ const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArr
   )
   return {
     role: roleOf(turn.side),
-    content: response.content,
+    content: response.content === null ? null : redact(response.content),
     tool_calls:
       calls.length === 0
         ? null
@@ -112,10 +119,10 @@ const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArr
             calls.map((call) => ({
               id: call.id,
               type: "function",
-              function: { name: call.name, arguments: call.argumentsText },
+              function: { name: call.name, arguments: redact(call.argumentsText) },
             })),
           ),
-    reasoning_content: response.reasoning,
+    reasoning_content: response.reasoning === null ? null : redact(response.reasoning),
     reasoning_details: response.reasoningDetails === undefined ? null : JSON.stringify(response.reasoningDetails),
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
@@ -282,7 +289,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
         const calls = toolCallsOf(response)
-        const [assistant] = yield* store.appendMessages(threadId, [responseMessage(turn, response, calls)])
+        const [assistant] = yield* store.appendMessages(threadId, [responseMessage(turn, response, calls, redact)])
         if (assistant !== undefined) {
           history.push(assistant)
           yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
