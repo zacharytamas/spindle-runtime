@@ -2380,6 +2380,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
 			"packages/runtime/test/conformance.test.ts > step loop > S26b redacts a secret of any length from stored tool results, later requests, and run errors",
 			"packages/runtime/test/conformance.test.ts > step loop > S26f redacts the text a tool writes into the thread and keeps what the human and the model wrote",
+			"packages/runtime/test/conformance.test.ts > step loop > S26g treats only the top-level text of a result as JSON and replaces a secret in every nested string as written",
 			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database",
 			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included"
 		],

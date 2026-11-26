@@ -2,7 +2,7 @@ import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@
 import { Data, Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
-import { mapStrings } from "./redact.ts"
+import { mapStrings, redactText } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -180,11 +180,12 @@ const redactAttachment = (item: Record<string, unknown>, redact: (text: string) 
 })
 
 // Threads section 2.3: a result is redacted in its string values only. The status, the error code, every property
-// name, and the parts of an attachment that the runtime reads back keep their values.
+// name, and the parts of an attachment that the runtime reads back keep their values. Only the result and error
+// text are read as JSON, and every other string loses each secret as written, whatever it looks like.
 export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
   ...result,
-  ...(result.result === undefined ? {} : { result: redact(result.result) }),
-  ...(result.error === undefined ? {} : { error: redact(result.error) }),
+  ...(result.result === undefined ? {} : { result: redactText(redact)(result.result) }),
+  ...(result.error === undefined ? {} : { error: redactText(redact)(result.error) }),
   ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact) }),
   ...(result.attachments === undefined
     ? {}

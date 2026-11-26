@@ -13,7 +13,7 @@ import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { addSecret, lookupEnv, newSecrets, type Secrets } from "./env.ts"
-import { mapStrings, redactor, redactText } from "./redact.ts"
+import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
 import {
@@ -206,7 +206,6 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       message: redact(error.message),
       ...(error.upstream === undefined ? {} : { upstream: redact(error.upstream) }),
     })
-    const redactString = redactText(redact)
     // A log keeps no secret in its keys either, and data that cannot be walked is left out.
     const redactLog = (data: Record<string, unknown>) => {
       try {
@@ -354,7 +353,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             Effect.gen(function* () {
               const { redacted, message } = yield* Effect.try({
                 try: () => {
-                  const redacted = redactResult(result, redactString)
+                  const redacted = redactResult(result, redact)
                   return { redacted, message: storedResult(turn, call, redacted) }
                 },
                 catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),

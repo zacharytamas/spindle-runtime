@@ -2139,6 +2139,66 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S26g treats only the top-level text of a result as JSON and replaces a secret in every nested string as written",
+    requirements: [],
+    run: async (driver) => {
+      const marker = "nested-821"
+      const tools = {
+        nest: defineTool({
+          description: "Hides its secret in JSON-looking strings",
+          variables: [{ name: "MARK", type: "secret", required: true, description: "A secret" }],
+          execute: async (state: ThreadState) => {
+            const mark = await state.env("MARK")
+            return {
+              status: "error" as const,
+              error: "sample",
+              result: JSON.stringify({ k: mark }),
+              error_data: { label: JSON.stringify({ [mark]: 7 }), list: [`[${JSON.stringify(mark)}]`] },
+              attachments: [
+                {
+                  type: "file" as const,
+                  id: "doc",
+                  path: "/doc",
+                  mimeType: "text/plain",
+                  size: 4,
+                  name: JSON.stringify({ [mark]: true }),
+                  description: mark,
+                },
+              ],
+            }
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "nest", arguments: {} }] }, { text: "done" }])
+      await using(
+        driver,
+        { provider, tools },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          expect([result?.content, result?.metadata, result?.attachments]).toEqual([
+            'sample\n\n{"k":"[redacted]"}',
+            { error_data: { label: '{"[redacted]":7}', list: ['["[redacted]"]'] } },
+            [
+              {
+                type: "file",
+                id: "doc",
+                path: "/doc",
+                mimeType: "text/plain",
+                size: 4,
+                name: '{"[redacted]":true}',
+                description: "[redacted]",
+              },
+            ],
+          ])
+          expect(holding(await session.messages(thread), marker)).toEqual([])
+        },
+        { MARK: marker },
+      )
+      expect(holding(provider.requests, marker)).toEqual([])
+    },
+  },
+  {
     name: "S26b redacts a secret of any length from stored tool results, later requests, and run errors",
     requirements: ["287f2aef"],
     run: async (driver) => {
