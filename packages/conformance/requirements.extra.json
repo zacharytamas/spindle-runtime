@@ -1,0 +1,596 @@
+[
+  {
+    "page": "infrastructure:runtime",
+    "section": "2. Invocation Triggers",
+    "level": "MUST",
+    "text": "| User message | A new message is injected into the thread (see [Messages](/0.2.0/specification/threads/messages)) |"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "2. Invocation Triggers",
+    "level": "MUST",
+    "text": "| Queued message | `queueMessage()` is called (see [Messages](/0.2.0/specification/threads/messages)) |"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "2. Invocation Triggers",
+    "level": "MUST",
+    "text": "| Queued tool | `queueTool()` is called (see [Tools](/0.2.0/specification/tools)) |"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "2. Invocation Triggers",
+    "level": "MUST",
+    "text": "| Scheduled effect | A scheduled effect alarm fires (see [Effects](/0.2.0/specification/effects)) |"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "2. Invocation Triggers",
+    "level": "MUST",
+    "text": "If a thread is already executing, new work is queued. If idle, the runtime starts a new execution."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "3. Step Cycle",
+    "level": "MUST",
+    "text": "A human-backed side's turn parks execution until the human's inbound message arrives."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "text": "the side's own turns appear as `assistant`"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "text": "the opposite side's turns appear as `user`"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "text": "opposite-side tool calls are not directly visible"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "text": "When supported by the model, attachments remain multimodal content."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "7.2 Lifecycle Tooling",
+    "level": "MUST",
+    "text": "For a prompt-backed side's non-hidden declared relationships, runtimes inject the built-in lifecycle tools:"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "7.2 Lifecycle Tooling",
+    "level": "MUST",
+    "text": "The `agent` argument of `subagent_create` / `subagent_message` enumerates relationship names."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "7.4 Initial Payload Mapping",
+    "level": "MUST",
+    "text": "Relationship configuration can map args to: initial user message (`initUserMessageProperty`) initial attachments (`initAttachmentsProperty`) human-readable child name (`initAgentNameProperty`)"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "7.4 Initial Payload Mapping",
+    "level": "MUST",
+    "text": "only `nameEnv` and `descriptionEnv` are model-visible"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "7.5 Scoped Variable Bootstrap",
+    "level": "MUST",
+    "text": "`POST` stores values and immediately boots the deferred subagent."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "8.2 Child -> Parent",
+    "level": "MUST",
+    "text": "mapped lifecycle payload (`sessionStop` / `sessionFail`) is converted to parent queued message"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "8.2 Child -> Parent",
+    "level": "MUST",
+    "text": "If the thread has no parent, `notifyParent()` does not queue anything externally; `setStatus()` is a no-op without a parent registry entry."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "8.3 Status Updates",
+    "level": "MUST",
+    "text": "`sessionStatus` updates child status in the parent registry without terminating child execution."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "10. Termination Semantics",
+    "level": "MUST",
+    "text": "set terminated timestamp"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "10. Termination Semantics",
+    "level": "MUST",
+    "text": "abort in-flight work"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "10. Termination Semantics",
+    "level": "MUST",
+    "text": "reject future execute/queue/send operations"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "10. Termination Semantics",
+    "level": "MUST",
+    "text": "propagate child termination status to parent registry when linked"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.2 Module Resolution",
+    "level": "MUST",
+    "text": "Each `options.imports[specifier]` entry is a synthetic module whose namespace is a frozen copy of the host-provided object. The key `default` (when present) becomes that module's default export."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.2 Module Resolution",
+    "level": "MUST",
+    "text": "Each `options.modules[specifier]` entry is a source-backed ES module evaluated inside the sandbox."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.3 Value Marshaling",
+    "level": "MUST",
+    "text": "Primitives (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`) cross by value."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.3 Value Marshaling",
+    "level": "MUST",
+    "text": "Plain objects, arrays, `Map`, `Set`, `Date`, typed arrays cross by structured clone (deep copy; no shared reference)."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.3 Value Marshaling",
+    "level": "MUST",
+    "text": "Functions cross as callable proxies. Calls forward serialized arguments and marshal the return value (awaiting any returned `Promise`) back."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.7 Event Loop",
+    "level": "MUST",
+    "text": "The sandbox has its own microtask queue. `Promise`, `await`, and (at runtime discretion) `queueMicrotask` behave normally."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "14.7 Event Loop",
+    "level": "MUST",
+    "text": "Top-level `await` is supported. A module \"completes\" once its top-level evaluation promise settles and the configured-export resolution ([§14.5](#145-configured-export-resolution)) finishes."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "Hooks",
+    "level": "MUST",
+    "text": "A hook decorates turns owned by something else — it runs around steps and messages, its failures are non-fatal to the decorated turn, and it may not own a side."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "Hooks",
+    "level": "MUST",
+    "text": "Hooks that run during active execution also receive [`state.execution`](/0.2.0/specification/threads/execution-state) with step counts, active dual-side, and abort signal context."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.1 Available Hooks",
+    "level": "MUST",
+    "text": "| `after_thread_created` | After thread creation, before execution | Initialize thread state |"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.1 Available Hooks",
+    "level": "MUST",
+    "text": "| `after_subagent_created` | On parent after child thread creation | Track or initialize child relationships |"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Thread hooks are scoped to the active parent composition rather than running globally."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Child before hooks — `before_parent` requirements from enabled direct child relationships, in side A then side B relationship order and child declaration order"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Prompt-level hooks — A non-empty active prompt `hooks` array is the parent's base set"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Agent-level hooks — If the prompt has no hooks, the agent's `hooks` array is the parent's fallback base set"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Child after hooks — `after_parent` requirements (the default stage), in the same stable relationship/declaration order"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "If none of these sources declares a matching hook, no hook runs."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "Downloaded or installed packages are not global hook sources."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.3 Hook Scoping",
+    "level": "MUST",
+    "text": "At-rest operations have no active prompt. They resolve lifecycle hooks from the thread's agent-level `hooks` array."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "2.1 ThreadState Parameter",
+    "level": "MUST",
+    "text": "All thread hooks receive a `ThreadState` instance as their first parameter and a `HookExecutionContext` as their final parameter."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "4.2 after_create_message",
+    "level": "MUST",
+    "text": "Called after a message is successfully inserted. Cannot modify the message."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.1 tool_call_started",
+    "level": "MUST",
+    "text": "Called when a tool call starts — before the tool executes, while the model may still be generating the rest of the call."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.1 tool_call_started",
+    "level": "MUST",
+    "text": "When the tool declares a [`progressArgument`](/0.2.0/specification/tools#7-progress-reporting), the hook fires as soon as *just that argument* has finished streaming (not the whole call), passing its value as `progress`."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.2 before_store_tool_result",
+    "level": "MUST",
+    "text": "Called before a tool result is stored in the database."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.3 after_tool_call_success",
+    "level": "MUST",
+    "text": "Called after a tool executes successfully."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.3 after_tool_call_success",
+    "level": "MUST",
+    "text": "If hook returns `null`, the original result is used"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.3 after_tool_call_success",
+    "level": "MUST",
+    "text": "If hook returns a result, it replaces the original"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "5.4 after_tool_call_failure",
+    "level": "MUST",
+    "text": "Called after a tool execution fails. Can return modified error or null for original."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "Messages",
+    "level": "MUST",
+    "text": "Each thread owns an ordered, persistent list of messages"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `tool_calls` | `string \\| null` | JSON-encoded array of tool calls. Each entry is `{ id: string, type: 'function', function: { name: string, arguments: string } }`, where `arguments` is itself JSON-encoded |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `status` | `'pending' \\| 'completed' \\| 'failed' \\| null` | Lifecycle state. `pending` while the message is queued or still being generated |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "2.1 Query Options",
+    "level": "MUST",
+    "text": "| `limit` | `number` | - | Max messages to return |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "2.1 Query Options",
+    "level": "MUST",
+    "text": "| `offset` | `number` | 0 | Messages to skip |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "2.1 Query Options",
+    "level": "MUST",
+    "text": "| `order` | `'asc' \\| 'desc'` | `'desc'` | Sort order |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "2.1 Query Options",
+    "level": "MUST",
+    "text": "| `includeSilent` | `boolean` | false | Include silent messages in this query. This option affects read APIs only. |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "2.1 Query Options",
+    "level": "MUST",
+    "text": "| `maxDepth` | `number` | - | Max nesting depth |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "`role: 'user'` is the side B perspective — a message side A acts on."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "`role: 'assistant'` is the side A perspective — a message side B acts on."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "This mapping is independent of what backs each side (human, prompt, or handler)."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "Subagent traffic delivered to a parent lands in the perspective that prompts the relationship's *owning side* to take its turn"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "If the thread is executing, queued messages are injected before the next LLM request."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "If the thread is idle, queueing forces a new turn."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "4. Queueing Messages",
+    "level": "MUST",
+    "text": "Queued messages are processed in order."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "6. Deleting Messages",
+    "level": "MUST",
+    "text": "Returns `true` if the message was found and removed, `false` otherwise."
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "6. Deleting Messages",
+    "level": "MUST",
+    "text": "Tool-result messages cascade with their parent assistant message."
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "No other properties are legal on a human side."
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `stopOnResponse` | `boolean` | `true` | Stop side turn on text response without tool calls |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `stopTool` | `string` | - | Stop side turn when this tool is called |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `stopToolResponseProperty` | `string` | - | Extracted property for stop tool outcomes |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `maxSteps` | `number` | - | Per-side step safety limit |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `sessionStop` | `SessionToolBinding` | - | End session successfully (object form only, see [§3](#3-sessiontoolbinding)) |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `sessionFail` | `SessionToolBinding` | - | End session with failure |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "text": "| `sessionStatus` | `SessionToolBinding` | - | Publish status updates |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.3 Derivations",
+    "level": "MUST",
+    "text": "A human on side A is legal."
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.3 Derivations",
+    "level": "MUST",
+    "text": "`maxSessionTurns` is *optional on every agent shape*."
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.3 Derivations",
+    "level": "MUST",
+    "text": "Exchange counting is uniform across backings: a handler turn counts like a prompt turn when a cap is set."
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.1 Required",
+    "level": "MUST",
+    "text": "| `name` | `string` | Unique agent identifier |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.1 Required",
+    "level": "MUST",
+    "text": "Both sides are explicit. There is no implicit \"missing side B is a human\" default"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.2 Optional",
+    "level": "MUST",
+    "text": "| `maxSessionTurns` | `number` | - | Session exchange safety cap ([§1.3](#13-derivations)) |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.2 Optional",
+    "level": "MUST",
+    "text": "| `primary` | `boolean` | `true` | Whether the agent is a user-facing entry point. Clients omit non-primary agents from agent pickers. A non-primary agent remains addressable |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.2 Optional",
+    "level": "MUST",
+    "text": "| `exposeAsTool` | `boolean` | `false` | Expose callable entrypoint ([§5](#5-tool-exposure)) |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.2 Optional",
+    "level": "MUST",
+    "text": "| `env` | `Record<string, string>` | - | Agent-level default variable values |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "2.2 Optional",
+    "level": "MUST",
+    "text": "`AgentDefinition` also accepts optional packaging metadata — `packageName`, `version`, `author`, `license` — consumed only when the agent is packed for distribution."
+  },
+  {
+    "page": "specification:agents",
+    "section": "3. SessionToolBinding",
+    "level": "MUST",
+    "text": "`name`: tool that controls the lifecycle action"
+  },
+  {
+    "page": "specification:agents",
+    "section": "3. SessionToolBinding",
+    "level": "MUST",
+    "text": "`messageProperty`: which arg field becomes lifecycle message text"
+  },
+  {
+    "page": "specification:agents",
+    "section": "3. SessionToolBinding",
+    "level": "MUST",
+    "text": "`attachmentsProperty`: which arg field contains attachment path(s)"
+  },
+  {
+    "page": "specification:agents",
+    "section": "4. Stop Semantics",
+    "level": "MUST",
+    "text": "A handler-backed side's turn ends when its handler invocation returns"
+  },
+  {
+    "page": "specification:agents",
+    "section": "4. Stop Semantics",
+    "level": "MUST",
+    "text": "A human-backed side's turn ends when the human's inbound message is persisted."
+  },
+  {
+    "page": "specification:agents",
+    "section": "5. Tool Exposure",
+    "level": "MUST",
+    "text": "When `exposeAsTool: true`, an agent referenced directly in a prompt's `tools` array is a handoff: the tool call transfers control of the *same thread* to the target agent, preserving history."
+  },
+  {
+    "page": "specification:agents",
+    "section": "5. Tool Exposure",
+    "level": "MUST",
+    "text": "Handoff requires the target agent to have a human side matching the thread's conversational surface."
+  },
+  {
+    "page": "specification:agents",
+    "section": "5. Tool Exposure",
+    "level": "MUST",
+    "text": "`exposeAsTool` + `toolDescription` are the composability contract — `toolDescription` is the default model-facing description when the agent is composed, and any agent may be composed."
+  },
+  {
+    "page": "specification:agents",
+    "section": "6. Required Parent Hooks",
+    "level": "MUST",
+    "text": "Requirements apply only to direct parent relationships; they do not propagate transitively through the child graph."
+  },
+  {
+    "page": "specification:agents",
+    "section": "6. Required Parent Hooks",
+    "level": "MUST",
+    "text": "`optional` relationships contribute hooks only while their flag is enabled. `hidden: true` affects model visibility, not composition, so hidden enabled relationships still contribute their required hooks."
+  },
+  {
+    "page": "specification:agents",
+    "section": "6. Required Parent Hooks",
+    "level": "MUST",
+    "text": "Each requirement names a thread-scoped hook in the child's own package namespace. User-scoped hooks cannot be required on a parent."
+  },
+  {
+    "page": "specification:agents",
+    "section": "6. Required Parent Hooks",
+    "level": "MUST",
+    "text": "The hook receives the parent's `ThreadState` and remains active for the lifetime of the enabled relationship. It applies during every prompt on either side of the parent."
+  },
+  {
+    "page": "specification:agents",
+    "section": "6. Required Parent Hooks",
+    "level": "MUST",
+    "text": "Duplicate hook IDs within one child's `parentHooks` declaration are invalid."
+  },
+  {
+    "page": "specification:agents",
+    "section": "7. Human-in-the-Loop Composition",
+    "level": "MUST",
+    "text": "When execution reaches the human-backed side's turn, the child session pauses: the child's registry status becomes `awaiting_human`, and the session resumes when a human's inbound message arrives on that side's perspective."
+  }
+]
