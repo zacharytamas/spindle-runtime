@@ -43,6 +43,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           id: "f_one",
           execute: async (state, messages, context) => {
             events.push(["f_one", context.source, typeof state.threadId])
+            state.context.source = { kind: "prompt", promptName: "imposter" }
             return [...messages, { id: "marker", role: "user", content: "from f_one", created_at: 0 }]
           },
         }),
@@ -75,6 +76,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           id: "born",
           execute: async (state, context) => {
             events.push(["born", context.source, state.execution, (await state.getMessages()).total])
+            await state.setValue("source", { kind: "prompt", promptName: "imposter" })
           },
         }),
         defineHook({
@@ -135,6 +137,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
       for (const humanOn of SIDES) {
         const { human, model } = rolesFor(humanOn)
         const before: Array<Message> = []
+        const beforeReads: Array<unknown> = []
         const after: Array<unknown> = []
         const updates: Array<unknown> = []
         const seen: Array<unknown> = []
@@ -143,8 +146,9 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           defineHook({
             hook: "before_create_message",
             id: "stamp",
-            execute: async (_state, message) => {
+            execute: async (state, message) => {
               before.push(message)
+              beforeReads.push(await state.getMessage(message.id))
               return { ...message, metadata: { ...message.metadata, stamp: `s-${message.content}` } }
             },
           }),
@@ -161,7 +165,13 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             hook: "before_update_message",
             id: "patch",
             execute: async (state, messageId, patch) => {
-              updates.push(["before", messageId, patch, state.execution === null])
+              updates.push([
+                "before",
+                messageId,
+                patch,
+                state.execution === null,
+                (await state.getMessage(messageId))?.content,
+              ])
               return { ...patch, metadata: { ...(patch.metadata as object), reviewed: true } }
             },
           }),
@@ -239,6 +249,8 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
               created.map((m) => [m.id, m.created_at, m.content]),
             )
             for (const message of created) expect(message.metadata?.stamp).toBe(`s-${message.content}`)
+            expect(beforeReads).toEqual(created.map(() => null))
+            expect(updates).toHaveLength(4)
             expect(after).toEqual(created.map((message) => [message, message]))
             expect(seen).toEqual([true])
             const [first, second] = [updates.slice(0, 2), updates.slice(2, 4)]
@@ -247,12 +259,14 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
               quiet?.id,
               { content: "edited by a tool", metadata: { by: "tool" } },
               false,
+              "old",
             ])
             expect(second[0]).toEqual([
               "before",
               quiet?.id,
               { content: "edited at rest", metadata: { by: "rest" } },
               true,
+              "edited by a tool",
             ])
             expect(stored[0]).toMatchObject({
               content: "edited at rest",
@@ -401,6 +415,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     requirements: ["765e84ae", "9d7eaeac", "e1b53f31", "d7e8a202", "3d8dede1"],
     run: async (driver) => {
       const afters: Array<string | null> = []
+      const afterUpdates: Array<string | null> = []
       const outcomes: Array<unknown> = []
       const hooks = [
         defineHook({
@@ -430,7 +445,8 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         defineHook({
           hook: "after_update_message",
           id: "after_update_boom",
-          execute: async () => {
+          execute: async (_state, message) => {
+            afterUpdates.push(message.content)
             throw new Error("after update")
           },
         }),
@@ -486,6 +502,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ])
         expect(afters).not.toContain("veto me")
         expect(afters.filter((content) => content === "after boom")).toHaveLength(1)
+        expect(afterUpdates).toEqual(["after update"])
         expect(session.logs().join("\n")).toContain("Hook veto (before_create_message")
       })
     },
@@ -568,26 +585,30 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           )
         },
       })
+      const replayed = (n: string, word: string) => ({
+        role: "assistant",
+        content: `a${n}`,
+        reasoning: `thought ${word}`,
+        reasoningDetails: [{ type: "reasoning.text", text: `detail ${word}` }],
+      })
+      const assistants = (request: Awaited<ReturnType<typeof requestOf>>) =>
+        history(request).filter((m) => m.role === "assistant")
       for (const humanOn of SIDES) {
         const plain = await requestOf(humanOn, undefined)
+        expect(assistants(plain)).toEqual([replayed("1", "one"), replayed("2", "two")])
         expect(await requestOf(humanOn, [pass])).toEqual(plain)
-        const filtered = JSON.stringify(await requestOf(humanOn, [dropFilter]))
-        expect(filtered).not.toContain("thought one")
-        expect(filtered).not.toContain("detail one")
-        expect(filtered).toContain("thought two")
-        expect(filtered).toContain("detail two")
-        const prefiltered = JSON.stringify(await requestOf(humanOn, [dropPrefilter]))
-        expect(prefiltered).toContain("thought one")
-        expect(prefiltered).toContain("detail one")
-        expect(prefiltered).not.toContain("thought two")
-        expect(prefiltered).not.toContain("detail two")
-        const excluded = JSON.stringify(await requestOf(humanOn, [pass], false))
-        expect(excluded).not.toContain("thought")
-        expect(excluded).not.toContain("detail")
-        const restored = JSON.stringify(await requestOf(humanOn, [restore], false))
-        expect(restored).toContain("a2")
-        expect(restored).not.toContain("thought")
-        expect(restored).not.toContain("detail")
+        expect(assistants(await requestOf(humanOn, [dropFilter]))).toEqual([replayed("2", "two")])
+        expect(assistants(await requestOf(humanOn, [dropPrefilter]))).toEqual([replayed("1", "one")])
+        const bare = [
+          { role: "assistant", content: "a1" },
+          { role: "assistant", content: "a2" },
+        ]
+        const excluded = await requestOf(humanOn, [pass], false)
+        expect(assistants(excluded)).toEqual(bare)
+        expect(JSON.stringify(excluded)).not.toMatch(/thought|detail/)
+        const restored = await requestOf(humanOn, [restore], false)
+        expect(assistants(restored)).toEqual(bare)
+        expect(JSON.stringify(restored)).not.toMatch(/thought|detail/)
       }
     },
   },
@@ -1409,6 +1430,8 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         void state.injectMessage({ role: "user", content: null })
         // @ts-expect-error an update changes content and metadata only
         void state.updateMessage("id", { silent: true })
+        // @ts-expect-error attachments belong to a queued message, not an injected one
+        void state.injectMessage({ role: "user", content: "x", attachments: [] })
       }
       expect(typeof typesOnly).toBe("function")
     },
@@ -1859,7 +1882,23 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ["string", []],
         "agent",
       ])
-      expect(first("after_update_message")?.slice(0, 3)).toEqual(["after_update_message", "string", "running"])
+      expect(first("after_create_message")).toEqual([
+        "after_create_message",
+        "string",
+        "at rest",
+        [["id", "role", "content", "status"]],
+        "agent",
+      ])
+      expect(first("after_update_message")).toEqual([
+        "after_update_message",
+        "string",
+        "running",
+        [["id", "role", "content", "status"]],
+        "agent",
+      ])
+      expect(
+        calls.filter((call) => (call as Array<unknown>)[2] === "at rest").map((call) => (call as Array<unknown>)[0]),
+      ).toEqual(["after_thread_created", "before_create_message", "after_create_message"])
       expect(first("tool_call_started")).toEqual([
         "tool_call_started",
         "string",

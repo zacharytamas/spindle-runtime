@@ -21,6 +21,8 @@ const contents = (messages: ReadonlyArray<{ readonly content?: unknown }>) => me
 
 const noop = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
 
+const system = { role: "system", content: "You are a test assistant." }
+
 // Messages section 7, one scenario per row, each with the human on side B and then on side A.
 export const messageScenarios: ReadonlyArray<Scenario> = [
   {
@@ -31,7 +33,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         const before: Array<Message> = []
         const after: Array<Message> = []
         const filtered: Array<Array<string>> = []
+        const live: Array<Array<string>> = []
         const seen: Array<unknown> = []
+        const liveIds = (state: ThreadState) => (state.execution?.messageHistory ?? []).map((message) => message.id)
         const hooks = [
           defineHook({
             hook: "before_create_message",
@@ -51,9 +55,17 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           defineHook({
             hook: "filter_messages",
             id: "look",
-            execute: async (_state, messages) => {
+            execute: async (state, messages) => {
               filtered.push(messages.map((message) => message.id))
+              live.push(liveIds(state))
               return messages
+            },
+          }),
+          defineHook({
+            hook: "tool_call_done",
+            id: "after_tool",
+            execute: async (state, toolCall) => {
+              if (toolCall.id === "c_inject") live.push(liveIds(state))
             },
           }),
         ]
@@ -87,7 +99,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         ])
         await using(
           driver,
-          { provider, tools, hooks, humanOn, prompt: { hooks: ["stamp", "record", "look"] } },
+          { provider, tools, hooks, humanOn, prompt: { hooks: ["stamp", "record", "look", "after_tool"] } },
           async (session, thread) => {
             expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
             const stored = await session.messages(thread)
@@ -103,6 +115,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             expect(seen[1]).toEqual(ids.slice(0, 4))
             expect(ids[2]).toBe(message?.id)
             expect(filtered[1]).toEqual(ids.slice(0, 5))
+            expect(live).toEqual([ids.slice(0, 1), ids.slice(0, 4), ids.slice(0, 5)])
           },
         )
       }
@@ -131,6 +144,16 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             },
           }),
           defineHook({ hook: "before_create_message", id: "prompt_before", execute: record("prompt_before") }),
+          ...["agent_update", "prompt_update"].map((id) =>
+            defineHook({
+              hook: "before_update_message",
+              id,
+              execute: async (state, _messageId, updates, context) => {
+                calls.push([id, updates.content, context.source, state.execution === null])
+                return updates
+              },
+            }),
+          ),
         ]
         const provider = new ScriptedProvider([{ text: "answer" }])
         await using(
@@ -139,9 +162,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             provider,
             hooks,
             humanOn,
-            agent: { hooks: ["agent_before", "agent_after"] },
+            agent: { hooks: ["agent_before", "agent_after", "agent_update"] },
             side: { prompt: "helper" },
-            prompt: { name: "helper", hooks: ["prompt_before"], includeChat: true },
+            prompt: { name: "helper", hooks: ["prompt_before", "prompt_update"], includeChat: true },
           },
           async (session, thread) => {
             const state = await session.state(thread)
@@ -149,16 +172,19 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             const message = await state.injectMessage({ role: human, content: "idle note", metadata: { k: 1 } })
             expect(await state.getMessage(message.id)).toEqual(message)
             expect(await session.messages(thread)).toEqual([message])
+            const edited = await state.updateMessage(message.id, { content: "idle edit" })
+            expect(await session.messages(thread)).toEqual([edited])
             expect(provider.requests).toHaveLength(0)
             const agent = { kind: "agent", agentName: "assistant" }
             expect(calls).toEqual([
               ["agent_before", "idle note", agent, true],
               ["agent_after", "idle note", agent, true],
+              ["agent_update", "idle edit", agent, true],
             ])
             calls.length = 0
             await send(session, thread, "go")
             expect(history(provider.requests[0]).map(sideOf)).toEqual([
-              ["user", "idle note"],
+              ["user", "idle edit"],
               ["user", "go"],
             ])
             expect(calls).toEqual([
@@ -313,9 +339,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             hook: "prefilter_llm_history",
             id: "remind",
             execute: async (_state, messages) => {
-              const last = messages[messages.length - 1]
-              if (last !== undefined && typeof last.content === "string") last.content += " (be brief)"
-              return messages
+              const asked = messages.find((message) => message.content === "u3")
+              if (asked !== undefined) asked.content = "u3 (be brief)"
+              return [...messages, { role: "user", content: "added by prefilter" }]
             },
           }),
         ]
@@ -348,8 +374,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             expect(history(provider.requests[0]).map(sideOf)).toEqual([
               ["user", "summary of u1 and m1"],
               ["assistant", "m2 edited", []],
-              ["user", "u3"],
-              ["user", "tail (be brief)"],
+              ["user", "u3 (be brief)"],
+              ["user", "tail"],
+              ["user", "added by prefilter"],
             ])
             expect(provider.requests[0]?.messages[0]).toEqual({ role: "system", content: "You are a test assistant." })
             expect(provider.requests[0]?.tools?.map((tool) => tool.function.name)).toEqual(["check"])
@@ -361,6 +388,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             expect(stored.map((message) => message.id)).not.toContain("synthetic_summary")
             expect(stored.map((message) => message.id)).not.toContain("synthetic_tail")
             expect(stored.map((message) => message.content)).not.toContain("tail")
+            expect(stored.map((message) => message.content)).not.toContain("added by prefilter")
           },
         )
       }
@@ -441,7 +469,8 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
               ["prefilter", ["go", "from filter", null, "noop"], true],
             ])
             expect(provider.requests).toHaveLength(2)
-            expect(contents(history(provider.requests[0]))).toEqual(["go"])
+            expect(provider.requests[0]?.messages).toEqual([system, { role: "user", content: "go" }])
+            expect(provider.requests[1]?.messages.filter((m) => m.role === "system")).toEqual([system])
             expect(contents(history(provider.requests[1]))).toContain("from filter")
             expect((await session.messages(thread)).filter((m) => m.content === "from filter")).toHaveLength(1)
           },
@@ -528,7 +557,8 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
               ["filter", ["go", "from prefilter", null, "observed"]],
               ["prefilter", ["go", "from prefilter", null, "observed"]],
             ])
-            expect(contents(history(provider.requests[0]))).toEqual(["go"])
+            expect(provider.requests[0]?.messages).toEqual([system, { role: "user", content: "go" }])
+            expect(provider.requests[1]?.messages.filter((m) => m.role === "system")).toEqual([system])
             expect(contents(history(provider.requests[1]))).toContain("from prefilter")
           },
         )
@@ -543,7 +573,8 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         const { human } = rolesFor(humanOn)
         const order: Array<string> = []
         const seen: Array<unknown> = []
-        let injected = false
+        const persisted: Array<unknown> = []
+        let injected: Message | undefined
         const hooks = [
           defineHook({
             hook: "after_system_message",
@@ -551,19 +582,17 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             execute: async (state, systemMessage) => {
               order.push("after_system_message")
               seen.push(systemMessage)
-              if (!injected) {
-                injected = true
-                await state.injectMessage({ role: human, content: "from system hook", silent: true })
-              }
+              injected ??= await state.injectMessage({ role: human, content: "from system hook", silent: true })
               return "REPLACED"
             },
           }),
           defineHook({
             hook: "filter_messages",
             id: "see_filter",
-            execute: async (_state, messages) => {
+            execute: async (state, messages) => {
               order.push("filter_messages")
               seen.push(messages.map((m) => [m.role, m.content, m.silent]))
+              persisted.push(await state.getMessage(injected?.id ?? ""))
               return messages
             },
           }),
@@ -605,6 +634,8 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         ])
         await using(driver, { provider, hooks, humanOn, prompt, prompts: [rules] }, async (session, thread) => {
           await send(session, thread, "go")
+          expect(persisted).toEqual([injected])
+          expect((await session.messages(thread)).find((m) => m.id === injected?.id)).toEqual(injected)
           expect(order).toEqual(["after_system_message", "filter_messages", "prefilter_llm_history", "dispatch"])
           expect(seen[0]).toBe("Base. Be kind. Tone: warm")
           expect(seen[1]).toEqual([
