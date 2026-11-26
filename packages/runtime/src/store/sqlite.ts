@@ -24,6 +24,7 @@ import {
   toThread,
 } from "./schema.ts"
 import {
+  type Claim,
   FlowEnded,
   InvalidMessagesQuery,
   KeyNotWellFormed,
@@ -137,6 +138,20 @@ export const layer = Layer.effect(
                 ),
               )}`
         }
+      })
+
+    // Execution State section 4.3: a run starts from idle or failed. The claim names the holder and the flow, and the
+    // last message before the run.
+    const claimRun = (threadId: string, row: RunRow, claim: Claim, now: number) =>
+      Effect.gen(function* () {
+        const next = transition(toStatus(row), { type: "start" }, now)
+        if (next === undefined) return false
+        const [last] = yield* sql<{ seq: number }>`
+          SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ${threadId}`
+        yield* sql`UPDATE threads SET run_state = ${next.state}, run_reason = NULL, run_since = ${next.since},
+          holder_id = ${claim.holder}, flow_id = ${claim.flowId}, claim_seq = ${last?.seq ?? 0}
+          WHERE id = ${threadId}`
+        return true
       })
 
     const release = (threadId: string, status: ThreadStatus) =>
@@ -447,16 +462,22 @@ export const layer = Layer.effect(
               INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload, queued_at: now })}
               RETURNING seq, kind, payload, queued_at`
             const queued = toQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
-            const next = transition(toStatus(row), { type: "start" }, now)
-            if (next === undefined) return { queued, claimed: false }
-            const [last] = yield* sql<{ seq: number }>`
-              SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ${threadId}`
-            yield* sql`UPDATE threads SET run_state = ${next.state}, run_reason = NULL, run_since = ${next.since},
-              holder_id = ${claim.holder}, flow_id = ${claim.flowId}, claim_seq = ${last?.seq ?? 0}
-              WHERE id = ${threadId}`
-            return { queued, claimed: true }
+            return { queued, claimed: yield* claimRun(threadId, row, claim, now) }
           }),
         ),
+
+      claim: (threadId, claim) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const [row] = yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
+            if (row === undefined || row.terminated_at !== null) return false
+            const head = yield* sql`SELECT 1 FROM queue WHERE thread_id = ${threadId} LIMIT 1`
+            return head.length > 0 && (yield* claimRun(threadId, row, claim, yield* nowMicros))
+          }),
+        ),
+
+      isQueued: (threadId, seq) =>
+        Effect.map(sql`SELECT 1 FROM queue WHERE thread_id = ${threadId} AND seq = ${seq}`, (rows) => rows.length > 0),
 
       nextQueued: (threadId) =>
         Effect.map(

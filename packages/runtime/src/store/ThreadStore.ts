@@ -210,6 +210,10 @@ export class ThreadStore extends Context.Service<
       entry: QueueEntry,
       claim: Claim,
     ) => Effect.Effect<Admitted, ThreadNotFound | ThreadTerminated | ValueNotJson | SqlError>
+    // Claims a thread that holds queued work and that no execution holds, for work that waits behind a run that
+    // stopped or failed. Returns whether the caller now runs it.
+    readonly claim: (threadId: string, claim: Claim) => Effect.Effect<boolean, SqlError>
+    readonly isQueued: (threadId: string, seq: number) => Effect.Effect<boolean, SqlError>
     // The oldest entry, which stays queued until the message that delivers it is inserted.
     readonly nextQueued: (threadId: string) => Effect.Effect<Queued | undefined, SqlError>
     readonly queueLength: (threadId: string) => Effect.Effect<number, SqlError>

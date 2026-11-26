@@ -100,6 +100,34 @@ describe("ThreadStore claims", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("claim takes a released thread that still holds queued work, and nothing else", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore
+      const thread = yield* store.createThread({ agentId: "assistant" })
+      expect(yield* store.claim(thread.id, claim("flow-empty"))).toBe(false)
+      const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"))
+      expect(yield* store.claim(thread.id, claim("flow-busy"))).toBe(false)
+      yield* store.settle(
+        thread.id,
+        "flow-a",
+        { state: "idle", reason: "aborted" },
+        { continueIfQueued: false, closing: "" },
+      )
+      expect(yield* store.isQueued(thread.id, queued.seq)).toBe(true)
+      expect(yield* store.claim(thread.id, claim("flow-b"))).toBe(true)
+      expect(yield* store.owned("holder-1")).toEqual(new Map([[thread.id, "flow-b"]]))
+      yield* store.settle(
+        thread.id,
+        "flow-b",
+        { state: "failed", reason: "step_error" },
+        { continueIfQueued: false, closing: "" },
+      )
+      yield* store.terminate(thread.id)
+      expect(yield* store.claim(thread.id, claim("flow-c"))).toBe(false)
+      expect(yield* store.isQueued(thread.id, queued.seq + 1)).toBe(false)
+    }).pipe(Effect.provide(inMemory)),
+  )
+
   it.effect("settle keeps a run going while the queue holds work and releases the thread once it is empty", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore

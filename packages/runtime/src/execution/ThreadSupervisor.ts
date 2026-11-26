@@ -167,23 +167,46 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
+      const newRun = (): Run => ({
+        flowId: crypto.randomUUID(),
+        abort: new AbortController(),
+        stop: undefined,
+        steps: 0,
+        ended: false,
+      })
+
+      // The flow is known here before the claim commits, so that a renewal never takes the new claim for one with no
+      // execution behind it.
+      const claimWith = <E>(
+        threadId: string,
+        take: (run: Run) => Effect.Effect<boolean, E>,
+        options: ExecutionOptions,
+      ) =>
+        Effect.gen(function* () {
+          const run = newRun()
+          flows.add(run.flowId)
+          const claimed = yield* take(run).pipe(Effect.onError(() => Effect.sync(() => flows.delete(run.flowId))))
+          if (claimed) return yield* start(threadId, run, options)
+          flows.delete(run.flowId)
+          return undefined
+        })
+
+      // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
+      // this process, and an active one takes the entry before its next model call.
       const admit = (threadId: string, entry: QueueEntry, options: ExecutionOptions) =>
         Effect.gen(function* () {
           yield* store.recover(threadId)
-          const run: Run = {
-            flowId: crypto.randomUUID(),
-            abort: new AbortController(),
-            stop: undefined,
-            steps: 0,
-            ended: false,
-          }
-          flows.add(run.flowId)
-          const admitted = yield* store
-            .admit(threadId, entry, { holder: holder.id, flowId: run.flowId })
-            .pipe(Effect.onError(() => Effect.sync(() => flows.delete(run.flowId))))
-          if (admitted.claimed) return yield* start(threadId, run, options)
-          flows.delete(run.flowId)
-          return undefined
+          let seq = 0
+          const started = yield* claimWith(
+            threadId,
+            (run) =>
+              Effect.map(store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }), (admitted) => {
+                seq = admitted.queued.seq
+                return admitted.claimed
+              }),
+            options,
+          )
+          return { seq, started }
         })
 
       // Runtime section 10: the thread is marked and its run settled in one transaction. The execution that ran it
@@ -254,6 +277,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       return ThreadSupervisor.of({
         holderId: holder.id,
+        // A sender waits for the run that takes its message. When the run it waited behind stopped or failed and left
+        // the message queued, the sender claims the thread and runs it, because the message is its deliberate request.
+        // A run that was lost leaves the queue to the next trigger, and a terminated thread runs nothing.
         send: (threadId, content, options = {}) =>
           Effect.gen(function* () {
             const invalid = checkOptions(options)
@@ -261,22 +287,41 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const thread = yield* store.getThread(threadId)
             const { human } = yield* sidesOf(thread.agentId)
             const message: QueueMessageInput = { role: roleOf(human), content }
-            const started = yield* admit(threadId, { kind: "message", message }, options)
-            if (started !== undefined) {
-              const outcome = yield* Deferred.await(started.done)
-              return { outcome, status: yield* statusOf(threadId) }
+            const admitted = yield* admit(threadId, { kind: "message", message }, options)
+            let started = admitted.started
+            let elsewhere: Holder | undefined
+            while (true) {
+              if (started !== undefined) {
+                const outcome = yield* Deferred.await(started.done)
+                return { outcome, status: yield* statusOf(threadId) }
+              }
+              const local = live.get(threadId)
+              let outcome: RunOutcome | undefined
+              if (local !== undefined) outcome = yield* Deferred.await(local.done)
+              else {
+                const holderNow = yield* store.holderOf(threadId)
+                if (holderNow !== null) {
+                  elsewhere = holderNow
+                  if (options.observe !== undefined)
+                    yield* options.observe({ type: "queued", threadId, pid: holderNow.pid })
+                }
+              }
+              const status = yield* awaitRest(threadId)
+              const current = yield* store.getThread(threadId)
+              if (
+                status.reason === "execution_lost" ||
+                current.terminated !== null ||
+                !(yield* store.isQueued(threadId, admitted.seq))
+              ) {
+                const delivery = { status, ...(elsewhere === undefined ? {} : { elsewhere }) }
+                return outcome === undefined ? delivery : { ...delivery, outcome }
+              }
+              started = yield* claimWith(
+                threadId,
+                (run) => store.claim(threadId, { holder: holder.id, flowId: run.flowId }),
+                options,
+              )
             }
-            // The running execution takes the message before it settles.
-            const local = live.get(threadId)
-            if (local !== undefined) {
-              const outcome = yield* Deferred.await(local.done)
-              return { outcome, status: yield* awaitRest(threadId) }
-            }
-            const elsewhere = yield* store.holderOf(threadId)
-            if (options.observe !== undefined)
-              yield* options.observe({ type: "queued", threadId, pid: elsewhere?.pid ?? null })
-            const status = yield* awaitRest(threadId)
-            return elsewhere === null ? { status } : { elsewhere, status }
           }),
         control,
         stop: (threadId) =>
