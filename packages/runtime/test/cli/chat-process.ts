@@ -66,7 +66,7 @@ export const launch = (gate: string, words: ReadonlyArray<string>, env: Record<s
       exit: handle.exitCode.pipe(
         Effect.map(Number),
         Effect.orElseSucceed(() => -1),
-        Effect.flatMap((code) => Effect.as(Fiber.join(reading), code)),
+        Effect.tap(() => Fiber.join(reading)),
       ),
       // kill waits until the process exits, so it runs on its own fiber.
       signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
