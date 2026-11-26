@@ -45,28 +45,46 @@ const extract = (specDir) => {
 		let fenced = false;
 		let block = [];
 		let blockLine = 0;
+		let blockKind = "paragraph";
+		let lead = null;
+		let tableRow = 0;
+		const classify = (text) => {
+			const upper = text.match(KEYWORD);
+			const lower = !upper && text.match(LOWERCASE);
+			return upper || lower ? { level: (upper ? upper[1] : lower[1]).toUpperCase(), rfc2119: Boolean(upper) } : null;
+		};
+		const emit = (line, text, { level, rfc2119 }) =>
+			requirements.push({ id: requirementId(page, section, text), page, line, section, level, rfc2119, text });
+		const closeLead = () => {
+			if (lead && !lead.used) emit(lead.line, lead.text, lead);
+			lead = null;
+		};
 		const flush = () => {
 			if (!block.length) return;
 			const text = block.join(" ").replace(/\s+/g, " ").replace(/\*\*/g, "").trim();
 			block = [];
-			const upper = text.match(KEYWORD);
-			const lower = !upper && text.match(LOWERCASE);
-			if (!upper && !lower) return;
-			requirements.push({
-				id: requirementId(page, section, text),
-				page,
-				line: blockLine,
-				section,
-				level: (upper ? upper[1] : lower[1]).toUpperCase(),
-				rfc2119: Boolean(upper),
-				text,
-			});
+			const own = classify(text);
+			if (blockKind === "row") {
+				tableRow += 1;
+				if (lead && tableRow <= 2) return;
+			}
+			if (lead && blockKind !== "paragraph") {
+				lead.used = true;
+				emit(blockLine, `${lead.text} ${text}`, own ?? lead);
+				return;
+			}
+			closeLead();
+			if (!own) return;
+			if (text.endsWith(":") && classify(text.slice(text.lastIndexOf(". ") + 1))) {
+				lead = { ...own, line: blockLine, text, used: false };
+			} else emit(blockLine, text, own);
 		};
 		fs.readFileSync(file, "utf8")
 			.split(/\r?\n/)
 			.forEach((line, index) => {
 				if (/^\s*(```|~~~)/.test(line)) {
 					flush();
+					closeLead();
 					fenced = !fenced;
 					return;
 				}
@@ -74,6 +92,7 @@ const extract = (specDir) => {
 				const heading = line.match(/^#{1,6}\s+(.*)$/);
 				if (heading) {
 					flush();
+					closeLead();
 					section = heading[1].trim();
 					return;
 				}
@@ -81,11 +100,16 @@ const extract = (specDir) => {
 				const row = /^\s*\|/.test(line);
 				if (line.trim() === "" || item || row) flush();
 				if (line.trim() === "") return;
-				if (!block.length) blockLine = index + 1;
+				if (!block.length) {
+					blockLine = index + 1;
+					blockKind = item ? "item" : row ? "row" : "paragraph";
+					if (!row) tableRow = 0;
+				}
 				block.push(line.replace(/^\s*([-*]|\d+\.)\s+/, "").trim());
 				if (row) flush();
 			});
 		flush();
+		closeLead();
 	}
 	return requirements;
 };
