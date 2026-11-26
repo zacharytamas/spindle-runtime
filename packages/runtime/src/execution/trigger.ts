@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import type { Registry } from "../registry/Registry.ts"
 import { type Thread, ThreadStore } from "../store/ThreadStore.ts"
 import { newSecrets } from "./env.ts"
-import { agentHooks, type HookSet, hookScope, runHooks } from "./hooks.ts"
+import { agentHooks, type HookScope, type HookSet, runHooks } from "./hooks.ts"
 import { createMessage } from "./messages.ts"
 import { type ExecutionOptions, learnSecrets, runExecution } from "./step.ts"
 import { makeThreadState } from "./thread-state.ts"
@@ -39,7 +39,10 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
           error: `invokeTool(${name}) needs a calling tool and its uses list`,
         }),
     }
-    const hooks = hookScope(set, (hook) => makeThreadState({ ...base, from: hook.definition, hooks }))
+    const hooks: HookScope = {
+      set,
+      stateFor: (hook, call) => makeThreadState({ ...base, from: hook.definition, hooks, call }),
+    }
     return { hooks, secrets, state: makeThreadState({ ...base, from: agent?.definition, hooks }) }
   })
 

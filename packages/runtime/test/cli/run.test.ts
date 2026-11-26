@@ -98,7 +98,7 @@ describe("spindle run", () => {
       expect(Date.now() - started).toBeLessThan(5000)
       expect(out).toEqual(["Hello! How can I help?"])
       expect(err[0]).toBe(
-        "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. The hook may still be running, and Spindle cannot undo what it does after this point.",
+        "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means.",
       )
       expect(err.join("\n")).not.toContain("private words")
       const zero = yield* run(["stuck", "-m", "hi", "--script", "@text-reply.json", "--hook-timeout", "0"], {}, "hooks")

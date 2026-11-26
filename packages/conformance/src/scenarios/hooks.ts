@@ -962,11 +962,83 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         const logs = loaded.logs().join("\n")
         expect(logs).toContain("Hook stuck_filter (filter_messages")
         expect(logs).toContain("Hook stuck_done (tool_call_done")
-        expect(logs).toContain("cannot undo what it does after this point")
+        expect(logs).toContain("Its ThreadState refuses every later call")
         expect(logs).toContain("Hook leaky (after_tool_call_success")
         expect(logs).not.toContain("SENTINEL_7731")
         expect(logs).not.toContain("noop")
         expect(JSON.stringify(outcome)).not.toContain("SENTINEL_7731")
+      } finally {
+        await loaded.close()
+      }
+    },
+  },
+  {
+    name: "H15b discards a return that comes after the time limit and refuses later calls from that hook's state",
+    requirements: ["cb48415f", "3d8dede1"],
+    run: async (driver) => {
+      let late: (outcome: string) => void = () => {}
+      const lateCall = new Promise<string>((resolve) => {
+        late = resolve
+      })
+      let blocked = false
+      let waited = false
+      const hooks = [
+        defineHook({
+          hook: "after_system_message",
+          id: "busy",
+          execute: () => {
+            if (blocked) return null
+            blocked = true
+            const until = Date.now() + 400
+            while (Date.now() < until) {}
+            return "OVERTIME"
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "slow_writer",
+          execute: async (state, messages) => {
+            if (waited) return messages
+            waited = true
+            await new Promise((resolve) => setTimeout(resolve, 400))
+            late(
+              await state.injectMessage({ role: "user", content: "too late" }).then(
+                () => "stored",
+                (error: Error) => `${error.name}: ${error.message}`,
+              ),
+            )
+            return [...messages, { id: "late", role: "user", content: "late filter", created_at: 0 } as Message]
+          },
+        }),
+      ]
+      const provider = new ScriptedProvider([{ text: "done" }, { text: "again" }])
+      const loaded = await driver.load(
+        project({ provider, hooks, prompt: { hooks: hookIds(hooks), includeChat: true } }),
+        {
+          hookTimeoutMs: 150,
+        },
+      )
+      try {
+        const thread = await loaded.createThread("assistant")
+        expect(await send(loaded, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+        expect(await lateCall).toMatch(/^HookExpired: Hook slow_writer \(filter_messages\) ran past its time limit/)
+        await send(loaded, thread, "next")
+        expect(provider.requests.map((request) => request.messages[0]?.content)).toEqual([
+          "You are a test assistant.",
+          "You are a test assistant.",
+        ])
+        expect(provider.requests.map((request) => history(request).map(sideOf))).toEqual([
+          [["user", "go"]],
+          [
+            ["user", "go"],
+            ["assistant", "done", []],
+            ["user", "next"],
+          ],
+        ])
+        expect((await loaded.messages(thread)).map((m) => m.content)).toEqual(["go", "done", "next", "again"])
+        const logs = loaded.logs().join("\n")
+        expect(logs).toContain("Hook busy (after_system_message")
+        expect(logs).toContain("Hook slow_writer (filter_messages")
       } finally {
         await loaded.close()
       }

@@ -4,7 +4,7 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
-import type { HookScope } from "./hooks.ts"
+import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
 import { lookup, type Side } from "./turn.ts"
 
@@ -29,6 +29,8 @@ export interface StateContext {
   readonly invoke: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
   // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
   readonly hooks: HookScope
+  // The hook call this state belongs to, when a hook gets it.
+  readonly call?: HookCall
 }
 
 const notYet = (member: string, arrival: string) => () => {
@@ -68,13 +70,24 @@ const executionState = (record: ExecutionRecord, readHistory: () => Array<Messag
 // The one place where Spindle turns an Effect into a Promise. Tools are Promise-based user code, and every
 // ThreadState method they call runs here against the services of the execution.
 export const makeThreadState = (state: StateContext): ThreadState => {
-  const run = Effect.runPromiseWith(state.services)
+  const { call } = state
+  const expired = () =>
+    call?.expired === true ? new HookExpired({ hook: call.hook, position: call.position }) : undefined
+  const runPromise = Effect.runPromiseWith(state.services)
+  const run = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): Promise<A> => {
+    const refused = expired()
+    return refused === undefined ? runPromise(effect) : Promise.reject(refused)
+  }
   const registry = Context.get(state.services, Registry)
   const store = Context.get(state.services, ThreadStore)
   const threadId = state.thread.id
   // A read of the store finishes in the call that starts it, because no transaction spans an await.
-  const readHistory = () =>
-    Effect.runSyncWith(state.services)(store.getMessages(threadId, { order: "asc", includeSilent: true })).messages
+  const readHistory = () => {
+    const refused = expired()
+    if (refused !== undefined) throw refused
+    return Effect.runSyncWith(state.services)(store.getMessages(threadId, { order: "asc", includeSilent: true }))
+      .messages
+  }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
       Effect.gen(function* () {

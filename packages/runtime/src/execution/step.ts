@@ -23,7 +23,7 @@ import {
 } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse, type StreamedCalls } from "./call.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
-import { countHooks, has, hookScope, runHooks, turnHooks } from "./hooks.ts"
+import { countHooks, type HookScope, has, runHooks, turnHooks } from "./hooks.ts"
 import { createMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
@@ -308,9 +308,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           status: "error",
           error: `invokeTool(${name}) needs a calling tool and its uses list`,
         })
-      const hooks = hookScope(hookSet, (hook) =>
-        makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, invoke: noInvoke }),
-      )
+      const hooks: HookScope = {
+        set: hookSet,
+        stateFor: (hook, call) =>
+          makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, invoke: noInvoke, call }),
+      }
       const base = {
         thread,
         services,

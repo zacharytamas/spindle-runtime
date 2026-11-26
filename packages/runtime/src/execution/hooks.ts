@@ -6,7 +6,7 @@ import type {
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
-import { Context, Data, Duration, Effect } from "effect"
+import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { toJson } from "../store/schema.ts"
 import { readResult } from "./tools.ts"
@@ -270,9 +270,16 @@ export interface HookSet {
   readonly byPosition: ReadonlyMap<string, ReadonlyArray<SelectedHook>>
 }
 
+// One call of one hook. Its ThreadState refuses every call once the call runs past the hook time limit.
+export interface HookCall {
+  readonly hook: string
+  readonly position: Position
+  expired: boolean
+}
+
 export interface HookScope {
   readonly set: HookSet
-  readonly stateFor: (hook: SelectedHook) => ThreadState
+  readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
 
 export const has = (scope: HookScope, position: Position) => scope.set.byPosition.has(position)
@@ -319,17 +326,12 @@ export const turnHooks = (turn: Turn) => {
 export const agentHooks = (agent: Loaded<AgentDefinition>) =>
   selectHooks(agent.value.hooks ?? [], agent.definition, { kind: "agent", agentName: agent.definition.qualifiedName })
 
-export const hookScope = (set: HookSet, makeState: (hook: SelectedHook) => ThreadState): HookScope => {
-  const states = new Map<Definition, ThreadState>()
-  return {
-    set,
-    stateFor: (hook) => {
-      const known = states.get(hook.definition)
-      if (known !== undefined) return known
-      const state = makeState(hook)
-      states.set(hook.definition, state)
-      return state
-    },
+export class HookExpired extends Data.TaggedError("HookExpired")<{
+  readonly hook: string
+  readonly position: Position
+}> {
+  override get message() {
+    return `Hook ${this.hook} (${this.position}) ran past its time limit, so Spindle refused this call from its ThreadState`
   }
 }
 
@@ -380,19 +382,29 @@ export const runHooks = <K extends Position>(
     const check = options.check ?? (() => Effect.succeed(undefined))
     let current = value
     for (const hook of hooks) {
+      const call: HookCall = { hook: hook.id, position, expired: false }
       const args = [
-        scope.stateFor(hook),
+        scope.stateFor(hook, call),
         ...lead.map(copy),
         ...(position === "after_thread_created" ? [] : [copy(current)]),
         { source: { ...scope.set.source } },
       ]
+      const started = yield* Clock.currentTimeMillis
       const outcome = yield* callHook(hook, args, timeout)
+      // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
+      call.expired =
+        (outcome._tag === "Success" && outcome.success._tag === "None") ||
+        (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
       let problem: string
       let late = ""
-      if (outcome._tag === "Failure") problem = outcome.failure
-      else if (outcome.success._tag === "None") {
-        problem = `did not settle within ${Duration.format(timeout)}`
-        late = " The hook may still be running, and Spindle cannot undo what it does after this point."
+      if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {
+        problem =
+          call.expired || outcome._tag === "Success"
+            ? `did not settle within ${Duration.format(timeout)}`
+            : outcome.failure
+        if (call.expired)
+          late =
+            " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
       } else {
         let next: Values[K] | typeof INVALID
         try {
