@@ -48,6 +48,8 @@ export const SPINDLE_ISSUE_CODES = [
   "model_id_missing",
   "model_property_invalid",
   "model_fallback_undefined",
+  "model_fallback_self",
+  "model_fallback_circular",
   "model_provider_options_invalid",
   "tool_invalid",
   "tool_name_reserved",

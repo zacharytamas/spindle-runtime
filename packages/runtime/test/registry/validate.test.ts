@@ -136,6 +136,11 @@ const invalid: ReadonlyArray<Case> = [
     [error("prompt_include_circular", "agents/prompts/first.ts:prompt[0].prompt")],
   ],
   [
+    "rejects a prompt that includes itself",
+    "self-include",
+    [error("prompt_include_circular", "agents/prompts/mirror.ts:prompt[0].prompt")],
+  ],
+  [
     "rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include",
     "prompt-required-fields",
     [
@@ -164,9 +169,15 @@ const invalid: ReadonlyArray<Case> = [
       error("model_property_invalid", "agents/models/bad_price.ts:inputPrice"),
       error("model_id_missing", "agents/models/no_model.ts:model"),
       error("model_provider_invalid", "agents/models/no_provider.ts:provider"),
+      error("model_fallback_self", "agents/models/self_fallback.ts:fallbacks[0]"),
       error("definition_name_mismatch", "agents/models/spaced_name.ts:name"),
       error("model_name_invalid", "agents/models/spaced_name.ts:name"),
     ],
+  ],
+  [
+    "warns about models that name each other as fallbacks in a cycle",
+    "model-fallback-cycle",
+    [warning("model_fallback_circular", "agents/models/first.ts:fallbacks[0]")],
   ],
   [
     "rejects provider options that fail the provider's schema",

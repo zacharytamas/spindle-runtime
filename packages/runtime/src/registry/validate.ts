@@ -76,6 +76,30 @@ const backingOf = (side: Shape) => {
   return present.length === 1 ? present[0] : undefined
 }
 
+type Edges = ReadonlyMap<Definition, ReadonlyArray<{ readonly target: Definition; readonly path: string }>>
+
+const cyclesOf = (edges: Edges) => {
+  const cycles: Array<{ readonly cycle: ReadonlyArray<Definition>; readonly path: string }> = []
+  const done = new Set<Definition>()
+  const visit = (definition: Definition, trail: ReadonlyArray<Definition>) => {
+    if (done.has(definition)) return
+    const start = trail.indexOf(definition)
+    if (start !== -1) {
+      const cycle = trail.slice(start)
+      const edge = edges.get(definition)?.find((e) => e.target === (cycle[1] ?? definition))
+      cycles.push({ cycle, path: edge?.path ?? "" })
+      return
+    }
+    for (const edge of edges.get(definition) ?? []) visit(edge.target, [...trail, definition])
+    done.add(definition)
+  }
+  for (const definition of [...edges.keys()].sort((a, b) => a.qualifiedName.localeCompare(b.qualifiedName)))
+    visit(definition, [])
+  return cycles
+}
+
+const listed = (names: ReadonlyArray<string>) => `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+
 export interface Validation {
   readonly definitions: ReadonlyArray<Definition>
   readonly issues: ReadonlyArray<Issue>
@@ -357,6 +381,12 @@ export const validate = Effect.gen(function* () {
         const resolution = at.resolve("model", name)
         if (resolution._tag !== "Found")
           at.report("model_fallback_undefined", `fallbacks[${index}]`, at.describe("model", name, resolution))
+        else if (resolution.definition === definition)
+          at.report(
+            "model_fallback_self",
+            `fallbacks[${index}]`,
+            `fallbacks names model ${name} itself. A fallback must name another model.`,
+          )
       })
     const schema =
       typeof model.provider === "function"
@@ -454,41 +484,53 @@ export const validate = Effect.gen(function* () {
     }
   }
 
-  const includes = new Map<Definition, Array<{ readonly target: Definition; readonly path: string }>>()
-  for (const [definition, value] of loaded) {
-    if (definition.kind !== "prompt" || !isRecord(value) || !Array.isArray(value.prompt)) continue
-    includes.set(
-      definition,
-      value.prompt.flatMap((part: unknown, index) => {
-        if (!isRecord(part) || part.type !== "include" || !isNonEmptyString(part.prompt)) return []
-        const resolution = registry.resolve("prompt", part.prompt, namespaceOf(definition))
-        return resolution._tag === "Found" ? [{ target: resolution.definition, path: `prompt[${index}].prompt` }] : []
-      }),
+  const edgesOf = (kind: Kind, targets: (value: Shape) => ReadonlyArray<readonly [name: unknown, path: string]>) => {
+    const edges = new Map<Definition, ReadonlyArray<{ readonly target: Definition; readonly path: string }>>()
+    for (const [definition, value] of loaded) {
+      if (definition.kind !== kind || !isRecord(value)) continue
+      edges.set(
+        definition,
+        targets(value).flatMap(([name, path]) => {
+          if (!isNonEmptyString(name)) return []
+          const resolution = registry.resolve(kind, name, namespaceOf(definition))
+          return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
+        }),
+      )
+    }
+    return edges
+  }
+
+  const includes = edgesOf("prompt", (prompt) =>
+    Array.isArray(prompt.prompt)
+      ? prompt.prompt.map(
+          (part: unknown, index) =>
+            [isRecord(part) && part.type === "include" ? part.prompt : undefined, `prompt[${index}].prompt`] as const,
+        )
+      : [],
+  )
+  for (const { cycle, path } of cyclesOf(includes)) {
+    const names = cycle.map((d) => d.qualifiedName)
+    site(cycle[0] as Definition).report(
+      "prompt_include_circular",
+      path,
+      cycle.length === 1
+        ? `Prompt ${names[0]} includes itself`
+        : `Prompts ${listed(names)} include each other (${[...names, names[0]].join(" -> ")})`,
     )
   }
-  const done = new Set<Definition>()
-  const visit = (definition: Definition, trail: Array<Definition>) => {
-    if (done.has(definition)) return
-    const start = trail.indexOf(definition)
-    if (start !== -1) {
-      const cycle = trail.slice(start)
-      const names = cycle.map((d) => d.qualifiedName)
-      const first = cycle[0] as Definition
-      const edge = includes.get(first)?.find((e) => e.target === (cycle[1] ?? first))
-      site(first).report(
-        "prompt_include_circular",
-        edge?.path ?? "prompt",
-        cycle.length === 1
-          ? `Prompt ${names[0]} includes itself`
-          : `Prompts ${names.slice(0, -1).join(", ")} and ${names.at(-1)} include each other (${[...names, names[0]].join(" -> ")})`,
-      )
-      return
-    }
-    for (const edge of includes.get(definition) ?? []) visit(edge.target, [...trail, definition])
-    done.add(definition)
+
+  const fallbacks = edgesOf("model", (model) =>
+    isStringArray(model.fallbacks) ? model.fallbacks.map((name, index) => [name, `fallbacks[${index}]`] as const) : [],
+  )
+  for (const { cycle, path } of cyclesOf(fallbacks).filter(({ cycle }) => cycle.length > 1)) {
+    const names = cycle.map((d) => d.qualifiedName)
+    site(cycle[0] as Definition).report(
+      "model_fallback_circular",
+      path,
+      `Models ${listed(names)} name each other as fallbacks (${[...names, names[0]].join(" -> ")}). A fallback chain that returns to its first model does not end.`,
+      "warning",
+    )
   }
-  for (const definition of [...includes.keys()].sort((a, b) => a.qualifiedName.localeCompare(b.qualifiedName)))
-    visit(definition, [])
 
   for (const pkg of registry.packages) {
     for (const agentName of pkg.entryAgents) {
