@@ -147,7 +147,7 @@ export interface Holder {
 
 // settled: the run ended and released the thread. continue: the queue holds work, so the run goes on.
 // superseded: the flow no longer holds the thread, and nothing was written.
-export type Settlement = "settled" | "continue" | "superseded"
+export type Settlement = "settled" | "capped" | "continue" | "superseded"
 
 export class HandleExpired extends Data.TaggedError("HandleExpired") {}
 
@@ -239,7 +239,7 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       flowId: string,
       outcome: { readonly state: "idle" | "failed"; readonly reason: string },
-      options: { readonly continueIfQueued: boolean; readonly closing: string },
+      options: { readonly continueIfQueued: boolean; readonly atCap?: boolean; readonly closing: string },
     ) => Effect.Effect<Settlement, SqlError>
     // Settles each running thread whose holder process is gone, or only the given thread, as failed with
     // execution_lost, and returns their ids.

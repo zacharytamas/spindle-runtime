@@ -533,7 +533,11 @@ export const layer = Layer.effect(
             // run going or finds the thread released and starts the next one.
             if (options.continueIfQueued && row.terminated_at === null) {
               const head = yield* sql`SELECT 1 FROM queue WHERE thread_id = ${threadId} LIMIT 1`
-              if (head.length > 0) return "continue"
+              if (head.length > 0) {
+                if (!options.atCap) return "continue"
+                yield* settleWith(threadId, row, { type: "settle", state: "idle", reason: "max_total_steps" }, options.closing)
+                return "capped"
+              }
             }
             yield* settleWith(threadId, row, { type: "settle", ...outcome }, options.closing)
             return "settled"

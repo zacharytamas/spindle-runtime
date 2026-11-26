@@ -292,7 +292,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     // Execution State section 4.3: every run settles. A run that ended its turn goes on while the queue holds work.
     // Once the run settles, every ThreadState of the execution refuses its calls.
     const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
-      Effect.tap(store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing }), (settlement) =>
+      Effect.tap(store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }), (settlement) =>
         Effect.sync(() => {
           if (settlement !== "continue") run.ended = true
         }),
@@ -336,7 +336,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         ? Effect.flatMap(store.getThread(threadId), (thread) =>
             thread.terminated === null ? settle("failed", "execution_lost") : settle("idle", "aborted"),
           )
-        : settle(status, reason, extra)
+        : settlement === "capped" ? settle("idle", "max_total_steps") : settle(status, reason, extra)
 
     const loop = Effect.gen(function* () {
       const thread = yield* store.getThread(threadId)
