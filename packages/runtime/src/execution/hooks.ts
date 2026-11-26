@@ -10,7 +10,8 @@ import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
-import { Callback, type PendingCallbacks } from "./callback.ts"
+import { Callback } from "./callback.ts"
+import type { Execution } from "./Execution.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -357,7 +358,7 @@ export interface HookCall extends Callback {
 }
 
 export interface HookScope {
-  readonly pending?: PendingCallbacks
+  readonly execution?: Execution
   readonly set: HookSet
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
@@ -436,18 +437,6 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-const callHook = (
-  hook: SelectedHook,
-  args: () => ReadonlyArray<unknown>,
-  timeout: Duration.Duration,
-  call: HookCall,
-  pending: HookScope["pending"],
-) =>
-  Effect.tryPromise({
-    try: () => call.invoke(pending, `hook ${hook.id}`, () => hook.execute(...args())),
-    catch: () => "threw an error",
-  }).pipe(Effect.timeoutOption(timeout), Effect.result)
-
 // Hooks section 1.2: a hook's failure is logged with its id and type only. The thrown error and the hook's
 // arguments can hold message content or a secret, so neither reaches the log.
 export const runHooks = <K extends Position>(
@@ -473,20 +462,24 @@ export const runHooks = <K extends Position>(
     let current = value
     for (const hook of hooks) {
       const call = Object.assign(new Callback(), { hook: hook.id, position, depth: (options.depth ?? 0) + 1 })
-      const args = () => [
-        scope.stateFor(hook, call),
-        ...lead.map((arg) => structuredClone(arg)),
-        ...(position === "after_thread_created" ? [] : [structuredClone(current)]),
-        { source: { ...scope.set.source } },
-      ]
+      const invoke = () =>
+        hook.execute(
+          scope.stateFor(hook, call),
+          ...lead.map((arg) => structuredClone(arg)),
+          ...(position === "after_thread_created" ? [] : [structuredClone(current)]),
+          { source: { ...scope.set.source } },
+        )
       const started = yield* Clock.currentTimeMillis
-      const outcome = yield* callHook(hook, args, timeout, call, scope.pending)
+      const outcome = yield* Effect.tryPromise({
+        try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, invoke) : call.invoke(invoke)),
+        catch: () => "threw an error",
+      }).pipe(Effect.timeoutOption(timeout), Effect.result)
       // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
       if (
         (outcome._tag === "Success" && outcome.success._tag === "None") ||
         (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
       )
-        call.expire(scope.pending)
+        call.expire()
       let problem: string
       let late = ""
       if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {

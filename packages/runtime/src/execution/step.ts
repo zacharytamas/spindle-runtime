@@ -315,7 +315,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
             error: `invokeTool(${name}) needs a calling tool and its uses list`,
           })
         const hooks: HookScope = {
-          pending: run,
+          execution: run,
           set: hookSet,
           stateFor: (hook, call) =>
             makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, invoke: noInvoke, call }),
@@ -338,7 +338,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
         // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
         // turn. The agent's hooks apply to it and see no execution, as they do at rest.
         const inbound: HookScope = {
-          pending: run,
+          execution: run,
           set: yield* agentHooks(turn.agent),
           stateFor: (hook, call) =>
             makeThreadState({
@@ -355,7 +355,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
         }
         const delivery = { ...write, hooks: inbound }
         const toolContext: ToolContext = {
-          pending: run,
+          execution: run,
           turn,
           stateFor: (
             tool: Loaded<FunctionTool>,
@@ -505,13 +505,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               call,
               tool === undefined
                 ? Effect.succeed(failed(call.problem ?? ""))
-                : executeTool(
-                    tool,
-                    entry.args,
-                    (callback) => toolContext.stateFor(tool, exposed?.entry, callback),
-                    run,
-                    scopeFor(turn, exposed?.entry),
-                  ),
+                : executeTool(toolContext, tool, exposed?.entry, entry.args),
             )
             return message.id
           })

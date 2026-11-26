@@ -1,11 +1,7 @@
-import type { Execution } from "./Execution.ts"
-
-export type PendingCallbacks = Pick<Execution, "track" | "forget">
-
 export class Callback {
   #finished = false
   #expired = false
-  #promise?: Promise<unknown>
+  #release: (() => void) | undefined
 
   get finished() {
     return this.#finished
@@ -14,12 +10,13 @@ export class Callback {
     return this.#expired
   }
 
-  expire(pending: PendingCallbacks | undefined) {
+  expire() {
     this.#expired = true
-    if (this.#promise) pending?.forget(this.#promise)
+    this.#release?.()
+    this.#release = undefined
   }
 
-  invoke<A>(pending: PendingCallbacks | undefined, operation: string, invoke: () => PromiseLike<A> | A) {
+  invoke<A>(invoke: () => PromiseLike<A> | A, register?: (promise: Promise<unknown>) => () => void) {
     try {
       const value = invoke()
       if (!value || typeof (value as PromiseLike<A>).then !== "function") {
@@ -28,10 +25,10 @@ export class Callback {
       }
       const result = Promise.resolve(value).finally(() => {
         this.#finished = true
-        pending?.forget(result)
+        this.#release?.()
+        this.#release = undefined
       })
-      this.#promise = result
-      pending?.track(result, operation)
+      this.#release = register?.(result)
       return result
     } catch (error) {
       this.#finished = true

@@ -3,6 +3,7 @@ import type { SqlError } from "effect/sql/SqlError"
 import { FlowEnded, type ThreadNotFound } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { ProviderFailure } from "./call.ts"
+import type { Callback } from "./callback.ts"
 import { CLOSING } from "./run-status.ts"
 import type { prepareSteps, RunOutcome } from "./step.ts"
 import { SetupError, type Side } from "./turn.ts"
@@ -84,13 +85,15 @@ export class Execution {
     this.#stop ??= by
     return true
   }
-  track(promise: Promise<unknown>, operation: string) {
-    this.#pending.set(promise, operation)
-    if (this.#phase === "holding") this.#released.closeUnsafe()
-  }
-  forget(promise: Promise<unknown>) {
-    this.#pending.delete(promise)
-    this.#releaseIfReady()
+  call<A>(callback: Callback, operation: string, invoke: () => PromiseLike<A> | A) {
+    return callback.invoke(invoke, (promise) => {
+      this.#pending.set(promise, operation)
+      if (this.#phase === "holding") this.#released.closeUnsafe()
+      return () => {
+        this.#pending.delete(promise)
+        this.#releaseIfReady()
+      }
+    })
   }
   #releaseIfReady() {
     if (this.#phase === "dropping" || (this.#phase === "holding" && !this.#pending.size)) this.#released.openUnsafe()
