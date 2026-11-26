@@ -71,7 +71,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 
 - [ ] A full swarm runs once, at the code-ready head. Another full swarm runs only for new behavior, a redesign, or a large new diff. A rebase, a merge-conflict resolution, or a minor fix gets a single verifier at the new head. Run each full swarm per `<pstack>/skills/swarm/SKILL.md`. One gates lane runs `pnpm check` on Node and on Bun. The ten live lanes come from the PR's **Verify, live** block. The perf lane comes from its **Verify, perf** block. Two audit lanes read the diff and the receipts and distrust the PR body. One audit lane checks the diff against the spec text for the ledger entries the PR marks `covered`. The other audit lane checks the clean-room rule and the platform import rule. The gates lane, the live lanes, and the perf lane run on Claude Sonnet 5.5. The spec audit lane runs on GPT-6.2 Astra through Codex. The clean-room audit lane runs on Gemini 4 Neon. Every lane brief carries the three owner-brief rules, because a lane on another provider loads no pstack skill.
 - [ ] Until the operator's review of the built stack, run the full swarm on M1-1 only. For each later PR, one Claude Sonnet 5.5 verifier runs the gates and the ten live lanes in sequence in one worktree, and the spec audit lane runs beside it. The full swarm for M1-2 through M1-7 runs after the review, at the reviewed head.
-- [ ] Clean only when every lane is `PASS`. A lane that cannot run reports `BLOCKED`, and `BLOCKED` is not `PASS`. Findings go back to the owner, including a defect that a lane filed as a note. A new head gets a fresh verdict, except for results that stay valid under the patch-id rule in `shipping.md`.
+- [ ] Clean only when every lane is `PASS`. A lane that cannot run reports `BLOCKED`, and `BLOCKED` is not `PASS`. A finding that blocks goes back to the owner, including one that a lane filed as a note. A finding blocks when stored data is lost or changed, a secret leaks, a tool call has no result or a result has no call, a tool runs twice, two executions of one thread run at once, or a thread cannot continue. Every other finding goes to `docs/plans/trail/m1-followups.md`. A failed or blocked verification lane still blocks. A new head gets a fresh verdict, except for results that stay valid under the patch-id rule in `shipping.md`.
 - [ ] The owner reports STACK-READY. The root appends the PR to the stack in dependency order with `gh pr edit <pr> --base <parent-branch>`. The operator lands the stack bottom-up.
 
 ### Boot recipe, for every live lane
@@ -237,7 +237,7 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 - [ ] Define `ThreadStore` as an Effect service whose methods return typed records and typed errors. The live layer needs `SqlClient` from `effect/sql/SqlClient` and names no SQLite package.
 - [ ] Write one implementation. Tests use the same implementation on an in-memory database. Do not add a second adapter.
 - [ ] Run migrations with the `SqliteMigrator` module of the platform's SQLite package, reached through `#platform`.
-- [ ] Write every step's records in one transaction. A step's assistant message and its tool results commit together or not at all.
+- [ ] Give the caller control of the transaction boundary. A batch that the caller writes in one transaction commits together or not at all. The store never groups a step's records by itself, because the step loop in M1-4 commits the assistant message before it runs a tool and commits each tool result before the next tool.
 - [ ] Implement the durable key-value rules from the second section 14 of the Runtime page. `setValue` with `null` or `undefined` deletes the key. `getValue` returns `null` for a key that was never set. A thread cannot read another thread's keys. A value that JSON cannot represent makes `setValue` fail with an error that names the key.
 - [ ] Implement message reads with `includeSilent`, a stable order by sequence number, and the paging options of `GetMessagesOptions`.
 - [ ] Change the `since` time of the run status only when the state or the reason changes.
@@ -257,7 +257,7 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no store, so record that. At the head, run the `roundtrip` probe, then read the database from a new process. Save `roundtrip.txt`. Pass when both processes print the same three records in the same order.
 - [ ] Lane 2. Append one message, send `SIGKILL` to the process after the append resolves, and read from a new process. Save `kill-after-append.txt`. Pass when the message is present.
-- [ ] Lane 3. Send `SIGKILL` to the process inside a step transaction that writes one assistant message and two tool results. Save `kill-mid-transaction.txt`. Pass when the new process finds all three records or none of them.
+- [ ] Lane 3. Send `SIGKILL` to the process inside one store transaction that writes a batch of three synthetic records. Save `kill-mid-transaction.txt`. Pass when the new process finds all three records or none of them.
 - [ ] Lane 4. Set an object value, read it, set the key to `null`, and read it again. Save `kv-roundtrip.txt`. Pass when the first read equals the object and the second read is `null`.
 - [ ] Lane 5. Write the same key on a parent thread, a child thread, and a sibling thread. Save `kv-isolation.txt`. Pass when each thread reads only its own value.
 - [ ] Lane 6. Call `setValue` with a `BigInt`. Save `kv-non-json.txt`. Pass when the call fails with an error that names the key and the store holds no row for it.
@@ -436,7 +436,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 - [ ] Implement `queueMessage` and `queueTool` on `ThreadState`. The drain phase takes queued entries in arrival order before the next model call.
 - [ ] Take the lease in the same transaction that sets `running`. Release it in the same transaction that settles the run.
 - [ ] Settle every execution to `idle` or `failed`, including an execution that throws. At process start, settle each thread whose lease holder is gone to `failed` with reason `execution_lost`.
-- [ ] Wire `execution.stop()` and `execution.abortSignal` to fiber interruption. A stopped run settles to `idle` with a stop reason.
+- [ ] Make `execution.stop()` cooperative. It sets a flag that the loop reads at each boundary. The operation in flight finishes, its result is stored, and no abort signal fires. A stopped run settles to `idle` with a stop reason. Fire `execution.abortSignal` and interrupt the fiber only for terminate and for an explicit abort.
 - [ ] Implement `terminate()`. It sets the terminated time, interrupts the fiber, and makes later send, queue, and execute calls fail with a typed error.
 - [ ] Add `spindle send <thread> -m <text>` and `spindle status <thread>` so that two processes can address one thread.
 
@@ -462,7 +462,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 - [ ] Lane 6. Send to two different threads at the same moment, each with a slow tool. Save `two-threads.txt`. Pass when the two executions' time ranges overlap.
 - [ ] Lane 7. Send `SIGKILL` to the process during a run, then start a new process. Save `execution-lost.txt`. Pass when the status is `failed` with reason `execution_lost` and no thread is `running`.
 - [ ] Lane 8. Send a new message to the thread from lane 7. Save `recover-after-loss.txt`. Pass when the status goes `running` then `idle` and the earlier messages are still present.
-- [ ] Lane 9. Stop an execution during a slow tool that watches `abortSignal`. Save `stop-during-tool.txt`. Pass when the tool observed the abort and the status settles to `idle` with a stop reason.
+- [ ] Lane 9. Stop an execution during a slow tool that watches `abortSignal`. Save `stop-during-tool.txt`. Pass when the tool finished without seeing an abort, its result is stored, no further model call or tool call starts, and the status settles to `idle` with a stop reason.
 - [ ] Lane 10. Terminate a thread during a run, then send to it. Save `terminate.txt`. Pass when the run is interrupted, the terminated time is set, and the send fails with an error that says the thread is terminated.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
