@@ -180,6 +180,23 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("redacts a three-character common word from every line it prints, the summary line included", () =>
+    Effect.gen(function* () {
+      const secrets = { SPINDLE_TEST_API_KEY: "sk-test-1357913579", SHORT_TOKEN: "top" }
+      const { exit, out, err } = yield* run(
+        ["leaky", "-m", "hi", "--script", "@reveal.json", "--trace", "--dump-requests"],
+        secrets,
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(err).toEqual([
+        expect.stringMatching(/^spindle: idle \(s\[redacted\]_on_response\) after 2 steps, thread /),
+      ])
+      expect(out).toContain("[tool result] reveal success: key [redacted] token [redacted]")
+      for (const line of [...out, ...err])
+        for (const secret of Object.values(secrets)) expect(line).not.toContain(secret)
+    }),
+  )
+
   it.effect("fails before any request when a prompt declares the endpoint key as a text variable", () =>
     Effect.gen(function* () {
       const key = "sk-test-2468024680"

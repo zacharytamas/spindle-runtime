@@ -3,6 +3,7 @@ import { Cause, Console, Data, Effect, FileSystem, Layer, Option, Path, Runtime 
 import { Argument, Command, Flag } from "effect/cli"
 import { SqliteLive } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
+import { redactor } from "../execution/redact.ts"
 import type { ExecutionEvent } from "../execution/step.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { sendMessage } from "../execution/trigger.ts"
@@ -36,10 +37,20 @@ const loadScript = (file: string) =>
     return scriptedProvider(script)
   })
 
+// Threads section 2.3 and Infrastructure Providers: the command prints no secret value. Every line it prints goes
+// through one redactor, which knows each value the execution has resolved as secret by then.
+const redacting = (console: Console.Console, redact: (text: string) => string): Console.Console => {
+  const clean = (parts: ReadonlyArray<unknown>) => parts.map((part) => (typeof part === "string" ? redact(part) : part))
+  return Object.assign(Object.create(console) as Console.Console, {
+    log: (...parts: ReadonlyArray<unknown>) => console.log(...clean(parts)),
+    error: (...parts: ReadonlyArray<unknown>) => console.error(...clean(parts)),
+  })
+}
+
 const printer =
   (modelRole: Message["role"], options: { readonly trace: boolean; readonly dumpRequests: boolean }) =>
-  (event: ExecutionEvent, redact: (text: string) => string = (text) => text): Effect.Effect<void> => {
-    const print = (line: string) => Console.log(redact(line))
+  (event: ExecutionEvent): Effect.Effect<void> => {
+    const print = (line: string) => Console.log(line)
     if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
@@ -111,42 +122,47 @@ export const runCommand = Command.make(
     ),
   },
   (args) =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path
-      const root = path.resolve(args.dir)
-      const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
-        ? yield* loadScript(path.resolve(args.script.value))
-        : undefined
-      yield* Effect.gen(function* () {
-        const { issues } = yield* validate
-        const errors = issues.filter((issue) => issue.severity === "error")
-        for (const issue of errors)
-          yield* Console.error(
-            `${issue.code} ${issue.file}${issue.path === "" ? "" : `:${issue.path}`} ${issue.message}`,
-          )
-        if (errors.length > 0)
-          return yield* fail(`${root} has ${errors.length} definition error${errors.length === 1 ? "" : "s"}`)
-        const sides = yield* sidesOf(args.agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
-        const database = yield* openDatabase(args.db === ":memory:" ? args.db : path.resolve(args.db))
+    Console.consoleWith((current) => {
+      const secrets = new Set<string>()
+      return Effect.gen(function* () {
+        const path = yield* Path.Path
+        const root = path.resolve(args.dir)
+        const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
+          ? yield* loadScript(path.resolve(args.script.value))
+          : undefined
         yield* Effect.gen(function* () {
-          const store = yield* ThreadStore
-          const thread = yield* store.createThread({ agentId: args.agent })
-          const outcome = yield* sendMessage(thread.id, args.message, {
-            ...(provider === undefined ? {} : { provider }),
-            observe: printer(roleOf(sides.side), args),
-          })
-          yield* Console.error(
-            `spindle: ${outcome.status} (${outcome.reason}) after ${outcome.steps} step${outcome.steps === 1 ? "" : "s"}, thread ${thread.id}`,
-          )
-          if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
-        }).pipe(Effect.provide(database))
-      }).pipe(Effect.provide(Registry.layer(root)))
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const failure = Cause.findError(cause)
-        if (failure._tag === "Success" && failure.success instanceof RunFailed) return Effect.failCause(cause)
-        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-        return fail(describe(cause))
-      }),
-    ),
+          const { issues } = yield* validate
+          const errors = issues.filter((issue) => issue.severity === "error")
+          for (const issue of errors)
+            yield* Console.error(
+              `${issue.code} ${issue.file}${issue.path === "" ? "" : `:${issue.path}`} ${issue.message}`,
+            )
+          if (errors.length > 0)
+            return yield* fail(`${root} has ${errors.length} definition error${errors.length === 1 ? "" : "s"}`)
+          const sides = yield* sidesOf(args.agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
+          const database = yield* openDatabase(args.db === ":memory:" ? args.db : path.resolve(args.db))
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore
+            const thread = yield* store.createThread({ agentId: args.agent })
+            const outcome = yield* sendMessage(thread.id, args.message, {
+              ...(provider === undefined ? {} : { provider }),
+              secrets,
+              observe: printer(roleOf(sides.side), args),
+            })
+            yield* Console.error(
+              `spindle: ${outcome.status} (${outcome.reason}) after ${outcome.steps} step${outcome.steps === 1 ? "" : "s"}, thread ${thread.id}`,
+            )
+            if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
+          }).pipe(Effect.provide(database))
+        }).pipe(Effect.provide(Registry.layer(root)))
+      }).pipe(
+        Effect.catchCause((cause) => {
+          const failure = Cause.findError(cause)
+          if (failure._tag === "Success" && failure.success instanceof RunFailed) return Effect.failCause(cause)
+          if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+          return fail(describe(cause))
+        }),
+        Effect.provideService(Console.Console, redacting(current, redactor(secrets))),
+      )
+    }),
 ).pipe(Command.withDescription("Send one message to an agent and print the reply of its prompt side"))

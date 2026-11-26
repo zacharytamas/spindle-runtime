@@ -40,8 +40,9 @@ export interface ExecutionOptions {
   readonly retries?: number
   readonly stepCap?: number
   readonly provider?: LLMProviderInterface
-  // redact removes the secret values the execution knows from text, such as a line an observer prints.
-  readonly observe?: (event: ExecutionEvent, redact?: (text: string) => string) => Effect.Effect<void>
+  // The execution adds each secret value it resolves, so that a caller can redact what it prints.
+  readonly secrets?: Set<string>
+  readonly observe?: (event: ExecutionEvent) => Effect.Effect<void>
 }
 
 export interface RunError {
@@ -190,10 +191,9 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const trace: Array<TraceEntry> = []
     const modelCalls: Array<ModelCall> = []
     const pending: Array<Fiber.Fiber<void>> = []
-    const secrets = new Set<string>()
+    const secrets = options.secrets ?? new Set<string>()
     const redact = redactor(secrets)
-    const observe = (event: ExecutionEvent) =>
-      options.observe === undefined ? Effect.void : options.observe(event, redact)
+    const observe = (event: ExecutionEvent) => (options.observe === undefined ? Effect.void : options.observe(event))
     // Only the text a tool, a provider, or a model wrote is redacted, never a field that the runtime reads back.
     const redactError = <E extends { readonly message: string; readonly upstream?: string }>(error: E): E => ({
       ...error,
