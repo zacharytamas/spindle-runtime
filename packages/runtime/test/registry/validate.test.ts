@@ -782,3 +782,23 @@ describe("validate", () => {
     })
   })
 })
+
+describe("Registry", () => {
+  it.effect("keeps a tool's annotations unchanged on the loaded definition", () =>
+    Effect.gen(function* () {
+      const root = yield* fixture("step-loop")
+      const registry = yield* Effect.provide(
+        Effect.gen(function* () {
+          return yield* Registry
+        }),
+        Registry.layer(root),
+      )
+      const noop = registry.definitions.find((definition) => definition.kind === "tool" && definition.name === "noop")
+      const value = noop === undefined ? undefined : registry.loaded.get(noop)
+      expect((value as { annotations?: unknown } | undefined)?.annotations).toEqual({
+        spindle_test: { sentinel: "kept as written" },
+        someone_else: { codemode: { codeArgument: "x" } },
+      })
+    }).pipe(Effect.provide(PlatformLive)),
+  )
+})

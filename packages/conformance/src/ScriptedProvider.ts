@@ -56,6 +56,8 @@ export class ScriptedProvider implements LLMProviderInterface {
   readonly name: string
   readonly specificationVersion = "1" as const
   readonly requests: Array<RecordedRequest> = []
+  // How many streams the consumer read to their end.
+  completedStreams = 0
   readonly configs: Array<ProviderFactoryConfig> = []
   readonly getResponseMetadata?: NonNullable<ScriptedProviderOptions["getResponseMetadata"]>
   readonly factory: ProviderFactory
@@ -107,9 +109,13 @@ export class ScriptedProvider implements LLMProviderInterface {
     const step = await this.next(request)
     const chunks = "chunks" in step ? step.chunks : this.chunksOf(step)
     const thenThrow = "chunks" in step ? step.thenThrow : undefined
+    const completed = () => {
+      this.completedStreams += 1
+    }
     return (async function* () {
       yield* chunks
       if (thenThrow !== undefined) throw thenThrow
+      completed()
     })()
   }
 

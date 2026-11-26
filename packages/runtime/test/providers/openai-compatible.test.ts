@@ -200,6 +200,12 @@ describe("openaiCompatible", () => {
     expect(
       requestBody({ ...request, reasoning: { level: 0, levels: { 0: null, 100: "high" } } }, false),
     ).not.toHaveProperty("reasoning_effort")
+    expect(
+      requestBody({ ...request, reasoning: { level: 0, levels: { 33: "low", 100: "high" } } }, false),
+    ).toMatchObject({ reasoning_effort: "low" })
+    expect(requestBody({ ...request, reasoning: { level: 0, levels: { 0: null } } }, false)).not.toHaveProperty(
+      "reasoning_effort",
+    )
     expect(requestBody({ ...request, reasoning: { maxTokens: 64 } }, false)).toMatchObject({ reasoning_effort: "low" })
     expect(requestBody({ ...request, reasoning: { level: 57 } }, false)).toMatchObject({ reasoning_effort: "low" })
     const bare = requestBody({ model: "m", messages: [], toolChoice: "none", parallelToolCalls: true }, false)
@@ -343,16 +349,18 @@ describe("openaiCompatible", () => {
         headers: { "retry-after": "3" },
       }),
       new Response("nope", { status: 401 }),
+      new Response("forbidden", { status: 403 }),
       new Response("bad", { status: 400 }),
       new Response("down", { status: 503 }),
     ]
     const { fetch } = transport(() => answers.shift() ?? new Response("", { status: 500 }))
     const provider = openaiCompatible({ apiKey: "", fetch })
     const failures: Array<ProviderError> = []
-    for (let index = 0; index < 4; index++) failures.push(await provider.generate(request).catch((error) => error))
+    for (let index = 0; index < 5; index++) failures.push(await provider.generate(request).catch((error) => error))
     expect(failures.map((error) => [error.code, error.statusCode, error.retryAfter, error.origin])).toEqual([
       ["rate_limit", 429, 3, "provider:openai_compatible"],
       ["auth_error", 401, undefined, "provider:openai_compatible"],
+      ["auth_error", 403, undefined, "provider:openai_compatible"],
       ["invalid_request", 400, undefined, "provider:openai_compatible"],
       ["server_error", 503, undefined, "provider:openai_compatible"],
     ])
@@ -482,18 +490,26 @@ describe("provider config slots", () => {
         baseProvider: openaiCompatible,
         overrides: {
           generate: (context, next) => {
-            seen.push(context.state)
+            seen.push(["generate", context.state])
+            return next()
+          },
+          stream: (context, next) => {
+            seen.push(["stream", context.state])
             return next()
           },
         },
       })
-      const { fetch } = transport(() => Response.json(generated))
+      const { fetch } = transport((entry) => (entry.body.stream === true ? sse(streamed) : Response.json(generated)))
       const state = { threadId: "thread-2" }
       const instance = yield* yield* providerFor(loaded(overridden), state as never, new Set()).pipe(
         Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch),
       )
       yield* Effect.promise(() => instance.generate(request))
-      expect(seen).toEqual([state])
+      yield* Effect.promise(async () => collect(await instance.stream(request)))
+      expect(seen).toEqual([
+        ["generate", state],
+        ["stream", state],
+      ])
     }),
   )
 

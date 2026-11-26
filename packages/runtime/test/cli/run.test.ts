@@ -4,7 +4,6 @@ import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { PlatformLive, SqliteLive } from "#platform"
 import { runCommand } from "../../src/cli/run.ts"
-import { PHASES } from "../../src/execution/trace.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
@@ -51,7 +50,7 @@ describe("spindle run", () => {
     Effect.gen(function* () {
       const { out } = yield* run(["assistant", "-m", "hello", "--script", "@text-reply.json", "--trace"])
       const phases = out.filter((line) => line.startsWith("step 1 ")).map((line) => line.split(/\s+/)[2])
-      expect(phases).toEqual([...PHASES])
+      expect(phases).toEqual(["drain", "assemble", "call", "persist-response", "tools", "persist-results", "stop"])
     }),
   )
 
@@ -60,9 +59,16 @@ describe("spindle run", () => {
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" }), "run.db")
-      const { exit } = yield* run(["assistant", "-m", "save blue", "--script", "@two-tools.json", "--db", db])
+      const { exit, err } = yield* run(["assistant", "-m", "save blue", "--script", "@two-tools.json", "--db", db])
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(yield* fs.exists(db)).toBe(true)
+      const messages = yield* storedMessages(db, err)
+      expect(messages.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : m.content])).toEqual([
+        ["user", "save blue"],
+        ["assistant", "I will save the note and read it back."],
+        ["tool", "call_1"],
+        ["tool", "call_2"],
+        ["assistant", "The note says the color is blue."],
+      ])
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
