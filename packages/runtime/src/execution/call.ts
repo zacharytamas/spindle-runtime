@@ -39,7 +39,8 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   }
 }
 
-export class ToolChoiceViolated extends Data.TaggedError("ToolChoiceViolated")<{ readonly message: string }> {}
+// A response that breaks what the prompt requires is not stored. The step asks again within the retry budget.
+export class ResponseRejected extends Data.TaggedError("ResponseRejected")<{ readonly message: string }> {}
 
 // Providers SHOULD attribute their errors, and the runtime MAY attribute the request boundary when they do not.
 // A native TimeoutError, which AbortSignal.timeout raises, is the timeout of Providers section 7.1.
@@ -221,6 +222,8 @@ const violation = (response: ModelResponse, toolChoice: CallContext["toolChoice"
     return "The prompt requires a tool call and the model returned none"
   if (toolChoice === "none" && response.calls.size > 0)
     return "The prompt sets toolChoice to none and the model called a tool"
+  if (response.calls.size === 0 && response.images.size === 0 && (response.content ?? "").trim() === "")
+    return "The model returned nothing, with no text and no tool call,"
   return undefined
 }
 
@@ -279,6 +282,6 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     if (rejected === undefined) return response
     log.rejected = rejected
     if (attempt > context.retries)
-      return yield* new ToolChoiceViolated({ message: `${rejected} after ${attempt} requests` })
+      return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
   }
 })

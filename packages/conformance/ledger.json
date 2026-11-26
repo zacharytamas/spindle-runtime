@@ -3688,8 +3688,7 @@
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
 			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
-			"packages/runtime/test/conformance.test.ts > step loop > S21 records empty and reasoning-only responses as completed steps without a response stop"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
 		],
 		"reason": ""
 	},
@@ -4835,8 +4834,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false",
-			"packages/runtime/test/conformance.test.ts > step loop > S21 records empty and reasoning-only responses as completed steps without a response stop",
-			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response matches text without calls by default, and never empty text, calls, or a false setting"
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response matches text without calls by default, and never empty text, calls, or a false setting",
+			"packages/runtime/test/conformance.test.ts > step loop > S21 retries a response with no text and no tool call, and fails the run when every retry returns nothing"
 		],
 		"reason": ""
 	},

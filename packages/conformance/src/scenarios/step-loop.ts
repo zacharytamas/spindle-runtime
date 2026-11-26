@@ -1412,7 +1412,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     name: "S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
     requirements: ["d80e4c71", "7b5d1f06", "44e51927", "8d9a5b12", "35afe886"],
     run: async (driver) => {
-      const tools = { finish: defineTool({ description: "Finish", execute: async () => ok("finished") }) }
+      const tools = {
+        finish: defineTool({ description: "Finish", execute: async () => ok("finished") }),
+        other: defineTool({ description: "Other", execute: async () => ok("other") }),
+      }
       const side = { stopTool: "finish", maxSteps: 1 }
       const toolStop = new ScriptedProvider([{ text: "wrapping up", toolCalls: [{ name: "finish", arguments: {} }] }])
       await using(driver, { provider: toolStop, tools, side }, async (session, thread) => {
@@ -1422,15 +1425,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       await using(driver, { provider: responseStop, tools, side }, async (session, thread) => {
         expect(await send(session, thread, "go")).toMatchObject({ reason: "stop_on_response", steps: 1 })
       })
-      const limit = new ScriptedProvider([{ text: "", toolCalls: [] }])
+      const limit = new ScriptedProvider([{ text: "", toolCalls: [{ name: "other", arguments: {} }] }])
       await using(driver, { provider: limit, tools, side }, async (session, thread) => {
         expect(await send(session, thread, "go")).toMatchObject({ reason: "max_side_steps", steps: 1 })
       })
     },
   },
   {
-    name: "S21 records empty and reasoning-only responses as completed steps without a response stop",
-    requirements: ["c0dc1ab1", "7aa29e92"],
+    name: "S21 retries a response with no text and no tool call, and fails the run when every retry returns nothing",
+    requirements: ["7aa29e92"],
     run: async (driver) => {
       const provider = new ScriptedProvider([
         { text: null },
@@ -1439,28 +1442,24 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { reasoning: "thinking only" },
         { text: "real" },
       ])
-      await using(driver, { provider, side: { maxSteps: 5 } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({
-          status: "idle",
-          reason: "stop_on_response",
-          steps: 5,
-        })
-        expect(
-          (await session.messages(thread))
-            .filter((m) => m.role === "assistant")
-            .map((m) => [m.content, m.reasoning_content, m.tool_calls]),
-        ).toEqual([
-          [null, null, null],
-          ["", null, null],
-          ["   ", null, null],
-          [null, "thinking only", null],
-          ["real", null, null],
+      await using(driver, { provider }, async (session, thread) => {
+        const outcome = await send(session, thread, "go", { retries: 4 })
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
+        expect(outcome.modelCalls.map((call) => call.rejected !== undefined)).toEqual([true, true, true, true, false])
+        expect(shape(await session.messages(thread))).toEqual([
+          ["user", "go"],
+          ["assistant", "real"],
         ])
       })
       expect(provider.requests).toHaveLength(5)
-      const capped = new ScriptedProvider([{ text: null }, { text: null }, { text: null }])
-      await using(driver, { provider: capped, side: { maxSteps: 2 } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ reason: "max_side_steps", steps: 2 })
+      const silent = new ScriptedProvider([{ text: null }, { text: "" }, { reasoning: "still nothing" }])
+      await using(driver, { provider: silent }, async (session, thread) => {
+        const outcome = await send(session, thread, "go", { retries: 2 })
+        expect(outcome).toMatchObject({ status: "failed", reason: "step_error", steps: 0 })
+        expect(outcome.error?.message).toBe(
+          "The model returned nothing, with no text and no tool call, after 3 requests",
+        )
+        expect(shape(await session.messages(thread))).toEqual([["user", "go"]])
       })
     },
   },
