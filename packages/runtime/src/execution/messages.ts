@@ -137,9 +137,17 @@ export const createMessage = Effect.fn("createMessage")(function* (
     original,
     essential ? { depth, essential, check: taken } : { depth },
   )
-  const inserted = yield* store.insertMessage(
-    write.threadId,
-    redactWrite(writer, original, hooked, redactor(write.secrets.values)),
+  const redacted = redactWrite(writer, original, hooked, redactor(write.secrets.values))
+  // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
+  // stored once under an id from the runtime, and its hooks, which have already run, do not run again.
+  const inserted = yield* store.insertMessage(write.threadId, redacted).pipe(
+    Effect.catchTag("MessageIdTaken", (error) => {
+      if (!essential) return Effect.fail(error)
+      const id = crypto.randomUUID()
+      return Effect.logWarning(
+        `Message id ${JSON.stringify(error.messageId)} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
+      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id })))
+    }),
   )
   write.history?.inserted(inserted)
   const stored = inserted.message

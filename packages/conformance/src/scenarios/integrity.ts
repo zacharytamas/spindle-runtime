@@ -53,4 +53,50 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
       expect(ran).toEqual(["noop"])
     },
   },
+  {
+    name: "I2 stores a tool result once under a new id when a nested injection takes its id, and runs no hook twice",
+    requirements: [],
+    run: async (driver) => {
+      let reserved = ""
+      let calls = 0
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "take_id",
+          execute: async (state, message) => {
+            calls += 1
+            if (message.role === "tool") {
+              reserved = message.id
+              await state.injectMessage({ role: "user", content: "nested row" })
+            }
+            return message.content === "nested row" ? { ...message, id: reserved } : message
+          },
+        }),
+      ]
+      const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools, hooks, prompt: { hooks: ["take_id"] } }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const stored = await session.messages(thread)
+        expect(rows(stored)).toEqual([
+          ["user", "go"],
+          ["assistant", null],
+          ["user", "nested row"],
+          ["tool", "c1"],
+          ["assistant", "done"],
+        ])
+        const result = stored[3]
+        expect(stored[2]?.id).toBe(reserved)
+        expect(result?.id).not.toBe(reserved)
+        const lines = session.logs().filter((line) => line.includes(reserved))
+        expect(lines).toHaveLength(1)
+        expect(lines[0]).toContain(result?.id)
+        expect(history(provider.requests[1]).map(sideOf)).toContainEqual(["tool", "c1"])
+      })
+      expect(calls).toBe(4)
+    },
+  },
 ]

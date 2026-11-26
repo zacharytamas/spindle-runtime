@@ -450,7 +450,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             }).pipe(Effect.flatMap((message) => createMessage(write, message, "result")))
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
           const stored = yield* save(final).pipe(
-            Effect.catchTag(["ValueNotJson", "ResultUnreadable", "MessageIdTaken"], (error) =>
+            Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
               save(unstorableResult(final, error.message)),
             ),
           )
