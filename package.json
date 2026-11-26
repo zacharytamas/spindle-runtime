@@ -10,7 +10,7 @@
 	"scripts": {
 		"build": "pnpm --filter spindle-runtime build",
 		"test": "vitest run",
-		"check": "biome check && tsc --noEmit -p tsconfig.json && vitest run && node scripts/spec-requirements.mjs --check"
+		"check": "biome check && tsc --noEmit -p tsconfig.json && vitest run --reporter=default --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json && node scripts/spec-requirements.mjs --check && node packages/conformance/src/ledger.ts node_modules/.cache/spindle/vitest.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.9",

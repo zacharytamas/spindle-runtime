@@ -4,5 +4,8 @@
 	"private": true,
 	"description": "The requirement ledger and conformance scenarios for Spindle",
 	"license": "MIT",
-	"type": "module"
+	"type": "module",
+	"dependencies": {
+		"effect": "4.1.5"
+	}
 }

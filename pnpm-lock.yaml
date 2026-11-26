@@ -33,7 +33,11 @@ importers:
         specifier: 5.1.2
         version: 5.1.2(@types/node@22.20.7)(vite@8.3.8(@types/node@22.20.7))
 
-  packages/conformance: {}
+  packages/conformance:
+    dependencies:
+      effect:
+        specifier: 4.1.5
+        version: 4.1.5
 
   packages/runtime:
     dependencies:
