@@ -1,5 +1,5 @@
 import type { Message } from "@standardagents/spec"
-import { Effect, HashMap } from "effect"
+import { Chunk, Effect } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { MessageStore } from "../store/MessageStore.ts"
 import type { Inserted, ThreadHistory, ThreadNotFound } from "../store/model.ts"
@@ -28,14 +28,15 @@ export interface History {
 }
 
 export const makeHistory = (threadId: string): History => {
-  let copy: (ThreadHistory & { revision: number }) | undefined
+  let copy: { rows: Chunk.Chunk<ThreadHistory["rows"][number]>; revision: number } | undefined
   return {
     read: Effect.gen(function* () {
       const store = yield* MessageStore
-      if (copy !== undefined && copy.revision === (yield* store.revision(threadId))) return copy
+      if (copy !== undefined && copy.revision === (yield* store.revision(threadId)))
+        return { revision: copy.revision, rows: Chunk.toReadonlyArray(copy.rows) }
       // A read inside a caller's transaction may see writes that roll back, so the copy never keeps it.
       const read = yield* store.history(threadId)
-      if (read.revision !== null) copy = { ...read, revision: read.revision }
+      if (read.revision !== null) copy = { rows: Chunk.fromIterable(read.rows), revision: read.revision }
       return read
     }),
     // A revision at or below the copy's means a read after the insert already holds it. One past the copy's means
@@ -47,8 +48,7 @@ export const makeHistory = (threadId: string): History => {
       else if (revision === copy.revision + 1) {
         copy = {
           revision,
-          messages: copy.messages.concat(copyMessage(message)),
-          positions: HashMap.set(copy.positions, message.id, { seq, callerSeq }),
+          rows: Chunk.append(copy.rows, { message: copyMessage(message), seq, callerSeq }),
         }
       }
     },

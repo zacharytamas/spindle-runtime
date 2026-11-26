@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { GetMessagesOptions } from "@standardagents/spec"
-import { Effect, HashMap } from "effect"
+import { Effect } from "effect"
 import * as Statement from "effect/sql/Statement"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
@@ -76,8 +76,7 @@ describe("ThreadStore", () => {
           expect(yield* Effect.flip(threadStore.transaction(Effect.andThen(write, Effect.fail("crash"))))).toBe("crash")
         expect(yield* messageStore.history(thread.id)).toEqual({
           revision: 1,
-          messages: [kept],
-          positions: HashMap.make([id, { seq: 1, callerSeq: null }]),
+          rows: [{ message: kept, seq: 1, callerSeq: null }],
         })
       }).pipe(Effect.provide(inMemory)),
     )
@@ -111,12 +110,12 @@ describe("ThreadStore", () => {
             const before = yield* messageStore.history(thread.id)
             yield* appendMessages(thread.id, [user("from another connection")]).pipe(Effect.provide(storeAt(filename)))
             const after = yield* messageStore.history(thread.id)
-            expect({ revision: before.revision, contents: before.messages.map((m) => m.content) }).toEqual({
+            expect({ revision: before.revision, contents: before.rows.map((row) => row.message.content) }).toEqual({
               revision: 2,
               contents: ["first", "quiet"],
             })
             expect(yield* messageStore.revision(thread.id)).toBe(3)
-            expect({ revision: after.revision, contents: after.messages.map((m) => m.content) }).toEqual({
+            expect({ revision: after.revision, contents: after.rows.map((row) => row.message.content) }).toEqual({
               revision: 3,
               contents: ["first", "quiet", "from another connection"],
             })

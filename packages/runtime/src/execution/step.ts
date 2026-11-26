@@ -23,6 +23,7 @@ import {
   fromLLMMessage,
   pastOf,
   promptScope,
+  type RequestRow,
   renderSystemPrompt,
   toLLMMessage,
   toProviderMessages,
@@ -607,7 +608,14 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             return yield* ended(settlement, "idle", "awaiting_human")
           }
           // The turn starts at the other side's latest message, and everything before it is past history.
-          view = { ...view, past: pastOf((yield* history.read).messages, turn.side, count > 1 ? first : undefined) }
+          view = {
+            ...view,
+            past: pastOf(
+              (yield* history.read).rows.map((row) => row.message),
+              turn.side,
+              count > 1 ? first : undefined,
+            ),
+          }
           turnStart = false
           turnSteps = 0
         }
@@ -620,11 +628,22 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
         // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
         // the trace, runs between the read and the first hook.
-        const { messages: snapshot, positions } = yield* history.read
-        const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
-        yield* record("assemble", `snapshot, ${snapshot.length} messages`)
+        const { rows } = yield* history.read
+        let historyRows: ReadonlyArray<RequestRow> = rows
+        if (has(hooks, "filter_messages")) {
+          const snapshot = rows.map((row) => row.message)
+          const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
+          if (filtered !== snapshot) {
+            const byId = new Map(rows.map((row) => [row.message.id, row]))
+            historyRows = filtered.map((message) => {
+              const row = byId.get(message.id)
+              return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
+            })
+          }
+        }
+        yield* record("assemble", `snapshot, ${rows.length} messages`)
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
-        const transformed = toProviderMessages(filtered, view, positions)
+        const transformed = toProviderMessages(historyRows, view)
         yield* record("assemble", `transform, ${transformed.length} provider messages`)
         const prefiltered = has(hooks, "prefilter_llm_history")
           ? (yield* runHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)

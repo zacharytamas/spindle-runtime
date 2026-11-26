@@ -218,13 +218,49 @@ describe("the history an execution keeps", () => {
     }),
   )
 
+  it.effect("keeps each own insert and its caller sequence in the new snapshot only", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadStore
+      const messages = yield* MessageStore
+      const thread = yield* threads.createThread({ agentId: "assistant" })
+      const runs = yield* RunStore
+      yield* runs.admit(
+        thread.id,
+        { kind: "message", message: { role: "user", content: "go" } },
+        { flowId: "f", holder: "h" },
+        external,
+      )
+      const history = makeHistory(thread.id)
+      const empty = yield* history.read
+      const caller = yield* messages.insertMessage(
+        thread.id,
+        { role: "assistant", id: "call", created_at: 1 },
+        { flowId: "f" },
+      )
+      history.inserted(caller)
+      const first = yield* history.read
+      const result = yield* messages.insertMessage(
+        thread.id,
+        { role: "tool", id: "result", created_at: 2 },
+        { flowId: "f", callerSeq: caller.seq },
+      )
+      history.inserted(result)
+      expect(empty.rows).toHaveLength(0)
+      expect(first.rows).toHaveLength(1)
+      expect((yield* history.read).rows.map(({ seq, callerSeq }) => [seq, callerSeq])).toEqual([
+        [caller.seq, null],
+        [result.seq, caller.seq],
+      ])
+    }).pipe(Effect.provide(inMemory())),
+  )
+
   it.effect("never holds an insert of the execution's that a caller's transaction rolled back", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* appendMessages(thread.id, [{ role: "user", content: "first" }])
       const history = makeHistory(thread.id)
-      expect(contents((yield* history.read).messages)).toEqual(["first"])
+      expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first"])
       const hooks: HookScope = {
         set: { source: { kind: "agent", agentName: "assistant" }, byPosition: new Map() },
         stateFor: () => {
@@ -235,7 +271,7 @@ describe("the history an execution keeps", () => {
       const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
       expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
       yield* appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
-      expect(contents((yield* history.read).messages)).toEqual(["first", "from another writer"])
+      expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "from another writer"])
     }).pipe(Effect.provide(inMemory())),
   )
 
@@ -247,17 +283,17 @@ describe("the history an execution keeps", () => {
         const append = (content: string) => appendMessages(thread.id, [{ role: "user", content }])
         const history = makeHistory(thread.id)
         yield* append("first")
-        expect(contents((yield* history.read).messages)).toEqual(["first"])
+        expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first"])
         const inner = store.transaction(
           Effect.gen(function* () {
             yield* append("rolled back")
-            expect(contents((yield* history.read).messages)).toEqual(["first", "rolled back"])
+            expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "rolled back"])
             return yield* Effect.fail("crash")
           }),
         )
         expect(yield* savepoint ? store.transaction(Effect.flip(inner)) : Effect.flip(inner)).toBe("crash")
         yield* append("committed")
-        expect(contents((yield* history.read).messages)).toEqual(["first", "committed"])
+        expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "committed"])
       }
     }).pipe(Effect.provide(inMemory())),
   )
@@ -290,7 +326,7 @@ describe("the history an execution keeps", () => {
         const thread = yield* createThread("assistant")
         elsewhere = yield* stateAtRest(thread.id)
         yield* sendMessage(thread.id, "go", { observe })
-        return (yield* (yield* MessageStore).history(thread.id)).messages
+        return (yield* (yield* MessageStore).history(thread.id)).rows.map((row) => row.message)
       }).pipe(
         Effect.provide(Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), inMemory()))),
       )

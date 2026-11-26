@@ -1,5 +1,5 @@
 import type { GetMessagesOptions, MessageUpdates } from "@standardagents/spec"
-import { Context, Effect, HashMap, Option, Schema } from "effect"
+import { Context, Effect, Option, Schema } from "effect"
 import { BeginTransaction } from "effect/sql/SqlClient"
 import { authorize, type Database, first, json, pending, unyielding } from "./database.ts"
 import {
@@ -88,8 +88,7 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
           >`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
           return {
             revision: current,
-            messages: rows.map(toMessage),
-            positions: HashMap.fromIterable(rows.map((row) => [row.id, { seq: row.seq, callerSeq: row.caller_seq }])),
+            rows: rows.map((row) => ({ message: toMessage(row), seq: row.seq, callerSeq: row.caller_seq })),
           }
         }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
           Effect.zipWith(

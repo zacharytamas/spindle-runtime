@@ -222,7 +222,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const readHistory = (history: History) => () => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    return Effect.runSyncWith(state.services)(history.read).messages.map(copyMessage)
+    return Effect.runSyncWith(state.services)(history.read).rows.map(({ message }) => copyMessage(message))
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
