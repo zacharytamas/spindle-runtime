@@ -112,6 +112,23 @@ const callsOf = (message: Message | undefined) =>
     function: { name: string; arguments: string }
   }>
 
+// Every key and string inside a value, and inside each string that holds JSON, so that a search finds a value under
+// any field and inside a JSON column, decoded.
+const stringsIn = (value: unknown): Array<string> => {
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return [value, ...(typeof parsed === "object" && parsed !== null ? stringsIn(parsed) : [])]
+    } catch {
+      return [value]
+    }
+  }
+  if (typeof value !== "object" || value === null) return []
+  return Object.entries(value).flatMap(([key, member]) => [key, ...stringsIn(member)])
+}
+
+const holding = (value: unknown, secret: string) => stringsIn(value).filter((text) => text.includes(secret))
+
 const shape = (messages: ReadonlyArray<Message>) =>
   messages.map((message) => [message.role, message.role === "tool" ? message.tool_call_id : message.content])
 
@@ -1880,12 +1897,12 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             ["success", "authorized"],
             ["error", expect.stringContaining("MISSING_TOKEN")],
           ])
-          expect(JSON.stringify(stored)).not.toContain(marker)
+          expect(holding(stored, marker)).toEqual([])
         },
         instance,
       )
       expect(provider.requests[0]?.messages[0]).toEqual({ role: "system", content: "Label: shown" })
-      expect(JSON.stringify(provider.requests)).not.toContain(marker)
+      expect(holding(provider.requests, marker)).toEqual([])
     },
   },
   {
@@ -2026,9 +2043,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             "short [redacted]",
             { error_code: "denied", error_data: { quoted: "[redacted]", nested: ["[redacted]"], count: 7 } },
           ])
-          for (const text of [JSON.stringify(stored), JSON.stringify(provider.requests), JSON.stringify(outcome)])
-            for (const secret of Object.values(instance))
-              expect(text).not.toContain(JSON.stringify(secret).slice(1, -1))
+          for (const secret of Object.values(instance))
+            expect(holding([stored, provider.requests, outcome], secret)).toEqual([])
         },
         instance,
       )

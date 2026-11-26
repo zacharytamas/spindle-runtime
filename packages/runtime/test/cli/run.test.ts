@@ -170,13 +170,19 @@ describe("spindle run", () => {
       )
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(out).toContain("[tool result] reveal success: key [redacted] token [redacted]")
+      const rows = yield* storedMessages(db, err)
+      expect(rows.map((m) => [m.role, m.name, m.tool_status, m.content])).toEqual([
+        ["user", null, null, "hi"],
+        ["assistant", null, null, null],
+        ["tool", "reveal", "success", "key [redacted] token [redacted]"],
+        ["assistant", null, null, "done"],
+      ])
       const files = (yield* fs.readDirectory(path.dirname(db))).map((name) => path.join(path.dirname(db), name))
       const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file))).map((bytes) =>
         new TextDecoder().decode(bytes),
       )
-      expect(stored.join("")).toContain("key [redacted] token [redacted]")
       for (const secret of Object.values(secrets))
-        for (const text of [...out, ...err, ...stored]) expect(text).not.toContain(secret)
+        for (const text of [...out, ...err, ...stored, JSON.stringify(rows)]) expect(text).not.toContain(secret)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
