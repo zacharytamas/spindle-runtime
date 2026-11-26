@@ -3752,7 +3752,7 @@
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
-			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > recover settles a thread whose holder's lease expired as lost and keeps its queue and its history",
+			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > recover settles a thread whose process is gone as lost and keeps its queue and its history",
 			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > admit claims a failed thread, which is how a recovery run starts",
 			"packages/runtime/test/conformance.test.ts > ownership > O05 keeps a thread running whose holder is alive, however far the observer's wall clock moves",
 			"packages/runtime/test/conformance.test.ts > ownership > O14 closes the open call of a lost execution although a hook set the caller's prompt to null"
