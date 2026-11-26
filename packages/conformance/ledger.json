@@ -5500,7 +5500,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
-			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns from generate the same text, reasoning, call, and finish that stream yields"
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns from generate the same text, reasoning, call, and finish that stream yields",
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
 		],
 		"reason": ""
 	},
@@ -5509,7 +5510,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
-			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > streams chunk by chunk and gives no tool-call-done to a call whose arguments are not a JSON object"
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > streams chunk by chunk and gives no tool-call-done to a call whose arguments are not a JSON object",
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
 		],
 		"reason": ""
 	},

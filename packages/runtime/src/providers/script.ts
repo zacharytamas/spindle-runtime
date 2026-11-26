@@ -2,8 +2,6 @@ import {
   type LLMProviderInterface,
   ProviderError,
   type ProviderErrorCode,
-  type ProviderReasoningDetail,
-  type ProviderResponse,
   type ProviderStreamChunk,
   type ProviderToolCallPart,
 } from "@standardagents/spec"
@@ -103,8 +101,7 @@ export const scriptedProvider = (script: Script): LLMProviderInterface => {
     generate: async () => {
       let content: string | null = null
       let reasoning: string | undefined
-      let details: Array<ProviderReasoningDetail> | undefined
-      let finishReason: ProviderResponse["finishReason"] | undefined
+      let finish: Extract<ProviderStreamChunk, { type: "finish" }> | undefined
       const toolCalls = new Map<string, ProviderToolCallPart>()
       for (const chunk of next()) {
         if (chunk.type === "content-delta") content = (content ?? "") + chunk.delta
@@ -114,19 +111,17 @@ export const scriptedProvider = (script: Script): LLMProviderInterface => {
         else if (chunk.type === "tool-call-done") {
           const call = toolCalls.get(chunk.id)
           if (call !== undefined) call.arguments = chunk.arguments
-        } else if (chunk.type === "finish") {
-          finishReason = chunk.finishReason
-          details = chunk.reasoningDetails
-        } else if (chunk.type === "error") throw failure(chunk.error, chunk.code)
+        } else if (chunk.type === "finish") finish = chunk
+        else if (chunk.type === "error") throw failure(chunk.error, chunk.code)
       }
-      if (finishReason === undefined) throw failure("The script's response has no finish chunk", "server_error")
+      if (finish === undefined) throw failure("The script's response has no finish chunk", "server_error")
       return {
         content,
         ...(reasoning === undefined ? {} : { reasoning }),
-        ...(details === undefined ? {} : { reasoningDetails: details }),
+        ...(finish.reasoningDetails === undefined ? {} : { reasoningDetails: finish.reasoningDetails }),
         ...(toolCalls.size === 0 ? {} : { toolCalls: [...toolCalls.values()] }),
-        finishReason,
-        usage,
+        finishReason: finish.finishReason,
+        usage: finish.usage,
       }
     },
   }
