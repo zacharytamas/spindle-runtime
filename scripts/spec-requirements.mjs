@@ -122,7 +122,10 @@ const sections = (markdown) => {
   const found = [{ section: "", text: "", starts: [] }]
   let fenced = false
   markdown.split(/\r?\n/).forEach((line, index) => {
-    if (FENCE.test(line)) fenced = !fenced
+    if (FENCE.test(line)) {
+      fenced = !fenced
+      found.push({ section: found.at(-1).section, text: "", starts: [] })
+    }
     const heading = !fenced && line.match(HEADING)
     if (heading) found.push({ section: heading[1].trim(), text: "", starts: [] })
     const part = normalize(line.replace(ITEM, ""))
@@ -134,7 +137,8 @@ const sections = (markdown) => {
   return found
 }
 
-// A quote is matched inside one section at a time, so it cannot be stitched together across a heading.
+// A quote is matched inside one run of prose at a time, so it cannot be stitched together across a heading or a
+// fenced block.
 const locate = (markdown, quote) =>
   sections(markdown).flatMap(({ section, text, starts }) => {
     const at = text.indexOf(normalize(quote))
