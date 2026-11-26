@@ -42,6 +42,8 @@ const extract = (specDir) => {
   const slug = (file) =>
     path
       .relative(specDir, file)
+      .split(path.sep)
+      .join("/")
       .replace(/\.md$/, "")
       .replace(/^(specification|infrastructure|distribution|getting-started)\//, "$1:")
   const requirements = []
