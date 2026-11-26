@@ -141,14 +141,21 @@ export const layer = Layer.effect(
       deleteMessage: (threadId, messageId) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            const deleted = yield* sql<{ tool_calls: string | null }>`
-              DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId} RETURNING tool_calls`
-            if (deleted[0] === undefined) return false
-            const toolCalls = deleted[0].tool_calls
-            if (toolCalls !== null)
+            const deleted = yield* sql<Pick<MessageRow, "role" | "tool_calls"> & { seq: number }>`
+              DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId} RETURNING seq, role, tool_calls`
+            const parent = deleted[0]
+            if (parent === undefined) return false
+            // A provider may reuse a call id in a later turn, so a result belongs to the nearest
+            // earlier assistant message that lists its id.
+            if (parent.role === "assistant" && parent.tool_calls !== null)
               yield* sql`
-                DELETE FROM messages WHERE thread_id = ${threadId} AND role = 'tool'
-                AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(${toolCalls}))`
+                DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
+                AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(${parent.tool_calls}))
+                AND NOT EXISTS (
+                  SELECT 1 FROM messages AS later, json_each(later.tool_calls)
+                  WHERE later.thread_id = result.thread_id AND later.role = 'assistant'
+                  AND later.seq > ${parent.seq} AND later.seq < result.seq
+                  AND json_extract(json_each.value, '$.id') = result.tool_call_id)`
             return true
           }),
         ),

@@ -341,6 +341,40 @@ describe("ThreadStore", () => {
           expect(left.messages.map((m) => m.content)).toEqual(["look up two things", "other"])
         }).pipe(Effect.provide(inMemory)),
     )
+
+    it.effect("deleteMessage keeps the results of a later assistant message that reuses a tool call id", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [first, , second] = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: null, tool_calls: toolCalls("call_0") },
+          { role: "tool", content: "first result", tool_call_id: "call_0" },
+          { role: "assistant", content: null, tool_calls: toolCalls("call_0") },
+          { role: "tool", content: "second result", tool_call_id: "call_0" },
+        ])
+        expect(yield* store.deleteMessage(thread.id, first?.id ?? "")).toBe(true)
+        const left = yield* store.getMessages(thread.id, { order: "asc" })
+        expect(left.messages.map((m) => [m.id === second?.id, m.content])).toEqual([
+          [true, null],
+          [false, "second result"],
+        ])
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        expect((yield* store.getMessages(thread.id)).total).toBe(0)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("deleteMessage removes only the record itself when it is not an assistant message", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [userWithCalls] = yield* store.appendMessages(thread.id, [
+          { role: "user", content: "pasted", tool_calls: toolCalls("call-1") },
+          { role: "tool", content: "1", tool_call_id: "call-1" },
+        ])
+        expect(yield* store.deleteMessage(thread.id, userWithCalls?.id ?? "")).toBe(true)
+        expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["1"])
+      }).pipe(Effect.provide(inMemory)),
+    )
   })
 
   describe("queue", () => {
