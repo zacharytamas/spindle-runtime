@@ -249,7 +249,9 @@ export const toJson = (value: unknown): string | NotJson => {
           // Anything else, such as a Date or a class instance, can serialize to a value that differs from its members.
           const prototype = read(path, () => Object.getPrototypeOf(value))
           if (prototype !== null && read(path, () => Object.getPrototypeOf(prototype)) !== null)
-            throw new Found(path, `a ${prototype.constructor?.name ?? "non-plain"} object`)
+            throw new Found(path, `a ${read(path, () => prototype.constructor?.name) ?? "non-plain"} object`)
+          if (typeof read(path, () => (value as { toJSON?: unknown }).toJSON) === "function")
+            throw new Found(path, "an object with a toJSON method")
           const members: Array<string> = []
           for (const [key, member] of read(path, () => Object.entries(value)))
             if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)

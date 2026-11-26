@@ -804,7 +804,23 @@ describe("ThreadStore", () => {
           }
         }
         const inherited = Object.create({ toJSON: () => "ok" }, { a: { value: 1, enumerable: true } })
-        for (const value of [new Money(), inherited, new Date(0), new Map()]) {
+        const rootWithToJson = Object.assign(
+          Object.create(Object.assign(Object.create(null), { toJSON: () => "ok" })),
+          {
+            a: 1,
+          },
+        )
+        const throwingPrototype = Object.create(
+          new Proxy(
+            {},
+            {
+              get: () => {
+                throw new Error("trap")
+              },
+            },
+          ),
+        )
+        for (const value of [new Money(), inherited, new Date(0), new Map(), rootWithToJson, throwingPrototype]) {
           const error = yield* Effect.flip(store.setValue(thread.id, "odd", value))
           expect(error._tag).toBe("ValueNotJson")
         }
