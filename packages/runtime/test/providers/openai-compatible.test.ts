@@ -169,6 +169,33 @@ describe("openaiCompatible", () => {
     ])
   })
 
+  it("classifies a 401 by its status only after the error body completes", async () => {
+    const caller = new AbortController()
+    let cancelDuringRead = false
+    const provider = openaiCompatible({
+      apiKey: "",
+      timeout: 20,
+      fetch: async (_input, init) =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true })
+              if (init?.signal && cancelDuringRead) caller.abort(new DOMException("cancelled", "AbortError"))
+            },
+          }),
+          { status: 401 },
+        ),
+    })
+    await expect(provider.generate(request)).rejects.toMatchObject({ code: "timeout", isRetryable: true })
+    cancelDuringRead = true
+    await expect(provider.stream({ ...request, signal: caller.signal })).rejects.toMatchObject({
+      code: "unknown",
+      isRetryable: false,
+    })
+    const complete = openaiCompatible({ apiKey: "", fetch: async () => new Response("denied", { status: 401 }) })
+    await expect(complete.generate(request)).rejects.toMatchObject({ code: "auth_error", statusCode: 401 })
+  })
+
   it("fails with a retryable timeout when the transport times out, and never for a request the caller cancelled", async () => {
     const deadline = () => new DOMException("transport deadline", "TimeoutError")
     const erroring = (error: unknown) => async () =>

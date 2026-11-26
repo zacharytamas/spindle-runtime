@@ -184,7 +184,7 @@ const retryAfterSeconds = (response: Response): number | undefined => {
 }
 
 const httpError = async (response: Response): Promise<ProviderError> => {
-  const text = await response.text().catch(() => "")
+  const text = await response.text()
   let detail = text.slice(0, 500)
   try {
     const parsed: unknown = JSON.parse(text)
@@ -466,10 +466,10 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
           body: JSON.stringify(requestBody(request, stream)),
           ...(signal === undefined ? {} : { signal }),
         })
+        if (!response.ok) throw await httpError(response)
       } catch (cause) {
         throw fail(cause)
       }
-      if (!response.ok) throw await httpError(response)
       return { response, fail }
     }
     return {
