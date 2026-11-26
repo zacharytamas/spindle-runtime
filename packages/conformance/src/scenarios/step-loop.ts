@@ -1909,11 +1909,29 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
         { ONE_CHAR: "e" },
       )
+    },
+  },
+  {
+    name: "S26c stores the model's reply as returned and runs the tool with the arguments it stored",
+    requirements: [],
+    run: async (driver) => {
+      let received: unknown
+      const tools = {
+        check: defineTool({
+          description: "Records its arguments",
+          variables: [{ name: "SHORT_TOKEN", type: "secret", required: true, description: "A short token" }],
+          args: z.object({ label: z.string() }),
+          execute: async (_state, args) => {
+            received = args
+            return ok("checked")
+          },
+        }),
+      }
       const echoing = new ScriptedProvider([
         {
-          text: "the token is Q7z",
-          reasoning: "it said Q7z",
-          toolCalls: [{ id: "e1", name: "reveal", arguments: { note: "Q7z" } }],
+          text: "the sum is 4",
+          reasoning: "it said sum",
+          toolCalls: [{ id: "e1", name: "check", arguments: { label: "sum of parts" } }],
         },
         { text: "done" },
       ])
@@ -1923,15 +1941,21 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         async (session, thread) => {
           await send(session, thread, "go")
           const model = (await session.messages(thread)).find((m) => m.role === "assistant")
-          expect([model?.content, model?.reasoning_content, callsOf(model)[0]?.function.arguments]).toEqual([
-            "the token is [redacted]",
-            "it said [redacted]",
-            '{"note":"[redacted]"}',
+          expect([model?.content, model?.reasoning_content, callsOf(model)]).toEqual([
+            "the sum is 4",
+            "it said sum",
+            [{ id: "e1", type: "function", function: { name: "check", arguments: '{"label":"sum of parts"}' } }],
           ])
-          expect(JSON.stringify(echoing.requests[1])).not.toContain("Q7z")
         },
-        instance,
+        { SHORT_TOKEN: "sum" },
       )
+      expect(received).toEqual({ label: "sum of parts" })
+      expect(history(echoing.requests[1]).find((m) => m.role === "assistant")).toEqual({
+        role: "assistant",
+        content: "the sum is 4",
+        reasoning: "it said sum",
+        toolCalls: [{ id: "e1", name: "check", arguments: { label: "sum of parts" } }],
+      })
     },
   },
   {

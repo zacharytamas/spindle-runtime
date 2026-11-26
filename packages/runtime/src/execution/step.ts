@@ -105,15 +105,10 @@ const reasoningSource = (turn: Turn) => ({
   model: turn.model.value.model,
 })
 
-// The text, reasoning text, and call arguments that the model returned are stored with secrets redacted. The
-// opaque reasoning details are stored as returned, because a provider may sign them. Messages section 1 stores
-// arguments as the JSON text of an object, so arguments that are not one are kept as the text of invalid_json.
-const responseMessage = (
-  turn: Turn,
-  response: ModelResponse,
-  calls: ReadonlyArray<ToolCall>,
-  redact: (text: string) => string,
-): NewMessage => {
+// The response is stored as the model returned it, so the stored arguments are the ones the tool runs with and
+// the next request shows. Messages section 1 stores arguments as the JSON text of an object, so arguments that
+// are not one are kept as the text of invalid_json.
+const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
       call.extraContent === undefined ? [] : [[call.id, call.extraContent] as const],
@@ -121,7 +116,7 @@ const responseMessage = (
   )
   return {
     role: roleOf(turn.side),
-    content: response.content === null ? null : redact(response.content),
+    content: response.content,
     tool_calls:
       calls.length === 0
         ? null
@@ -131,15 +126,11 @@ const responseMessage = (
               type: "function",
               function: {
                 name: call.name,
-                arguments: JSON.stringify(
-                  call.arguments === undefined
-                    ? { invalid_json: redact(call.argumentsText) }
-                    : mapStrings(call.arguments, redact, redact),
-                ),
+                arguments: JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText }),
               },
             })),
           ),
-    reasoning_content: response.reasoning === null ? null : redact(response.reasoning),
+    reasoning_content: response.reasoning,
     reasoning_details: response.reasoningDetails === undefined ? null : JSON.stringify(response.reasoningDetails),
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
@@ -337,7 +328,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
         const calls = toolCallsOf(response)
-        const [assistant] = yield* store.appendMessages(threadId, [responseMessage(turn, response, calls, redact)])
+        const [assistant] = yield* store.appendMessages(threadId, [responseMessage(turn, response, calls)])
         if (assistant !== undefined) {
           history.push(assistant)
           yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
