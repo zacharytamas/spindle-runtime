@@ -7,6 +7,7 @@ import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import {
   CallerHasOpenCalls,
+  external,
   HandleExpired,
   type NewMessage,
   type QueueEntry,
@@ -77,7 +78,7 @@ describe("ThreadStore claims", () => {
           yield* SqlClient.use((sql) => sql`INSERT INTO holders (id,pid) VALUES (${holder},${pid})`).pipe(
             Effect.provide(SqliteLive({ filename })),
           )
-          yield* store.admit(thread.id, message("pending"), claim("lost", holder))
+          yield* store.admit(thread.id, message("pending"), claim("lost", holder), external)
           expect(yield* store.recover(thread.id)).toEqual([thread.id])
           expect((yield* store.getThread(thread.id)).status).toMatchObject({
             state: "failed",
@@ -92,14 +93,14 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* TestClock.adjust("1 second")
-      const first = yield* store.admit(thread.id, message("one"), claim("flow-a"))
-      const second = yield* store.admit(thread.id, message("two"), claim("flow-b", "holder-2"))
+      const first = yield* store.admit(thread.id, message("one"), claim("flow-a"), external)
+      const second = yield* store.admit(thread.id, message("two"), claim("flow-b", "holder-2"), external)
       expect([first.claimed, second.claimed]).toEqual([true, false])
       expect((yield* store.getThread(thread.id)).status).toEqual({ state: "running", since: 1_000_000, reason: null })
       expect(yield* store.owned("holder-1")).toEqual(new Map([[thread.id, "flow-a"]]))
       expect((yield* store.owned("holder-2")).size).toBe(0)
       expect([first.queued.seq < second.queued.seq, yield* store.queueLength(thread.id)]).toEqual([true, 2])
-      expect(yield* store.nextQueued(thread.id)).toEqual(first.queued)
+      expect(yield* store.nextQueued(thread.id, { flowId: "flow-a" })).toEqual(first.queued)
     }).pipe(Effect.provide(inMemory)),
   )
 
@@ -107,10 +108,10 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.admit(thread.id, message("first"), claim("flow-a"))
+      yield* store.admit(thread.id, message("first"), claim("flow-a"), external)
       yield* store.recover(thread.id)
       yield* TestClock.adjust("2 seconds")
-      expect((yield* store.admit(thread.id, message("again"), claim("flow-r"))).claimed).toBe(true)
+      expect((yield* store.admit(thread.id, message("again"), claim("flow-r"), external)).claimed).toBe(true)
       expect((yield* store.getThread(thread.id)).status).toEqual({ state: "running", since: 2_000_000, reason: null })
     }).pipe(Effect.provide(inMemory)),
   )
@@ -119,8 +120,8 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      const terminated = yield* store.terminate(thread.id)
-      const error = yield* Effect.flip(store.admit(thread.id, message("late"), claim("flow-t")))
+      const terminated = yield* store.terminate(thread.id, external)
+      const error = yield* Effect.flip(store.admit(thread.id, message("late"), claim("flow-t"), external))
       expect(error).toMatchObject({ _tag: "ThreadTerminated", threadId: thread.id, terminated })
       expect(yield* store.queueLength(thread.id)).toBe(0)
       expect((yield* store.getThread(thread.id)).status.state).toBe("idle")
@@ -135,9 +136,9 @@ describe("ThreadStore claims", () => {
         Effect.map(store.createThread({ agentId: "assistant" }), (thread) => thread.id),
       ).pipe(Effect.provide(storeAt(filename)))
       const admitFrom = (flowId: string) =>
-        Effect.flatMap(ThreadStore, (store) => store.admit(threadId, message(flowId), claim(flowId, flowId))).pipe(
-          Effect.provide(storeAt(filename)),
-        )
+        Effect.flatMap(ThreadStore, (store) =>
+          store.admit(threadId, message(flowId), claim(flowId, flowId), external),
+        ).pipe(Effect.provide(storeAt(filename)))
       const results = yield* Effect.all([admitFrom("flow-1"), admitFrom("flow-2")], { concurrency: "unbounded" })
       expect(results.filter((result) => result.claimed)).toHaveLength(1)
       const length = Effect.flatMap(ThreadStore, (store) => store.queueLength(threadId))
@@ -150,11 +151,11 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       expect(yield* store.claim(thread.id, claim("flow-empty"))).toBe(false)
-      const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"))
+      const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"), external)
       expect(yield* store.claim(thread.id, claim("flow-busy"))).toBe(false)
       yield* store.settle(
         thread.id,
-        "flow-a",
+        { flowId: "flow-a" },
         { state: "idle", reason: "aborted" },
         { continueIfQueued: false, closing: "" },
       )
@@ -163,11 +164,11 @@ describe("ThreadStore claims", () => {
       expect(yield* store.owned("holder-1")).toEqual(new Map([[thread.id, "flow-b"]]))
       yield* store.settle(
         thread.id,
-        "flow-b",
+        { flowId: "flow-b" },
         { state: "failed", reason: "step_error" },
         { continueIfQueued: false, closing: "" },
       )
-      yield* store.terminate(thread.id)
+      yield* store.terminate(thread.id, external)
       expect(yield* store.claim(thread.id, claim("flow-c"))).toBe(false)
       expect(yield* store.isQueued(thread.id, queued.seq + 1)).toBe(false)
     }).pipe(Effect.provide(inMemory)),
@@ -177,10 +178,10 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      const { queued } = yield* store.admit(thread.id, message("one"), claim("flow-a"))
+      const { queued } = yield* store.admit(thread.id, message("one"), claim("flow-a"), external)
       const idle = { state: "idle", reason: "stop_on_response" } as const
       const options = { continueIfQueued: true, closing: CLOSING.failed }
-      expect(yield* store.settle(thread.id, "flow-a", idle, options)).toBe("continue")
+      expect(yield* store.settle(thread.id, { flowId: "flow-a" }, idle, options)).toBe("continue")
       expect((yield* store.getThread(thread.id)).status.state).toBe("running")
       yield* store.insertMessage(
         thread.id,
@@ -188,7 +189,7 @@ describe("ThreadStore claims", () => {
         { flowId: "flow-a", dequeue: queued.seq },
       )
       yield* TestClock.adjust("3 seconds")
-      expect(yield* store.settle(thread.id, "flow-a", idle, options)).toBe("settled")
+      expect(yield* store.settle(thread.id, { flowId: "flow-a" }, idle, options)).toBe("settled")
       expect((yield* store.getThread(thread.id)).status).toEqual({
         state: "idle",
         since: 3_000_000,
@@ -204,17 +205,17 @@ describe("ThreadStore claims", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.admit(thread.id, message("one"), claim("flow-a"))
+        yield* store.admit(thread.id, message("one"), claim("flow-a"), external)
         const stopped = { state: "idle", reason: "aborted" } as const
-        expect(yield* store.settle(thread.id, "flow-other", stopped, { continueIfQueued: false, closing: "" })).toBe(
-          "superseded",
-        )
-        expect(yield* store.settle(thread.id, "flow-a", stopped, { continueIfQueued: false, closing: "" })).toBe(
-          "settled",
-        )
-        expect(yield* store.settle(thread.id, "flow-a", stopped, { continueIfQueued: false, closing: "" })).toBe(
-          "superseded",
-        )
+        expect(
+          yield* store.settle(thread.id, { flowId: "flow-other" }, stopped, { continueIfQueued: false, closing: "" }),
+        ).toBe("superseded")
+        expect(
+          yield* store.settle(thread.id, { flowId: "flow-a" }, stopped, { continueIfQueued: false, closing: "" }),
+        ).toBe("settled")
+        expect(
+          yield* store.settle(thread.id, { flowId: "flow-a" }, stopped, { continueIfQueued: false, closing: "" }),
+        ).toBe("superseded")
         expect([(yield* store.getThread(thread.id)).status.reason, yield* store.queueLength(thread.id)]).toEqual([
           "aborted",
           1,
@@ -227,14 +228,17 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.appendMessages(thread.id, [callsBy("assistant", "old")])
-      yield* store.admit(thread.id, message("go"), claim("flow-a"))
+      yield* store.admit(thread.id, message("go"), claim("flow-a"), external)
       yield* insertCalls(thread.id, "flow-a", callsBy("assistant", "c1", "c2", "c3"), resultFor("c1"))
       yield* store.appendMessages(thread.id, [
         { role: "user", content: "seeded by the human side", tool_calls: JSON.stringify([{ id: "h1" }]) },
       ])
       const failed = { state: "failed", reason: "step_error" } as const
       expect(
-        yield* store.settle(thread.id, "flow-a", failed, { continueIfQueued: false, closing: CLOSING.failed }),
+        yield* store.settle(thread.id, { flowId: "flow-a" }, failed, {
+          continueIfQueued: false,
+          closing: CLOSING.failed,
+        }),
       ).toBe("settled")
       expect(yield* rows(thread.id)).toEqual([
         ["assistant", null, null],
@@ -260,10 +264,10 @@ describe("ThreadStore claims", () => {
       const live = yield* store.createThread({ agentId: "assistant" })
       yield* store.registerHolder({ id: "dead", pid: 2147483647 })
       yield* store.registerHolder({ id: "alive", pid: processId })
-      yield* store.admit(lost.id, message("x"), claim("flow-lost", "dead"))
-      yield* store.admit(live.id, message("y"), claim("flow-live", "alive"))
+      yield* store.admit(lost.id, message("x"), claim("flow-lost", "dead"), external)
+      yield* store.admit(live.id, message("y"), claim("flow-live", "alive"), external)
       yield* insertCalls(lost.id, "flow-lost", callsBy("assistant", "c1", "c2"), resultFor("c1"))
-      yield* store.admit(lost.id, message("z"), claim("flow-ignored"))
+      yield* store.admit(lost.id, message("z"), claim("flow-ignored"), external)
       yield* TestClock.adjust("2 seconds")
       expect(yield* store.recover(live.id)).toEqual([])
       expect(yield* store.recover()).toEqual([lost.id])
@@ -290,7 +294,7 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.admit(thread.id, message("x"), claim("flow-a", "never-beat"))
+      yield* store.admit(thread.id, message("x"), claim("flow-a", "never-beat"), external)
       expect(yield* store.holderOf(thread.id)).toBeNull()
       expect(yield* store.recover(thread.id)).toEqual([thread.id])
     }).pipe(Effect.provide(inMemory)),
@@ -301,14 +305,14 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       const other = yield* store.createThread({ agentId: "assistant" })
-      yield* store.admit(thread.id, message("x"), claim("flow-a"))
-      yield* store.admit(other.id, message("x"), claim("flow-b"))
+      yield* store.admit(thread.id, message("x"), claim("flow-a"), external)
+      yield* store.admit(other.id, message("x"), claim("flow-b"), external)
       const insert = (threadId: string, id: string, flowId: string) =>
         store.insertMessage(threadId, { id, created_at: 1, role: "assistant", content: id }, { flowId })
       yield* insert(thread.id, "kept", "flow-a")
       yield* store.settle(
         thread.id,
-        "flow-a",
+        { flowId: "flow-a" },
         { state: "idle", reason: "stop_on_response" },
         {
           continueIfQueued: false,
@@ -319,7 +323,7 @@ describe("ThreadStore claims", () => {
         _tag: "FlowEnded",
         why: "superseded",
       })
-      yield* store.terminate(other.id)
+      yield* store.terminate(other.id, external)
       expect(yield* Effect.flip(insert(other.id, "late", "flow-b"))).toMatchObject({
         _tag: "FlowEnded",
         why: "terminated",
@@ -333,8 +337,8 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"))
-      yield* store.insertMessage(thread.id, { id: "taken", created_at: 1, role: "user", content: "seed" })
+      const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"), external)
+      yield* store.insertMessage(thread.id, { id: "taken", created_at: 1, role: "user", content: "seed" }, external)
       const taken = { id: "taken", created_at: 2, role: "user", content: "x" } as const
       expect(
         yield* Effect.flip(store.insertMessage(thread.id, taken, { flowId: "flow-a", dequeue: queued.seq })),
@@ -359,11 +363,11 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.admit(thread.id, message("x"), claim("flow-a"))
-      yield* store.admit(thread.id, message("y"), claim("flow-b"))
+      yield* store.admit(thread.id, message("x"), claim("flow-a"), external)
+      yield* store.admit(thread.id, message("y"), claim("flow-b"), external)
       yield* insertCalls(thread.id, "flow-a", callsBy("assistant", "c1"))
       yield* TestClock.adjust("4 seconds")
-      const terminated = yield* store.terminate(thread.id)
+      const terminated = yield* store.terminate(thread.id, external)
       const after = yield* store.getThread(thread.id)
       expect([terminated, after.terminated, after.status]).toEqual([
         4_000_000,
@@ -384,7 +388,7 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.registerHolder({ id: "h", pid: 4242 })
-      yield* store.admit(thread.id, message("x"), claim("flow-a", "h"))
+      yield* store.admit(thread.id, message("x"), claim("flow-a", "h"), external)
       yield* TestClock.adjust("1 second")
       expect(yield* store.holderOf(thread.id)).toEqual({ id: "h", pid: 4242 })
       yield* store.dropHolder("h")

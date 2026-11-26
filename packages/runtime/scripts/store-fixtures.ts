@@ -1,14 +1,14 @@
 import { Effect } from "effect"
-import { type Claim, type Queued, type QueueEntry, ThreadStore } from "../src/store/ThreadStore.ts"
+import { type Claim, external, type Queued, type QueueEntry, ThreadStore } from "../src/store/ThreadStore.ts"
 
 export const admitEntry = (threadId: string, entry: QueueEntry, claim: Claim) =>
-  ThreadStore.use((store) => store.admit(threadId, entry, claim))
+  ThreadStore.use((store) => store.admit(threadId, entry, claim, external))
 export const drainEntries = (threadId: string, flowId: string) =>
   ThreadStore.use((store) =>
     Effect.gen(function* () {
       const delivered: Queued[] = []
       while (true) {
-        const entry = yield* store.nextQueued(threadId)
+        const entry = yield* store.nextQueued(threadId, { flowId: flowId })
         if (!entry) return delivered
         const message =
           entry.kind === "tool"

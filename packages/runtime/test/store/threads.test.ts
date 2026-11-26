@@ -4,7 +4,7 @@ import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
 import { platformName } from "#platform"
-import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 import { inMemory, storeAt, withDatabaseFile } from "./contract-fixtures.ts"
 
@@ -55,9 +55,9 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         yield* TestClock.adjust("1 second")
-        const terminated = yield* store.terminate(thread.id)
+        const terminated = yield* store.terminate(thread.id, external)
         yield* TestClock.adjust("1 second")
-        expect(yield* store.terminate(thread.id)).toBe(terminated)
+        expect(yield* store.terminate(thread.id, external)).toBe(terminated)
         expect((yield* store.getThread(thread.id)).terminated).toBe(1_000_000)
       }).pipe(Effect.provide(inMemory)),
     )
@@ -68,9 +68,9 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.setValue(thread.id, "invocation_count", 1)
+        yield* store.setValue(thread.id, "invocation_count", 1, external)
         expect(yield* store.getValue(thread.id, "invocation_count")).toBe(1)
-        yield* store.setValue(thread.id, "invocation_count", 2)
+        yield* store.setValue(thread.id, "invocation_count", 2, external)
         expect(yield* store.getValue(thread.id, "invocation_count")).toBe(2)
       }).pipe(Effect.provide(inMemory)),
     )
@@ -88,7 +88,7 @@ describe("ThreadStore", () => {
           boolean: false,
           empty: "",
         }
-        for (const [key, value] of Object.entries(values)) yield* store.setValue(thread.id, key, value)
+        for (const [key, value] of Object.entries(values)) yield* store.setValue(thread.id, key, value, external)
         for (const [key, value] of Object.entries(values)) expect(yield* store.getValue(thread.id, key)).toEqual(value)
       }).pipe(Effect.provide(inMemory)),
     )
@@ -98,7 +98,7 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         expect(yield* store.getValue(thread.id, "never")).toBeNull()
-        yield* store.setValue(thread.id, "other", 1)
+        yield* store.setValue(thread.id, "other", 1, external)
         expect(yield* store.getValue(thread.id, "never")).toBeNull()
       }).pipe(Effect.provide(inMemory)),
     )
@@ -107,13 +107,13 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.setValue(thread.id, "a", { x: 1 })
-        yield* store.setValue(thread.id, "b", [1])
-        yield* store.setValue(thread.id, "a", null)
-        yield* store.setValue(thread.id, "b", undefined)
+        yield* store.setValue(thread.id, "a", { x: 1 }, external)
+        yield* store.setValue(thread.id, "b", [1], external)
+        yield* store.setValue(thread.id, "a", null, external)
+        yield* store.setValue(thread.id, "b", undefined, external)
         expect(yield* store.getValue(thread.id, "a")).toBeNull()
         expect(yield* store.getValue(thread.id, "b")).toBeNull()
-        yield* store.setValue(thread.id, "a", "again")
+        yield* store.setValue(thread.id, "a", "again", external)
         expect(yield* store.getValue(thread.id, "a")).toBe("again")
       }).pipe(Effect.provide(inMemory)),
     )
@@ -125,12 +125,13 @@ describe("ThreadStore", () => {
         const child = yield* store.createThread({ agentId: "billing", parentId: parent.id })
         const sibling = yield* store.createThread({ agentId: "support", parentId: parent.id })
         const lonely = yield* store.createThread({ agentId: "support", parentId: parent.id })
-        for (const thread of [parent, child, sibling]) yield* store.setValue(thread.id, "owner", thread.agentId)
+        for (const thread of [parent, child, sibling])
+          yield* store.setValue(thread.id, "owner", thread.agentId, external)
         expect(yield* store.getValue(parent.id, "owner")).toBe("triage")
         expect(yield* store.getValue(child.id, "owner")).toBe("billing")
         expect(yield* store.getValue(sibling.id, "owner")).toBe("support")
         expect(yield* store.getValue(lonely.id, "owner")).toBeNull()
-        yield* store.setValue(child.id, "owner", null)
+        yield* store.setValue(child.id, "owner", null, external)
         expect(yield* store.getValue(parent.id, "owner")).toBe("triage")
       }).pipe(Effect.provide(inMemory)),
     )
@@ -157,13 +158,13 @@ describe("ThreadStore", () => {
           ]
           for (const [index, value] of rejected.entries()) {
             const key = `bad-${index}`
-            const error = yield* Effect.flip(store.setValue(thread.id, key, value))
+            const error = yield* Effect.flip(store.setValue(thread.id, key, value, external))
             expect(error._tag).toBe("ValueNotJson")
             expect(error.message).toContain(`"${key}"`)
             expect(yield* store.getValue(thread.id, key)).toBeNull()
           }
-          yield* store.setValue(thread.id, "kept", 1)
-          yield* Effect.flip(store.setValue(thread.id, "kept", 10n))
+          yield* store.setValue(thread.id, "kept", 1, external)
+          yield* Effect.flip(store.setValue(thread.id, "kept", 10n, external))
           expect(yield* store.getValue(thread.id, "kept")).toBe(1)
         }).pipe(Effect.provide(inMemory)),
     )
@@ -172,7 +173,7 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.setValue(thread.id, "tagged", { a: 1, [Symbol.toStringTag]: "Sample" })
+        yield* store.setValue(thread.id, "tagged", { a: 1, [Symbol.toStringTag]: "Sample" }, external)
         expect(yield* store.getValue(thread.id, "tagged")).toEqual({ a: 1 })
       }).pipe(Effect.provide(inMemory)),
     )
@@ -205,7 +206,7 @@ describe("ThreadStore", () => {
           ),
         )
         for (const value of [new Money(), inherited, epochDate, new Map(), rootWithToJson, throwingPrototype]) {
-          const error = yield* Effect.flip(store.setValue(thread.id, "odd", value))
+          const error = yield* Effect.flip(store.setValue(thread.id, "odd", value, external))
           expect(error._tag).toBe("ValueNotJson")
         }
         expect(yield* store.getValue(thread.id, "odd")).toBe(null)
@@ -219,8 +220,8 @@ describe("ThreadStore", () => {
         // Another realm's Object.prototype is a root object that is not this realm's, which a fresh root stands in for.
         const foreign = Object.assign(Object.create(Object.create(null)), { x: 1, nested: [{ y: "z" }] })
         const bare = Object.assign(Object.create(null), { x: 2 })
-        yield* store.setValue(thread.id, "foreign", foreign)
-        yield* store.setValue(thread.id, "bare", bare)
+        yield* store.setValue(thread.id, "foreign", foreign, external)
+        yield* store.setValue(thread.id, "bare", bare, external)
         expect(yield* store.getValue(thread.id, "foreign")).toEqual({ x: 1, nested: [{ y: "z" }] })
         expect(yield* store.getValue(thread.id, "bare")).toEqual({ x: 2 })
       }).pipe(Effect.provide(inMemory)),
@@ -231,7 +232,7 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         const value: { x: number } = { x: 1 }
-        const write = store.setValue(thread.id, "changed", value)
+        const write = store.setValue(thread.id, "changed", value, external)
         value.x = Number.POSITIVE_INFINITY
         expect(yield* Effect.flip(write)).toMatchObject({ _tag: "ValueNotJson", path: "$.x", found: "Infinity" })
         expect(yield* store.getValue(thread.id, "changed")).toBeNull()
@@ -254,15 +255,15 @@ describe("ThreadStore", () => {
               throw new Error("boom")
             },
           }
-          const getter = yield* Effect.flip(store.setValue(thread.id, "getter", throwing))
+          const getter = yield* Effect.flip(store.setValue(thread.id, "getter", throwing, external))
           expect(getter).toMatchObject({ _tag: "ValueNotJson", path: "$" })
           expect(getter.message).toContain("boom")
-          const deep = yield* Effect.flip(store.setValue(thread.id, "deep", nest(20_000)))
+          const deep = yield* Effect.flip(store.setValue(thread.id, "deep", nest(20_000), external))
           expect(deep).toMatchObject({ _tag: "ValueNotJson" })
           expect(deep.message).toContain("1000 levels")
-          yield* store.setValue(thread.id, "deepest", nest(1000))
+          yield* store.setValue(thread.id, "deepest", nest(1000), external)
           expect(JSON.stringify(yield* store.getValue(thread.id, "deepest"))).toBe(JSON.stringify(nest(1000)))
-          expect(yield* Effect.flip(store.setValue(thread.id, "too deep", nest(1001)))).toMatchObject({
+          expect(yield* Effect.flip(store.setValue(thread.id, "too deep", nest(1001), external))).toMatchObject({
             _tag: "ValueNotJson",
           })
         }).pipe(Effect.provide(inMemory)),
@@ -295,13 +296,13 @@ describe("ThreadStore", () => {
           Effect.gen(function* () {
             const writer = yield* ThreadStore
             const thread = yield* writer.createThread({ agentId: "assistant" })
-            yield* writer.setValue(thread.id, "count", 1)
+            yield* writer.setValue(thread.id, "count", 1, external)
             const read = Effect.gen(function* () {
               const reader = yield* ThreadStore
               return yield* reader.getValue(thread.id, "count")
             }).pipe(Effect.provide(storeAt(filename)))
             expect(yield* read).toBe(1)
-            yield* writer.setValue(thread.id, "count", null)
+            yield* writer.setValue(thread.id, "count", null, external)
             expect(yield* read).toBeNull()
           }).pipe(Effect.provide(storeAt(filename))),
         ),
@@ -311,12 +312,12 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.setValue(thread.id, "\ufffd", "replacement character")
-        yield* store.setValue(thread.id, "\ud83d\ude00", "emoji")
+        yield* store.setValue(thread.id, "\ufffd", "replacement character", external)
+        yield* store.setValue(thread.id, "\ud83d\ude00", "emoji", external)
         for (const key of ["\ud800", "\udc00", "a\ud801b"]) {
           for (const call of [
-            store.setValue(thread.id, key, 1),
-            store.setValue(thread.id, key, null),
+            store.setValue(thread.id, key, 1, external),
+            store.setValue(thread.id, key, null, external),
             store.getValue(thread.id, key),
           ]) {
             const error = yield* Effect.flip(call)
@@ -333,7 +334,7 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         for (const value of [1, { a: 1 }, null, undefined]) {
-          const error = yield* Effect.flip(store.setValue("missing", "k", value))
+          const error = yield* Effect.flip(store.setValue("missing", "k", value, external))
           expect(error).toMatchObject({ _tag: "ThreadNotFound", threadId: "missing" })
         }
       }).pipe(Effect.provide(inMemory)),

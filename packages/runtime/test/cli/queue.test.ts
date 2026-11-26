@@ -271,7 +271,9 @@ describe("spindle across processes", () => {
         )
         const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
         const claim = yield* store.holderOf(thread)
-        const entry = yield* store.nextQueued(thread)
+        const entry = yield* store.nextQueued(thread, {
+          flowId: (yield* store.owned(claim?.id ?? "")).get(thread) ?? "",
+        })
         expect(claim?.pid).toBe(owner.pid)
         expect(entry).toMatchObject({ kind: "message", message: { content: "waiting" } })
         yield* waiter.signal("SIGINT")
@@ -280,7 +282,9 @@ describe("spindle across processes", () => {
           "spindle: Your message is still queued and the next run of this thread will deliver it.",
         )
         expect(yield* store.holderOf(thread)).toEqual(claim)
-        expect(yield* store.nextQueued(thread)).toEqual(entry)
+        expect(
+          yield* store.nextQueued(thread, { flowId: (yield* store.owned(claim?.id ?? "")).get(thread) ?? "" }),
+        ).toEqual(entry)
         yield* touch(at("release-owner"))
         expect(yield* owner.exit).toBe(0)
         expect(owner.out.at(-1)).toBe("ack: waiting")

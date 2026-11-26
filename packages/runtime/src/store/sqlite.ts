@@ -29,9 +29,9 @@ import {
 import {
   CallerHasOpenCalls,
   type Claim,
+  external,
   FlowEnded,
   HandleExpired,
-  type HandleOwner,
   InvalidMessagesQuery,
   KeyNotWellFormed,
   MessageIdTaken,
@@ -42,7 +42,7 @@ import {
   ThreadStore,
   ThreadTerminated,
   ValueNotJson,
-  WritingHandle,
+  type WriteOrigin,
 } from "./ThreadStore.ts"
 
 // All connections in this process can observe claims held by its supervisors.
@@ -114,30 +114,34 @@ export const layer = Layer.effect(
         first(rows, () => new ThreadNotFound({ threadId })),
       )
 
-    const checkHandle = (
+    const authorize = (
       threadId: string,
       row: { flow_id: string | null; terminated_at: number | null },
-      handle: HandleOwner | undefined,
-      injection = false,
+      origin: WriteOrigin,
+      operation?: "insert" | "settle",
     ) => {
-      if (handle?.flowId !== undefined && row.flow_id !== handle.flowId)
+      if (origin.flowId !== undefined && row.flow_id !== origin.flowId)
         return new FlowEnded({
           threadId,
-          flowId: handle.flowId,
+          flowId: origin.flowId,
           why: row.terminated_at === null ? "superseded" : "terminated",
         })
-      if (handle?.expired()) return new HandleExpired()
-      if (row.terminated_at !== null && !(injection && handle?.terminated === row.terminated_at))
+      if (origin.handle?.expired()) return new HandleExpired()
+      if (
+        row.terminated_at !== null &&
+        operation !== "settle" &&
+        !(operation === "insert" && origin.handle?.terminated === row.terminated_at)
+      )
         return new ThreadTerminated({ threadId, terminated: row.terminated_at })
     }
-    const guardWrite = (threadId: string) =>
+    const guardWrite = (threadId: string, origin: WriteOrigin) =>
       Effect.gen(function* () {
         const [row] = yield* sql<{
           flow_id: string | null
           terminated_at: number | null
         }>`SELECT flow_id, terminated_at FROM threads WHERE id = ${threadId}`
         if (row) {
-          const refusal = checkHandle(threadId, row, yield* WritingHandle)
+          const refusal = authorize(threadId, row, origin)
           if (refusal) return yield* refusal
         }
       })
@@ -247,17 +251,14 @@ export const layer = Layer.effect(
 
       // Runtime section 10: the first termination time stays. A running run settles idle with aborted in the same
       // transaction, so the execution that ran it can write nothing more.
-      terminate: (threadId) =>
+      terminate: (threadId, origin) =>
         sql.withTransaction(
           Effect.gen(function* () {
             const now = yield* nowMicros
-            const handle = yield* WritingHandle
             const existing = yield* selectRun(threadId)
             if (existing.terminated_at !== null) return existing.terminated_at
-            if (handle) {
-              const refusal = checkHandle(threadId, existing, handle)
-              if (refusal) return yield* refusal
-            }
+            const refusal = authorize(threadId, existing, origin)
+            if (refusal) return yield* refusal
             const rows = yield* sql<{ terminated_at: number }>`
               UPDATE threads SET terminated_at = coalesce(terminated_at, ${now})
               WHERE id = ${threadId} RETURNING terminated_at`
@@ -290,7 +291,7 @@ export const layer = Layer.effect(
           }),
         ),
 
-      insertMessage: (threadId, message, options = {}) =>
+      insertMessage: (threadId, message, origin) =>
         Effect.gen(function* () {
           const nested = Option.isSome(yield* Effect.serviceOption(sql.transactionService))
           return yield* sql.withTransaction(
@@ -300,17 +301,8 @@ export const layer = Layer.effect(
                   SELECT revision, flow_id, terminated_at FROM threads WHERE id = ${threadId}`,
                 () => new ThreadNotFound({ threadId }),
               )
-              const handle = yield* WritingHandle
-              const { flowId, dequeue } = options
-              if (dequeue !== undefined && flowId === undefined)
-                return yield* Effect.die(new Error("Queue delivery requires a flow"))
-              if (flowId !== undefined && thread.flow_id !== flowId)
-                return yield* new FlowEnded({
-                  threadId,
-                  flowId,
-                  why: thread.terminated_at === null ? "superseded" : "terminated",
-                })
-              const refusal = checkHandle(threadId, thread, handle, true)
+              const { flowId, dequeue } = origin
+              const refusal = authorize(threadId, thread, origin, "insert")
               if (refusal) return yield* refusal
               if (dequeue !== undefined) {
                 const removed =
@@ -328,14 +320,16 @@ export const layer = Layer.effect(
               const facts = {
                 admission_seq: dequeue ?? null,
                 flow_id: flowId ?? null,
-                caller_seq: options.callerSeq ?? null,
+                caller_seq: origin.callerSeq ?? null,
               }
               const values = { ...row, ...facts }
               const [inserted] = yield* sql<{ seq: number }>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`
               if (!inserted) return yield* Effect.die("Message insert returned no sequence")
               // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
               return {
-                message: toMessage(row), seq: inserted.seq, callerSeq: facts.caller_seq,
+                message: toMessage(row),
+                seq: inserted.seq,
+                callerSeq: facts.caller_seq,
                 revision: nested ? null : thread.revision + 1,
               }
             }),
@@ -356,8 +350,14 @@ export const layer = Layer.effect(
             yield* sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`,
             () => new ThreadNotFound({ threadId }),
           )
-          const rows = yield* sql<MessageRow & {seq: number, caller_seq: number | null}>`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
-          return { revision: thread.revision, messages: rows.map(toMessage), positions: new Map(rows.map(row => [row.id, {seq: row.seq, callerSeq: row.caller_seq}])) }
+          const rows = yield* sql<
+            MessageRow & { seq: number; caller_seq: number | null }
+          >`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
+          return {
+            revision: thread.revision,
+            messages: rows.map(toMessage),
+            positions: new Map(rows.map((row) => [row.id, { seq: row.seq, callerSeq: row.caller_seq }])),
+          }
         }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
           Effect.zipWith(
             Effect.serviceOption(sql.transactionService),
@@ -412,10 +412,10 @@ export const layer = Layer.effect(
       messageIdTaken: (messageId) =>
         Effect.map(sql`SELECT 1 FROM messages WHERE id = ${messageId}`, (rows) => rows.length > 0),
 
-      updateMessage: (threadId, messageId, updates) =>
+      updateMessage: (threadId, messageId, updates, origin) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            yield* guardWrite(threadId)
+            yield* guardWrite(threadId, origin)
             const where = sql.and([sql`thread_id = ${threadId}`, sql`id = ${messageId}`])
             const current = yield* first(
               yield* selectMessages(where),
@@ -440,10 +440,10 @@ export const layer = Layer.effect(
           }),
         ),
 
-      deleteMessage: (threadId, messageId) =>
+      deleteMessage: (threadId, messageId, origin) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            yield* guardWrite(threadId)
+            yield* guardWrite(threadId, origin)
             const [active] = yield* sql<{ seq: number; tool_calls: string }>`
               SELECT m.seq,m.tool_calls FROM messages m JOIN threads t ON t.id = m.thread_id AND t.flow_id = m.flow_id
               WHERE m.thread_id = ${threadId} AND m.id = ${messageId} AND m.tool_calls IS NOT NULL`
@@ -483,13 +483,13 @@ export const layer = Layer.effect(
             )
           : Effect.fail(new KeyNotWellFormed({ key })),
 
-      setValue: (threadId, key, value) => {
+      setValue: (threadId, key, value, origin) => {
         if (!isWellFormed(key)) return Effect.fail(new KeyNotWellFormed({ key }))
         if (value === null || value === undefined)
           return sql.withTransaction(
             Effect.gen(function* () {
               yield* requireThread(threadId)
-              yield* guardWrite(threadId)
+              yield* guardWrite(threadId, origin)
               yield* sql`DELETE FROM kv WHERE thread_id = ${threadId} AND key = ${key}`
             }),
           )
@@ -497,7 +497,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const text = yield* json(`the value of key ${JSON.stringify(key)}`, value)
             yield* requireThread(threadId)
-            yield* guardWrite(threadId)
+            yield* guardWrite(threadId, origin)
             yield* sql`
               INSERT INTO kv ${sql.insert({ thread_id: threadId, key, value: text })}
               ON CONFLICT (thread_id, key) DO UPDATE SET value = excluded.value`
@@ -505,11 +505,11 @@ export const layer = Layer.effect(
         )
       },
 
-      admit: (threadId, entry, claim) =>
+      admit: (threadId, entry, claim, origin) =>
         sql.withTransaction(
           Effect.gen(function* () {
             const row = yield* selectRun(threadId)
-            const refusal = checkHandle(threadId, row, yield* WritingHandle)
+            const refusal = authorize(threadId, row, origin)
             if (refusal) return yield* refusal
             const payload = yield* json("the queue entry", queuePayload(entry))
             const now = yield* nowMicros
@@ -525,7 +525,7 @@ export const layer = Layer.effect(
         sql.withTransaction(
           Effect.gen(function* () {
             const [row] = yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
-            if (row === undefined || row.terminated_at !== null) return false
+            if (row === undefined || authorize(threadId, row, external)) return false
             const head =
               yield* sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} LIMIT 1`
             return head.length > 0 && (yield* claimRun(threadId, row, claim, yield* nowMicros))
@@ -538,7 +538,7 @@ export const layer = Layer.effect(
           (rows) => rows.length > 0,
         ),
 
-      nextQueued: (threadId, flowId) =>
+      nextQueued: (threadId, origin) =>
         Effect.gen(function* () {
           while (true) {
             const [row] =
@@ -547,9 +547,14 @@ export const layer = Layer.effect(
             try {
               return toQueued(row)
             } catch {
-              if (flowId === undefined) return undefined
-              const changed =
-                yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE seq = ${row.seq} AND disposition = 'pending' AND EXISTS (SELECT 1 FROM threads WHERE id = ${threadId} AND flow_id = ${flowId}) RETURNING seq`
+              const changed = yield* sql.withTransaction(
+                Effect.gen(function* () {
+                  const [run] =
+                    yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
+                  if (!run || authorize(threadId, run, origin, "settle")) return []
+                  return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE seq = ${row.seq} AND disposition = 'pending' RETURNING seq`
+                }),
+              )
               if (!changed.length) return undefined
             }
           }
@@ -563,11 +568,12 @@ export const layer = Layer.effect(
           (rows) => rows[0]?.count ?? 0,
         ),
 
-      settle: (threadId, flowId, outcome, options) =>
+      settle: (threadId, origin, outcome, options) =>
         sql.withTransaction(
           Effect.gen(function* () {
             const [row] = yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
-            if (row === undefined || row.flow_id !== flowId || row.run_state !== "running") return "superseded"
+            if (row === undefined || authorize(threadId, row, origin, "settle") || row.run_state !== "running")
+              return "superseded"
             // The check and the release share one transaction, so work queued after the last drain either keeps this
             // run going or finds the thread released and starts the next one.
             if (options.continueIfQueued && row.terminated_at === null) {

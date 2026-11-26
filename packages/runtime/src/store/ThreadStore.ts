@@ -156,15 +156,12 @@ export class HandleExpired extends Data.TaggedError("HandleExpired") {
   }
 }
 
-export interface HandleOwner {
-  readonly flowId: string | undefined
-  readonly terminated: number | null
-  readonly expired: () => boolean
+export interface WriteOrigin {
+  readonly flowId?: string
+  readonly handle?: { readonly terminated: number | null; readonly expired: () => boolean }
 }
 
-export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle/WritingHandle", {
-  defaultValue: () => undefined,
-})
+export const external = {} satisfies WriteOrigin
 
 export type WriteRefused = FlowEnded | ThreadTerminated | HandleExpired
 
@@ -177,16 +174,21 @@ export interface MessagePosition {
   readonly seq: number
   readonly callerSeq: number | null
 }
-export type InsertOptions =
-  | { readonly flowId: string; readonly callerSeq?: number; readonly dequeue?: number }
-  | { readonly flowId?: never; readonly callerSeq?: never; readonly dequeue?: never }
+export type InsertOptions = WriteOrigin &
+  (
+    | { readonly flowId: string; readonly callerSeq?: number; readonly dequeue?: number }
+    | { readonly callerSeq?: never; readonly dequeue?: never }
+  )
 
 export class ThreadStore extends Context.Service<
   ThreadStore,
   {
     readonly createThread: (thread: NewThread) => Effect.Effect<Thread, ThreadNotFound | ValueNotJson | SqlError>
     readonly getThread: (threadId: string) => Effect.Effect<Thread, ThreadNotFound | SqlError>
-    readonly terminate: (threadId: string) => Effect.Effect<number, ThreadNotFound | WriteRefused | SqlError>
+    readonly terminate: (
+      threadId: string,
+      origin: WriteOrigin,
+    ) => Effect.Effect<number, ThreadNotFound | WriteRefused | SqlError>
 
     readonly appendMessages: (
       threadId: string,
@@ -196,7 +198,7 @@ export class ThreadStore extends Context.Service<
     readonly insertMessage: (
       threadId: string,
       message: IdentifiedMessage,
-      options?: InsertOptions,
+      origin: InsertOptions,
     ) => Effect.Effect<
       Inserted,
       ThreadNotFound | ValueNotJson | MessageIdTaken | WriteRefused | QueueEntryGone | SqlError
@@ -224,10 +226,12 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       messageId: string,
       updates: MessageUpdates,
+      origin: WriteOrigin,
     ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | WriteRefused | SqlError>
     readonly deleteMessage: (
       threadId: string,
       messageId: string,
+      origin: WriteOrigin,
     ) => Effect.Effect<boolean, CallerHasOpenCalls | WriteRefused | SqlError>
 
     // Runtime sections 2 and 9 in one transaction: refuses a terminated thread, queues the entry, and claims the
@@ -236,18 +240,22 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       entry: QueueEntry,
       claim: Claim,
+      origin: WriteOrigin,
     ) => Effect.Effect<Admitted, ThreadNotFound | WriteRefused | ValueNotJson | SqlError>
     // Claims a thread that holds queued work and that no execution holds, for work that waits behind a run that
     // stopped or failed. Returns whether the caller now runs it.
     readonly claim: (threadId: string, claim: Claim) => Effect.Effect<boolean, SqlError>
     readonly isQueued: (threadId: string, seq: number) => Effect.Effect<boolean, SqlError>
     // The oldest entry, which stays queued until the message that delivers it is inserted.
-    readonly nextQueued: (threadId: string, flowId?: string) => Effect.Effect<Queued | undefined, SqlError>
+    readonly nextQueued: (
+      threadId: string,
+      origin: { readonly flowId: string },
+    ) => Effect.Effect<Queued | undefined, SqlError>
     readonly queueLength: (threadId: string) => Effect.Effect<number, SqlError>
     // Ends the flow's run. Every call of the run that has no result gets an error result with the closing text.
     readonly settle: (
       threadId: string,
-      flowId: string,
+      origin: { readonly flowId: string },
       outcome: { readonly state: "idle" | "failed"; readonly reason: string },
       options: { readonly continueIfQueued: boolean; readonly atCap?: boolean; readonly closing: string },
     ) => Effect.Effect<Settlement, SqlError>
@@ -264,6 +272,7 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       key: string,
       value: unknown,
+      origin: WriteOrigin,
     ) => Effect.Effect<void, WriteRefused | KeyNotWellFormed | ValueNotJson | ThreadNotFound | SqlError>
 
     readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>

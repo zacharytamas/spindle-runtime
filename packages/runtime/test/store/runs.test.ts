@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { admitEntry, drainEntries } from "../../scripts/store-fixtures.ts"
-import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 import { claim, inMemory, settleRun, storeAt, withDatabaseFile } from "./contract-fixtures.ts"
 
@@ -10,7 +10,12 @@ const startRun = (threadId: string) =>
   ThreadStore.use((store) =>
     Effect.gen(function* () {
       if (!(yield* store.claim(threadId, claim)))
-        yield* store.admit(threadId, { kind: "message", message: { role: "user", content: "trigger" } }, claim)
+        yield* store.admit(
+          threadId,
+          { kind: "message", message: { role: "user", content: "trigger" } },
+          claim,
+          external,
+        )
       return (yield* store.getThread(threadId)).status
     }),
   )

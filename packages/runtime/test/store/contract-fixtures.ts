@@ -9,7 +9,7 @@ export const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provid
 export const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason: string }) =>
   ThreadStore.use((store) =>
     Effect.gen(function* () {
-      yield* store.settle(threadId, claim.flowId, outcome, { continueIfQueued: false, closing: "" })
+      yield* store.settle(threadId, { flowId: claim.flowId }, outcome, { continueIfQueued: false, closing: "" })
       return (yield* store.getThread(threadId)).status
     }),
   )

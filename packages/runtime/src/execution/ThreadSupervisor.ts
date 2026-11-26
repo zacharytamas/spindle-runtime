@@ -3,7 +3,14 @@ import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, S
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
 import { isAttachmentRef } from "../store/schema.ts"
-import { type Holder, type QueueEntry, ThreadStore, ThreadTerminated, WritingHandle } from "../store/ThreadStore.ts"
+import {
+  external,
+  type Holder,
+  type QueueEntry,
+  ThreadStore,
+  ThreadTerminated,
+  type WriteOrigin,
+} from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
@@ -149,7 +156,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           // An execution yields to other fibers only where it waits, for a model, a tool, or a hook, so its store calls
           // take the writer lock without a scheduler yield. The outcome is recorded in a finalizer, which an interrupt cannot cut short.
           const execution = runExecution(threadId, run, control(threadId), { ...defaults, ...options }).pipe(
-            Effect.provideService(WritingHandle, undefined),
             Effect.provideService(Scheduler.PreventSchedulerYield, true),
             Effect.onExit((exit) =>
               Effect.gen(function* () {
@@ -224,18 +230,21 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
-      const admit = (threadId: string, entry: QueueEntry, options: SendOptions) =>
+      const admit = (threadId: string, entry: QueueEntry, options: SendOptions, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          if ((yield* WritingHandle)?.flowId === undefined) yield* store.recover(threadId)
+          if (origin.flowId === undefined) yield* store.recover(threadId)
           let seq = 0
           const started = yield* claimWith(
             threadId,
             (run) =>
-              Effect.map(store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }), (admitted) => {
-                seq = admitted.queued.seq
-                options.onAdmitted?.(seq)
-                return admitted.claimed
-              }),
+              Effect.map(
+                store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }, origin),
+                (admitted) => {
+                  seq = admitted.queued.seq
+                  options.onAdmitted?.(seq)
+                  return admitted.claimed
+                },
+              ),
             options,
           )
           return { seq, started }
@@ -243,9 +252,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime section 10: the thread is marked and its run settled in one transaction. The execution that ran it
       // here is interrupted, and one in another process stops at its next write or its next control poll.
-      const terminate = (threadId: string) =>
+      const terminate = (threadId: string, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          const time = yield* store.terminate(threadId)
+          const time = yield* store.terminate(threadId, origin)
           const local = live.get(threadId)
           if (local?.fiber !== undefined) {
             local.run.releaseWait.abort()
@@ -255,13 +264,14 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         })
 
       const control = (threadId: string): ThreadControl => ({
-        queueMessage: (input, secrets) =>
+        queueMessage: (input, secrets, origin) =>
           Effect.flatMap(queuedMessage(input, secrets), (message) =>
-            Effect.asVoid(admit(threadId, { kind: "message", message }, {})),
+            Effect.asVoid(admit(threadId, { kind: "message", message }, {}, origin)),
           ),
-        queueTool: (target, args) => Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args }, {})),
+        queueTool: (target, args, origin) =>
+          Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args }, {}, origin)),
         status: statusOf(threadId),
-        terminate: terminate(threadId),
+        terminate: (origin) => terminate(threadId, origin),
       })
 
       // Waits until no execution holds the thread. A holder in another process is watched through the store.
@@ -286,7 +296,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           if (!flows.has(flowId))
             yield* store.settle(
               threadId,
-              flowId,
+              { flowId },
               { state: "failed", reason: "execution_lost" },
               { continueIfQueued: false, closing: CLOSING.lost },
             )
@@ -333,7 +343,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const thread = yield* store.getThread(threadId)
             const { human } = yield* sidesOf(thread.agentId)
             const message: QueueMessageInput = { role: roleOf(human), content }
-            const admitted = yield* admit(threadId, { kind: "message", message }, options)
+            const admitted = yield* admit(threadId, { kind: "message", message }, options, external)
             let started = admitted.started
             let elsewhere: Holder | undefined
             while (true) {

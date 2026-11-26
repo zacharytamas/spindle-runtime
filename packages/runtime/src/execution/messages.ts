@@ -1,6 +1,6 @@
 import type { Message, MessageUpdates } from "@standardagents/spec"
 import { Clock, Effect } from "effect"
-import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
+import { type NewMessage, ThreadStore, type WriteOrigin } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import type { History } from "./history.ts"
 import {
@@ -25,7 +25,7 @@ export interface WriteContext {
   readonly history: History | undefined
   // The flow of the execution that writes. Its writes fail once that flow no longer holds the thread.
   readonly callerSeq?: number
-  readonly flowId?: string
+  readonly origin: WriteOrigin
 }
 
 // A write from a hook is one level deeper than the write or the step that called the hook.
@@ -184,11 +184,12 @@ export const createMessage = Effect.fn("createMessage")(function* (
     redacted = { ...redacted, id: original.id }
   }
   const options =
-    write.flowId === undefined
-      ? {}
+    write.origin.flowId === undefined
+      ? write.origin
       : {
           ...(write.callerSeq === undefined ? {} : { callerSeq: write.callerSeq }),
-          flowId: write.flowId,
+          ...write.origin,
+          flowId: write.origin.flowId,
           ...(dequeue === undefined ? {} : { dequeue }),
         }
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
@@ -226,7 +227,7 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   const depth = yield* depthOf(write)
   const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
-  const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates)
+  const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates, write.origin)
   yield* runHooks(write.hooks, "after_update_message", [], message, { depth })
   return message
 })

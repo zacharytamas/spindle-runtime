@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import type { GetMessagesOptions } from "@standardagents/spec"
 import { Effect } from "effect"
 import * as Statement from "effect/sql/Statement"
-import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 import { inMemory, storeAt, toolCalls, user, withDatabaseFile } from "./contract-fixtures.ts"
 
@@ -18,16 +18,20 @@ describe("ThreadStore", () => {
           const revisions = [yield* store.revision(thread.id)]
           const [first] = yield* store.appendMessages(thread.id, [user("first"), user("second")])
           revisions.push(yield* store.revision(thread.id))
-          const inserted = yield* store.insertMessage(thread.id, {
-            id: "chosen",
-            created_at: 1,
-            role: "user",
-            content: "x",
-          })
+          const inserted = yield* store.insertMessage(
+            thread.id,
+            {
+              id: "chosen",
+              created_at: 1,
+              role: "user",
+              content: "x",
+            },
+            external,
+          )
           revisions.push(yield* store.revision(thread.id))
-          yield* store.updateMessage(thread.id, first?.id ?? "", { content: "edited" })
+          yield* store.updateMessage(thread.id, first?.id ?? "", { content: "edited" }, external)
           revisions.push(yield* store.revision(thread.id))
-          yield* store.deleteMessage(thread.id, "chosen")
+          yield* store.deleteMessage(thread.id, "chosen", external)
           revisions.push(yield* store.revision(thread.id))
           const [call] = yield* store.appendMessages(thread.id, [
             { role: "assistant", content: null, tool_calls: toolCalls("a", "b") },
@@ -35,10 +39,10 @@ describe("ThreadStore", () => {
             { role: "tool", content: "ok", tool_call_id: "b" },
           ])
           revisions.push(yield* store.revision(thread.id))
-          yield* store.deleteMessage(thread.id, call?.id ?? "")
+          yield* store.deleteMessage(thread.id, call?.id ?? "", external)
           revisions.push(yield* store.revision(thread.id))
           yield* store.appendMessages(other.id, [user("elsewhere")])
-          yield* store.deleteMessage(thread.id, "missing")
+          yield* store.deleteMessage(thread.id, "missing", external)
           revisions.push(yield* store.revision(thread.id))
           expect(revisions).toEqual([0, 2, 3, 4, 5, 8, 11, 11])
           expect(inserted.revision).toBe(3)
@@ -55,13 +59,17 @@ describe("ThreadStore", () => {
         const id = kept?.id ?? ""
         const writes: ReadonlyArray<Effect.Effect<unknown, unknown>> = [
           store.appendMessages(thread.id, [user("appended")]),
-          store.insertMessage(thread.id, { id: "inserted", created_at: 1, role: "user", content: "x" }),
-          store.updateMessage(thread.id, id, { content: "edited" }),
-          store.deleteMessage(thread.id, id),
+          store.insertMessage(thread.id, { id: "inserted", created_at: 1, role: "user", content: "x" }, external),
+          store.updateMessage(thread.id, id, { content: "edited" }, external),
+          store.deleteMessage(thread.id, id, external),
         ]
         for (const write of writes)
           expect(yield* Effect.flip(store.transaction(Effect.andThen(write, Effect.fail("crash"))))).toBe("crash")
-        expect(yield* store.history(thread.id)).toEqual({ revision: 1, messages: [kept], positions: new Map([[id, {seq: 1, callerSeq: null}]]) })
+        expect(yield* store.history(thread.id)).toEqual({
+          revision: 1,
+          messages: [kept],
+          positions: new Map([[id, { seq: 1, callerSeq: null }]]),
+        })
       }).pipe(Effect.provide(inMemory)),
     )
 
@@ -69,9 +77,13 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        const alone = yield* store.insertMessage(thread.id, { id: "alone", created_at: 1, role: "user", content: "x" })
+        const alone = yield* store.insertMessage(
+          thread.id,
+          { id: "alone", created_at: 1, role: "user", content: "x" },
+          external,
+        )
         const nested = yield* store.transaction(
-          store.insertMessage(thread.id, { id: "nested", created_at: 2, role: "user", content: "y" }),
+          store.insertMessage(thread.id, { id: "nested", created_at: 2, role: "user", content: "y" }, external),
         )
         expect([alone.revision, nested.revision, yield* store.revision(thread.id)]).toEqual([1, null, 2])
       }).pipe(Effect.provide(inMemory)),

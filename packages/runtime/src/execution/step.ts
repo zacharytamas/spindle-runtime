@@ -12,12 +12,7 @@ import type {
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import { Registry } from "../registry/Registry.ts"
-import {
-  type NewMessage,
-  type Queued,
-  type Settlement,
-  ThreadStore,
-} from "../store/ThreadStore.ts"
+import { type NewMessage, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -291,7 +286,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     // Once the run settles, every ThreadState of the execution refuses its calls.
     const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
       Effect.tap(
-        store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }),
+        store.settle(threadId, { flowId }, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }),
         (settlement) =>
           Effect.sync(() => {
             if (settlement !== "continue") run.ended = true
@@ -377,7 +372,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         hooks,
         control,
       }
-      const write = { threadId, hooks, secrets, call: undefined, history, flowId }
+      const write = { threadId, hooks, secrets, call: undefined, history, origin: { flowId } }
       // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
       // turn. The agent's hooks apply to it and see no execution, as they do at rest.
       const inbound: HookScope = {
@@ -485,7 +480,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               ),
             )
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
-          const {message: stored} = yield* save(final).pipe(
+          const { message: stored } = yield* save(final).pipe(
             Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
               save(unstorableResult(final, error.message)),
             ),
@@ -519,7 +514,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             argumentsText,
             problem: tool === undefined ? `The queued tool ${entry.toolName} is no longer defined` : undefined,
           }
-          const {message, seq} = yield* createMessage(
+          const { message, seq } = yield* createMessage(
             write,
             {
               role: roleOf(turn.side),
@@ -560,7 +555,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         let prompted = false
         let count = 0
         while (run.stop === undefined) {
-          const entry = yield* store.nextQueued(threadId, flowId)
+          const entry = yield* store.nextQueued(threadId, { flowId })
           if (entry === undefined) break
           count += 1
           if (entry.kind === "tool") {
@@ -569,7 +564,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             prompted = true
             continue
           }
-          const {message} = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
+          const { message } = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
           first ??= message.id
           yield* record("drain", `message ${message.id}`)
           yield* observe({ type: "message", message })
@@ -616,7 +611,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
         // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
         // the trace, runs between the read and the first hook.
-        const {messages: snapshot, positions} = yield* history.read
+        const { messages: snapshot, positions } = yield* history.read
         const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
         yield* record("assemble", `snapshot, ${snapshot.length} messages`)
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)

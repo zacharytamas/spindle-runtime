@@ -10,7 +10,7 @@ import { Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { platformName, SqliteLive } from "#platform"
 import { layer } from "../src/store/sqlite.ts"
-import { type NewMessage, ThreadStore } from "../src/store/ThreadStore.ts"
+import { external, type NewMessage, ThreadStore } from "../src/store/ThreadStore.ts"
 import { admitEntry, drainEntries } from "./store-fixtures.ts"
 
 const USAGE = `Usage: store-probe <command> --db <file> [options]
@@ -53,14 +53,19 @@ const startRun = (threadId: string) =>
   ThreadStore.use((store) =>
     Effect.gen(function* () {
       if (!(yield* store.claim(threadId, claim)))
-        yield* store.admit(threadId, { kind: "message", message: { role: "user", content: "trigger" } }, claim)
+        yield* store.admit(
+          threadId,
+          { kind: "message", message: { role: "user", content: "trigger" } },
+          claim,
+          external,
+        )
       return (yield* store.getThread(threadId)).status
     }),
   )
 const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason: string }) =>
   ThreadStore.use((store) =>
     Effect.gen(function* () {
-      yield* store.settle(threadId, claim.flowId, outcome, { continueIfQueued: false, closing: "" })
+      yield* store.settle(threadId, { flowId: claim.flowId }, outcome, { continueIfQueued: false, closing: "" })
       return (yield* store.getThread(threadId)).status
     }),
   )
@@ -347,7 +352,7 @@ const commands: Record<string, () => Promise<void>> = {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "kv" })
         const value = { theme: "dark", locale: "en-US" }
-        yield* store.setValue(thread.id, "preferences", value)
+        yield* store.setValue(thread.id, "preferences", value, external)
         return { thread: thread.id, key: "preferences", value }
       }),
     )
@@ -361,9 +366,9 @@ const commands: Record<string, () => Promise<void>> = {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "kv" })
         const value = { theme: "dark", locale: "en-US", recent: [1, 2, 3], nested: { on: true, none: null } }
-        yield* store.setValue(thread.id, "preferences", value)
+        yield* store.setValue(thread.id, "preferences", value, external)
         const first = yield* store.getValue(thread.id, "preferences")
-        yield* store.setValue(thread.id, "preferences", null)
+        yield* store.setValue(thread.id, "preferences", null, external)
         const second = yield* store.getValue(thread.id, "preferences")
         return { thread: thread.id, set: value, firstRead: first, secondRead: second }
       }),
@@ -381,7 +386,7 @@ const commands: Record<string, () => Promise<void>> = {
         const sibling = yield* store.createThread({ agentId: "sibling", parentId: parent.id })
         const threads = { parent, child, sibling }
         for (const [name, thread] of Object.entries(threads))
-          yield* store.setValue(thread.id, "shared_key", `${name} value`)
+          yield* store.setValue(thread.id, "shared_key", `${name} value`, external)
         const reads: Record<string, unknown> = {}
         for (const [name, thread] of Object.entries(threads))
           reads[name] = yield* store.getValue(thread.id, "shared_key")
@@ -398,7 +403,7 @@ const commands: Record<string, () => Promise<void>> = {
         const store = yield* ThreadStore
         const sql = yield* SqlClient
         const thread = yield* store.createThread({ agentId: "kv" })
-        const error = yield* Effect.flip(store.setValue(thread.id, "big_number", 12345678901234567890n))
+        const error = yield* Effect.flip(store.setValue(thread.id, "big_number", 12345678901234567890n, external))
         const rows = yield* sql<{
           n: number
         }>`SELECT count(*) AS n FROM kv WHERE thread_id = ${thread.id} AND key = 'big_number'`

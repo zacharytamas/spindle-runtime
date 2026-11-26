@@ -10,7 +10,7 @@ import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/schema.ts"
 import type { Thread } from "../store/ThreadStore.ts"
-import { HandleExpired, ThreadStore, ValueNotJson, WritingHandle } from "../store/ThreadStore.ts"
+import { HandleExpired, ThreadStore, ValueNotJson, type WriteOrigin } from "../store/ThreadStore.ts"
 import type { Callback, PendingCallbacks } from "./callback.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
@@ -59,14 +59,16 @@ export interface ThreadControl {
   readonly queueMessage: (
     input: QueueMessageInput,
     secrets: Secrets,
+    origin: WriteOrigin,
   ) => Effect.Effect<void, unknown, Registry | ThreadStore>
   // The target is the qualified name of a function tool that queueTarget allowed.
   readonly queueTool: (
     target: string,
     args: Record<string, unknown>,
+    origin: WriteOrigin,
   ) => Effect.Effect<void, unknown, Registry | ThreadStore>
   readonly status: Effect.Effect<ThreadStatus, unknown>
-  readonly terminate: Effect.Effect<number, unknown>
+  readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, unknown>
 }
 
 export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
@@ -189,11 +191,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     check()
     return notYetAsync(member, arrival)()
   }
-  const services = Context.add(state.services, WritingHandle, {
-    flowId: owner?.flowId,
-    terminated: state.thread.terminated,
-    expired: () => expired() !== undefined,
-  })
+  const services = state.services
+  const origin: WriteOrigin = {
+    ...(owner && { flowId: owner.flowId }),
+    handle: { terminated: state.thread.terminated, expired: () => expired() !== undefined },
+  }
   const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.
   const signal = owner === undefined ? undefined : { signal: owner.abort.signal }
@@ -239,7 +241,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     secrets: state.secrets,
     call,
     history: state.execution?.history,
-    ...(owner === undefined ? {} : { flowId: owner.flowId }),
+    origin,
   }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
@@ -277,11 +279,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
             ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
           },
           "injection",
-        ).pipe(Effect.map(inserted => inserted.message)),
+        ).pipe(Effect.map((inserted) => inserted.message)),
       ),
     updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
-    deleteMessage: (messageId) => run(store.deleteMessage(threadId, messageId)),
-    queueMessage: (input) => run(state.control.queueMessage(input, state.secrets)),
+    deleteMessage: (messageId) => run(store.deleteMessage(threadId, messageId, origin)),
+    queueMessage: (input) => run(state.control.queueMessage(input, state.secrets, origin)),
 
     loadModel: load("model"),
     loadPrompt: load("prompt"),
@@ -332,7 +334,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
             mapStrings(plain, check, check)
             if (found) return yield* new SecretInArguments()
           }
-          yield* state.control.queueTool(target, plain)
+          yield* state.control.queueTool(target, plain, origin)
         }),
       ),
     invokeTool: (toolName, args) => run(state.invoke(toolName, args)),
@@ -343,14 +345,14 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     runAgent: unavailableAsync("runAgent", "M2"),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: () =>
-      runPromise(state.control.terminate).then((time) => {
+      runPromise(state.control.terminate(origin)).then((time) => {
         terminated = time
       }),
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,
 
     getValue: (key) => run(store.getValue(threadId, key)) as Promise<never>,
-    setValue: (key, value) => run(store.setValue(threadId, key, value)),
+    setValue: (key, value) => run(store.setValue(threadId, key, value, origin)),
     getUserValue: unavailableAsync("getUserValue", "the Users page, which is a Draft"),
     setUserValue: unavailableAsync("setUserValue", "the Users page, which is a Draft"),
     listUserValues: unavailableAsync("listUserValues", "the Users page, which is a Draft"),

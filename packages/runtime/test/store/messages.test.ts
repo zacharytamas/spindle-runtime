@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { admitEntry, drainEntries } from "../../scripts/store-fixtures.ts"
-import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 import { claim, inMemory, settleRun, storeAt, toolCalls, user, withDatabaseFile } from "./contract-fixtures.ts"
 
@@ -87,14 +87,18 @@ describe("ThreadStore", () => {
         const thread = yield* store.createThread({ agentId: "assistant" })
         yield* TestClock.adjust("5 seconds")
         const [first] = yield* store.appendMessages(thread.id, [user("first")])
-        const { message: inserted } = yield* store.insertMessage(thread.id, {
-          id: "chosen-id",
-          created_at: 42,
-          role: "user",
-          content: "second",
-          silent: true,
-          metadata: { stamped: true },
-        })
+        const { message: inserted } = yield* store.insertMessage(
+          thread.id,
+          {
+            id: "chosen-id",
+            created_at: 42,
+            role: "user",
+            content: "second",
+            silent: true,
+            metadata: { stamped: true },
+          },
+          external,
+        )
         expect(inserted).toMatchObject({ id: "chosen-id", created_at: 42, content: "second", silent: true })
         expect(yield* store.getMessage(thread.id, "chosen-id")).toEqual(inserted)
         const read = (yield* store.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
@@ -113,18 +117,18 @@ describe("ThreadStore", () => {
         const [existing] = yield* store.appendMessages(thread.id, [user("original")])
         const id = existing?.id ?? ""
         const again = yield* Effect.flip(
-          store.insertMessage(thread.id, { id, created_at: 1, role: "user", content: "replacement" }),
+          store.insertMessage(thread.id, { id, created_at: 1, role: "user", content: "replacement" }, external),
         )
         expect(again).toMatchObject({ _tag: "MessageIdTaken", messageId: id })
         const elsewhere = yield* Effect.flip(
-          store.insertMessage(other.id, { id, created_at: 1, role: "user", content: "elsewhere" }),
+          store.insertMessage(other.id, { id, created_at: 1, role: "user", content: "elsewhere" }, external),
         )
         expect(elsewhere._tag).toBe("MessageIdTaken")
         expect(yield* store.getMessage(thread.id, id)).toEqual(existing)
         expect((yield* store.getMessages(thread.id, { includeSilent: true })).total).toBe(1)
         expect((yield* store.getMessages(other.id, { includeSilent: true })).total).toBe(0)
         const missing = yield* Effect.flip(
-          store.insertMessage("missing", { id: "fresh", created_at: 1, role: "user", content: "x" }),
+          store.insertMessage("missing", { id: "fresh", created_at: 1, role: "user", content: "x" }, external),
         )
         expect(missing._tag).toBe("ThreadNotFound")
       }).pipe(Effect.provide(inMemory)),
@@ -246,7 +250,9 @@ describe("ThreadStore", () => {
           expect(appended.message).toContain("metadata")
           expect((yield* store.getMessages(thread.id)).total).toBe(0)
           const [message] = yield* store.appendMessages(thread.id, [user("kept", { metadata: { n: 1 } })])
-          const updated = yield* Effect.flip(store.updateMessage(thread.id, message?.id ?? "", { metadata: { n: 2n } }))
+          const updated = yield* Effect.flip(
+            store.updateMessage(thread.id, message?.id ?? "", { metadata: { n: 2n } }, external),
+          )
           expect(updated).toMatchObject({ _tag: "ValueNotJson", path: "$.n" })
           expect(yield* store.getMessage(thread.id, message?.id ?? "")).toEqual(message)
         }).pipe(Effect.provide(inMemory)),
@@ -294,13 +300,18 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         const [message] = yield* store.appendMessages(thread.id, [user("draft", { metadata: { source: "tool" } })])
-        const updated = yield* store.updateMessage(thread.id, message?.id ?? "", {
-          content: "final",
-          metadata: { edited: true },
-        })
+        const updated = yield* store.updateMessage(
+          thread.id,
+          message?.id ?? "",
+          {
+            content: "final",
+            metadata: { edited: true },
+          },
+          external,
+        )
         expect(updated).toEqual({ ...message, content: "final", metadata: { source: "tool", edited: true } })
         expect(yield* store.getMessage(thread.id, message?.id ?? "")).toEqual(updated)
-        const error = yield* Effect.flip(store.updateMessage(thread.id, "missing", { content: "x" }))
+        const error = yield* Effect.flip(store.updateMessage(thread.id, "missing", { content: "x" }, external))
         expect(error._tag).toBe("MessageNotFound")
       }).pipe(Effect.provide(inMemory)),
     )
@@ -318,8 +329,8 @@ describe("ThreadStore", () => {
             { role: "tool", content: "2", tool_call_id: "call-2" },
             { role: "tool", content: "other", tool_call_id: "call-3" },
           ])
-          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(true)
-          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(false)
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "", external)).toBe(true)
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "", external)).toBe(false)
           const left = yield* store.getMessages(thread.id, { order: "asc" })
           expect(left.messages.map((m) => m.content)).toEqual(["look up two things", "other"])
         }).pipe(Effect.provide(inMemory)),
@@ -335,13 +346,13 @@ describe("ThreadStore", () => {
           { role: "assistant", content: null, tool_calls: toolCalls("call_0") },
           { role: "tool", content: "second result", tool_call_id: "call_0" },
         ])
-        expect(yield* store.deleteMessage(thread.id, first?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, first?.id ?? "", external)).toBe(true)
         const left = yield* store.getMessages(thread.id, { order: "asc" })
         expect(left.messages.map((m) => [m.id === second?.id, m.content])).toEqual([
           [true, null],
           [false, "second result"],
         ])
-        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "", external)).toBe(true)
         expect((yield* store.getMessages(thread.id)).total).toBe(0)
       }).pipe(Effect.provide(inMemory)),
     )
@@ -358,7 +369,7 @@ describe("ThreadStore", () => {
           { role: "tool", content: "outer result", tool_call_id: "shared", ...under(outer) },
           { role: "tool", content: "inner result", tool_call_id: "shared", ...under(inner) },
         ])
-        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "", external)).toBe(true)
         const left = yield* store.getMessages(thread.id, { order: "asc" })
         expect(left.messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["outer result"])
       }).pipe(Effect.provide(inMemory)),
@@ -382,7 +393,7 @@ describe("ThreadStore", () => {
         ])
         expect(written?.content).toBe("a\ufffdb")
         expect(yield* store.getMessage(thread.id, written?.id ?? "")).toEqual(written)
-        const updated = yield* store.updateMessage(thread.id, written?.id ?? "", { content: "\ud800" })
+        const updated = yield* store.updateMessage(thread.id, written?.id ?? "", { content: "\ud800" }, external)
         expect(updated.content).toBe("\ufffd")
       }).pipe(Effect.provide(inMemory)),
     )
@@ -410,14 +421,14 @@ describe("ThreadStore", () => {
           { role: "assistant", content: null, tool_calls: "not json" },
           { role: "tool", content: "kept", tool_call_id: "call_0" },
         ])
-        expect(yield* store.deleteMessage(thread.id, broken?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, broken?.id ?? "", external)).toBe(true)
         expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["kept"])
         const [valid] = yield* store.appendMessages(thread.id, [
           { role: "assistant", content: null, tool_calls: toolCalls("call_1") },
           { role: "assistant", content: null, tool_calls: "not json" },
           { role: "tool", content: "removed", tool_call_id: "call_1" },
         ])
-        expect(yield* store.deleteMessage(thread.id, valid?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, valid?.id ?? "", external)).toBe(true)
         const contents = (yield* store.getMessages(thread.id)).messages.map((m) => m.content)
         expect(contents).not.toContain("removed")
       }).pipe(Effect.provide(inMemory)),
@@ -435,7 +446,7 @@ describe("ThreadStore", () => {
             { role: "tool", content: "removed", tool_call_id: "call_1" },
             { role: "tool", content: "kept", tool_call_id: "not an envelope" },
           ])
-          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(true)
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "", external)).toBe(true)
           expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["kept"])
         }).pipe(Effect.provide(inMemory)),
     )
@@ -451,7 +462,7 @@ describe("ThreadStore", () => {
             { role: "assistant", content: null, tool_calls: JSON.stringify(["not an envelope"]) },
             { role: "tool", content: "removed", tool_call_id: "call_1" },
           ])
-          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(true)
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "", external)).toBe(true)
           const left = yield* store.getMessages(thread.id, { order: "asc" })
           expect(left.messages.map((m) => [m.role, m.content])).toEqual([["assistant", null]])
         }).pipe(Effect.provide(inMemory)),
@@ -470,7 +481,7 @@ describe("ThreadStore", () => {
               { role: "tool", content: "long result", tool_call_id: "shared", parent_id: "p\u0000suffix" },
             ])
             const deleted = parent === "p" ? short : long
-            expect(yield* store.deleteMessage(thread.id, deleted?.id ?? "")).toBe(true)
+            expect(yield* store.deleteMessage(thread.id, deleted?.id ?? "", external)).toBe(true)
             const left = yield* store.getMessages(thread.id, { order: "asc" })
             return left.messages.filter((m) => m.role === "tool").map((m) => m.content)
           })
@@ -489,7 +500,7 @@ describe("ThreadStore", () => {
             throw new Error("getter")
           },
         }
-        const error = yield* Effect.flip(store.updateMessage(thread.id, written?.id ?? "", { metadata }))
+        const error = yield* Effect.flip(store.updateMessage(thread.id, written?.id ?? "", { metadata }, external))
         expect(error._tag).toBe("ValueNotJson")
       }).pipe(Effect.provide(inMemory)),
     )
@@ -504,10 +515,10 @@ describe("ThreadStore", () => {
           { role: "user", content: "side B again", tool_calls: toolCalls("call-1") },
           { role: "tool", content: "second result", tool_call_id: "call-1" },
         ])
-        expect(yield* store.deleteMessage(thread.id, first?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, first?.id ?? "", external)).toBe(true)
         const left = yield* store.getMessages(thread.id, { order: "asc" })
         expect(left.messages.map((m) => m.content)).toEqual(["side B again", "second result"])
-        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "", external)).toBe(true)
         expect((yield* store.getMessages(thread.id)).total).toBe(0)
       }).pipe(Effect.provide(inMemory)),
     )
@@ -522,8 +533,8 @@ describe("ThreadStore", () => {
           { role: "user", content: "plain" },
           { role: "tool", content: "2", tool_call_id: "call-1" },
         ])
-        expect(yield* store.deleteMessage(thread.id, result?.id ?? "")).toBe(true)
-        expect(yield* store.deleteMessage(thread.id, plain?.id ?? "")).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, result?.id ?? "", external)).toBe(true)
+        expect(yield* store.deleteMessage(thread.id, plain?.id ?? "", external)).toBe(true)
         const left = yield* store.getMessages(thread.id, { order: "asc" })
         expect(left.messages.map((m) => m.content)).toEqual(["calls", "2"])
       }).pipe(Effect.provide(inMemory)),
@@ -579,7 +590,7 @@ describe("ThreadStore", () => {
               claim,
             )
             const status = yield* settleRun(thread.id, { state: "idle", reason: nul("reason") })
-            yield* store.setValue(thread.id, nul("key"), { [nul("value key")]: nul("value") })
+            yield* store.setValue(thread.id, nul("key"), { [nul("value key")]: nul("value") }, external)
             return { thread: yield* store.getThread(thread.id), status, message }
           }).pipe(Effect.provide(storeAt(filename)))
           expect(written.thread.agentId).toBe(nul("agent"))
@@ -611,8 +622,13 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         const [message] = yield* store.appendMessages(thread.id, [user(nul("before"))])
-        yield* store.updateMessage(thread.id, message?.id ?? "", { metadata: { touched: true } })
-        const updated = yield* store.updateMessage(thread.id, message?.id ?? "", { metadata: { again: true } })
+        yield* store.updateMessage(thread.id, message?.id ?? "", { metadata: { touched: true } }, external)
+        const updated = yield* store.updateMessage(
+          thread.id,
+          message?.id ?? "",
+          { metadata: { again: true } },
+          external,
+        )
         expect(updated).toEqual({ ...message, metadata: { touched: true, again: true } })
         expect(yield* store.getMessage(thread.id, message?.id ?? "")).toEqual(updated)
       }).pipe(Effect.provide(inMemory)),

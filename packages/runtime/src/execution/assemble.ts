@@ -182,7 +182,11 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDeliver
 // order is undefined when the stored order already is the request order, which is the usual case.
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
-const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>, positions: ThreadHistory["positions"]) => {
+const requestOrder = (
+  history: ReadonlyArray<Message>,
+  parsed: ReadonlyArray<Array<ProviderToolCallPart>>,
+  positions: ThreadHistory["positions"],
+) => {
   const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
   const holderOf = (message: Message, index: number) => {
@@ -231,7 +235,11 @@ const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Arr
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
 // includeChat and includePastTools admit. A call and its result are shown or hidden together.
-export const toProviderMessages = (history: ReadonlyArray<Message>, view: HistoryView, positions: ThreadHistory["positions"]): Array<ProviderMessage> => {
+export const toProviderMessages = (
+  history: ReadonlyArray<Message>,
+  view: HistoryView,
+  positions: ThreadHistory["positions"],
+): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()

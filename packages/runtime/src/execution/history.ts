@@ -44,7 +44,11 @@ export const makeHistory = (threadId: string): History => {
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
       // The writer gets the same message object back, and injectMessage hands it to the tool or hook that wrote it.
       else if (revision === copy.revision + 1) {
-        copy = { revision, messages: copy.messages.concat(copyMessage(message)), positions: new Map(copy.positions).set(message.id, { seq, callerSeq }) }
+        copy = {
+          revision,
+          messages: copy.messages.concat(copyMessage(message)),
+          positions: new Map(copy.positions).set(message.id, { seq, callerSeq }),
+        }
       }
     },
   }
