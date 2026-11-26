@@ -9,8 +9,12 @@
 	},
 	"scripts": {
 		"build": "pnpm --filter spindle-runtime build",
-		"test": "vitest run --reporter=verbose",
-		"check": "biome check && tsc --noEmit -p tsconfig.json && vitest run --reporter=default --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json && node scripts/spec-requirements.mjs --check && node packages/conformance/src/ledger.ts node_modules/.cache/spindle/vitest.json"
+		"lint": "biome check",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"test": "vitest run --reporter=verbose --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json",
+		"requirements": "node scripts/spec-requirements.mjs --check",
+		"ledger": "node packages/conformance/src/ledger.ts node_modules/.cache/spindle/vitest.json",
+		"check": "pnpm lint && pnpm typecheck && pnpm test && pnpm requirements && pnpm ledger"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.9",
