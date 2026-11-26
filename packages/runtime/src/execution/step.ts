@@ -38,7 +38,7 @@ import { agentHooks, countHooks, type HookScope, has, runHooks, turnHooks } from
 import { createMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
-import { type ExecutionRecord, makeThreadState, type ThreadControl } from "./thread-state.ts"
+import { makeThreadState, type ThreadControl } from "./thread-state.ts"
 import {
   describe,
   executeTool,
@@ -243,12 +243,7 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
   ...((input.attachments ?? []).length === 0 ? {} : { attachments: input.attachments as Array<AttachmentRef> }),
 })
 
-export const prepareSteps = (
-  threadId: string,
-  run: Execution,
-  control: ThreadControl,
-  options: ExecutionOptions = {},
-) =>
+export const prepareSteps = (threadId: string, run: Execution, control: ThreadControl, options: ExecutionOptions) =>
   Effect.gen(function* () {
     const runStore = yield* RunStore
     const threadStore = yield* ThreadStore
@@ -313,12 +308,6 @@ export const prepareSteps = (
         const turn = yield* prepareTurn(thread.agentId)
         const hookSet = yield* turnHooks(turn)
         const history = makeHistory(threadId)
-        const execution: ExecutionRecord = {
-          side: turn.side,
-          promptPath: [turn.prompt.definition.qualifiedName],
-          history,
-          run,
-        }
         const context: Record<string, unknown> = {}
         const noInvoke = (name: string) =>
           Effect.succeed<ToolResult>({
@@ -334,7 +323,12 @@ export const prepareSteps = (
         const base = {
           thread,
           services,
-          execution,
+          execution: {
+            side: turn.side,
+            promptPath: [turn.prompt.definition.qualifiedName],
+            history,
+            run,
+          },
           context,
           secrets,
           hooks,

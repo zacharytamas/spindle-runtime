@@ -1,10 +1,11 @@
 import { expect, it } from "@effect/vitest"
 import { defineTool } from "@standardagents/spec"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer, Scheduler } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { gate, ok, project } from "../../../conformance/src/scenarios/harness.ts"
+import { newSecrets } from "../../src/execution/env.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
@@ -72,7 +73,7 @@ it.effect("refuses a stop while the aborted tool still holds the thread", () => 
 for (const mode of ["abort", "terminate"] as const)
   it.effect(`preserves the sender's outcome on ${mode} while committed metadata is pending`, () =>
     Effect.gen(function* () {
-      const committed = yield* Deferred.make<void>()
+      const committed = yield* Deferred.make<boolean>()
       const entered = gate()
       const release = gate()
       const registry = registryOf(
@@ -92,7 +93,13 @@ for (const mode of ["abort", "terminate"] as const)
           Effect.succeed({
             ...store,
             settle: (...args: Parameters<typeof store.settle>) =>
-              store.settle(...args).pipe(Effect.tap(() => Deferred.succeed(committed, undefined))),
+              store
+                .settle(...args)
+                .pipe(
+                  Effect.tap(() =>
+                    Effect.flatMap(Scheduler.PreventSchedulerYield, (guarded) => Deferred.succeed(committed, guarded)),
+                  ),
+                ),
           }),
         ),
       ).pipe(Layer.provideMerge(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))))
@@ -101,7 +108,7 @@ for (const mode of ["abort", "terminate"] as const)
         const supervisor = yield* ThreadSupervisor
         const sent = yield* Effect.forkChild(sendMessage(id, "go"))
         yield* Effect.promise(() => entered.opened)
-        yield* Deferred.await(committed)
+        expect(yield* Deferred.await(committed), "the scheduler is guarded through the return from commit").toBe(true)
         if (mode === "terminate") yield* supervisor.control(id).terminate({ kind: "external" })
         else yield* supervisor.abort(id)
         const { outcome, status } = yield* Fiber.join(sent)
@@ -117,3 +124,40 @@ for (const mode of ["abort", "terminate"] as const)
       )
     }),
   )
+
+it.effect("a queue that repeatedly asks to continue without a delivery still lets the operator stop", () =>
+  Effect.gen(function* () {
+    const retrying = yield* Deferred.make<void>()
+    let attempts = 0
+    const stores = Layer.effect(
+      RunStore,
+      RunStore.use((store) =>
+        Effect.succeed({
+          ...store,
+          settle: (...args: Parameters<typeof store.settle>) => {
+            if (args[2].reason !== "awaiting_human") return store.settle(...args)
+            if (++attempts > 1000) return Effect.die("the stop fiber never ran")
+            return Effect.as(Deferred.succeed(retrying, undefined), "continue" as const)
+          },
+        }),
+      ),
+    ).pipe(Layer.provideMerge(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))))
+    yield* Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const supervisor = yield* ThreadSupervisor
+      yield* supervisor
+        .control(id)
+        .queueMessage({ role: "assistant", content: "same side" }, newSecrets(), { kind: "external" })
+      yield* Deferred.await(retrying)
+      expect(yield* supervisor.stop(id)).toBe(true)
+      expect((yield* supervisor.settled(id))?.reason).toBe("aborted_by_user")
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          registryOf(project({ provider: new ScriptedProvider([]) })),
+          Layer.provideMerge(supervisorLayer(), stores),
+        ),
+      ),
+    )
+  }),
+)

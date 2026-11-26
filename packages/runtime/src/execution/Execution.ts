@@ -1,4 +1,4 @@
-import { Cause, Deferred, Effect, Exit, type Fiber, Latch, type Scope } from "effect"
+import { Cause, Deferred, Effect, Exit, type Fiber, Latch, Scheduler, type Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { FlowEnded, type ThreadNotFound } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
@@ -139,10 +139,10 @@ export class Execution {
             : failure(exit.cause)
         const end: End = proposed instanceof FlowEnded ? settledAs[proposed.why] : proposed
         if (proposed instanceof FlowEnded) this.#abort.abort()
-        const settlement =
+        const settle =
           proposed instanceof FlowEnded
-            ? proposed.why
-            : yield* store.settle(
+            ? Effect.succeed(proposed.why)
+            : store.settle(
                 threadId,
                 this,
                 { state: end.status, reason: end.reason },
@@ -152,8 +152,18 @@ export class Execution {
                   closing: end.status === "failed" ? CLOSING.failed : CLOSING.aborted,
                 },
               )
+        const holding = this.#phase === "holding"
+        // A poll must not observe the released claim between SQLite commit and this local transition.
+        const settlement = yield* settle.pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => {
+              if (Exit.isFailure(exit) || exit.value !== "continue") this.#phase = "ended"
+            }),
+          ),
+          Effect.provideService(Scheduler.PreventSchedulerYield, true),
+        )
         if (settlement === "continue") continue
-        const restart = interrupted && settlement === "settled" && this.#phase === "holding"
+        const restart = interrupted && settlement === "settled" && holding
         const result = settlement === "settled" ? end : settledAs[settlement]
         return { result, report, interrupted, restart }
       }
@@ -161,7 +171,6 @@ export class Execution {
     // Mask the driver before its first turn. Only the work between settlement boundaries is interruptible.
     const publish = Effect.gen({ self: this }, function* () {
       const settled = yield* Effect.exit(finish)
-      this.#phase = "ended"
       if (Exit.isFailure(settled)) return yield* Effect.failCause(settled.cause)
       const { result, report, interrupted, restart } = settled.value
       const brief = ({ status, reason }: End): RunOutcome => ({

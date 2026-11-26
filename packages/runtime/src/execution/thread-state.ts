@@ -32,7 +32,7 @@ import { mapStrings } from "./redact.ts"
 import { type QueueRefused, queueTarget } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
 
-export interface ExecutionRecord {
+interface ExecutionRecord {
   readonly side: Side
   readonly promptPath: ReadonlyArray<string>
   readonly history: History
