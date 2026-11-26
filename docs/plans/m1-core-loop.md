@@ -369,29 +369,29 @@ The spec defines fourteen hooks, and this PR implements thirteen of them. The ho
 **Files.**
 
 - [ ] Create `packages/runtime/src/execution/hooks.ts` and `packages/runtime/src/execution/snapshot.ts`.
-- [ ] Edit `packages/runtime/src/execution/assemble.ts`, `tools.ts`, and `thread-state.ts`.
-- [ ] Create `packages/conformance/src/scenarios/hooks.ts` and `packages/conformance/src/scenarios/messages.ts`.
+- [x] Edit `packages/runtime/src/execution/assemble.ts`, `tools.ts`, and `thread-state.ts`.
+- [x] Create `packages/conformance/src/scenarios/hooks.ts` and `packages/conformance/src/scenarios/messages.ts`.
 
 **Build.**
 
-- [ ] Resolve the hook set of the active prompt and agent, with unique ids, in declaration order.
-- [ ] Run the seven assembly steps in the order that section 4 of the Runtime page gives. Call `filter_messages` exactly once per assembly, on a stable snapshot that includes silent messages.
-- [ ] Keep the output of `filter_messages` and of `prefilter_llm_history` inside the request. `execution.messageHistory` lists the persisted records only.
-- [ ] Implement `injectMessage` on `ThreadState`. It runs `before_create_message` and `after_create_message`, resolves after the record is readable through `getMessage`, and never restarts an assembly.
-- [ ] Call `before_update_message` and `after_update_message` around every update.
-- [ ] Call the five tool hooks at the positions that section 5 of the Hooks page gives. `tool_call_started` and `tool_call_done` each run exactly once per tool call.
-- [ ] Call `after_thread_created` when a thread is created. `after_subagent_created` waits for M3.
-- [ ] Give each hook call a timeout from one config value, and log a hook failure without the hook's arguments.
+- [x] Resolve the hook set of the active prompt and agent, with unique ids, in declaration order.
+- [x] Run the seven assembly steps in the order that section 4 of the Runtime page gives. Call `filter_messages` exactly once per assembly, on a stable snapshot that includes silent messages.
+- [x] Keep the output of `filter_messages` and of `prefilter_llm_history` inside the request. `execution.messageHistory` lists the persisted records only.
+- [x] Implement `injectMessage` on `ThreadState`. It runs `before_create_message` and `after_create_message`, resolves after the record is readable through `getMessage`, and never restarts an assembly.
+- [x] Call `before_update_message` and `after_update_message` around every update.
+- [x] Call the five tool hooks at the positions that section 5 of the Hooks page gives. `tool_call_started` and `tool_call_done` each run exactly once per tool call.
+- [x] Call `after_thread_created` when a thread is created. `after_subagent_created` waits for M3.
+- [x] Give each hook call a timeout from one config value, and log a hook failure without the hook's arguments.
 
 **You see.**
 
-- [ ] `spindle run assistant -m "hello" --script text-reply.json --trace` on the hooks fixture prints `after_system_message`, `snapshot`, `filter_messages`, `transform`, `prefilter_llm_history`, and `dispatch` in that order.
-- [ ] The same run prints `filter_messages` once per model call.
+- [x] `spindle run assistant -m "hello" --script text-reply.json --trace` on the hooks fixture prints `after_system_message`, `snapshot`, `filter_messages`, `transform`, `prefilter_llm_history`, and `dispatch` in that order.
+- [x] The same run prints `filter_messages` once per model call.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/conformance/src/scenarios/messages.ts` gains the seven scenarios from section 7 of the Messages page, one scenario per table row. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
-- [ ] `packages/conformance/src/scenarios/hooks.ts` gains one scenario per statement in sections 3, 4, and 5 of the Hooks page.
+- [x] `packages/conformance/src/scenarios/messages.ts` gains the seven scenarios from section 7 of the Messages page, one scenario per table row. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
+- [x] `packages/conformance/src/scenarios/hooks.ts` gains one scenario per statement in sections 3, 4, and 5 of the Hooks page.
 - [ ] The ledger entries for `specification:hooks` sections 3 to 5, `specification:threads/messages`, and `specification:threads/execution-state` section 2.2 change to `covered`. Run `pnpm check`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
@@ -783,6 +783,59 @@ Both medians are about 6% of the 10 ms budget. The fix round of 2026-11-26 ran `
 - Milestones moved by hand. Nine existing `infrastructure:providers` entries for the base provider's config slots, credentials, headers, timeouts, and missing variables moved from M7 to M1. Prompt safety, secret redaction, agent `env`, and function-to-function `uses` moved from M2 to M1. Four Prompts entries for a prompt called as a tool, three of them for requiredSchema, moved from M1 to M2. The new rows for `createFetch`, request-scoped overrides, the agent, prompt, and instance levels of env resolution, and `required` variables start in M1. The new image threshold rows start in M3 and the user-account level of env resolution starts in later.
 - The Spindle driver in `packages/runtime/test/spindle-driver.ts` runs each scenario through a `ManagedRuntime`. That is a second place that turns an Effect into a Promise, in test code, at the edge the conformance harness needs.
 - Scenario 25 of the brief tests Spindle's own provider, so it lives in `packages/runtime/test/providers/openai-compatible.test.ts` and not in the conformance package.
+
+### Settled in M1-5
+
+The M1-5 owner ran each command below on 2026-11-26 on macOS, from the repository root, with Node 22.22.3 and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-5/evidence/` on that machine. The brief `docs/plans/briefs/m1-5.md` corrected this section before the build, and the owner followed it.
+
+**Layout.** `execution/hooks.ts` holds `POSITIONS`, one table from each of the thirteen positions to where the loop calls it, what a return value replaces, and what a failure does. It also selects the hook set and runs hooks with the `HookTimeout` limit. `execution/messages.ts` creates and updates a message with its lifecycle hooks and redacts last. `trigger.ts` gains `createThread`, which runs `after_thread_created`, and `stateAtRest`, the `ThreadState` an endpoint would see. `call.ts` reads a progress argument as it streams and starts each call once. `assemble.ts` gains the system prompt check, the set of past message ids, and the converters to and from `LLMMessage`. `step.ts` runs the seven assembly steps and the tool hooks. There is no `snapshot.ts`, because the snapshot is one copy of the live history taken as `filter_messages` starts. The store gains `insertMessage`, which keeps an id and a time that the caller chose and fails with `MessageIdTaken` for an id that any thread holds. The schema did not change.
+
+**Readings taken for part 5 of the brief.** Each line is one reading. The operator can overrule any of them.
+
+1. Identity. The runtime picks a UUID and the current time in microseconds before `before_create_message`, and stores the id and time that the hooks return. An id must be a non-empty string with no lone surrogate, and `created_at` a non-negative safe integer, or the return is invalid. An id that a message already holds fails the write with `MessageIdTaken`, and the first row stays.
+2. Refused and essential writes. A failing or invalid `before_create_message` or `before_update_message` hook makes `injectMessage` or `updateMessage` reject with `HookFailed`, which names the hook and holds no content. The human's message, the model's response, and a tool result are writes the execution needs. For them Spindle logs the failure, gives the next hook the last good message, and stores it. When the store refuses what the hooks returned, it stores the message without their changes. A failing `before_store_tool_result` hook keeps the last good result.
+3. At rest. `state.execution` is null in `after_thread_created`, in a write outside an execution, and in the create hooks of the human's message, which `sendMessage` stores before the execution starts. The agent's list applies to all three, so a prompt's create hooks never see the human's message. The trigger stays outside the loop.
+4. Order. Spindle runs the selected ids of one position in the order the list first names them, and each hook gets the value the hook before it returned. A duplicate id runs once. An invalid return is a failure of that hook. A non-empty prompt list never falls back to the agent's list for a type it lacks.
+5. Tool order. `tool_call_started` fires from the stream. Then the tool runs, the tool's own status picks the success or the failure branch once, `before_store_tool_result` runs, the create hooks run on the tool message, and `tool_call_done` gets the stored result after redaction. A failure hook that returns a success result does not switch the branch. A call with invalid arguments or to an unknown tool takes the failure branch. A call that started in a response that failed or that the loop rejected never runs, and its `tool_call_done` gets an error result that says so.
+6. Gate and limit. Spindle has no policy gate, and a failing request hook leaves its input in place. One hook call may run 30 seconds, and `spindle run --hook-timeout` or the `HookTimeout` reference sets another limit. A hook past its limit counts as failed, and the log line says that Spindle cannot undo what it does later.
+7. Hook types. Spindle calls thirteen positions. `after_subagent_created` hooks resolve and run nowhere before M3. Every hook that gets a message gets the whole `Message`.
+8. History. The snapshot is the execution's live history, oldest first, with silent messages and no window. `historyLimit` is ignored.
+9. Updates. A returned update holds `content` and `metadata`. A key the hook adds or changes beyond those fails the hook, and a key the caller passed and the hook kept is ignored. `metadata` returned as text that holds a JSON object is read as that object, as Hooks section 8.6 writes it.
+10. Nested writes. A hook that injects runs the create hooks again for that message, each call under its own limit. Spindle sets no depth limit.
+11. New files. The result hooks see a new `ToolAttachment`, and storage drops it with a note that names M3, as M1-4 does.
+12. Request shape. `prefilter_llm_history` gets the history without the system message, in chat completion format, with reasoning as `reasoning_content` and `reasoning_details`. The system message stays first in the request. A message with a role other than system, user, assistant, or tool makes the return invalid.
+
+**Other choices.** A progress argument whose value is not a string starts the call with `progress` undefined. A message that `filter_messages` adds without a known id belongs to the current exchange, so `includeChat` cannot hide it. A field that a hook changes on the human's message or the model's response is redacted like tool output, and every other field of those messages is stored as written. The system prompt check runs after `after_system_message`. A message is on `execution.messageHistory` before its `after_create_message` hooks run. The trace prints the seven assembly steps as seven `assemble` lines.
+
+**Effect v4 names.** These come from the `.d.ts` files under `node_modules/effect/dist`.
+
+- `Context.Reference(key, { defaultValue })` declares `HookTimeout`, and `Layer.succeed` or `Effect.provideService` replaces it.
+- `Effect.tryPromise` turns a synchronous throw into a failure, and `Effect.timeoutOption` returns `None` when the limit passes. `Effect.result` keeps both as values.
+- `Logger.make` and `Logger.layer` replace the default logger. The driver keeps the lines, and `spindle run` prints them to standard error through the redactor. `Duration.format` prints `500ms`.
+- `it.effect` runs on the test clock, so a hook time limit never passes there. The CLI timeout test uses `it.live`.
+- `Effect.forkChild` and `Fiber.interrupt` interrupt an execution inside a hook in `test/execution/hooks.test.ts`.
+
+**Live lanes, owner runs.** `/tmp/spindle-m1-5/scripts/lanes.py` ran both "You see" boxes and the ten lanes on Node and on Bun at the head, and every check passed. Lane 1 ran `text-reply.json` and `two-tools.json` on the step-loop fixture at `3020531` and at the head, and the provider requests and the stored messages, without ids and times, were identical. Lane 3 uses the new `packages/runtime/scripts/hook-probe.ts inject`. Lanes 4 and 5 seed earlier messages from an `after_thread_created` hook, and their tool prints `execution.messageHistory`, so each run takes two steps. One real-model run of the `tool_logger` agent against `claude-haiku-5-5` at `http://localhost:8317/v1` called `write_note` once, ran each tool hook once, and stored the result and a final answer. The verifier's lanes still run at the verdict, so the live and perf boxes stay unchecked.
+
+**Perf, owner run.** `/tmp/spindle-m1-5/scripts/perf.py` alternated the parent at `3020531`, the head, and the head with `bench_hooks`, on Node and on Bun, for 10 rounds each. Every run took 200 steps and stored 401 rows. The load average was about 3.4 on 24 cores.
+
+| Runtime | Parent, no hooks | Head, no hooks | Head, 13 no-op hooks |
+|---|---|---|---|
+| Node 22.22.3 | 0.614 ms (0.595 to 0.711) | 0.687 ms (0.637 to 0.773) | 1.490 ms (1.451 to 1.656) |
+| Bun 1.4.5 | 0.544 ms (0.516 to 0.655) | 0.567 ms (0.531 to 0.599) | 1.195 ms (1.146 to 1.248) |
+
+The no-hooks median is 12% above the parent on Node and 4% on Bun, under the 20% rule. The thirteen hooks add 0.80 ms per step on Node and 0.63 ms on Bun, under the 2 ms rule. `bench_hooks` makes 11 hook calls per step, because the bench tool never fails and never updates a message, so the update hooks and the failure hook never run. A second Node session measured 0.590 ms for the parent and 0.632 ms for the head, so the no-hooks gap moves between sessions by about its own size. Removing the id check of `insertMessage` saved 0.006 ms, removing the six new trace lines saved 0.010 ms, and skipping the generator of `runHooks` when no hook is set saved 0.004 ms. One CPU profile per side, not counted above, spent 6 ms more of about 140 ms in the Effect runtime at the head, which fits more Effect steps per loop step. No single change explains the gap.
+
+**Mutation checks.** For 14 covered statements the owner broke the code the statement describes and ran the test the ledger names, and each test failed with an assertion error or, for the time limit, a test timeout. `/tmp/spindle-m1-5/scripts/mutate.py` holds the edits, and `/tmp/spindle-m1-5/evidence/mutations.txt` holds the runs. The statements are the prompt list as the whole set, the agent's list at rest, `after_system_message` before the snapshot, one `filter_messages` call per assembly, the filter's result as the transform's input, silent messages in the snapshot, `null` keeping the system message, the returned message as the inserted one, a failing before hook preventing the creation, a call without a progress argument starting when it appears, a call without its progress argument starting when it is done, `null` keeping a tool result, `tool_call_done` for a failed call, and the hook time limit.
+
+**Where M1-5 differs from this plan.**
+
+- The Files box names `snapshot.ts`, which does not exist. `messages.ts`, `trigger.ts`, `call.ts`, `step.ts`, `ThreadStore.ts`, `sqlite.ts`, `cli/run.ts`, `scripts/hook-probe.ts`, and `scripts/step-probe.ts` changed too, each for one job named above. That box stays unchecked.
+- The scenario boxes follow the brief. `messages.ts` holds M1 to M7 and M7b, and `hooks.ts` holds H8 to H22 for the brief's scenarios 8 to 16 and 18. Scenario 17, the policy gate, is not built, because the brief recommends a gate only with an operator policy and none exists. Scenario 19 is not built, because its three statements bind hook authors and it would test fixture code, not Spindle. Those statements are `not-testable`.
+- The log line of a failed hook leaves out the hook's error text as well as its arguments.
+- The ledger box asks for `covered` on Hooks sections 3 to 5, the Messages page, and Execution State section 2.2. 91 entries became `covered` and 3 became `partial`. Hooks entries that bind authors are `not-testable`, the broadcasts of Hooks section 5 stay with M6, and the queue rows of Messages section 4 stay with M1-6. That box stays unchecked. The ledger holds 324 `covered` and 56 `partial` entries, against 233 and 68 before M1-5.
+- Part 4 of the brief lists 18 statements. 14 were already in the list, so 4 were added, and the count line is `606 RFC 2119 statements, 61 lowercase must or should statements, 248 curated statements with no keyword, 24 pages`. Of its three milestone corrections, `hooks:8e371f2b` moved from M3 to M1, and `agents:c51baf9f` and the pair `runtime:43bbb05d` and `runtime:853d2427` already had the milestones the brief asks for.
+- The `--trace` test of M1-4 now collapses repeated phases, because the assemble phase prints seven lines.
 
 ## Appendix B. Alternatives rejected
 
