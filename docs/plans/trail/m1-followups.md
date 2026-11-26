@@ -120,3 +120,10 @@ From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm
 - The key-value store accepts plain JSON data only.
 - A tool call whose arguments are not valid JSON is stored as `{"invalid_json": "<raw text>"}` and never runs.
 - A secret has no minimum length for redaction.
+- `spindle chat` with no `--db` keeps the thread in memory, says so, and prints no resume line. The plan's example implied a default database file.
+- `spindle chat` prints `ok` for a successful tool result and not what the tool returned. A flag to show the content can follow.
+- A live process is never taken over. `spindle recover <thread> --force` settles a thread whose holder is frozen.
+- A handle given to a tool or a hook stops working when it returns.
+- A terminated thread accepts only an explicit injected message from outside.
+- A tool call whose arguments hold a known secret is refused at `queueTool`.
+- An execution that reaches the step cap ends, and work left in the queue waits for the next trigger.
