@@ -352,4 +352,100 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       )
     },
   },
+  {
+    name: "O06 holds the thread after an abort until a tool that ignores the signal returns, then delivers the send that waited",
+    requirements: ["0953e887", "e28dedf2"],
+    run: async (driver) => {
+      const entered = gate()
+      const aborted = gate()
+      const leave = gate()
+      const order: Array<string> = []
+      let lateWrite: Promise<string> | undefined
+      const stubborn = defineTool({
+        description: "Wait for the test and ignore the abort",
+        execute: async (state: ThreadState) => {
+          order.push("tool starts")
+          state.execution?.abortSignal.addEventListener("abort", () => {
+            lateWrite = attempt(() => state.setValue("after-abort", "yes"))
+            aborted.release()
+          })
+          entered.release()
+          await leave.opened
+          order.push("tool returns")
+          return ok("returned after the abort")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_stubborn", name: "stubborn", arguments: {} }] },
+        () => {
+          order.push("second model call")
+          return { text: "the reply to B" }
+        },
+      ])
+      await using(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
+        const first = quiet(session.send(thread, "A")).catch(() => undefined)
+        await entered.opened
+        expect(await session.abort(thread)).toBe(true)
+        await aborted.opened
+        const whileToolRuns = (await (await peer.state(thread)).status()).state
+        const second = quiet(session.send(thread, "B"))
+        // The send is durable once its entry is in the queue or in the history. The poll only waits for that write.
+        for (let tries = 0; tries < 500; tries++) {
+          const stored = await peer.inspect(thread)
+          if (stored.queue.length > 0 || stored.messages.some((message) => message.content === "B")) break
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        const beforeReturn = (await (await peer.state(thread)).status()).state
+        leave.release()
+        const outcome = await second
+        await first
+        expect({ whileToolRuns, beforeReturn, order, outcome: [outcome.status, outcome.reason] }).toEqual({
+          whileToolRuns: "running",
+          beforeReturn: "running",
+          order: ["tool starts", "tool returns", "second model call"],
+          outcome: ["idle", "stop_on_response"],
+        })
+        expect(await lateWrite).toMatch(/^(ExecutionEnded|HandleExpired|FlowEnded)$/)
+        expect(await contents(session, thread)).toEqual(["A", null, "error", "B", "the reply to B"])
+        expect((await peer.inspect(thread)).values).toEqual({})
+        expect(provider.requests).toHaveLength(2)
+      })
+    },
+  },
+  {
+    name: "O07 holds a terminated thread running until a tool that ignores the signal returns, then settles it idle",
+    requirements: ["e95fd065", "0953e887"],
+    run: async (driver) => {
+      const entered = gate()
+      const leave = gate()
+      const stubborn = defineTool({
+        description: "Wait for the test and ignore the abort",
+        execute: async () => {
+          entered.release()
+          await leave.opened
+          return ok("returned after the terminate")
+        },
+      })
+      const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_stubborn", name: "stubborn", arguments: {} }] }])
+      await using(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
+        const run = quiet(session.send(thread, "A"))
+        await entered.opened
+        expect(await (await session.state(thread)).terminate()).toBeUndefined()
+        const during = await peer.inspect(thread)
+        leave.release()
+        const outcome = await run
+        const after = await peer.inspect(thread)
+        expect({
+          during: [during.status.state, during.status.reason, during.terminated === null],
+          outcome: [outcome.status, outcome.reason],
+          after: [after.status.state, after.status.reason, after.terminated === during.terminated, after.claim],
+        }).toEqual({
+          during: ["running", null, false],
+          outcome: ["idle", "aborted"],
+          after: ["idle", "aborted", true, null],
+        })
+        expect(await contents(session, thread)).toEqual(["A", null, "error"])
+      })
+    },
+  },
 ]
