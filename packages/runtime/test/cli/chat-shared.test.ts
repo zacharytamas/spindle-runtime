@@ -223,14 +223,17 @@ describe("spindle chat beside other processes", () => {
     () =>
       Effect.gen(function* () {
         const { gate, db, at } = yield* setup
-        // The reader takes one line and closes its end of the pipe. The command's own exit code goes to a file,
-        // because the exit code of a pipeline is the reader's.
-        const script =
-          '( "$@"; echo $? > "$SPINDLE_GATE_DIR/chat-exit" ) | { read line; echo "$line"; exec 0<&-; : > "$SPINDLE_GATE_DIR/reader-closed"; }'
+        // The reader takes one line and closes its end of the pipe once the test says so, which is after the tool
+        // started. The next line the command prints is the tool's result, so that write is the one that fails. The
+        // command's own exit code goes to a file, because the exit code of a pipeline is the reader's.
+        const reader =
+          'read line; echo "$line"; while [ ! -e "$SPINDLE_GATE_DIR/close-reader" ]; do sleep 0.05; done; exec 0<&-; : > "$SPINDLE_GATE_DIR/reader-closed"'
+        const script = `( "$@"; echo $? > "$SPINDLE_GATE_DIR/chat-exit" ) | { ${reader}; }`
         const session = yield* shell(gate, script, ["chat", "assistant", ...dir, "--db", db])
         yield* session.type(`${call("hold", { name: "a", watch: true })}\n`)
-        yield* until("the reader to close its end", exists(at("reader-closed")))
         yield* until("the tool to start", exists(at("tool-entered-a")))
+        yield* touch(at("close-reader"))
+        yield* until("the reader to close its end", exists(at("reader-closed")))
         const thread = yield* threadOf(session)
         yield* touch(at("release-a"))
         yield* until("the command to exit", exists(at("chat-exit")))
