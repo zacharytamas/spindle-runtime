@@ -4715,7 +4715,8 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn",
 			"packages/runtime/test/conformance.test.ts > hooks > H15 goes on without a hook that does not settle in time and logs only its id, never its error text",
 			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
-			"packages/runtime/test/conformance.test.ts > hooks > H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn"
+			"packages/runtime/test/conformance.test.ts > hooks > H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn",
+			"packages/runtime/test/conformance.test.ts > hooks > H23b fails a before_create_message hook that changes a message's role or a tool result's call id"
 		],
 		"reason": ""
 	},

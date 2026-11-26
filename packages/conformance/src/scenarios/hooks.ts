@@ -336,7 +336,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ["rejected", 'a message with id "chosen_id" already exists'],
         [
           "rejected",
-          "Hook ident (before_create_message) returned a value that is not a message the store can hold, so Spindle did not make the change",
+          "Hook ident (before_create_message) returned a value that is not a message the store can hold, with the role and the call id it was given, so Spindle did not make the change",
         ],
         [
           "rejected",
@@ -1302,6 +1302,72 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         expect(result.logs).toContain("Hook odd_create (before_create_message")
         expect(result.logs).not.toContain("accessor")
       }
+    },
+  },
+  {
+    name: "H23b fails a before_create_message hook that changes a message's role or a tool result's call id",
+    requirements: ["3d8dede1"],
+    run: async (driver) => {
+      const outcomes: Array<unknown> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "reidentify",
+          execute: async (_state, message) => {
+            if (message.content === "to system") return { ...message, role: "system" }
+            if (message.tool_call_id === "c1") return { ...message, tool_call_id: "orphan", content: "moved" }
+            if (message.tool_call_id === "c2") return { ...message, role: "assistant", content: "recast" }
+            return message
+          },
+        }),
+      ]
+      const tools = {
+        inject: defineTool({
+          description: "Inject a user message",
+          execute: async (state: ThreadState) => {
+            outcomes.push(
+              await state.injectMessage({ role: "user", content: "to system" }).then(
+                (message) => message.role,
+                (error: Error) => error.message,
+              ),
+            )
+            return ok("injected")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c1", name: "noop", arguments: {} },
+            { id: "c2", name: "inject", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools: { ...noop, ...tools }, hooks, prompt: { hooks: ["reidentify"] } },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => [m.role, m.tool_call_id, m.content])).toEqual([
+            ["user", null, "go"],
+            ["assistant", null, null],
+            ["tool", "c1", "noop"],
+            ["tool", "c2", "injected"],
+            ["assistant", null, "done"],
+          ])
+          expect(history(provider.requests[1]).map(sideOf)).toEqual([
+            ["user", "go"],
+            ["assistant", null, ["c1", "c2"]],
+            ["tool", "c1"],
+            ["tool", "c2"],
+          ])
+        },
+      )
+      expect(outcomes).toEqual([
+        "Hook reidentify (before_create_message) returned a value that is not a message the store can hold, with the role and the call id it was given, so Spindle did not make the change",
+      ])
     },
   },
   {

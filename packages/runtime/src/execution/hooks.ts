@@ -133,14 +133,21 @@ const isMessage = (value: unknown): value is Message =>
   optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
   optional(value.metadata, isRecord)
 
-// The returned message is stored as it is, so every field it sets must be one the store can hold.
-const acceptMessage = (returned: unknown): Message | typeof INVALID => {
+// The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
+// change which message a record is, so the role and a tool result's call id stay as the hook was given them.
+const acceptMessage = (returned: unknown, current: Message): Message | typeof INVALID => {
   const value = plain(returned)
   if (!isRecord(value)) return INVALID
   const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
   const message = { ...value, metadata }
-  return isMessage(message) && message.id !== "" && !loneSurrogate.test(message.id) ? message : INVALID
+  return isMessage(message) &&
+    message.id !== "" &&
+    !loneSurrogate.test(message.id) &&
+    message.role === current.role &&
+    (current.role !== "tool" || message.tool_call_id === current.tool_call_id)
+    ? message
+    : INVALID
 }
 
 const acceptMessages = (returned: unknown) => {
@@ -226,7 +233,7 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
   before_create_message: {
     where: "before a message is stored",
     accept: acceptMessage,
-    expects: "a message the store can hold",
+    expects: "a message the store can hold, with the role and the call id it was given",
     failure: "veto",
     kept: "kept the message the hook was given",
   },
