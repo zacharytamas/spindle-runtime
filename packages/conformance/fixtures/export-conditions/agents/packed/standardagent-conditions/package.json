@@ -1,0 +1,17 @@
+{
+  "name": "standardagent-conditions",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./main.d.ts",
+      "node": "./main.js"
+    }
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

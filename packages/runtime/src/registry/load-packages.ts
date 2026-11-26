@@ -19,19 +19,24 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isStringArray = (value: unknown): value is Array<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
 
-const entryOf = (manifest: Record<string, unknown>): string => {
+// Node and Bun both match these conditions, so a package resolves to the same entry on either runtime.
+const CONDITIONS = ["import", "node", "default"]
+
+const entryOf = (manifest: Record<string, unknown>): string | undefined => {
   const pick = (target: unknown): string | undefined => {
     if (typeof target === "string") return target
+    if (Array.isArray(target)) return target.map(pick).find((found) => found !== undefined)
     if (!isRecord(target)) return undefined
-    for (const condition of ["import", "default"]) {
-      const found = pick(target[condition])
+    for (const [condition, value] of Object.entries(target)) {
+      const found = CONDITIONS.includes(condition) ? pick(value) : undefined
       if (found !== undefined) return found
     }
     return undefined
   }
   const exports = manifest.exports
-  const root = isRecord(exports) && "." in exports ? exports["."] : exports
-  return pick(root) ?? (typeof manifest.main === "string" ? manifest.main : "index.js")
+  if (exports === undefined) return typeof manifest.main === "string" ? manifest.main : "index.js"
+  const subpaths = isRecord(exports) && Object.keys(exports).some((key) => key.startsWith("."))
+  return pick(subpaths ? exports["."] : exports)
 }
 
 const metaProblem = (meta: unknown, name: string): string | undefined => {
@@ -134,19 +139,28 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       issue("package_duplicate", relativeManifest, `${name} is installed more than once`)
       return
     }
-    const entry = path.join(dir, entryOf(manifest))
-    const file = path.relative(root, entry)
-    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry)]).pipe(Effect.result)
-    if (Result.isFailure(located)) {
-      issue("package_invalid", relativeManifest, `${name} names the entry ${entryOf(manifest)}, which does not exist`)
-      return
-    }
-    const [home, target] = located.success
-    if (!target.startsWith(home + path.sep)) {
+    const target = entryOf(manifest)
+    if (target === undefined) {
       issue(
         "package_invalid",
         relativeManifest,
-        `${name} names the entry ${entryOf(manifest)}, which resolves to ${target}, outside the package directory ${home}. Spindle imports only files inside a package.`,
+        `${name} exports no root entry under the conditions ${CONDITIONS.join(", ")}`,
+      )
+      return
+    }
+    const entry = path.join(dir, target)
+    const file = path.relative(root, entry)
+    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry)]).pipe(Effect.result)
+    if (Result.isFailure(located)) {
+      issue("package_invalid", relativeManifest, `${name} names the entry ${target}, which does not exist`)
+      return
+    }
+    const [home, resolved] = located.success
+    if (!resolved.startsWith(home + path.sep)) {
+      issue(
+        "package_invalid",
+        relativeManifest,
+        `${name} names the entry ${target}, which resolves to ${resolved}, outside the package directory ${home}. Spindle imports only files inside a package.`,
       )
       return
     }

@@ -517,6 +517,14 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect("finds a package entry under the node export condition", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("export-conditions")
+        expect(issues).toEqual([])
+        expect(definitions.map((d) => d.qualifiedName)).toEqual(["standardagent-conditions/lookup"])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("attaches a package signature to each packed definition at load time", () =>
       Effect.gen(function* () {
         const { definitions } = yield* validateFixture("namespace-isolation")
