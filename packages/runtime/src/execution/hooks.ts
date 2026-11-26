@@ -218,8 +218,10 @@ const isLLMMessage = (value: unknown) => {
   }
 }
 
+// The array a request hook returns shapes one request and is never stored, so a structured clone, which is cheaper
+// than a round trip through JSON on a long history, is enough to run each getter once.
 const acceptMessages = (returned: unknown) => {
-  const value = plain(returned)
+  const value: unknown = structuredClone(returned)
   return Array.isArray(value) && value.every(isMessage) ? value : INVALID
 }
 
@@ -291,7 +293,7 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
   prefilter_llm_history: {
     where: "after the history becomes provider messages, before the request",
     accept: (returned) => {
-      const value = plain(returned)
+      const value: unknown = structuredClone(returned)
       return Array.isArray(value) && value.every(isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
     },
     expects: "an array of messages that provider messages can hold",

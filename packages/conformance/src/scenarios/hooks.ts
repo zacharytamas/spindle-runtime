@@ -1687,6 +1687,25 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         expect(result.requests).toEqual(kept)
         expect(result.logs).toContain("Hook odd_filter (filter_messages")
       }
+      const guarded = await runWith(
+        defineHook({
+          hook: "filter_messages",
+          id: "odd_filter",
+          execute: async (_state, messages) => [
+            ...messages,
+            Object.defineProperty({ id: "odd", role: "user", created_at: 0 }, "content", {
+              enumerable: true,
+              get: () => {
+                throw new Error("accessor")
+              },
+            }) as Message,
+          ],
+        }),
+      )
+      expect(guarded.outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+      expect(guarded.requests).toEqual(kept)
+      expect(guarded.logs).toContain("Hook odd_filter (filter_messages")
+      expect(guarded.logs).not.toContain("accessor")
       const createReturning = (change: (message: Message) => Message) =>
         defineHook({
           hook: "before_create_message",
