@@ -25,6 +25,7 @@ For the fix round.
 - Dead-holder detection uses silence alone, a 15 second lease renewed five times per lease. The root's rule replaces it. A holder whose process is gone is dead at once. A live holder is never taken over for being slow. Silence past a threshold is the fallback, and every write from the stale holder is then refused.
 - Only message writes are fenced against a stale holder. A `setValue` can still land.
 - `store.setStatus` and `takeQueue` still exist and bypass the transition table and the claims. `takeQueue` deletes the batch it hands out.
+- Queued work can carry one execution past the step cap. When a step reaches the cap and a higher-ranked stop rule also applies, such as `stop_on_response`, the loop continues if the queue holds work. A hook that queues a message on every response then runs without end. The review bot found this on PR 8 at `step.ts:651`, and the root confirmed it by reading. The fix is to check the step count on its own when deciding whether to continue.
 - `supervisor.abort` releases the thread while a tool that ignores the signal may still run. Only `spindle run` uses it today, and that command exits right after.
 
 Open, not for this round.
@@ -80,7 +81,7 @@ Open, not for this round.
 
 ## Before the stack lands
 
-- The review bot left threads on PR 4, PR 5, and PR 6. The commits address them, and nobody has replied to them or resolved them.
+- The review bot left threads on PR 4, PR 5, PR 6, PR 7, and PR 8. The commits address them, and nobody has replied to them or resolved them.
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
 
