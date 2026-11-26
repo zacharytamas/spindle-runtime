@@ -45,14 +45,10 @@ const status = (gate: string, db: string, thread: string, clockShiftMs?: number)
     return { exit: yield* child.exit, out: child.out }
   })
 
-// Takes the thread from a process that is alive, which is what spindle recover --force is for. Until the command
-// exists, a lease that ran out is the only way to do that, so the first statement ends the lease. It fails on a store
-// that has no lease, and that failure is ignored. The status read at the end proves that the thread was taken.
 const takeFromLiveProcess = (gate: string, db: string, thread: string) =>
   Effect.gen(function* () {
-    yield* Effect.ignore(query(db, "UPDATE holders SET expires_at = 0"))
     const recover = yield* spindle(gate, ["recover", thread, "--force", "--db", db])
-    yield* recover.exit
+    expect(yield* recover.exit).toBe(0)
     const after = yield* status(gate, db, thread)
     expect(after.out[0]).toMatch(/^failed execution_lost since /)
   })
@@ -74,6 +70,29 @@ describe("spindle ownership across processes", () => {
         yield* lost.exit
         const read = yield* status(gate, db, thread, -DAY_MS)
         expect([read.exit, read.out]).toEqual([0, [expect.stringMatching(/^failed execution_lost since /), "queued 0"]])
+        yield* touch(at("release-model"))
+        const again = yield* spindle(gate, ["send", thread, "-m", "again", ...project, "--db", db])
+        expect([yield* again.exit, again.out]).toEqual([0, ["ack: first | again"]])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "recover without force settles a thread whose process is gone",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        yield* touch(at("hold-model"))
+        const lost = yield* spindle(gate, ["run", "assistant", "-m", "first", ...project, "--db", db])
+        const thread = yield* threadIn(lost)
+        yield* until(
+          "the process to enter the model",
+          Effect.map(entries(gate), (names) => names.some((name) => name.startsWith("model-entered-"))),
+        )
+        yield* lost.signal("SIGKILL")
+        yield* lost.exit
+        const read = yield* spindle(gate, ["recover", thread, "--db", db])
+        expect([yield* read.exit, read.out]).toEqual([0, [`thread ${thread} was running in process ${lost.pid}, which is gone. Settled it as failed (execution_lost).`]])
         yield* touch(at("release-model"))
         const again = yield* spindle(gate, ["send", thread, "-m", "again", ...project, "--db", db])
         expect([yield* again.exit, again.out]).toEqual([0, ["ack: first | again"]])

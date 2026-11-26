@@ -42,3 +42,28 @@ export const statusCommand = Command.make(
       }),
     ),
 ).pipe(Command.withDescription("Print a thread's run status: idle, running, or failed, with the reason and the time"))
+
+export const recoverCommand = Command.make(
+  "recover",
+  {
+    thread: Argument.String("thread"),
+    db: Flag.String("db"),
+    force: Flag.Boolean("force").pipe(Flag.withDefault(false)),
+  },
+  ({thread, db, force}) => Effect.gen(function* () {
+    const database = yield* openDatabase(db)
+    const line = yield* ThreadStore.use(store => store.transaction(Effect.gen(function* () {
+      const before = yield* store.getThread(thread)
+      const holder = yield* store.holderOf(thread)
+      if (before.status.state !== "running")
+        return `thread ${thread} is not running (${before.status.state} ${before.status.reason ?? "none"}). Nothing changed.`
+      const recovered = yield* store.recover(thread, force)
+      if (recovered.length === 0)
+        return `thread ${thread} is running in process ${holder?.pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`
+      if (holder === null) return `thread ${thread} had no recorded holder. Settled it as failed (execution_lost).`
+      if (force) return `thread ${thread} was running in process ${holder.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
+      return `thread ${thread} was running in process ${holder.pid}, which is gone. Settled it as failed (execution_lost).`
+    }))).pipe(Effect.provide(database))
+    yield* Console.log(line)
+  })
+)
