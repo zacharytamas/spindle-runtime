@@ -50,7 +50,6 @@ export interface ScriptedProviderOptions {
 
 const usage: ProviderUsage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
 
-// A provider that answers each request with the next step of its script and records every request it receives.
 export class ScriptedProvider implements LLMProviderInterface {
   readonly name: string
   readonly specificationVersion = "1" as const

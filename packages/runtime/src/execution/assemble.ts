@@ -130,7 +130,7 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
   }
 }
 
-// The message from the other side that started the turn: the latest one at the moment the execution starts.
+// Read once when the execution starts, so that a message a tool injects later cannot move the start of the turn.
 export const turnStartOf = (history: ReadonlyArray<Message>, side: Side) =>
   history.findLast((message) => message.role === roleOf(side === "a" ? "b" : "a"))?.id
 
