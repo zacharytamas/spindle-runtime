@@ -1,0 +1,16 @@
+{
+  "name": "standardagent-escape-exports",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./../../../outside.js"
+    }
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

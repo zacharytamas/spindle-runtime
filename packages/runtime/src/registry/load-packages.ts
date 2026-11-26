@@ -137,6 +137,20 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
     }
     const entry = path.join(dir, entryOf(manifest))
     const file = path.relative(root, entry)
+    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry)]).pipe(Effect.result)
+    if (Result.isFailure(located)) {
+      issue("package_invalid", relativeManifest, `${name} names the entry ${entryOf(manifest)}, which does not exist`)
+      return
+    }
+    const [home, target] = located.success
+    if (!target.startsWith(home + path.sep)) {
+      issue(
+        "package_invalid",
+        relativeManifest,
+        `${name} names the entry ${entryOf(manifest)}, which resolves to ${target}, outside the package directory ${home}. Spindle imports only files inside a package.`,
+      )
+      return
+    }
     const loaded = yield* Effect.result(importFile(file, path.toFileUrl(entry)))
     if (Result.isFailure(loaded)) {
       issues.push(...loaded.failure.issues)

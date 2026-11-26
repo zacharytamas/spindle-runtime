@@ -456,6 +456,18 @@ describe("validate", () => {
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     )
 
+    it.effect("imports nothing from a package whose entry resolves outside its directory", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("invalid/package-entry-outside")
+        expect(located(issues)).toEqual([
+          error("package_invalid", "agents/packed/standardagent-escape-exports/package.json"),
+          error("package_invalid", "agents/packed/standardagent-escape-main/package.json"),
+        ])
+        expect(definitions).toEqual([])
+        expect(Reflect.get(globalThis, "spindleImportedOutsideEntry")).toBeUndefined()
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("attaches a package signature to each packed definition at load time", () =>
       Effect.gen(function* () {
         const { definitions } = yield* validateFixture("namespace-isolation")
