@@ -17,6 +17,7 @@ import {
   runReasonColumn,
   stored,
   type ThreadRow,
+  text,
   threadColumns,
   toJson,
   toMessage,
@@ -140,20 +141,19 @@ export const layer = Layer.effect(
         first(rows, () => new ThreadNotFound({ threadId })),
       )
 
-    // Every call that the run stored with no result after it gets an error result, so that each call the next request
-    // shows has its result. A result belongs to a later tool message with the same parent and call id.
+    // Node truncates TEXT at a NUL. Compare the complete stored identifiers on both drivers.
     const openCalls = (caller: { seq: number; tool_calls: MessageRow["tool_calls"] }) =>
       Effect.gen(function* () {
         const answered = yield* sql<{
           id: Uint8Array
         }>`SELECT CAST(tool_call_id AS BLOB) AS id FROM messages WHERE caller_seq = ${caller.seq}`
-        const ids = new Set(answered.map((row) => new TextDecoder("utf-8", { ignoreBOM: true }).decode(row.id)))
+        const ids = new Set(answered.map((row) => text(row.id)))
         return callsIn(caller.tool_calls ?? "[]").filter((call) => !ids.has(call.id))
       })
     const closeCalls = (threadId: string, flowId: string | null, closing: string, now: number) =>
       Effect.gen(function* () {
         const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
-          SELECT seq, tool_calls, parent_id, prompt FROM messages
+          SELECT seq, tool_calls, CAST(parent_id AS BLOB) AS parent_id, CAST(prompt AS BLOB) AS prompt FROM messages
           WHERE thread_id = ${threadId} AND flow_id = ${flowId} AND tool_calls IS NOT NULL
           ORDER BY seq`
         for (const caller of callers) {
@@ -172,8 +172,8 @@ export const layer = Layer.effect(
                   tool_status: "error",
                   status: "completed",
                   content: closing,
-                  prompt: typeof caller.prompt === "string" ? caller.prompt : null,
-                  parent_id: typeof caller.parent_id === "string" ? caller.parent_id : null,
+                  prompt: text(caller.prompt),
+                  parent_id: text(caller.parent_id),
                 },
                 { attachments: null, metadata: "{}" },
               ),
@@ -181,8 +181,7 @@ export const layer = Layer.effect(
         }
       })
 
-    // Execution State section 4.3: a run starts from idle or failed. The claim names the holder and the flow, and the
-    // last message before the run.
+    // Execution State section 4.3: a run starts from idle or failed.
     const claimRun = (threadId: string, row: RunRow, claim: Claim, now: number) =>
       Effect.gen(function* () {
         const next = transition(toStatus(row), { type: "start" }, now)
@@ -296,6 +295,8 @@ export const layer = Layer.effect(
                 if (refusal) return yield* refusal
               }
               const { flowId, dequeue } = options
+              if (dequeue !== undefined && flowId === undefined)
+                return yield* Effect.die(new Error("Queue delivery requires a flow"))
               if (flowId !== undefined && thread.flow_id !== flowId)
                 return yield* new FlowEnded({
                   threadId,
@@ -487,8 +488,6 @@ export const layer = Layer.effect(
             const row = yield* selectRun(threadId)
             const refusal = checkHandle(threadId, row, yield* WritingHandle)
             if (refusal) return yield* refusal
-            if (row.terminated_at !== null)
-              return yield* new ThreadTerminated({ threadId, terminated: row.terminated_at })
             const payload = yield* json("the queue entry", queuePayload(entry))
             const now = yield* nowMicros
             const rows = yield* sql<QueueRow>`
@@ -543,19 +542,19 @@ export const layer = Layer.effect(
 
       recover: (threadId, force = false) =>
         Effect.gen(function* () {
-          const candidates = sql<{ id: string; pid: number | null }>`
-            SELECT t.id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
+          const candidates = sql<{ id: string; flow_id: string; pid: number | null }>`
+            SELECT t.id, t.flow_id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
             WHERE t.run_state = 'running' ${threadId === undefined ? sql.literal("") : sql`AND t.id = ${threadId}`}`
           const lost = (pid: number | null) =>
             force || pid === null ? Effect.succeed(true) : Effect.map(processAlive(pid), (alive) => !alive)
-          const ids: string[] = []
-          for (const row of yield* candidates) if (yield* lost(row.pid)) ids.push(row.id)
-          if (!ids.length) return []
+          const ids = new Set<string>()
+          for (const row of yield* candidates) if (yield* lost(row.pid)) ids.add(row.flow_id)
+          if (!ids.size) return []
           return yield* sql.withTransaction(
             Effect.gen(function* () {
               const recovered = []
               for (const row of yield* candidates) {
-                if (!ids.includes(row.id) || !(yield* lost(row.pid))) continue
+                if (!ids.has(row.flow_id) || !(yield* lost(row.pid))) continue
                 yield* settleWith(row.id, yield* Effect.orDie(selectRun(row.id)), { type: "lose" }, CLOSING.lost)
                 recovered.push(row.id)
               }

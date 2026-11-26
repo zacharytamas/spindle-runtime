@@ -6,8 +6,7 @@ import { fail, openDatabase, RunFailed } from "./run.ts"
 const time = (micros: number) =>
   micros === 0 ? "0" : `${new Date(Math.floor(micros / 1000)).toISOString()} (${micros})`
 
-// Execution State section 4: the run status, read the way any process reads it. A thread whose holder's lease has
-// expired is settled as lost first. The command prints codes, times, and counts, and no text that a thread holds.
+// Execution State section 4: the run status, read the way any process reads it. A thread whose process is gone is settled as lost first. The command prints codes, times, and counts, and no text that a thread holds.
 export const statusCommand = Command.make(
   "status",
   {

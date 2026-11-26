@@ -6,9 +6,9 @@ type Text = string | Uint8Array
 
 // The default decoder drops a leading U+FEFF as a byte-order mark, and that character is part of the text.
 const utf8 = new TextDecoder("utf-8", { ignoreBOM: true })
-function text(value: Text): string
-function text(value: Text | null): string | null
-function text(value: Text | null) {
+export function text(value: Text): string
+export function text(value: Text | null): string | null
+export function text(value: Text | null) {
   return value instanceof Uint8Array ? utf8.decode(value) : value
 }
 

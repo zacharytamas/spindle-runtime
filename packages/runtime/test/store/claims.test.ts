@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { PlatformLive, processId, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
-import { type NewMessage, positions, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
+import { callerSequence, type NewMessage, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
@@ -46,7 +46,7 @@ const insertCalls = (threadId: string, flowId: string, caller: NewMessage, resul
       yield* store.insertMessage(
         threadId,
         { ...result, id: crypto.randomUUID(), created_at: 0 },
-        { flowId, callerSeq: positions.get(inserted.message)!.seq },
+        { flowId, callerSeq: callerSequence(inserted.message) },
       )
   })
 
@@ -156,7 +156,7 @@ describe("ThreadStore claims", () => {
       yield* store.insertMessage(
         thread.id,
         { id: "m1", created_at: 1, role: "user", content: "one" },
-        { dequeue: queued.seq },
+        { flowId: "flow-a", dequeue: queued.seq },
       )
       yield* TestClock.adjust("3 seconds")
       expect(yield* store.settle(thread.id, "flow-a", idle, options)).toBe("settled")
@@ -256,7 +256,7 @@ describe("ThreadStore claims", () => {
     }).pipe(Effect.provide(inMemory)),
   )
 
-  it.effect("a running thread whose holder never recorded a lease counts as lost", () =>
+  it.effect("a running thread whose holder was never registered counts as lost", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
@@ -306,15 +306,21 @@ describe("ThreadStore claims", () => {
       const { queued } = yield* store.admit(thread.id, message("x"), claim("flow-a"))
       yield* store.insertMessage(thread.id, { id: "taken", created_at: 1, role: "user", content: "seed" })
       const taken = { id: "taken", created_at: 2, role: "user", content: "x" } as const
-      expect(yield* Effect.flip(store.insertMessage(thread.id, taken, { dequeue: queued.seq }))).toMatchObject({
+      expect(
+        yield* Effect.flip(store.insertMessage(thread.id, taken, { flowId: "flow-a", dequeue: queued.seq })),
+      ).toMatchObject({
         _tag: "MessageIdTaken",
       })
       expect(yield* store.queueLength(thread.id)).toBe(1)
       const delivered = { id: "fresh", created_at: 2, role: "user", content: "x" } as const
-      expect((yield* store.insertMessage(thread.id, delivered, { dequeue: queued.seq })).revision).toBe(2)
+      expect(
+        (yield* store.insertMessage(thread.id, delivered, { flowId: "flow-a", dequeue: queued.seq })).revision,
+      ).toBe(2)
       expect(yield* store.queueLength(thread.id)).toBe(0)
       expect(
-        yield* Effect.flip(store.insertMessage(thread.id, { ...delivered, id: "again" }, { dequeue: queued.seq })),
+        yield* Effect.flip(
+          store.insertMessage(thread.id, { ...delivered, id: "again" }, { flowId: "flow-a", dequeue: queued.seq }),
+        ),
       ).toMatchObject({ _tag: "QueueEntryGone" })
     }).pipe(Effect.provide(inMemory)),
   )

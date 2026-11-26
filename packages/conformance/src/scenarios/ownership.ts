@@ -4,9 +4,6 @@ import type { LoadOptions, RuntimeDriver, RuntimeSession } from "../RuntimeDrive
 import { ScriptedProvider } from "../ScriptedProvider.ts"
 import { gate, history, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
 
-// A session looks for a terminate or a recovery from another session once in a fifth of this time. With a minute, no
-// such look happens inside a scenario, so only the check the store makes when a write commits can refuse a stale write.
-
 const using = async (
   driver: RuntimeDriver,
   setup: Setup,

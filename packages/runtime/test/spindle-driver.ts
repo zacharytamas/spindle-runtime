@@ -94,7 +94,7 @@ const inspectThread = (threadId: string) =>
 
 const store = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
 
-// One session is one process: its own connection, its own claims, and its own lease.
+// Each session owns a connection and a distinct holder in this test process.
 const openSession = (
   registry: ReturnType<typeof registryOf>,
   filename: string,

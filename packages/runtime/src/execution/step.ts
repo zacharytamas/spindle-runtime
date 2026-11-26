@@ -12,7 +12,14 @@ import type {
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import { Registry } from "../registry/Registry.ts"
-import { type NewMessage, positions, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
+import {
+  callerSequence,
+  type NewMessage,
+  positions,
+  type Queued,
+  type Settlement,
+  ThreadStore,
+} from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -469,7 +476,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
             }).pipe(
               Effect.flatMap((message) =>
-                createMessage({ ...write, callerSeq: positions.get(caller)!.seq }, message, "result"),
+                createMessage({ ...write, callerSeq: callerSequence(caller) }, message, "result"),
               ),
             )
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
@@ -740,7 +747,13 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               ])
             }
           }),
-          Effect.ignore(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted)),
+          Effect.ignore(
+            Effect.tap(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted), (settlement) =>
+              Effect.sync(() => {
+                run.resumeQueued = settlement === "settled" && run.waitForCallbacks === true
+              }),
+            ),
+          ),
         ),
       ),
       Effect.ensuring(

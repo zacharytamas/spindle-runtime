@@ -15,8 +15,6 @@ import { rolesFor, SIDES } from "./messages.ts"
 import { attempt } from "./ownership.ts"
 import { callsOf, gate, history, holding, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
 
-// A short lease, so that a session notices within a tenth of a second that another session settled its run.
-
 const using = async (
   driver: RuntimeDriver,
   setup: Setup,

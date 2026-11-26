@@ -52,8 +52,6 @@ export type QueueEntry =
 
 export type Queued = QueueEntry & { readonly seq: number; readonly queuedAt: number }
 
-export type RunStatus = { readonly state: "running" } | { readonly state: "idle" | "failed"; readonly reason: string }
-
 export class ThreadNotFound extends Data.TaggedError("ThreadNotFound")<{ readonly threadId: string }> {}
 
 export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
@@ -151,7 +149,7 @@ export interface Holder {
 // superseded: the flow no longer holds the thread, and nothing was written.
 export type Settlement = "settled" | "continue" | "superseded"
 
-export class HandleExpired extends Data.TaggedError("HandleExpired")<{}> {}
+export class HandleExpired extends Data.TaggedError("HandleExpired") {}
 
 export interface HandleOwner {
   readonly flowId: string | undefined
@@ -172,6 +170,11 @@ export interface MessagePosition {
 }
 export const positions = new WeakMap<Message, MessagePosition>()
 
+export const callerSequence = (caller: Message) => {
+  const position = positions.get(caller)
+  if (!position) throw new Error("Stored caller has no sequence")
+  return position.seq
+}
 export interface InsertOptions {
   readonly callerSeq?: number
   // The execution that writes. The insert fails with FlowEnded when that flow no longer holds the thread.
@@ -242,7 +245,7 @@ export class ThreadStore extends Context.Service<
       outcome: { readonly state: "idle" | "failed"; readonly reason: string },
       options: { readonly continueIfQueued: boolean; readonly closing: string },
     ) => Effect.Effect<Settlement, SqlError>
-    // Settles each running thread whose holder's lease has expired, or only the given thread, as failed with
+    // Settles each running thread whose holder process is gone, or only the given thread, as failed with
     // execution_lost, and returns their ids.
     readonly recover: (threadId?: string, force?: boolean) => Effect.Effect<ReadonlyArray<string>, SqlError>
     readonly registerHolder: (holder: Holder) => Effect.Effect<void, SqlError>

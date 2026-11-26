@@ -30,6 +30,7 @@ export interface Run {
   readonly releaseWait: AbortController
   waitForCallbacks?: boolean
   displaced?: boolean
+  resumeQueued?: boolean
   readonly flowId: string
   readonly abort: AbortController
   stop: StopRequest | undefined
@@ -108,7 +109,11 @@ const notYetAsync =
       new Error(`ThreadState.${member} is not available in this version of Spindle. It arrives with ${arrival}.`),
     )
 
-const executionState = (record: ExecutionRecord, readHistory: () => Array<Message>): ExecutionState => {
+const executionState = (
+  record: ExecutionRecord,
+  readHistory: () => Array<Message>,
+  check: () => void,
+): ExecutionState => {
   const state: ExecutionState = {
     flowId: record.flowId,
     currentSide: record.side,
@@ -127,8 +132,12 @@ const executionState = (record: ExecutionRecord, readHistory: () => Array<Messag
     get messageHistory() {
       return readHistory()
     },
-    forceTurn: notYet("execution.forceTurn", "M2"),
+    forceTurn: () => {
+      check()
+      return notYet("execution.forceTurn", "M2")()
+    },
     stop: () => {
+      check()
       if (!record.run.ended) record.run.stop ??= { by: record.side, reason: "aborted" }
     },
     abortSignal: record.abort.signal,
@@ -160,6 +169,18 @@ export const makeThreadState = (state: StateContext): ThreadState => {
           : owner?.abort.signal.aborted
             ? new HandleExpired()
             : undefined
+  const check = () => {
+    const refusal = expired()
+    if (refusal) throw refusal
+  }
+  const unavailable = (member: string, arrival: string) => () => {
+    check()
+    return notYet(member, arrival)()
+  }
+  const unavailableAsync = (member: string, arrival: string) => async () => {
+    check()
+    return notYetAsync(member, arrival)()
+  }
   const services = Context.add(state.services, WritingHandle, {
     flowId: owner?.flowId,
     terminated: state.thread.terminated,
@@ -198,8 +219,12 @@ export const makeThreadState = (state: StateContext): ThreadState => {
         return found.value
       }),
     ) as Promise<never>
-  const names = (kind: "model" | "prompt" | "agent") => () =>
-    registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
+  const names = (kind: "model" | "prompt" | "agent") => () => {
+    check()
+    return registry.definitions
+      .filter((definition) => definition.kind === kind)
+      .map((definition) => definition.qualifiedName)
+  }
   const write = {
     threadId,
     hooks: state.hooks,
@@ -223,7 +248,9 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     arguments: structuredClone(state.thread.arguments) as Record<string, unknown>,
     context: state.context,
     execution:
-      state.execution === undefined ? null : executionState(state.execution, readHistory(state.execution.history)),
+      state.execution === undefined
+        ? null
+        : executionState(state.execution, readHistory(state.execution.history), check),
 
     getMessages: (options) => run(store.getMessages(threadId, options)),
     getMessage: (messageId) => run(store.getMessage(threadId, messageId)),
@@ -252,11 +279,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     getAgentNames: names("agent"),
     getModelNames: names("model"),
 
-    getChildThread: () => Promise.resolve(null),
-    getParentThread: () => Promise.resolve(null),
-    notifyParent: notYetAsync("notifyParent", "M3, because this thread has no parent"),
-    setStatus: () => Promise.resolve(),
-    stopSession: notYetAsync("stopSession", "M2"),
+    getChildThread: () => run(Effect.succeed(null)),
+    getParentThread: () => run(Effect.succeed(null)),
+    notifyParent: unavailableAsync("notifyParent", "M3, because this thread has no parent"),
+    setStatus: () => run(Effect.void),
+    stopSession: unavailableAsync("stopSession", "M2"),
 
     env: (name) =>
       run(
@@ -268,8 +295,8 @@ export const makeThreadState = (state: StateContext): ThreadState => {
       ),
     instanceEnv: (name) => run(Effect.map(instanceEnv(name), (value) => value && remember(value, true))),
     // Threads section 2.3: a value from any source but the thread is secret, and thread values arrive with setEnv.
-    envType: () => Promise.resolve("secret"),
-    setEnv: notYetAsync("setEnv", "M2"),
+    envType: () => run(Effect.succeed("secret" as const)),
+    setEnv: unavailableAsync("setEnv", "M2"),
 
     // Threads section 3.1 and Tools section 2.1. The constrained ThreadState of a tool with a uses list lets it leave
     // out the arguments.
@@ -287,50 +314,50 @@ export const makeThreadState = (state: StateContext): ThreadState => {
       ),
     invokeTool: (toolName, args) => run(state.invoke(toolName, args)),
 
-    scheduleEffect: notYetAsync("scheduleEffect", "M4"),
-    getScheduledEffects: notYetAsync("getScheduledEffects", "M4"),
-    removeScheduledEffect: notYetAsync("removeScheduledEffect", "M4"),
-    runAgent: notYetAsync("runAgent", "M2"),
+    scheduleEffect: unavailableAsync("scheduleEffect", "M4"),
+    getScheduledEffects: unavailableAsync("getScheduledEffects", "M4"),
+    removeScheduledEffect: unavailableAsync("removeScheduledEffect", "M4"),
+    runAgent: unavailableAsync("runAgent", "M2"),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: () => {
       const refused = expired()
       return refused === undefined ? runPromise(state.control.terminate) : Promise.reject(refused)
     },
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
-    emit: () => {},
+    emit: check,
 
     getValue: (key) => run(store.getValue(threadId, key)) as Promise<never>,
     setValue: (key, value) => run(store.setValue(threadId, key, value)),
-    getUserValue: notYetAsync("getUserValue", "the Users page, which is a Draft"),
-    setUserValue: notYetAsync("setUserValue", "the Users page, which is a Draft"),
-    listUserValues: notYetAsync("listUserValues", "the Users page, which is a Draft"),
-    user: () => Promise.resolve(null),
+    getUserValue: unavailableAsync("getUserValue", "the Users page, which is a Draft"),
+    setUserValue: unavailableAsync("setUserValue", "the Users page, which is a Draft"),
+    listUserValues: unavailableAsync("listUserValues", "the Users page, which is a Draft"),
+    user: () => run(Effect.succeed(null)),
     skills: {
-      list: notYetAsync("skills.list", "M7"),
-      get: notYetAsync("skills.get", "M7"),
-      readFile: notYetAsync("skills.readFile", "M7"),
-      install: notYetAsync("skills.install", "M7"),
-      setEnabled: notYetAsync("skills.setEnabled", "M7"),
-      remove: notYetAsync("skills.remove", "M7"),
+      list: unavailableAsync("skills.list", "M7"),
+      get: unavailableAsync("skills.get", "M7"),
+      readFile: unavailableAsync("skills.readFile", "M7"),
+      install: unavailableAsync("skills.install", "M7"),
+      setEnabled: unavailableAsync("skills.setEnabled", "M7"),
+      remove: unavailableAsync("skills.remove", "M7"),
     },
 
-    writeFile: notYetAsync("writeFile", "M3"),
-    readFile: notYetAsync("readFile", "M3"),
-    readFileStream: notYetAsync("readFileStream", "M3"),
-    statFile: notYetAsync("statFile", "M3"),
-    readdirFile: notYetAsync("readdirFile", "M3"),
-    unlinkFile: notYetAsync("unlinkFile", "M3"),
-    mkdirFile: notYetAsync("mkdirFile", "M3"),
-    rmdirFile: notYetAsync("rmdirFile", "M3"),
-    moveFile: notYetAsync("moveFile", "M3"),
-    renameFile: notYetAsync("renameFile", "M3"),
-    getFileStats: notYetAsync("getFileStats", "M3"),
-    grepFiles: notYetAsync("grepFiles", "M3"),
-    findFiles: notYetAsync("findFiles", "M3"),
-    getFileThumbnail: notYetAsync("getFileThumbnail", "M3"),
+    writeFile: unavailableAsync("writeFile", "M3"),
+    readFile: unavailableAsync("readFile", "M3"),
+    readFileStream: unavailableAsync("readFileStream", "M3"),
+    statFile: unavailableAsync("statFile", "M3"),
+    readdirFile: unavailableAsync("readdirFile", "M3"),
+    unlinkFile: unavailableAsync("unlinkFile", "M3"),
+    mkdirFile: unavailableAsync("mkdirFile", "M3"),
+    rmdirFile: unavailableAsync("rmdirFile", "M3"),
+    moveFile: unavailableAsync("moveFile", "M3"),
+    renameFile: unavailableAsync("renameFile", "M3"),
+    getFileStats: unavailableAsync("getFileStats", "M3"),
+    grepFiles: unavailableAsync("grepFiles", "M3"),
+    findFiles: unavailableAsync("findFiles", "M3"),
+    getFileThumbnail: unavailableAsync("getFileThumbnail", "M3"),
 
     status: () => run(state.control.status),
-    decide: notYetAsync("decide", "M4"),
-    runCode: notYet("runCode", "M5"),
+    decide: unavailableAsync("decide", "M4"),
+    runCode: unavailable("runCode", "M5"),
   }
 }

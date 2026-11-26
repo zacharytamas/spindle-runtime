@@ -232,6 +232,7 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
+  const shownBySeq = new Map<number, ReadonlyArray<ProviderToolCallPart>>()
   const messages: Array<ProviderMessage> = []
   const parsed = history.map((message) =>
     (message.role === "user" || message.role === "assistant") && message.tool_calls != null
@@ -241,7 +242,12 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const visit = (message: Message, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
-      if (shownCalls.get(message.tool_call_id ?? "") !== true) return
+      const seq = positions.get(message)?.callerSeq
+      const visible =
+        seq == null
+          ? shownCalls.get(message.tool_call_id ?? "")
+          : shownBySeq.get(seq)?.some((call) => call.id === message.tool_call_id)
+      if (!visible) return
       const text = textOf(message)
       messages.push({
         role: "tool",
@@ -257,6 +263,8 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
+      const position = positions.get(message)
+      if (position && showCalls) shownBySeq.set(position.seq, calls)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
       if (past && !showCalls && (content ?? "") === "") return
