@@ -435,30 +435,30 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 
 - [ ] Create `packages/runtime/src/execution/ThreadSupervisor.ts`, `run-status.ts`, and `lease.ts`.
 - [ ] Create `packages/runtime/src/store/migrations/0002_leases.ts`.
-- [ ] Edit `packages/runtime/src/execution/step.ts`, `thread-state.ts`, and `packages/runtime/src/cli/run.ts`.
-- [ ] Create `packages/conformance/src/scenarios/queue.ts` and `packages/conformance/src/scenarios/run-status.ts`.
+- [x] Edit `packages/runtime/src/execution/step.ts`, `thread-state.ts`, and `packages/runtime/src/cli/run.ts`.
+- [x] Create `packages/conformance/src/scenarios/queue.ts` and `packages/conformance/src/scenarios/run-status.ts`.
 
 **Build.**
 
-- [ ] Define `ThreadSupervisor` as an Effect service that owns one fiber per active thread. A new trigger for an idle thread starts an execution. A new trigger for an active thread goes to the queue.
-- [ ] Implement `queueMessage` and `queueTool` on `ThreadState`. The drain phase takes queued entries in arrival order before the next model call.
-- [ ] Take the lease in the same transaction that sets `running`. Release it in the same transaction that settles the run.
-- [ ] Settle every execution to `idle` or `failed`, including an execution that throws. At process start, settle each thread whose lease holder is gone to `failed` with reason `execution_lost`.
+- [x] Define `ThreadSupervisor` as an Effect service that owns one fiber per active thread. A new trigger for an idle thread starts an execution. A new trigger for an active thread goes to the queue.
+- [x] Implement `queueMessage` and `queueTool` on `ThreadState`. The drain phase takes queued entries in arrival order before the next model call.
+- [x] Take the lease in the same transaction that sets `running`. Release it in the same transaction that settles the run.
+- [x] Settle every execution to `idle` or `failed`, including an execution that throws. At process start, settle each thread whose lease holder is gone to `failed` with reason `execution_lost`.
 - [ ] Make `execution.stop()` cooperative. It sets a flag that the loop reads at each boundary. The operation in flight finishes, its result is stored, and no abort signal fires. A stopped run settles to `idle` with a stop reason. Fire `execution.abortSignal` and interrupt the fiber only for terminate and for an explicit abort.
-- [ ] Implement `terminate()`. It sets the terminated time, interrupts the fiber, and makes later send, queue, and execute calls fail with a typed error.
-- [ ] Add `spindle send <thread> -m <text>` and `spindle status <thread>` so that two processes can address one thread.
+- [x] Implement `terminate()`. It sets the terminated time, interrupts the fiber, and makes later send, queue, and execute calls fail with a typed error.
+- [x] Add `spindle send <thread> -m <text>` and `spindle status <thread>` so that two processes can address one thread.
 
 **You see.**
 
-- [ ] `spindle status <thread>` prints `idle`, `running`, or `failed` with the reason and the `since` time.
-- [ ] After a `SIGKILL` during a run and a restart, `spindle status <thread>` prints `failed execution_lost`.
+- [x] `spindle status <thread>` prints `idle`, `running`, or `failed` with the reason and the `since` time.
+- [x] After a `SIGKILL` during a run and a restart, `spindle status <thread>` prints `failed execution_lost`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/conformance/src/scenarios/queue.ts` gains one scenario per statement in sections 2, 9, 10, and 11 of the Runtime page. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
-- [ ] `packages/conformance/src/scenarios/run-status.ts` gains one scenario per statement in section 4.3 of the Execution State page.
-- [ ] `packages/runtime/test/execution/run-status.test.ts` gains one case per legal transition and one case per illegal transition of the run-status state machine.
-- [ ] The ledger entries for those statements change to `covered`. Run `pnpm check`. The last line reports the covered count for milestone 1.
+- [x] `packages/conformance/src/scenarios/queue.ts` gains one scenario per statement in sections 2, 9, 10, and 11 of the Runtime page. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
+- [x] `packages/conformance/src/scenarios/run-status.ts` gains one scenario per statement in section 4.3 of the Execution State page.
+- [x] `packages/runtime/test/execution/run-status.test.ts` gains one case per legal transition and one case per illegal transition of the run-status state machine.
+- [x] The ledger entries for those statements change to `covered`. Run `pnpm check`. The last line reports the covered count for milestone 1.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
@@ -863,6 +863,55 @@ The perf round ran `/tmp/m15perf/scripts/mutate.py` on the eight history cases, 
 - The ledger box asks for `covered` on Hooks sections 3 to 5, the Messages page, and Execution State section 2.2. 91 entries became `covered` and 3 became `partial`. Hooks entries that bind authors are `not-testable`, the broadcasts of Hooks section 5 stay with M6, and the queue rows of Messages section 4 stay with M1-6. That box stays unchecked. The ledger holds 322 `covered` and 58 `partial` entries, against 233 and 68 before M1-5. The fix round lowered two entries to `partial`. They are Hooks section 4.1's returned object, because the store keeps no subagent field before M3, and Hooks section 3.3's returned history, because the package's provider message types have no `name` on a system, user, or assistant message.
 - Part 4 of the brief lists 18 statements. 14 were already in the list, so 4 were added, and the count line is `606 RFC 2119 statements, 61 lowercase must or should statements, 248 curated statements with no keyword, 24 pages`. Of its three milestone corrections, `hooks:8e371f2b` moved from M3 to M1, and `agents:c51baf9f` and the pair `runtime:43bbb05d` and `runtime:853d2427` already had the milestones the brief asks for.
 - The `--trace` test of M1-4 now collapses repeated phases, because the assemble phase prints seven lines.
+
+### Settled in M1-6
+
+The M1-6 owner ran each command below on 2026-11-26 on macOS, from the repository root, with Node 22.22.3 and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-6/evidence/` on that machine. The brief `docs/plans/briefs/m1-6.md` corrected this section before the build, and the owner followed it. The branch starts at `b8587ff`. The root pushed twelve M1-5 audit fixes to `m1/5-hooks` during the build, ending at `f32f85a`, and merges them into this branch.
+
+**Layout.** `execution/run-status.ts` holds the table of legal transitions, the reason codes of Execution State section 4.2, and the texts of the error results that close a call whose run ended. `execution/ThreadSupervisor.ts` admits every inbound message, queued message, and queued tool, starts an execution for an idle thread in its own scope, renews the process's lease, settles lost runs, and stops, aborts, and terminates. The store gains `admit`, `claim`, `settle`, `recover`, `nextQueued`, `isQueued`, `queueLength`, `beat`, `holderOf`, `owned`, and `dropHolder`, and `insertMessage` gains a flow fence and the queue entry it delivers. The third migration adds the `holders` table and the `holder_id`, `flow_id`, and `claim_seq` columns of `threads`. `step.ts` drains the queue at the start of every step, stops at the boundaries between operations, and settles through the store. `thread-state.ts` gains `queueMessage`, `queueTool`, `status`, `terminate`, `execution.stop`, `stopped`, and `stoppedBy`, and refuses every call once its execution has ended. `cli/send.ts` and `cli/status.ts` are the two new commands, and `cli/run.ts` shares one delivery path with `send`. `platform/interrupts.ts` is the one `runMain` of both platforms.
+
+**Readings taken for part 5 of the brief.** Each line is one reading. The operator can overrule any of them.
+
+1. A dead owner. Recovery settles the thread `failed` with `execution_lost`, keeps every accepted queue entry and every committed message, and runs nothing again. Each call of the lost run that has no stored result gets an error result that says the outcome is unknown and that Spindle did not run the call again. The queued work waits for the next deliberate trigger, a send or a queue call, and a sender that was waiting behind the lost run does not run it.
+2. Stop, abort, and terminate. `execution.stop()` sets a flag that the loop reads at each boundary: before a drain, between drained entries, after the assembly and before the request, between tool calls, and before the stop rules. A model call in flight finishes and its response is stored. A call that the stop keeps from running gets an error result through the usual tool hooks. Stop fires no abort signal. The first Ctrl-C of `spindle run` is a stop for the human side, `aborted_by_user`, and the second interrupts the execution, fires the signal, and settles `idle` with the same reason. `terminate()` settles a running run `idle` with `aborted` in the transaction that marks the thread, interrupts the execution here, and makes the owner in another process stop at its next message write or its next lease renewal. A tool that ignores the signal keeps running, its late return is discarded, and its ThreadState refuses every later call with `ExecutionEnded`. In `spindle run` the process exits once the run settles. A long-lived process that interrupts an execution through `abort` releases the thread while such a tool may still run.
+3. A queued tool. The drain stores the call in the prompt side's role with `metadata.queued`, an id that starts with `queued-`, and the name the prompt offers the tool under, runs the tool with its usual hooks, and stores the result. The model sees both in its next request. `invokeTool` at rest still returns an error result, because a minimal execution at rest needs a run status and a claim that the M1 review should decide.
+4. Admission. `queueTool` validates its target and its arguments, admits the entry durably, and returns, or throws. `queueMessage` resolves once the entry is durable, so a tool of the running execution can call it. A store call never yields while it holds the connection, which keeps the synchronous `queueTool` from failing when another fiber is inside a store call.
+5. Triggers. A message from the human side, through `send`, `spindle send`, or `spindle run`, is the trigger of Runtime section 2, and it goes through the queue like every other trigger. `injectMessage` writes history and starts nothing, and it still works on a terminated thread. A message from the human, sent to an idle thread or drained into a running one, meets the agent's hook list with `execution` null, because an inbound message does not belong to a prompt's turn.
+6. Order. One sequence orders messages and tool calls across every process. The drain takes one entry at a time, each in the transaction that stores what it delivers. An entry that arrives after a snapshot waits for the next assembly. A run that ends its turn goes on while the queue holds work, and the check and the release share one transaction, so an entry cannot wait behind a released thread. The runtime step cap ends the run even while the queue holds work.
+7. Termination. The first termination time stays. History and status stay readable, queued entries stay in the queue and never run, and send, both queue methods, and a waiting sender's claim fail with `ThreadTerminated`. No status message is stored. `reason` is `null` while running and for a thread that never ran.
+8. Lost-owner detection. A claim names a holder, one process with its process id and a lease that the process renews five times per lease span, 15 seconds by default. A thread whose holder's lease has expired is lost, and a status read, an admission, or any process's renewal settles it. The process sets its own lease, so no observer judges it by a shorter span. Until the lease expires, the thread reads `running` and work sent to it waits in the queue.
+
+**Other choices.** A waiting sender whose message is still queued after the run it waited behind stopped or failed claims the thread and runs it. `retries` must be a whole number of 0 or more and `stepCap` a whole number above 0, or `send` fails with `InvalidOption` before it queues anything. A message write of an execution fails with `FlowEnded` once its flow no longer holds the thread. `forceTurn` now names M2 as its milestone, because one prompt side and one human side leave it no side to force.
+
+**Effect v4 names.** These come from the `.d.ts` files under `node_modules/effect/dist`.
+
+- `Scheduler.PreventSchedulerYield` keeps a fiber from yielding while a store call holds the connection. Without it, 220 of 300 synchronous reads failed in `test/store/claims.test.ts` with `MaxOpsBeforeYield` set to 1.
+- `Effect.scope` inside `Layer.effect` and `Effect.forkIn` put each execution in the supervisor's scope, so a caller's interrupt does not end it and the layer's close aborts it.
+- `Effect.onExit` records the outcome, because the steps after `Effect.exit` in an interrupted fiber never run.
+- `Effect.runSyncExitWith` runs `queueTool`, and `Effect.runPromiseWith(context)(effect, { signal })` ends a ThreadState call when the execution aborts.
+- `Runtime.makeRunMain` and `fiber.interruptUnsafe` build the `runMain` that hands SIGINT to a command.
+- `ChildProcessHandle.kill` waits until the process exits, so a test forks it when it sends SIGINT.
+
+**Live lanes, owner runs.** `/tmp/spindle-m1-6/scripts/lanes.sh` ran both "You see" boxes and the ten lanes, as the brief corrects them, against the built command on Node and on Bun at `37c64f1`, and every pass predicate held. The queue fixture's model and its hold tool wait for files that the script creates, so each ordering is one the script made. Lane 1 compares the parent at `b8587ff` with the head: the phases and the stored messages are the same, and only the detail of the drain line differs. Lane 5 uses two `spindle send` processes: one queued behind the other's execution, and each message is stored once. Lane 7 kills one process in a model call and one in a tool, and a new process reads both threads as `failed execution_lost`. Lane 8 sends to both threads and gets `idle` with the earlier messages, the queued message, and an error result for the open call. Lane 9 follows the brief's first correction: one Ctrl-C lets a tool that watches the signal finish without an abort, and two presses abort another run. `packages/runtime/test/cli/queue.test.ts` runs the same orderings in Vitest. The verifier's lanes still run at the verdict, so the live and perf boxes stay unchecked.
+
+**Perf, owner run.** `/tmp/spindle-m1-6/scripts/perf.sh 10` alternated the parent at `b8587ff`, the new tip of `m1/5-hooks` at `f32f85a`, and the head, on Node and on Bun, with `step-probe.ts run`, and then ran `queue-probe.ts bench` on the head. Every run took 200 steps and stored 401 rows, or stored 1,000 messages. The load average was 4.7 to 6.4 on 24 cores, because other sessions ran on the machine, so the sides were interleaved. The first round, at `4aa85a1`, measured the head 23.8% above the parent on Node and 12.0% on Bun, which breaks the 20% rule on Node. Providing the no-yield reference on every store call cost about 0.05 ms per step in an A/B of the head, and `da5ad38` provides it once per execution. The round after that fix, in `/tmp/spindle-m1-6/evidence/perf-step-2.txt`:
+
+| Runtime | Parent `b8587ff` | `f32f85a` | Head |
+|---|---|---|---|
+| Node 22.22.3 | 0.666 ms (0.646 to 0.771) | 0.701 ms | 0.761 ms (0.746 to 0.845) |
+| Bun 1.4.5 | 0.557 ms (0.547 to 0.614) | 0.579 ms | 0.628 ms (0.610 to 0.666) |
+
+The head is 14.2% above the parent on Node and 12.8% on Bun, under the 20% rule, and on Node the ranges do not overlap, so the step is measurably slower by about 0.1 ms. An A/B of the head puts about 0.02 ms in the drain's read of the queue at every step. The rest is not explained: one CPU profile per side was dominated by module loading and did not isolate it. The queue probe, ten runs per runtime, queued 10 messages to each of 100 threads through `queueMessage` at rest. In the batched mode every entry was queued before the thread's first drain, so each thread took one model call: 377 ms (365 to 504) on Node and 440 ms (425 to 563) on Bun. With `--sequential` each message waited for the run of the one before it, 1,000 runs: 1,004 ms (970 to 1,155) on Node and 973 ms (940 to 1,058) on Bun. Both are far under the 10 second rule, and neither was profiled.
+
+**Mutation checks.** For 14 covered statements the owner broke the code the statement describes at `da5ad38` and ran the test the ledger names, and each test failed on Node and on Bun. `/tmp/spindle-m1-6/scripts/mutate.py` holds the edits, and `/tmp/spindle-m1-6/evidence/mutations-node.txt` and `mutations-bun.txt` hold the runs. The statements are settling a run that fails, taking queued input before the next model call, FIFO order, one claim per running thread, recovery of a lost execution, refusing work after terminate, stop at the next boundary, stop without the abort signal, a queued message forcing a turn, a queued tool running, terminate aborting in-flight work, parking for the human, `queueTool` throwing outside `uses`, and queued entries surviving a crash. The terminate case first passed with only the local interrupt removed, because the lease renewal also interrupts a run that another process settled, so the final edit removes both.
+
+**Where M1-6 differs from this plan.**
+
+- The Files box names `lease.ts` and `migrations/0002_leases.ts`. The lease lives in the store and the supervisor, and the migration is `0003_claims.ts`, because `0002_revision.ts` came first. `cli/send.ts`, `cli/status.ts`, `platform/interrupts.ts`, `scripts/queue-probe.ts`, the `queue` fixture, `test/store/claims.test.ts`, and `test/cli/queue.test.ts` are new, each for one job named above. That box stays unchecked.
+- The stop box wires stop to fiber interruption. The brief's first correction replaces it, and stop is the cooperative flag of reading 2. That box stays unchecked as written.
+- The unit boxes follow the brief: Q03 to Q17 and R15 and R16 in `queue.ts` and `run-status.ts`, and scenarios 1 and 2 as process tests. Scenario 17 waits for M4.
+- The ledger has 19 more curated statements from part 4 of the brief, and the count line is `606 RFC 2119 statements, 61 lowercase must or should statements, 267 curated statements with no keyword, 24 pages`. The two Availability items of part 4 were already curated. Three Threads section 8 rows moved from M3 to M1, and `messages:b8f7cd7e` from M2 to M1. 46 entries became `covered` and 8 stayed `partial`, and the ledger holds 368 `covered` and 50 `partial`, against 322 and 58 before. The ledger line now reports the milestone 1 counts, and 12 milestone 1 entries stay `planned`, each with a reason.
+- Lane 9 as written asks the tool to observe the abort on stop. The brief's first correction reverses that, and the lane checks that a stop fires no abort.
 
 ## Appendix B. Alternatives rejected
 
