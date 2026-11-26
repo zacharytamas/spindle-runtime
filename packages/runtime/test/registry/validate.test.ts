@@ -123,6 +123,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "rejects a prompt tool or a provider tool with a reserved lifecycle tool name",
+    "reserved-prompt-tool",
+    [
+      error("tool_name_reserved", "agents/prompts/coordinator.ts:tools[0]"),
+      error("tool_name_reserved", "agents/prompts/coordinator.ts:tools[1]"),
+    ],
+  ],
+  [
     "rejects a tools entry that configures a subagent relationship",
     "tools-subagent-config",
     [error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[0]")],

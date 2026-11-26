@@ -321,6 +321,14 @@ export const validate = Effect.gen(function* () {
           at.report("prompt_tool_undefined", path, `${path} must be a tool name or an object with a name`)
           continue
         }
+        if ((RESERVED_RELATIONSHIP_NAMES as ReadonlyArray<string>).includes(parseQualifiedName(name)[1])) {
+          at.report(
+            "tool_name_reserved",
+            path,
+            `${path} names ${name}, which is reserved for the injected lifecycle tools (${RESERVED_RELATIONSHIP_NAMES.join(", ")})`,
+          )
+          continue
+        }
         const tool = at.resolve("tool", name)
         if (tool._tag === "Found") continue
         const subprompt = at.resolve("prompt", name)
