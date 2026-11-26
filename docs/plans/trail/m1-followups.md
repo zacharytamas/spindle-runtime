@@ -26,6 +26,9 @@ For the fix round.
 - Only message writes are fenced against a stale holder. A `setValue` can still land.
 - `store.setStatus` and `takeQueue` still exist and bypass the transition table and the claims. `takeQueue` deletes the batch it hands out.
 - Queued work can carry one execution past the step cap. When a step reaches the cap and a higher-ranked stop rule also applies, such as `stop_on_response`, the loop continues if the queue holds work. A hook that queues a message on every response then runs without end. The review bot found this on PR 8 at `step.ts:651`, and the root confirmed it by reading. The fix is to check the step count on its own when deciding whether to continue.
+- A `send` that waited behind a run exits 0 and prints `idle (aborted)` when another process terminates the thread, and its message stays queued for good. Reading 7 says its claim fails with `ThreadTerminated`. The verifier saw this in 16 of 16 races on each runtime.
+- A process that lost its thread prints a success outcome and exits 0.
+- The error text on a call that never started says Spindle does not know whether the tool finished. For a call that never started, that is untrue.
 - `supervisor.abort` releases the thread while a tool that ignores the signal may still run. Only `spindle run` uses it today, and that command exits right after.
 
 Open, not for this round.
