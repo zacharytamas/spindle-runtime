@@ -1,22 +1,9 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
-import {
-  Cause,
-  Console,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  FileSystem,
-  Layer,
-  Logger,
-  Option,
-  Path,
-  Queue,
-  Semaphore,
-} from "effect"
+import { Cause, Console, Effect, Exit, Fiber, FileSystem, Layer, Logger, Option, Path, Queue, Semaphore } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { onInterrupt, openChatTerminal } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
+import type { Execution } from "../execution/Execution.ts"
 import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
 import { type ExecutionEvent, learnSecrets, type RunOutcome } from "../execution/step.ts"
@@ -182,14 +169,14 @@ const converse = (chat: Conversation) =>
       }),
     )
     yield* flush
-    let previous: Deferred.Deferred<RunOutcome, unknown> | undefined
+    let previous: Execution["settlement"] | undefined
     let waiting = false
     let atPrompt = true
     const finishPrevious = Effect.gen(function* () {
       if (!previous) return
       const turn = previous
       previous = undefined
-      const outcome = yield* Deferred.await(turn)
+      const outcome = yield* turn.await
       yield* flush
       yield* report(outcome)
     })
@@ -271,7 +258,7 @@ const converse = (chat: Conversation) =>
           if (stopping) {
             atPrompt = true
             yield* note("aborting the run")
-            previous = yield* supervisor.abortExecution(chat.id)
+            previous = yield* supervisor.abort(chat.id)
             yield* Fiber.interrupt(turn)
             return "continue" as const
           }
@@ -294,7 +281,7 @@ const converse = (chat: Conversation) =>
         continue
       }
       atPrompt = false
-      if (previous && Deferred.isDoneUnsafe(previous)) yield* finishPrevious
+      if (previous?.isDone()) yield* finishPrevious
       yield* flush
       waiting = false
       let admitted = false

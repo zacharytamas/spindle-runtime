@@ -1,5 +1,6 @@
 import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
+import { Context, Data, Duration, Effect, Layer, Scope } from "effect"
+import type { SqlError } from "effect/sql/SqlError"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
 import {
@@ -7,6 +8,7 @@ import {
   type Holder,
   originFlow,
   type QueueEntry,
+  type ThreadNotFound,
   ThreadTerminated,
   type WriteOrigin,
 } from "../store/model.ts"
@@ -14,14 +16,15 @@ import { RunStore } from "../store/RunStore.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
+import { Execution } from "./Execution.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
 import { CLOSING } from "./run-status.ts"
-import { type ExecutionOptions, type RunOutcome, runExecution } from "./step.ts"
-import type { Run, ThreadControl } from "./thread-state.ts"
+import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
+import type { AdmissionError, ThreadControl } from "./thread-state.ts"
 import { QueueRefused, redactAttachment } from "./tools.ts"
-import { roleOf, sidesOf } from "./turn.ts"
+import { roleOf, type SetupError, sidesOf } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
 
@@ -42,13 +45,6 @@ interface SendOptions extends ExecutionOptions {
   readonly onWaiting?: (holder: { readonly pid: number; readonly abortedOperation?: string }) => Effect.Effect<void>
 }
 
-interface Live {
-  readonly run: Run
-  successor?: Live
-  readonly done: Deferred.Deferred<RunOutcome, unknown>
-  fiber: Fiber.Fiber<void, unknown> | undefined
-}
-
 export class ThreadSupervisor extends Context.Service<
   ThreadSupervisor,
   {
@@ -58,17 +54,15 @@ export class ThreadSupervisor extends Context.Service<
       threadId: string,
       content: string,
       options?: SendOptions,
-    ) => Effect.Effect<Delivery, unknown, Registry | Stores>
+    ) => Effect.Effect<Delivery, AdmissionError | InvalidOption | SetupError, Registry | Stores>
     readonly control: (threadId: string) => ThreadControl
     // Asks the execution that this process runs for the thread to stop at its next boundary, for the human side.
     readonly stop: (threadId: string) => Effect.Effect<boolean>
     // Interrupts that execution. The run settles idle, and the thread stays open.
-    readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<boolean>
-    // The settlement belongs to the execution interrupted here, even if a queued line starts its successor.
-    readonly abortExecution: (threadId: string) => Effect.Effect<Deferred.Deferred<RunOutcome, unknown> | undefined>
+    readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<Execution["settlement"] | undefined>
     // The outcome of the execution that this process runs for the thread, once it settles.
-    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, unknown>
-    readonly status: (threadId: string) => Effect.Effect<ThreadStatus, unknown>
+    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, SqlError>
+    readonly status: (threadId: string) => Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
   }
 >()("spindle/ThreadSupervisor") {}
 
@@ -129,12 +123,13 @@ export const layer = (defaults: ExecutionOptions = {}) =>
     Effect.gen(function* () {
       const runStore = yield* RunStore
       const threadStore = yield* ThreadStore
-      const scope = yield* Scope.fork(yield* Effect.scope, "sequential")
       let closing = false
       const holder = { id: crypto.randomUUID(), pid: processId }
+      yield* runStore.acquireHolder(holder)
+      const scope = yield* Scope.fork(yield* Effect.scope, "sequential")
       // The threads that this process runs, and the flows it holds or is about to hold. A claim of this holder whose
       // flow is in neither has no execution behind it.
-      const live = new Map<string, Live>()
+      const live = new Map<string, Execution>()
       const flows = new Set<string>()
 
       const statusOf = (threadId: string) =>
@@ -143,93 +138,44 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           Effect.map(threadStore.getThread(threadId), (thread) => thread.status),
         )
 
-      const start = (
-        threadId: string,
-        run: Run,
-        options: ExecutionOptions,
-      ): Effect.Effect<Live, never, Stores | Registry> =>
-        Effect.gen(function* () {
-          const entry: Live = { run, done: yield* Deferred.make<RunOutcome, unknown>(), fiber: undefined }
-          const previous = live.get(threadId)
-          if (previous && !previous.run.ended) {
-            previous.run.displaced = true
-            previous.run.releaseWait.abort()
-            previous.fiber?.interruptUnsafe()
-          }
-          live.set(threadId, entry)
-          // An execution yields to other fibers only where it waits, for a model, a tool, or a hook, so its store calls
-          // take the writer lock without a scheduler yield. The outcome is recorded in a finalizer, which an interrupt cannot cut short.
-          const execution = runExecution(threadId, run, control(threadId), { ...defaults, ...options }).pipe(
-            Effect.provideService(Scheduler.PreventSchedulerYield, true),
-            Effect.onExit((exit) =>
-              Effect.gen(function* () {
-                flows.delete(run.flowId)
-                if (live.get(threadId) === entry) live.delete(threadId)
-                // An interrupted run settled itself. Its outcome is the status the store holds.
-                if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-                  return yield* Deferred.failCause(entry.done, exit.cause)
-                const outcome: RunOutcome = Exit.isSuccess(exit)
-                  ? exit.value
-                  : yield* threadStore.getThread(threadId).pipe(
-                      Effect.map((stored) => stored.status),
-                      Effect.onError((cause) => Deferred.failCause(entry.done, cause)),
-                      Effect.map((status) => ({
-                        threadId,
-                        flowId: run.flowId,
-                        status: run.displaced || status.state === "failed" ? ("failed" as const) : ("idle" as const),
-                        reason: run.displaced ? "execution_lost" : (status.reason ?? "aborted"),
-                        steps: run.steps,
-                        trace: [],
-                        modelCalls: [],
-                      })),
-                    )
-                if (run.resumeQueued && !closing) {
-                  const next = newRun()
-                  flows.add(next.flowId)
-                  if (
-                    yield* runStore
-                      .claim(threadId, { holder: holder.id, flowId: next.flowId })
-                      .pipe(Effect.orElseSucceed(() => false))
-                  )
-                    entry.successor = yield* start(threadId, next, options)
-                  else flows.delete(next.flowId)
-                }
-                yield* Deferred.succeed(entry.done, outcome)
-              }),
-            ),
-            Effect.asVoid,
-          )
-          // Start masked so an interrupt before the first scheduler turn still runs both settlement finalizers.
-          entry.fiber = yield* Effect.forkIn(execution, scope, { uninterruptible: true })
-          return entry
-        })
-
-      // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
-      // this process, and an active one takes the entry before its next model call.
-      const newRun = (): Run => ({
-        pending: new Map(),
-        releaseWait: new AbortController(),
-        flowId: crypto.randomUUID(),
-        abort: new AbortController(),
-        stop: undefined,
-        steps: 0,
-        ended: false,
-      })
-
-      // The flow is known here before the claim commits, so that the control poll never takes the new claim for one with no
-      // execution behind it.
+      // Register an intended claim before its transaction so the poll cannot recover a flow being started.
       const claimWith = <E>(
         threadId: string,
-        take: (run: Run) => Effect.Effect<boolean, E>,
+        take: (flowId: string) => Effect.Effect<boolean, E>,
         options: ExecutionOptions,
-      ) =>
+      ): Effect.Effect<Execution | undefined, E, Registry | Stores> =>
         Effect.gen(function* () {
-          const run = newRun()
-          flows.add(run.flowId)
-          const claimed = yield* take(run).pipe(Effect.onError(() => Effect.sync(() => flows.delete(run.flowId))))
-          if (claimed) return yield* start(threadId, run, options)
-          flows.delete(run.flowId)
-          return undefined
+          const flowId = crypto.randomUUID()
+          flows.add(flowId)
+          const claimed = yield* take(flowId).pipe(Effect.onError(() => Effect.sync(() => flows.delete(flowId))))
+          if (!claimed) {
+            flows.delete(flowId)
+            return undefined
+          }
+          const run = new Execution(flowId)
+          const prior = live.get(threadId)
+          if (prior && !prior.ended) prior.cancel("displace")
+          live.set(threadId, run)
+          yield* run.start(
+            threadId,
+            scope,
+            prepareSteps(threadId, run, control(threadId), { ...defaults, ...options }),
+            Effect.suspend(() =>
+              closing
+                ? Effect.undefined
+                : claimWith(
+                    threadId,
+                    (flowId) =>
+                      runStore.claim(threadId, { holder: holder.id, flowId }).pipe(Effect.orElseSucceed(() => false)),
+                    options,
+                  ),
+            ),
+            () => {
+              flows.delete(flowId)
+              if (live.get(threadId) === run) live.delete(threadId)
+            },
+          )
+          return run
         }).pipe(Effect.uninterruptible)
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
@@ -240,15 +186,12 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           let seq = 0
           const started = yield* claimWith(
             threadId,
-            (run) =>
-              Effect.map(
-                runStore.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }, origin),
-                (admitted) => {
-                  seq = admitted.queued.seq
-                  options.onAdmitted?.(seq)
-                  return admitted.claimed
-                },
-              ),
+            (flowId) =>
+              Effect.map(runStore.admit(threadId, entry, { holder: holder.id, flowId }, origin), (admitted) => {
+                seq = admitted.queued.seq
+                options.onAdmitted?.(seq)
+                return admitted.claimed
+              }),
             options,
           )
           return { seq, started }
@@ -260,10 +203,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         Effect.gen(function* () {
           const time = yield* runStore.terminate(threadId, origin)
           const local = live.get(threadId)
-          if (local?.fiber !== undefined) {
-            local.run.releaseWait.abort()
-            yield* Fiber.interrupt(local.fiber)
-          }
+          if (local) yield* Effect.exit(local.cancel("displace").await)
           return time
         })
 
@@ -279,11 +219,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
 
       // Waits until no execution holds the thread. A holder in another process is watched through the store.
-      const awaitRest = (threadId: string): Effect.Effect<ThreadStatus, unknown> =>
+      const awaitRest = (threadId: string): Effect.Effect<ThreadStatus, ThreadNotFound | SqlError> =>
         Effect.gen(function* () {
           while (true) {
             const local = live.get(threadId)
-            if (local !== undefined) yield* Deferred.await(local.done)
+            if (local !== undefined) yield* local.settlement.await
             const status = yield* statusOf(threadId)
             if (status.state !== "running") return status
             yield* Effect.sleep("50 millis")
@@ -304,35 +244,16 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               { state: "failed", reason: "execution_lost" },
               { continueIfQueued: false, closing: CLOSING.lost },
             )
-        for (const [threadId, entry] of running)
-          if (!entry.run.ended && owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) {
-            entry.run.displaced = (yield* threadStore.getThread(threadId)).terminated === null
-            entry.run.releaseWait.abort()
-            yield* Fiber.interrupt(entry.fiber)
-          }
+        for (const [threadId, run] of running)
+          if (!run.ended && owned.get(threadId) !== run.flowId) yield* Effect.exit(run.cancel("displace").await)
       })
 
-      // A process that shuts down aborts its executions, which settle, and drops its holder record last.
-      yield* runStore.acquireHolder(holder)
       yield* Effect.addFinalizer(() => {
         closing = true
-        for (const { run } of live.values()) run.releaseWait.abort()
-        return Fiber.interruptAll(
-          [...live.values()].flatMap((entry) => (entry.fiber === undefined ? [] : [entry.fiber])),
-        )
+        const settlements = [...live.values()].map((run) => run.cancel("displace").await)
+        return Effect.forEach(settlements, Effect.exit, { concurrency: 1, discard: true })
       })
-      yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
-
-      const abortExecution = (threadId: string, exiting = false) =>
-        Effect.sync(() => {
-          const local = live.get(threadId)
-          if (local?.fiber === undefined) return undefined
-          local.run.stop ??= { reason: "aborted_by_user" }
-          local.run.waitForCallbacks = !exiting
-          if (exiting) local.run.releaseWait.abort()
-          local.fiber.interruptUnsafe()
-          return local.done
-        })
+      yield* Effect.forkScoped(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))))
 
       return ThreadSupervisor.of({
         holderId: holder.id,
@@ -351,20 +272,17 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             let elsewhere: Holder | undefined
             while (true) {
               if (started !== undefined) {
-                const outcome = yield* Deferred.await(started.done)
+                const outcome = yield* started.settlement.await
                 return { outcome, status: yield* statusOf(threadId) }
               }
-              let local = live.get(threadId)
+              const local = live.get(threadId)
               let outcome: RunOutcome | undefined
               if (local !== undefined) {
                 if (options.onWaiting) {
-                  const operation = local.run.waitForCallbacks ? local.run.pending.values().next().value : undefined
+                  const operation = local.waitingOn
                   yield* options.onWaiting({ pid: holder.pid, ...(operation ? { abortedOperation: operation } : {}) })
                 }
-                while (local) {
-                  outcome = yield* Deferred.await(local.done)
-                  local = local.successor
-                }
+                outcome = yield* local.lastOutcome
               } else {
                 const holderNow = yield* runStore.holderOf(threadId)
                 if (holderNow !== null) {
@@ -392,27 +310,15 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               }
               started = yield* claimWith(
                 threadId,
-                (run) => runStore.claim(threadId, { holder: holder.id, flowId: run.flowId }),
+                (flowId) => runStore.claim(threadId, { holder: holder.id, flowId }),
                 options,
               )
             }
           }),
         control,
-        stop: (threadId) =>
-          Effect.sync(() => {
-            const local = live.get(threadId)
-            if (local === undefined || local.run.ended) return false
-            local.run.stop ??= { reason: "aborted_by_user" }
-            return true
-          }),
-        abortExecution,
-        abort: (threadId, exiting) =>
-          Effect.map(abortExecution(threadId, exiting), (settlement) => settlement !== undefined),
-        settled: (threadId) =>
-          Effect.suspend(() => {
-            const local = live.get(threadId)
-            return local === undefined ? Effect.undefined : Deferred.await(local.done)
-          }),
+        stop: (threadId) => Effect.sync(() => live.get(threadId)?.requestStop() ?? false),
+        abort: (threadId, exiting) => Effect.sync(() => live.get(threadId)?.cancel(exiting ? "exit" : "hold")),
+        settled: (threadId) => Effect.suspend(() => live.get(threadId)?.settlement.await ?? Effect.undefined),
         status: statusOf,
       })
     }),

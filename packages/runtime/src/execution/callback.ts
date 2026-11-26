@@ -1,4 +1,7 @@
-export type PendingCallbacks = Map<Promise<unknown>, string>
+export interface PendingCallbacks {
+  track(promise: Promise<unknown>, operation: string): void
+  forget(promise: Promise<unknown>): void
+}
 
 export interface Callback {
   finished?: boolean
@@ -19,9 +22,9 @@ export const invokeCallback = <A>(
     }
     const result = Promise.resolve(value).finally(() => {
       callback.finished = true
-      pending?.delete(result)
+      pending?.forget(result)
     })
-    pending?.set(result, operation)
+    pending?.track(result, operation)
     callback.promise = result
     return result
   } catch (error) {

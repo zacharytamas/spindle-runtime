@@ -112,7 +112,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   }
   const callback: Callback = {}
   const state = stateFor(callback)
-  if (state.execution?.stopped) return notRun
+  if (state.execution?.stopped) return undefined
   const returned = yield* Effect.result(
     Effect.tryPromise({
       try: () =>
@@ -222,12 +222,14 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
     return failed(yield* notAFunctionTool(name, caller.definition, "invokeTool"))
   const tool = target as Loaded<FunctionTool>
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
-  return yield* executeTool(
-    tool,
-    input,
-    (callback) => context.stateFor(tool, entry, callback),
-    context.pending,
-    scopeFor(context.turn, entry),
+  return (
+    (yield* executeTool(
+      tool,
+      input,
+      (callback) => context.stateFor(tool, entry, callback),
+      context.pending,
+      scopeFor(context.turn, entry),
+    )) ?? notRun
   )
 })
 

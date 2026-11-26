@@ -199,7 +199,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       ) {
         const [row] = yield* runRows(threadId)
         if (row === undefined || row.flow_id !== origin.flowId || row.run_state !== "running")
-          return "superseded" as const
+          return row?.terminated_at != null ? ("terminated" as const) : ("superseded" as const)
         // The check and the release share one transaction, so work queued after the last drain either keeps this
         // run going or finds the thread released and starts the next one.
         if (options.continueIfQueued && row.terminated_at === null) {

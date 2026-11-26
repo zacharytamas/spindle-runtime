@@ -7,70 +7,57 @@ import type {
   ToolResult,
 } from "@standardagents/spec"
 import { Cause, Context, Data, Effect, Exit } from "effect"
+import type { SqlError } from "effect/sql/SqlError"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { MessageStore } from "../store/MessageStore.ts"
-import { HandleExpired, type Thread, ValueNotJson, type WriteOrigin } from "../store/model.ts"
+import {
+  type FlowEnded,
+  HandleExpired,
+  type Thread,
+  type ThreadNotFound,
+  type ThreadTerminated,
+  ValueNotJson,
+  type WriteOrigin,
+} from "../store/model.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import type { Callback, PendingCallbacks } from "./callback.ts"
+import type { Callback } from "./callback.ts"
+import type { Execution } from "./Execution.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
 import { mapStrings } from "./redact.ts"
-import { queueTarget } from "./tools.ts"
+import { type QueueRefused, queueTarget } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
 
-// Execution State section 3. A stop request waits for the next boundary between operations. aborted_by_user is a stop
-// that the human side asked for from outside, such as the first Ctrl-C of spindle run, so its side is the other one.
-export interface StopRequest {
-  readonly by?: Side
-  readonly reason: "aborted" | "aborted_by_user"
-}
-
-export interface Run {
-  readonly pending: PendingCallbacks
-  readonly releaseWait: AbortController
-  waitForCallbacks?: boolean
-  displaced?: boolean
-  resumeQueued?: boolean
-  readonly flowId: string
-  readonly abort: AbortController
-  stop: StopRequest | undefined
-  steps: number
-  // True once the execution has ended. Every later call through a ThreadState of the execution is refused.
-  ended: boolean
-}
-
 export interface ExecutionRecord {
-  readonly flowId: string
   readonly side: Side
-  stepCount: number
-  sideAStepCount: number
-  sideBStepCount: number
-  readonly abort: AbortController
   readonly promptPath: ReadonlyArray<string>
   readonly history: History
-  readonly run: Run
+  readonly run: Execution
 }
 
 // The members of ThreadState that reach past one execution: the queue, the run status, and termination. An execution
 // that one of them starts runs with the services of the caller.
+type WriteError = ThreadNotFound | SqlError | FlowEnded | ThreadTerminated | HandleExpired
+export type AdmissionError = WriteError | ValueNotJson
+
 export interface ThreadControl {
   readonly queueMessage: (
     input: QueueMessageInput,
     secrets: Secrets,
     origin: WriteOrigin,
-  ) => Effect.Effect<void, unknown, Registry | Stores>
+  ) => Effect.Effect<void, AdmissionError | QueueRefused, Registry | Stores>
   // The target is the qualified name of a function tool that queueTarget allowed.
   readonly queueTool: (
     target: string,
     args: Record<string, unknown>,
     origin: WriteOrigin,
-  ) => Effect.Effect<void, unknown, Registry | Stores>
-  readonly status: Effect.Effect<ThreadStatus, unknown>
-  readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, unknown>
+  ) => Effect.Effect<void, AdmissionError, Registry | Stores>
+  readonly status: Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
+  readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, WriteError>
 }
 
 export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
@@ -94,7 +81,7 @@ export interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | Stores>
   readonly callback?: Callback
-  readonly owner?: Run
+  readonly owner?: Execution
   readonly execution: ExecutionRecord | undefined
   readonly scope: EnvScope
   readonly from: Definition | undefined
@@ -127,19 +114,19 @@ const executionState = (
   check: () => void,
 ): ExecutionState => {
   const state: ExecutionState = {
-    flowId: record.flowId,
+    flowId: record.run.flowId,
     currentSide: record.side,
     get stepCount() {
-      return record.stepCount
+      return record.run.steps
     },
     get sideAStepCount() {
-      return record.sideAStepCount
+      return record.side === "a" ? record.run.steps : 0
     },
     get sideBStepCount() {
-      return record.sideBStepCount
+      return record.side === "b" ? record.run.steps : 0
     },
     get stopped() {
-      return record.run.stop !== undefined
+      return record.run.stopped()
     },
     get messageHistory() {
       return readHistory()
@@ -150,17 +137,16 @@ const executionState = (
     },
     stop: () => {
       check()
-      if (!record.run.ended) record.run.stop ??= { by: record.side, reason: "aborted" }
+      record.run.requestStop(record.side)
     },
-    abortSignal: record.abort.signal,
+    abortSignal: record.run.signal,
     promptPath: [...record.promptPath],
   }
   // stoppedBy is absent until a stop, and a stop from outside comes from the side that is not running.
   Object.defineProperty(state, "stoppedBy", {
     enumerable: true,
     get: () => {
-      const stop = record.run.stop
-      return stop === undefined ? undefined : (stop.by ?? (record.side === "a" ? "b" : "a"))
+      return record.run.stopped() ? (record.run.stoppedBy ?? (record.side === "a" ? "b" : "a")) : undefined
     },
   })
   return state
@@ -178,7 +164,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
         ? new HandleExpired()
         : owner?.ended === true
           ? new ExecutionEnded({ flowId: owner.flowId })
-          : owner?.abort.signal.aborted
+          : owner?.signal.aborted
             ? new HandleExpired()
             : undefined
   const check = () => {
@@ -202,7 +188,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   }
   const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.
-  const signal = owner === undefined ? undefined : { signal: owner.abort.signal }
+  const signal = owner === undefined ? undefined : { signal: owner.signal }
   const run = <A, E>(effect: Effect.Effect<A, E, Registry | Stores>): Promise<A> => {
     const refused = expired()
     return refused === undefined ? runPromise(effect, signal) : Promise.reject(refused)
