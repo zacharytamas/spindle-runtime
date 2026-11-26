@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-main-no-extension",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./entry",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

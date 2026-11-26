@@ -132,7 +132,7 @@ describe("spindle validate", () => {
       expect(definitions.map((d: { qualifiedName: string }) => d.qualifiedName)).toContain(
         "standardagent-main-directory/main_directory",
       )
-      expect(definitions).toHaveLength(7)
+      expect(definitions).toHaveLength(9)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 

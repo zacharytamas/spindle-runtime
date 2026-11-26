@@ -611,6 +611,7 @@ describe("validate", () => {
         const { definitions, issues } = yield* validateFixture("package-entries")
         expect(issues).toEqual([])
         expect(definitions.map((d) => d.qualifiedName)).toEqual([
+          "standardagent-exports-array/exports_array",
           "standardagent-exports-conditions/exports_conditions",
           "standardagent-exports-dot-string/exports_dot_string",
           "standardagent-exports-nested/exports_nested",
@@ -618,6 +619,7 @@ describe("validate", () => {
           "standardagent-exports-over-main/exports_over_main",
           "standardagent-exports-string/exports_string",
           "standardagent-main-directory/main_directory",
+          "standardagent-main-no-extension/main_no_extension",
         ])
       }).pipe(Effect.provide(PlatformLive)),
     )
@@ -643,7 +645,6 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("invalid/package-entry-shapes")
         const shapes = [
-          "array-target",
           "bare-target",
           "directory-export",
           "main-empty-directory",

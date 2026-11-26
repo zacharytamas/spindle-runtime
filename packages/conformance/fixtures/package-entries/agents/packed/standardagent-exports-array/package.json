@@ -1,5 +1,5 @@
 {
-  "name": "standardagent-array-target",
+  "name": "standardagent-exports-array",
   "version": "1.0.0",
   "type": "module",
   "exports": [

@@ -34,6 +34,14 @@ const invalid = (problem: string): Entry => ({ _tag: "Invalid", problem })
 // A matched condition whose value is null disables the entry, as it does for Node and Bun, so the search stops there.
 const exportTarget = (value: unknown): Entry | undefined => {
   if (value === null) return invalid("disables its root export with null")
+  // An array lists fallbacks, and Node and Bun both take the first target they can use.
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = exportTarget(item)
+      if (found !== undefined && found._tag !== "Invalid") return found
+    }
+    return invalid("has an exports array with no usable target")
+  }
   if (typeof value === "string")
     return value.startsWith("./")
       ? { _tag: "Export", target: value }
@@ -168,11 +176,18 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       issue("package_invalid", relativeManifest, `${name} ${target.problem}`)
       return
     }
-    const named = path.resolve(dir, target.target)
-    const kind = yield* fs.stat(named).pipe(
-      Effect.map((info) => info.type),
-      Effect.orElseSucceed(() => "Missing" as const),
-    )
+    const typeOf = (file: string) =>
+      fs.stat(file).pipe(
+        Effect.map((info) => info.type),
+        Effect.orElseSucceed(() => "Missing" as const),
+      )
+    const written = path.resolve(dir, target.target)
+    // Node and Bun both try a main without its extension as a .js file.
+    const named =
+      target._tag === "Main" && (yield* typeOf(written)) === "Missing" && (yield* typeOf(`${written}.js`)) === "File"
+        ? `${written}.js`
+        : written
+    const kind = yield* typeOf(named)
     // Node does not import a directory and Bun does, so Spindle picks the index.js of a main directory itself.
     const entry = kind === "Directory" && target._tag === "Main" ? path.join(named, "index.js") : named
     const unusable =
