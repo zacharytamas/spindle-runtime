@@ -491,7 +491,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "H11 replays the reasoning of each assistant message that survives the request hooks and of no other",
+    name: "H11 replays the reasoning of each assistant message that survives the request hooks and of no other, and none when include is false",
     requirements: ["80b5ff9b", "b9e3d243", "6e1d2f01"],
     run: async (driver) => {
       const source = { definition: "scripted", model: "scripted-model-v1" }
@@ -552,6 +552,22 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         id: "pass",
         execute: async (_state, messages) => messages,
       })
+      const restore = defineHook({
+        hook: "prefilter_llm_history",
+        id: "restore",
+        execute: async (state, messages) => {
+          const stored = state.execution?.messageHistory.find((m) => m.content === "a2")
+          return messages.map((m) =>
+            m.content === "a2"
+              ? {
+                  ...m,
+                  reasoning_content: stored?.reasoning_content ?? "",
+                  reasoning_details: JSON.parse(stored?.reasoning_details ?? "[]"),
+                }
+              : m,
+          )
+        },
+      })
       for (const humanOn of SIDES) {
         const plain = await requestOf(humanOn, undefined)
         expect(await requestOf(humanOn, [pass])).toEqual(plain)
@@ -568,6 +584,10 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         const excluded = JSON.stringify(await requestOf(humanOn, [pass], false))
         expect(excluded).not.toContain("thought")
         expect(excluded).not.toContain("detail")
+        const restored = JSON.stringify(await requestOf(humanOn, [restore], false))
+        expect(restored).toContain("a2")
+        expect(restored).not.toContain("thought")
+        expect(restored).not.toContain("detail")
       }
     },
   },

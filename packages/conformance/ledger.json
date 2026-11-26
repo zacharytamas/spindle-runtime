@@ -3780,7 +3780,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
 			"packages/runtime/test/cli/run.test.ts > spindle run > sends the reasoning text and details of an earlier response back through openaiCompatible",
-			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other, and none when include is false"
 		],
 		"reason": ""
 	},
@@ -3789,7 +3789,7 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
-			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other, and none when include is false"
 		],
 		"reason": ""
 	},
@@ -6094,7 +6094,7 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
-			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other, and none when include is false"
 		],
 		"reason": ""
 	},

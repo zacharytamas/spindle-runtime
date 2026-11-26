@@ -282,6 +282,12 @@ export const fromLLMMessage = (message: LLMMessage): ProviderMessage => {
   }
 }
 
+export const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
+  if (message.role !== "assistant") return message
+  const { reasoning: _reasoning, reasoningDetails: _details, ...rest } = message
+  return rest
+}
+
 export const buildRequest = (
   turn: Turn,
   system: string,

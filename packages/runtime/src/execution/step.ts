@@ -20,6 +20,7 @@ import {
   renderSystemPrompt,
   toLLMMessage,
   toProviderMessages,
+  withoutReasoning,
 } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse, type StreamedCalls } from "./call.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
@@ -394,9 +395,12 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
         const transformed = toProviderMessages(filtered, view)
         yield* record("assemble", `transform, ${transformed.length} provider messages`)
-        const messages = has(hooks, "prefilter_llm_history")
+        const prefiltered = has(hooks, "prefilter_llm_history")
           ? (yield* runHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
           : transformed
+        // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
+        // put back.
+        const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
         yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
         const request = buildRequest(turn, system, messages, abort.signal)
         yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
