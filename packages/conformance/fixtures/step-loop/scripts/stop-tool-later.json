@@ -1,0 +1,7 @@
+{
+  "responses": [
+    { "toolCalls": [{ "name": "write_note", "arguments": { "key": "progress", "value": "half" } }] },
+    { "toolCalls": [{ "name": "finish", "arguments": { "summary": "finished on step two" } }] },
+    { "text": "This response is never requested." }
+  ]
+}
