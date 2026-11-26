@@ -60,7 +60,7 @@ export interface RunOutcome {
 }
 
 export const DEFAULT_RETRIES = 2
-export const DEFAULT_STEP_CAP = 100
+export const DEFAULT_STEP_CAP = 1000
 
 const parseJson = (text: string | undefined): unknown => {
   try {
