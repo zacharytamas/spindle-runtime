@@ -986,18 +986,23 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       await using(driver, { provider, tools }, async (session, thread) => {
         expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
         const stored = await session.messages(thread)
-        expect(callsOf(stored[1]).map((call) => [call.id, call.function.arguments])).toEqual([
-          ["broken", '{"q": "unterminated'],
-          ["fine", '{"q":"ok"}'],
+        expect(callsOf(stored[1]).map((call) => [call.id, JSON.parse(call.function.arguments)])).toEqual([
+          ["broken", { invalid_json: '{"q": "unterminated' }],
+          ["fine", { q: "ok" }],
         ])
         const results = stored.filter((message) => message.role === "tool")
         expect(results.map((m) => [m.tool_call_id, m.name, m.tool_status])).toEqual([
           ["broken", "lookup", "error"],
           ["fine", "lookup", "success"],
         ])
-        expect(results[0]?.content).toContain("not a complete JSON object")
+        expect(results[0]?.content).toContain("not a valid JSON object")
       })
       expect(seen).toEqual(["ok"])
+      const replayed = history(provider.requests[1]).find((message) => message.role === "assistant")
+      expect(replayed?.role === "assistant" ? replayed.toolCalls?.map((call) => call.arguments) : []).toEqual([
+        { invalid_json: '{"q": "unterminated' },
+        { q: "ok" },
+      ])
     },
   },
   {

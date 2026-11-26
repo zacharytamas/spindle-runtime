@@ -74,18 +74,19 @@ const parseJson = (text: string | undefined): unknown => {
 
 const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...` : text)
 
-// A call is run only when the provider named it and finished its arguments as one JSON object.
+// A call is run only when the provider named it and finished its arguments as one JSON object. Messages section 1
+// stores arguments as JSON text of an object, so arguments that are not one are kept as the text of invalid_json.
 const toolCallsOf = (response: ModelResponse): Array<ToolCall> =>
   [...response.calls.values()].map((call) => ({
     id: call.id,
     name: call.name,
     arguments: call.arguments,
-    argumentsText: call.arguments === undefined ? call.argumentsText : JSON.stringify(call.arguments),
+    argumentsText: JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText }),
     problem:
       call.name === ""
         ? `The provider sent call ${call.id} without the name of a tool`
         : call.arguments === undefined
-          ? `The model's arguments for ${call.name} are not a complete JSON object, so the tool did not run. The provider sent: ${preview(call.argumentsText)}`
+          ? `The model sent arguments for ${call.name} that are not a valid JSON object, so the tool did not run. It sent: ${preview(call.argumentsText)}`
           : undefined,
   }))
 
