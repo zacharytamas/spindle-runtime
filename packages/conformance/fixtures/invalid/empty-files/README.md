@@ -1,0 +1,1 @@
+Node runs a `.ts` file that has no import or export syntax as CommonJS when no `package.json` above it sets `"type": "module"`. The CLI test copies this fixture to a temporary directory so that Node sees no such `package.json`.

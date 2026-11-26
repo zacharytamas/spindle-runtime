@@ -266,6 +266,15 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "rejects an empty file, a comment-only file, and a file with no export",
+    "empty-files",
+    [
+      error("definition_export_missing", "agents/tools/comment_only.ts"),
+      error("definition_export_missing", "agents/tools/emptyfile.ts"),
+      error("definition_export_missing", "agents/tools/unexported.ts"),
+    ],
+  ],
+  [
     "reports a kind directory or a package scope that is not a directory and goes on",
     "unreadable-kind",
     [

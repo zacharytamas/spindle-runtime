@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Console, Effect, Exit, FileSystem, Path } from "effect"
 import { Command } from "effect/cli"
-import { PlatformLive } from "#platform"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { PlatformLive, platformName } from "#platform"
 import { validateCommand } from "../../src/cli/validate.ts"
 
 const spindle = Command.make("spindle").pipe(Command.withSubcommands([validateCommand]))
@@ -19,6 +20,16 @@ const run = (...args: ReadonlyArray<string>) =>
     )
     return { exit, lines }
   }).pipe(Effect.provide(PlatformLive))
+
+const copyFixture = (name: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const fixture = yield* path.fromFileUrl(new URL(`../../../conformance/fixtures/${name}`, import.meta.url))
+    const root = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-cli-" }), "project")
+    yield* fs.copy(fixture, root)
+    return root
+  })
 
 const brokenManifest = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
@@ -87,6 +98,23 @@ describe("spindle validate", () => {
         expect.objectContaining({ code: "agent_both_sides_human", file: "agents/agents/both_human.ts" }),
         expect.objectContaining({ code: "package_invalid", file: "agents/packed/sample/package.json" }),
       ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.effect("reports an empty or export-free file as missing its export when the runtime itself imports it", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const main = yield* path.fromFileUrl(new URL("../../src/cli/main.ts", import.meta.url))
+      const root = yield* copyFixture("invalid/empty-files")
+      const output = yield* spawner.string(
+        ChildProcess.make(platformName, ["--conditions=spindle-source", main, "validate", "--json", root]),
+      )
+      expect(JSON.parse(output)).toEqual(
+        ["comment_only", "emptyfile", "unexported"].map((name) =>
+          expect.objectContaining({ code: "definition_export_missing", file: `agents/tools/${name}.ts` }),
+        ),
+      )
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 

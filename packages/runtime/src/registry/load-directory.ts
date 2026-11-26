@@ -3,6 +3,12 @@ import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL } fro
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
+// Node runs a file without import or export syntax as CommonJS, and its default export is then an empty object.
+// No kind accepts an empty object, so it counts as no export on every runtime.
+const exportsNoDefinition = (value: unknown) =>
+  value === undefined ||
+  (typeof value === "object" && value !== null && !Array.isArray(value) && Reflect.ownKeys(value).length === 0)
+
 export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -59,14 +65,14 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
       byName.set(name, file)
       const load = importFile(file, path.toFileUrl(absolute)).pipe(
         Effect.flatMap((module) =>
-          module.default === undefined
+          exportsNoDefinition(module.default)
             ? Effect.fail(
                 new LoadError({
                   issues: [
                     {
                       code: "definition_export_missing",
                       severity: "error",
-                      message: `The file has no default export. Export the ${kind} definition as the default export.`,
+                      message: `The file exports no definition. Export the ${kind} definition as the default export.`,
                       file,
                       path: "",
                     },
