@@ -2199,6 +2199,38 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S26h redacts a stored result after Spindle adds its own note, so a secret that is a word of the note is removed",
+    requirements: [],
+    run: async (driver) => {
+      const tools = {
+        fresh: defineTool({
+          description: "Returns a new file",
+          variables: [{ name: "MARK", type: "secret", required: true, description: "A secret that is a common word" }],
+          execute: async () => ({
+            status: "success" as const,
+            result: "ok",
+            attachments: [{ name: "a.txt", mimeType: "text/plain", data: "Ynl0ZXM=" }],
+          }),
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "fresh", arguments: {} }] }, { text: "done" }])
+      await using(
+        driver,
+        { provider, tools },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          expect([result?.tool_status, result?.content]).toEqual([
+            "error",
+            "ok\n\n[redacted] dropped the new file a.txt, because this version cannot store a new file. The thread file system arrives in M3.",
+          ])
+        },
+        { MARK: "Spindle" },
+      )
+      expect(holding(provider.requests, "Spindle")).toEqual([])
+    },
+  },
+  {
     name: "S26b redacts a secret of any length from stored tool results, later requests, and run errors",
     requirements: ["287f2aef"],
     run: async (driver) => {

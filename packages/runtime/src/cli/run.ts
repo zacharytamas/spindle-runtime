@@ -3,11 +3,12 @@ import { Cause, Console, Data, Effect, FileSystem, Layer, Option, Path, Runtime 
 import { Argument, Command, Flag } from "effect/cli"
 import { SqliteLive } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
+import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
-import type { ExecutionEvent } from "../execution/step.ts"
+import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { sendMessage } from "../execution/trigger.ts"
-import { roleOf, sidesOf } from "../execution/turn.ts"
+import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
@@ -127,11 +128,14 @@ export const runCommand = Command.make(
       return Effect.gen(function* () {
         const path = yield* Path.Path
         const root = path.resolve(args.dir)
-        const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
-          ? yield* loadScript(path.resolve(args.script.value))
-          : undefined
         yield* Effect.gen(function* () {
           const { issues } = yield* validate
+          // The redactor knows only what the execution has learned, so it learns the turn's secrets before the
+          // command prints its first line. A turn that cannot be prepared fails again in the run with its own message.
+          yield* prepareTurn(args.agent).pipe(
+            Effect.flatMap((turn) => learnSecrets(turn, newSecrets(secrets))),
+            Effect.ignore,
+          )
           const errors = issues.filter((issue) => issue.severity === "error")
           for (const issue of errors)
             yield* Console.error(
@@ -140,6 +144,9 @@ export const runCommand = Command.make(
           if (errors.length > 0)
             return yield* fail(`${root} has ${errors.length} definition error${errors.length === 1 ? "" : "s"}`)
           const sides = yield* sidesOf(args.agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
+          const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
+            ? yield* loadScript(path.resolve(args.script.value))
+            : undefined
           const database = yield* openDatabase(args.db === ":memory:" ? args.db : path.resolve(args.db))
           yield* Effect.gen(function* () {
             const store = yield* ThreadStore

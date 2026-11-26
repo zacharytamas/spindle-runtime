@@ -94,6 +94,29 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("learns the secret set before it prints a setup error about the database or the script", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" })
+      const token = "SETUP-TOKEN-58"
+      const db = path.join(dir, token, "x.db")
+      const missingDb = yield* run(["leaky", "-m", "hi", "--script", "@reveal.json", "--db", db], {
+        SHORT_TOKEN: token,
+      })
+      const script = path.join(dir, `${token}.json`)
+      const missingScript = yield* run(["leaky", "-m", "hi", "--script", script], { SHORT_TOKEN: token })
+      expect([missingDb.err, missingScript.err]).toEqual([
+        [
+          `spindle: cannot open the database ${path.join(dir, "[redacted]", "x.db")}: the directory ${path.join(dir, "[redacted]")} does not exist`,
+        ],
+        [expect.stringMatching(/^spindle: cannot read the script .*\[redacted\]\.json/)],
+      ])
+      for (const result of [missingDb, missingScript])
+        expect([...result.out, ...result.err].join("\n")).not.toContain(token)
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.effect("prints each request as JSON with --dump-requests, with no abort signal and every secret redacted", () =>
     Effect.gen(function* () {
       const { out } = yield* run(["quiet", "-m", "hi", "--script", "@no-tools.json", "--dump-requests"])

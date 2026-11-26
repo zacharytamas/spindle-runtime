@@ -205,9 +205,16 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
-export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
+// The content is redacted after Spindle adds its notes, so a secret that is a word of a note is removed too.
+export const storedResult = (
+  turn: Turn,
+  call: ToolCall,
+  result: ToolResult,
+  redact: (text: string) => string,
+): NewMessage => {
+  const redacted = redactResult(result, redact)
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
-  const refs = attachments.filter(isAttachmentRef)
+  const refs = ((redacted.attachments ?? []) as ReadonlyArray<unknown>).filter(isAttachmentRef)
   const fresh = attachments.filter(isNewAttachment)
   const odd = attachments.length - refs.length - fresh.length
   const dropped = [
@@ -229,11 +236,11 @@ export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): Ne
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
     tool_status: dropped.length === 0 ? result.status : "error",
-    content: [contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n"),
+    content: redactText(redact)([contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n")),
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
-      ...(result.error_data === undefined ? {} : { error_data: result.error_data }),
+      ...(redacted.error_data === undefined ? {} : { error_data: redacted.error_data }),
     },
   }
 }

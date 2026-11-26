@@ -352,10 +352,10 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           const save = (result: ToolResult) =>
             Effect.gen(function* () {
               const { redacted, message } = yield* Effect.try({
-                try: () => {
-                  const redacted = redactResult(result, redact)
-                  return { redacted, message: storedResult(turn, call, redacted) }
-                },
+                try: () => ({
+                  redacted: redactResult(result, redact),
+                  message: storedResult(turn, call, result, redact),
+                }),
                 catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
               })
               const [stored] = yield* store.appendMessages(threadId, [message])
