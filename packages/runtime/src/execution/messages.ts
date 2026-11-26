@@ -89,10 +89,11 @@ const sameJson = (a: unknown, b: unknown) => {
 // human's message and the model's response keep theirs. A field that a hook changes is the hook's text either way.
 // An injection is a write its caller may refuse. A tool result and a turn are writes the execution needs. A queued
 // call is the call that a tool or a hook queued, whose arguments that code wrote.
-export type Writer = "injection" | "result" | "turn" | "queued"
+export type Writer = "injection" | "result" | "turn" | "queued" | "skipped"
 
 const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
   injection: ["content", "metadata"],
+  skipped: ["content", "metadata", "attachments"],
   result: ["content", "metadata", "attachments"],
   turn: [],
   queued: [],
@@ -161,6 +162,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   })
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
   let redacted = redactWrite(writer, original, hooked, redact)
+  if (writer === "skipped") redacted = {...redacted, role: original.role, name: original.name, tool_call_id: original.tool_call_id, tool_status: "error", content: original.content}
   if (idOwner !== undefined && hooked.id !== original.id && redact(hooked.id) !== hooked.id) {
     const problem = "returned an id that holds a secret value"
     if (!essential) return yield* new HookFailed({ hook: idOwner, position: "before_create_message", problem })

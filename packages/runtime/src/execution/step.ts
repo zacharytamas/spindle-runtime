@@ -461,7 +461,8 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
       ) =>
         Effect.gen(function* () {
-          const returned = yield* outcome
+          const skipped = run.stop !== undefined
+          const returned = skipped ? failed(NOT_RUN) : yield* outcome
           const toolCall = hookCall(call, argumentsOf(call))
           const branched = yield* runHooks(
             hooks,
@@ -469,14 +470,14 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             [toolCall],
             returned,
           )
-          const final = yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
+          const final = skipped ? returned : yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
           const save = (result: ToolResult) =>
             Effect.try({
               try: () => storedResult(turn, call, result),
               catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
             }).pipe(
               Effect.flatMap((message) =>
-                createMessage({ ...write, callerSeq: callerSequence(caller) }, message, "result"),
+                createMessage({ ...write, callerSeq: callerSequence(caller) }, message, skipped ? "skipped" : "result"),
               ),
             )
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
@@ -637,6 +638,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           {
             step,
             provider,
+            stopped: () => run.stop !== undefined,
             retries,
             toolChoice: prompt.toolChoice,
             calls: modelCalls,
@@ -646,6 +648,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           },
           request,
         )
+        if (response === undefined) return yield* stopHere
         steps += 1
         run.steps = steps
         turnSteps += 1
