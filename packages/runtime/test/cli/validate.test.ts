@@ -44,6 +44,31 @@ const brokenManifest = Effect.gen(function* () {
   return root
 })
 
+const multilineLoader = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const root = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-cli-" }), "project")
+  const dir = path.join(root, "agents", "packed", "standardagent-multiline")
+  yield* fs.makeDirectory(dir, { recursive: true })
+  yield* fs.writeFileString(
+    path.join(dir, "package.json"),
+    JSON.stringify({ name: "standardagent-multiline", type: "module", keywords: ["standardagent"], standardagent: {} }),
+  )
+  yield* fs.writeFileString(
+    path.join(dir, "index.js"),
+    [
+      "export const agents = {}",
+      "export const handlers = {}",
+      "export const prompts = {}",
+      "export const models = {}",
+      "export const hooks = {}",
+      'export const tools = { multiline: async () => { throw new Error("first line\\nsecond line") } }',
+      'export const __meta = { packageId: "standardagent-multiline", version: "1.0.0", entryAgents: [], packedAt: 0 }',
+    ].join("\n"),
+  )
+  return root
+})
+
 describe("spindle validate", () => {
   it.effect("prints the count of each kind and exits 0 for a valid directory", () =>
     Effect.gen(function* () {
@@ -97,6 +122,25 @@ describe("spindle validate", () => {
       expect(JSON.parse(lines.join("\n"))).toEqual([
         expect.objectContaining({ code: "agent_both_sides_human", file: "agents/agents/both_human.ts" }),
         expect.objectContaining({ code: "package_invalid", file: "agents/packed/sample/package.json" }),
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.effect("prints a multi-line issue message on one line and keeps its line break with --json", () =>
+    Effect.gen(function* () {
+      const root = yield* multilineLoader
+      const message = "standardagent-multiline tools.multiline failed to load: first line\nsecond line"
+      const text = yield* run(root)
+      expect(Exit.isFailure(text.exit)).toBe(true)
+      const physical = text.lines.join("\n").split("\n")
+      expect(physical).toHaveLength(3)
+      expect(physical[0]).toBe(
+        "definition_load_failed error agents/packed/standardagent-multiline/index.js:tools.multiline standardagent-multiline tools.multiline failed to load: first line\\nsecond line",
+      )
+      expect(physical.at(-1)).toBe("1 error, 0 warnings")
+      const json = yield* run("--json", root)
+      expect(JSON.parse(json.lines.join("\n"))).toEqual([
+        expect.objectContaining({ code: "definition_load_failed", message }),
       ])
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )

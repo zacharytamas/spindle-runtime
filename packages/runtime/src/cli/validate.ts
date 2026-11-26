@@ -10,6 +10,10 @@ export class IssuesFound extends Data.TaggedError("IssuesFound")<{ readonly erro
 
 const location = (issue: Issue) => (issue.path === "" ? issue.file : `${issue.file}:${issue.path}`)
 
+const ESCAPES: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\u2028": "\\u2028", "\u2029": "\\u2029" }
+
+const oneLine = (text: string) => text.replace(/[\n\r\u2028\u2029]/g, (separator) => ESCAPES[separator] ?? separator)
+
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
 
 const listRow = (definition: Definition) => [
@@ -45,7 +49,7 @@ export const formatText = ({ definitions, issues }: Validation, options: { reado
     )
     lines.push(...table([["KIND", "QUALIFIED NAME", "PACKAGE", "NAME", "VISIBILITY"], ...sorted.map(listRow)]))
   }
-  for (const issue of issues) lines.push(`${issue.code} ${issue.severity} ${location(issue)} ${issue.message}`)
+  for (const issue of issues) lines.push(oneLine(`${issue.code} ${issue.severity} ${location(issue)} ${issue.message}`))
   const count = counts(definitions)
   lines.push(KINDS.map((kind) => `${PLURAL[kind]} ${count[kind]}`).join(", "))
   const errors = issues.filter((issue) => issue.severity === "error").length
