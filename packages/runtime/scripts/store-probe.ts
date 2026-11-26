@@ -79,8 +79,10 @@ const spawnProbe = (subcommand: string, flags: Array<string>, runtime = platform
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
     stderr += chunk
   })
+  let done = false
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
     child.on("exit", (code, signal) => {
+      done = true
       for (const wake of waiters.splice(0)) wake()
       const problems = stderr
         .split("\n")
@@ -89,10 +91,6 @@ const spawnProbe = (subcommand: string, flags: Array<string>, runtime = platform
       resolve({ code, signal })
     }),
   )
-  let done = false
-  void exited.then(() => {
-    done = true
-  })
   const waitForLine = async (predicate: (line: string) => boolean): Promise<string> => {
     for (;;) {
       const found = lines.find(predicate)
