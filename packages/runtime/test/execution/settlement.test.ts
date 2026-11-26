@@ -144,7 +144,7 @@ for (const mode of ["abort", "terminate", "abort after provider failure"] as con
 
 it.effect("a queue that repeatedly asks to continue without a delivery still lets the operator stop", () =>
   Effect.gen(function* () {
-    const retrying = yield* Deferred.make<void>()
+    const retrying = gate()
     let attempts = 0
     const stores = Layer.effect(
       RunStore,
@@ -154,7 +154,8 @@ it.effect("a queue that repeatedly asks to continue without a delivery still let
           settle: (...args: Parameters<typeof store.settle>) => {
             if (args[2].reason !== "awaiting_human") return store.settle(...args)
             if (++attempts > 1000) return Effect.die("the stop fiber never ran")
-            return Effect.as(Deferred.succeed(retrying, undefined), "continue" as const)
+            if (attempts === 1) queueMicrotask(retrying.release)
+            return Effect.succeed("continue" as const)
           },
         }),
       ),
@@ -165,7 +166,7 @@ it.effect("a queue that repeatedly asks to continue without a delivery still let
       yield* supervisor
         .control(id)
         .queueMessage({ role: "assistant", content: "same side" }, newSecrets(), { kind: "external" })
-      yield* Deferred.await(retrying)
+      yield* Effect.promise(() => retrying.opened)
       expect(yield* supervisor.stop(id)).toBe(true)
       expect((yield* supervisor.settled(id))?.reason).toBe("aborted_by_user")
     }).pipe(
