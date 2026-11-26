@@ -1,6 +1,5 @@
 import type {
   AttachmentRef,
-  ContentPart,
   LLMMessage,
   Message,
   PromptDefinition,
@@ -9,6 +8,7 @@ import type {
   ProviderReasoningDetail,
   ProviderRequest,
   ProviderToolCallPart,
+  ProviderUserMessage,
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
@@ -240,56 +240,44 @@ export const toLLMMessage = (message: ProviderMessage): LLMMessage => {
   }
 }
 
-const textContent = (content: unknown): string =>
-  typeof content === "string"
-    ? content
-    : Array.isArray(content)
-      ? content.map((part: unknown) => (isRecord(part) && typeof part.text === "string" ? part.text : "")).join("")
-      : ""
-
-const callFrom = (entry: unknown): Array<ProviderToolCallPart> => {
-  if (!isRecord(entry)) return []
-  const fn = isRecord(entry.function) ? entry.function : {}
-  const args = typeof fn.arguments === "string" ? parseJson(fn.arguments) : fn.arguments
-  return [
-    {
-      id: String(entry.id ?? ""),
-      name: String(fn.name ?? ""),
-      arguments: isRecord(args) ? args : {},
-      ...(isRecord(entry.extra_content) ? { extraContent: entry.extra_content } : {}),
-    },
-  ]
+const callFrom = (entry: Record<string, unknown>): ProviderToolCallPart => {
+  const fn = entry.function as Record<string, unknown>
+  return {
+    id: entry.id as string,
+    name: fn.name as string,
+    arguments: (typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments) as Record<string, unknown>,
+    ...(isRecord(entry.extra_content) ? { extraContent: entry.extra_content } : {}),
+  }
 }
 
-// The way back from LLMMessage, for the array prefilter_llm_history returns. Its hooks accept only the four roles.
+// The way back from LLMMessage, for the array prefilter_llm_history returns. hooks.ts has checked each message
+// against the provider message types, so every field one of them holds is kept as it is. A field that no provider
+// message type has, such as the name of a user message, has nowhere to go.
 export const fromLLMMessage = (message: LLMMessage): ProviderMessage => {
-  const content = message.content
   switch (message.role) {
     case "system":
-      return { role: "system", content: textContent(content) }
+      return { role: "system", content: message.content as string }
     case "user":
-      return { role: "user", content: Array.isArray(content) ? (content as Array<ContentPart>) : textContent(content) }
-    case "assistant": {
-      const details = message.reasoning_details
+      return { role: "user", content: message.content as ProviderUserMessage["content"] }
+    case "assistant":
       return {
         role: "assistant",
-        content: content == null ? null : textContent(content),
-        ...(Array.isArray(message.tool_calls) ? { toolCalls: message.tool_calls.flatMap(callFrom) } : {}),
-        ...(typeof message.reasoning_content === "string" ? { reasoning: message.reasoning_content } : {}),
-        ...(Array.isArray(details) ? { reasoningDetails: details as Array<ProviderReasoningDetail> } : {}),
+        content: (message.content as string | null | undefined) ?? null,
+        ...(Array.isArray(message.tool_calls) ? { toolCalls: message.tool_calls.map(callFrom) } : {}),
+        ...(message.reasoning_content === undefined ? {} : { reasoning: message.reasoning_content }),
+        ...(Array.isArray(message.reasoning_details)
+          ? { reasoningDetails: message.reasoning_details as Array<ProviderReasoningDetail> }
+          : {}),
       }
-    }
     default:
       return {
         role: "tool",
-        toolCallId: String(message.tool_call_id ?? ""),
-        toolName: String(message.name ?? ""),
+        toolCallId: message.tool_call_id as string,
+        toolName: message.name ?? "",
         content:
           message.tool_status === "error"
-            ? { type: "error", error: textContent(content) }
-            : Array.isArray(content)
-              ? (content as Array<ContentPart>)
-              : textContent(content),
+            ? { type: "error", error: message.content as string }
+            : (message.content as ProviderUserMessage["content"]),
       }
   }
 }

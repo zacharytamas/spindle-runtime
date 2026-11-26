@@ -4,6 +4,7 @@ import {
   defineTool,
   type HookExecutionContext,
   type HookToolResult,
+  type LLMMessage,
   type Message,
   type ProviderStreamChunk,
   type ThreadState,
@@ -567,6 +568,81 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         const excluded = JSON.stringify(await requestOf(humanOn, [pass], false))
         expect(excluded).not.toContain("thought")
         expect(excluded).not.toContain("detail")
+      }
+    },
+  },
+  {
+    name: "H11b sends every field of the array prefilter_llm_history returns that a provider message can hold",
+    requirements: ["5cf7c4b6", "dfde10dc"],
+    run: async (driver) => {
+      const requestWith = async (returned: Array<LLMMessage>) => {
+        const provider = new ScriptedProvider([{ text: "done" }])
+        const hooks = [
+          defineHook({
+            hook: "prefilter_llm_history",
+            id: "final_array",
+            execute: async (_state, messages) => [...messages, ...returned],
+          }),
+        ]
+        let logs = ""
+        await using(driver, { provider, hooks, prompt: { hooks: ["final_array"] } }, async (session, thread) => {
+          await send(session, thread, "go")
+          logs = session.logs().join("\n")
+        })
+        return { history: history(provider.requests[0]), logs }
+      }
+      const image = { type: "image", data: "aGk=", mediaType: "image/png" }
+      const kept = await requestWith([
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "x1",
+              type: "function",
+              function: { name: "noop", arguments: '{"a":1}' },
+              extra_content: { sig: "s" },
+            },
+          ],
+          reasoning_content: "why",
+          reasoning_details: [{ type: "text", text: "detail" }],
+        },
+        { role: "tool", tool_call_id: "x1", name: "noop", content: [{ type: "text", text: "wrapped" }] },
+        { role: "user", content: [{ type: "text", text: "look" }, image] },
+      ])
+      expect(kept.history).toEqual([
+        { role: "user", content: "go" },
+        {
+          role: "assistant",
+          content: null,
+          toolCalls: [{ id: "x1", name: "noop", arguments: { a: 1 }, extraContent: { sig: "s" } }],
+          reasoning: "why",
+          reasoningDetails: [{ type: "text", text: "detail" }],
+        },
+        { role: "tool", toolCallId: "x1", toolName: "noop", content: [{ type: "text", text: "wrapped" }] },
+        { role: "user", content: [{ type: "text", text: "look" }, image] },
+      ])
+      for (const odd of [
+        { role: "assistant", content: [{ type: "text", text: "caption" }, image] },
+        { role: "system", content: [{ type: "text", text: "rules" }] },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "x2", function: { name: "noop", arguments: "not json" } }],
+        },
+        { role: "user", content: [{ type: "image", data: 7 }] },
+        { role: "tool", tool_call_id: "x3", name: "noop", content: { type: "text", text: "an object" } },
+        {
+          role: "tool",
+          tool_call_id: "x4",
+          name: "noop",
+          tool_status: "error",
+          content: [{ type: "text", text: "e" }],
+        },
+      ] as Array<LLMMessage>) {
+        const refused = await requestWith([odd])
+        expect(refused.history).toEqual([{ role: "user", content: "go" }])
+        expect(refused.logs).toContain("Hook final_array (prefilter_llm_history")
       }
     },
   },

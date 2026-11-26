@@ -1572,17 +1572,19 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly",
+			"packages/runtime/test/conformance.test.ts > hooks > H11b sends every field of the array prefilter_llm_history returns that a provider message can hold"
 		],
 		"reason": ""
 	},
 	"specification:hooks:5cf7c4b6": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows",
+			"packages/runtime/test/conformance.test.ts > hooks > H11b sends every field of the array prefilter_llm_history returns that a provider message can hold"
 		],
-		"reason": ""
+		"reason": "Spindle sends every field of the returned array that a provider message type of the package holds. Those types have no name on a system, user, or assistant message, so Spindle drops it, as DIVERGENCES.md records under The name of a message that prefilter_llm_history returns. Sending it waits on the package, not on a later milestone."
 	},
 	"specification:hooks:a0834ffa": {
 		"status": "covered",

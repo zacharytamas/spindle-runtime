@@ -60,8 +60,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const ROLES: ReadonlyArray<unknown> = ["system", "user", "assistant", "tool"]
 
-const hasRole = (value: unknown) => isRecord(value) && ROLES.includes(value.role)
-
 // A hook's return is user data. Reading it once into plain JSON data runs every getter here, so a getter that throws
 // fails that hook, no later read can throw, and the store can hold what is left.
 const plain = (value: unknown): unknown => {
@@ -154,6 +152,72 @@ const acceptMessage = (returned: unknown, current: Message): Message | typeof IN
     : INVALID
 }
 
+const parses = (text: string) => {
+  try {
+    return isRecord(JSON.parse(text))
+  } catch {
+    return false
+  }
+}
+
+const DETAIL = ["auto", "low", "high"]
+
+// The ContentPart union of the package's provider types.
+const isContentPart = (value: unknown) => {
+  if (!isRecord(value)) return false
+  switch (value.type) {
+    case "text":
+      return isString(value.text)
+    case "image":
+      return isString(value.data) && isString(value.mediaType) && oneOf(value.detail, DETAIL)
+    case "image_url":
+      return isRecord(value.image_url) && isString(value.image_url.url) && oneOf(value.image_url.detail, DETAIL)
+    case "file":
+      return isString(value.data) && isString(value.mediaType) && optional(value.filename, isString)
+    default:
+      return false
+  }
+}
+
+const isParts = (value: unknown) => Array.isArray(value) && value.every(isContentPart)
+
+const isCall = (value: unknown) =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isRecord(value.function) &&
+  isString(value.function.name) &&
+  (isRecord(value.function.arguments) || (isString(value.function.arguments) && parses(value.function.arguments))) &&
+  optional(value.extra_content, isRecord)
+
+// Hooks section 3.3 makes the returned array the provider request history, so each message must be one that a
+// provider message type of the package holds as it is. Only a user or a tool message may hold content parts.
+// Reasoning details keep the shape a provider stored them in, which may differ from the package's.
+const isLLMMessage = (value: unknown) => {
+  if (!isRecord(value)) return false
+  switch (value.role) {
+    case "system":
+      return isString(value.content)
+    case "user":
+      return isString(value.content) || isParts(value.content)
+    case "assistant":
+      return (
+        optional(value.content, (content) => content === null || isString(content)) &&
+        optional(value.tool_calls, (calls) => Array.isArray(calls) && calls.every(isCall)) &&
+        optional(value.reasoning_content, isString) &&
+        optional(value.reasoning_details, (details) => Array.isArray(details) && details.every(isRecord))
+      )
+    case "tool":
+      return (
+        isString(value.tool_call_id) &&
+        optional(value.name, isString) &&
+        oneOf(value.tool_status, ["success", "error"]) &&
+        (isString(value.content) || (value.tool_status !== "error" && isParts(value.content)))
+      )
+    default:
+      return false
+  }
+}
+
 const acceptMessages = (returned: unknown) => {
   const value = plain(returned)
   return Array.isArray(value) && value.every(isMessage) ? value : INVALID
@@ -228,9 +292,9 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
     where: "after the history becomes provider messages, before the request",
     accept: (returned) => {
       const value = plain(returned)
-      return Array.isArray(value) && value.every(hasRole) ? (value as Array<LLMMessage>) : INVALID
+      return Array.isArray(value) && value.every(isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
     },
-    expects: "an array of messages with the role system, user, assistant, or tool",
+    expects: "an array of messages that provider messages can hold",
     failure: "keep",
     kept: "kept the provider messages the hook was given",
   },
