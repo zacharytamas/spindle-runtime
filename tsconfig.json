@@ -34,7 +34,7 @@
           "preferTypedSchemaDecoder": "warning",
           "returnEffectInGen": "warning",
           "schemaNumber": "warning",
-          "tryCatchInEffectGen": "warning",
+          "tryCatchInEffectGen": "suggestion",
           "unknownInEffectCatch": "warning",
           "unsafeEffectTypeAssertion": "suggestion",
           "unstableApiUsage": "off"
