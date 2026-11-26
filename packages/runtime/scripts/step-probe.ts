@@ -6,7 +6,7 @@ import path from "node:path"
 import process from "node:process"
 import { Effect, Layer } from "effect"
 import { PlatformLive, platformName, SqliteLive } from "#platform"
-import { sendMessage } from "../src/execution/trigger.ts"
+import { createThread, sendMessage } from "../src/execution/trigger.ts"
 import { decodeScript, scriptedProvider } from "../src/providers/script.ts"
 import { Registry } from "../src/registry/Registry.ts"
 import { layer } from "../src/store/sqlite.ts"
@@ -18,10 +18,19 @@ const USAGE = `Usage: step-probe <command>
                  on a new file database, and print the result as one JSON line
   interleaved    --rounds <n>, run the probe on Node and on Bun in alternating order and print medians
 
+Both commands take --fixture <name> and --agent <name>. The defaults are step-loop and bench. The hooks fixture
+has bench_hooks, which adds a no-op hook at each of the thirteen hook positions.
+
 Run pnpm build first, because #platform resolves to dist outside Vitest.`
 
 const [command = "help", ...args] = process.argv.slice(2)
-const project = path.join(import.meta.dirname, "../../conformance/fixtures/step-loop")
+const option = (name: string, fallback: string) => {
+  const index = args.indexOf(name)
+  return index === -1 ? fallback : (args[index + 1] ?? fallback)
+}
+const fixture = option("--fixture", "step-loop")
+const agent = option("--agent", "bench")
+const project = path.join(import.meta.dirname, "../../conformance/fixtures", fixture)
 
 const median = (values: ReadonlyArray<number>) => {
   const sorted = [...values].sort((a, b) => a - b)
@@ -38,7 +47,7 @@ const run = async () => {
       Effect.gen(function* () {
         const provider = scriptedProvider(yield* decodeScript(text))
         const store = yield* ThreadStore
-        const thread = yield* store.createThread({ agentId: "bench" })
+        const thread = yield* createThread(agent)
         const started = performance.now()
         const outcome = yield* sendMessage(thread.id, "go", { provider })
         const elapsed = performance.now() - started
@@ -60,6 +69,7 @@ const run = async () => {
     console.log(
       JSON.stringify({
         runtime: platformName,
+        agent,
         ok,
         reason: result.outcome.reason,
         steps: result.outcome.steps,
@@ -81,7 +91,9 @@ const interleaved = () => {
   let failures = 0
   for (let round = 1; round <= rounds; round++)
     for (const runtime of round % 2 === 1 ? (["node", "bun"] as const) : (["bun", "node"] as const)) {
-      const child = spawnSync(runtime, [import.meta.filename, "run"], { encoding: "utf8" })
+      const child = spawnSync(runtime, [import.meta.filename, "run", "--fixture", fixture, "--agent", agent], {
+        encoding: "utf8",
+      })
       const line = child.stdout.trim().split("\n").at(-1) ?? ""
       console.log(`round ${round} ${runtime} ${line}`)
       const parsed = line.startsWith("{") ? JSON.parse(line) : undefined
