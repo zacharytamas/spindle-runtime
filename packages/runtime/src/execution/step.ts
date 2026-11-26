@@ -404,6 +404,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
         yield* checkSystemMessages(messages, secrets)
         yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
+        yield* checkSystemPrompt(turn, system, secrets)
         const request = buildRequest(turn, system, messages, abort.signal)
         yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
         yield* observe({ type: "request", request })

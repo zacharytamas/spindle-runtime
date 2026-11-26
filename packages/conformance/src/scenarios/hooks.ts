@@ -1734,6 +1734,39 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H22d checks the leading system prompt after the history hooks finish",
+    requirements: ["287f2aef"],
+    run: async (driver) => {
+      const marker = "fixture-late-system"
+      const hook = defineHook({
+        hook: "prefilter_llm_history",
+        id: "learn_during_history",
+        execute: async (state, history) => {
+          await state.env("LATE")
+          return history
+        },
+      })
+      const provider = new ScriptedProvider([{ text: "unused" }])
+      await using(
+        driver,
+        { provider, tools: noop, hooks: [hook], prompt: { prompt: marker, hooks: [hook.id] } },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect(provider.requests).toHaveLength(0)
+          expect(outcome).toMatchObject({
+            status: "failed",
+            reason: "fatal_error",
+            error: {
+              message:
+                "The system prompt that prompt assistant renders holds a secret value. A system prompt never holds a secret.",
+            },
+          })
+        },
+        { LATE: marker },
+      )
+    },
+  },
+  {
     name: "H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn",
     requirements: ["3d8dede1"],
     run: async (driver) => {
