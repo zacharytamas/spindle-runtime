@@ -6,8 +6,8 @@ import { Result, Schema, type SchemaAST } from "effect"
 export const MAX_REQUIREMENTS_PER_TEST = 8
 
 const LedgerEntry = Schema.Struct({
-  status: Schema.Literals(["covered", "planned", "deferred", "not-testable"]),
-  milestone: Schema.String,
+  status: Schema.Literals(["covered", "partial", "planned", "deferred", "not-testable"]),
+  milestone: Schema.Literals(["M1", "M2", "M3", "M4", "M5", "M6", "M7", "later", "none"]),
   tests: Schema.Array(Schema.String),
   reason: Schema.String,
 })
@@ -40,16 +40,18 @@ const decode =
 export const decodeLedger = decode(Ledger, "ledger.json", { onExcessProperty: "error" })
 
 export const duplicateKeys = (json: string): Array<string> => {
-  const seen = new Set<string>()
   const duplicates: Array<string> = []
-  let depth = 0
+  const frames: Array<{ readonly path: string; readonly seen: Set<string>; last: string }> = []
   for (const [token, key, colon] of json.matchAll(/("(?:[^"\\]|\\.)*")(\s*:)?|[{}[\]]/g)) {
-    if (token === "{" || token === "[") depth += 1
-    else if (token === "}" || token === "]") depth -= 1
-    else if (depth === 1 && key !== undefined && colon !== undefined) {
+    const frame = frames.at(-1)
+    if (token === "{" || token === "[") {
+      frames.push({ path: frame === undefined ? "" : `${frame.path}${frame.last}.`, seen: new Set(), last: "" })
+    } else if (token === "}" || token === "]") frames.pop()
+    else if (frame !== undefined && key !== undefined && colon !== undefined) {
       const name: string = JSON.parse(key)
-      if (seen.has(name)) duplicates.push(name)
-      seen.add(name)
+      if (frame.seen.has(name)) duplicates.push(`${frame.path}${name}`)
+      frame.seen.add(name)
+      frame.last = name
     }
   }
   return duplicates
@@ -91,10 +93,13 @@ export const checkLedger = (
       problems.push(`${id} is stale because requirements.json does not contain it`)
       continue
     }
-    if (entry.status === "covered" && entry.tests.length === 0) problems.push(`${id} is covered but names no test`)
+    const claimsCoverage = entry.status === "covered" || entry.status === "partial"
+    if (claimsCoverage && entry.tests.length === 0) problems.push(`${id} is ${entry.status} but names no test`)
+    if (entry.status !== "covered" && entry.status !== "planned" && entry.reason.trim() === "")
+      problems.push(`${id} is ${entry.status} but gives no reason`)
     for (const test of entry.tests) {
       citations.set(test, (citations.get(test) ?? 0) + 1)
-      if (entry.status === "covered" && test.startsWith("packages/conformance/test/"))
+      if (claimsCoverage && test.toLowerCase().startsWith("packages/conformance/test/"))
         problems.push(`${id} is covered by a test of the ledger tool, not of the runtime: ${test}`)
       const statuses = tests.get(test)
       if (statuses === undefined) problems.push(`${id} names a test that does not exist: ${test}`)
@@ -132,7 +137,7 @@ if (import.meta.main) {
     path.join(conformance, "../.."),
   )
   const problems = [
-    ...duplicateKeys(ledgerText).map((id) => `${id} appears more than once in ledger.json`),
+    ...duplicateKeys(ledgerText).map((key) => `${key} appears more than once in ledger.json`),
     ...checkLedger(requirementIds, ledger, tests),
   ]
   if (problems.length > 0) {
@@ -140,6 +145,7 @@ if (import.meta.main) {
     console.error(`ledger failed, ${problems.length} problems`)
     process.exit(1)
   }
-  const covered = Object.values(ledger).filter((entry) => entry.status === "covered").length
-  console.log(`ledger ok, ${requirementIds.length} requirements, ${covered} covered`)
+  const count = (status: string) => Object.values(ledger).filter((entry) => entry.status === status).length
+  const partial = count("partial") === 0 ? "" : `, ${count("partial")} partial`
+  console.log(`ledger ok, ${requirementIds.length} requirements, ${count("covered")} covered${partial}`)
 }
