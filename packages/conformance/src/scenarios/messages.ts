@@ -396,7 +396,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only",
-    requirements: ["0018442c", "41fe7364", "62ac4caa", "61b94fc9", "6d8b1d0c", "8a28a42b", "16606350", "1ba43990"],
+    requirements: ["0018442c", "62ac4caa", "61b94fc9", "6d8b1d0c", "8a28a42b", "16606350", "1ba43990", "d57ad351"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -480,7 +480,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly",
-    requirements: ["8233eb0b", "b7d299a8", "000bf2b7", "73bce32e", "e0078c2e", "d57ad351"],
+    requirements: ["8233eb0b", "b7d299a8", "22cf59fa", "000bf2b7", "73bce32e", "e0078c2e", "d57ad351"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -658,7 +658,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored",
-    requirements: ["88c209cc", "41fe7364", "8cefb16e", "c4905fe6"],
+    requirements: ["88c209cc", "41fe7364", "d492805f", "8cefb16e", "c4905fe6", "6d37745b"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)

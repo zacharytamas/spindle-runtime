@@ -478,7 +478,6 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
-			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only",
 			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
 		],
 		"reason": ""
@@ -1612,7 +1611,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
 		],
 		"reason": ""
 	},
@@ -1649,7 +1649,7 @@
 		"reason": ""
 	},
 	"specification:hooks:41d77a88": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run",
@@ -1657,7 +1657,7 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds",
 			"packages/runtime/test/conformance.test.ts > hooks > H9c fails the hook that gives the human's message, the model's response, or a tool result a taken id, and keeps the later hooks' changes"
 		],
-		"reason": ""
+		"reason": "The message that before_create_message returns is what Spindle inserts, for every field the store keeps. The store leaves the nine subagent_* fields null until M3 adds the child registry they project from, so a subagent_id that a hook returns reads back as null. M3 owes those fields."
 	},
 	"specification:hooks:765e84ae": {
 		"status": "covered",
@@ -3821,7 +3821,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
-			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
 		],
 		"reason": ""
 	},
@@ -3906,7 +3907,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
-			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request",
+			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
 		],
 		"reason": ""
 	},
@@ -4743,7 +4745,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
-			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
 		],
 		"reason": ""
 	},
@@ -4818,7 +4821,6 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
 			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
 		],
 		"reason": ""
@@ -4851,7 +4853,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
+			"packages/runtime/test/conformance.test.ts > hooks > H12b calls the success hook only after a tool succeeds and the failure hook only after one fails"
 		],
 		"reason": ""
 	},
@@ -4883,7 +4886,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
+			"packages/runtime/test/conformance.test.ts > hooks > H12b calls the success hook only after a tool succeeds and the failure hook only after one fails"
 		],
 		"reason": ""
 	},
@@ -6493,7 +6497,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
 		],
 		"reason": ""
 	},
@@ -6501,7 +6506,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
 		],
 		"reason": "The store keeps parent_id on every message and returns null when nothing sets it. M2 owes the sub-prompt messages that name a parent."
 	},
@@ -6509,7 +6515,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
+			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result"
 		],
 		"reason": ""
 	}

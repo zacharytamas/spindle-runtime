@@ -34,7 +34,7 @@ const hookIds = (hooks: Setup["hooks"]) => (hooks ?? []).map((hook) => hook.id)
 export const hookScenarios: ReadonlyArray<Scenario> = [
   {
     name: "H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
-    requirements: ["216a047a", "6fc64bc7", "dce1c8bc", "17286533", "f66e7c81", "f7da5f56", "bf795e82", "3b4fc9bc"],
+    requirements: ["216a047a", "41bdae5c", "6fc64bc7", "dce1c8bc", "17286533", "f66e7c81", "f7da5f56", "3b4fc9bc"],
     run: async (driver) => {
       const events: Array<unknown> = []
       const hooks = [
@@ -614,7 +614,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H11b sends every field of the array prefilter_llm_history returns that a provider message can hold",
-    requirements: ["5cf7c4b6", "dfde10dc"],
+    requirements: ["dfde10dc", "5cf7c4b6"],
     run: async (driver) => {
       const requestWith = async (returned: Array<LLMMessage>) => {
         const provider = new ScriptedProvider([{ text: "done" }])
@@ -811,7 +811,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H12b calls the success hook only after a tool succeeds and the failure hook only after one fails",
-    requirements: ["0fc819f0", "5fc8a060"],
+    requirements: ["a91f50b9", "0fc819f0", "ca83d472", "5fc8a060"],
     run: async (driver) => {
       const events: Array<unknown> = []
       const hooks = [
@@ -1332,7 +1332,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
-    requirements: ["732b2d4b", "3d8dede1", "41bdae5c"],
+    requirements: ["732b2d4b", "3d8dede1", "41bdae5c", "4029d475"],
     run: async (driver) => {
       const ran: Array<string> = []
       const boom = (id: string) => async () => {
@@ -1582,7 +1582,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H22b redacts a write with the secrets that its hooks learned before the write was stored",
-    requirements: ["287f2aef"],
+    requirements: ["d263e879", "287f2aef"],
     run: async (driver) => {
       const instance = { LATE_A: "late-injected-71", LATE_B: "late-edited-72", LATE_C: "late-result-73" }
       const hooks = [
