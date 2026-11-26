@@ -17,10 +17,6 @@ import {
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
 
-const theStore = Effect.gen(function* () {
-  return yield* ThreadStore
-})
-
 const message = (content: string): QueueEntry => ({ kind: "message", message: { role: "user", content } })
 
 const claim = (flowId: string, holder = "holder-1") => ({ holder, flowId })
@@ -59,7 +55,7 @@ const insertCalls = (threadId: string, flowId: string, caller: NewMessage, resul
   })
 
 const rows = (threadId: string) =>
-  Effect.flatMap(theStore, (store) =>
+  Effect.flatMap(ThreadStore, (store) =>
     Effect.map(store.getMessages(threadId, { order: "asc", includeSilent: true }), (result) =>
       result.messages.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : m.content, m.tool_status ?? null]),
     ),
@@ -136,16 +132,16 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
       const filename = `${yield* fs.makeTempDirectoryScoped({ prefix: "spindle-claims-" })}/spindle.db`
-      const threadId = yield* Effect.flatMap(theStore, (store) =>
+      const threadId = yield* Effect.flatMap(ThreadStore, (store) =>
         Effect.map(store.createThread({ agentId: "assistant" }), (thread) => thread.id),
       ).pipe(Effect.provide(storeAt(filename)))
       const admitFrom = (flowId: string) =>
-        Effect.flatMap(theStore, (store) => store.admit(threadId, message(flowId), claim(flowId, flowId))).pipe(
+        Effect.flatMap(ThreadStore, (store) => store.admit(threadId, message(flowId), claim(flowId, flowId))).pipe(
           Effect.provide(storeAt(filename)),
         )
       const results = yield* Effect.all([admitFrom("flow-1"), admitFrom("flow-2")], { concurrency: "unbounded" })
       expect(results.filter((result) => result.claimed)).toHaveLength(1)
-      const length = Effect.flatMap(theStore, (store) => store.queueLength(threadId))
+      const length = Effect.flatMap(ThreadStore, (store) => store.queueLength(threadId))
       expect(yield* Effect.provide(length, storeAt(filename))).toBe(2)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )

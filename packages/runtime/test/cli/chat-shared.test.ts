@@ -264,12 +264,7 @@ describe("spindle chat beside other processes", () => {
         yield* session.type("one\n")
         yield* prompt(session, 2)
         const thread = yield* threadOf(session)
-        const sql = yield* Effect.provide(
-          Effect.gen(function* () {
-            return yield* SqlClient
-          }),
-          yield* Layer.build(Layer.fresh(SqliteLive({ filename: db }))),
-        )
+        const sql = yield* Effect.provide(SqlClient, yield* Layer.build(Layer.fresh(SqliteLive({ filename: db }))))
         yield* sql.unsafe("BEGIN IMMEDIATE")
         yield* session.type("locked\n")
         // The driver waits 5 seconds for the lock before it gives up, so this line takes that long to show.

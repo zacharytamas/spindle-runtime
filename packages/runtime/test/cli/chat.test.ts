@@ -27,11 +27,8 @@ const queue = fixture("queue")
 const stepLoop = fixture("step-loop")
 const hooks = fixture("hooks")
 
-const fileSystem = Effect.gen(function* () {
-  return yield* FileSystem.FileSystem
-})
-
-const write = (file: string, text: string) => Effect.flatMap(fileSystem, (fs) => fs.writeFileString(file, text))
+const write = (file: string, text: string) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(file, text))
 
 const threadsIn = (db: string) =>
   Effect.gen(function* () {
