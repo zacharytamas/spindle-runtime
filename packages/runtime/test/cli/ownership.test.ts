@@ -212,6 +212,9 @@ describe("spindle ownership across processes", () => {
         const code = yield* old.exit
         const outcomes = (yield* exists(at("late-l.log"))) ? yield* lines(at("late-l.log")) : []
         const refused = (write: string) => expect.stringMatching(new RegExp(`^${write} refused [A-Z][A-Za-z]+$`))
+        // The process stops when it sees that it lost the thread, which can be before the tool has tried every write.
+        // So each write it did try must have been refused. Scenario O01 checks all six in one process.
+        const writes = ["setValue", "queueMessage", "injectMessage", "updateMessage", "deleteMessage", "terminate"]
         expect({
           outcomes,
           stored: yield* stored(db, thread),
@@ -219,9 +222,7 @@ describe("spindle ownership across processes", () => {
           lastLine: old.err.at(-1),
           reportedAnOutcome: old.err.filter((line) => /^spindle: (idle|failed) \(/.test(line)),
         }).toEqual({
-          outcomes: ["setValue", "queueMessage", "injectMessage", "updateMessage", "deleteMessage", "terminate"].map(
-            refused,
-          ),
+          outcomes: writes.slice(0, outcomes.length).map(refused),
           stored: before,
           failed: true,
           lastLine: lostThread(thread),
