@@ -506,7 +506,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               : undefined
           const exposed = [...turn.tools.values()].find((candidate) => candidate.tool.definition === definition)
           const name = exposed?.name ?? definition?.name ?? entry.toolName
-          const argumentsText = JSON.stringify(entry.args)
+          const argumentsText = JSON.stringify(mapStrings(entry.args, redact, redact))
           const call: ToolCall = {
             id: `queued-${crypto.randomUUID()}`,
             name,

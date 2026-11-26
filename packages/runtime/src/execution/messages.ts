@@ -95,7 +95,7 @@ const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
   injection: ["content", "metadata"],
   result: ["content", "metadata", "attachments"],
   turn: [],
-  queued: ["tool_calls"],
+  queued: [],
 }
 
 const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
