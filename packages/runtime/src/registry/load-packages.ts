@@ -160,9 +160,18 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
     packages.push(pkg)
     for (const kind of KINDS) {
       const loaders = exports[PLURAL[kind]]
-      if (loaders === undefined) continue
+      if (loaders === undefined && kind === "effect") continue
       if (!isRecord(loaders)) {
-        issue("package_invalid", file, `${name} exports ${PLURAL[kind]} that is not an object of loaders`)
+        issues.push({
+          code: "package_invalid",
+          severity: "error",
+          message:
+            loaders === undefined
+              ? `${name} does not export ${PLURAL[kind]}. A package exports every registry except effects and threadEndpoints, even when it is empty.`
+              : `${name} exports ${PLURAL[kind]} that is not an object of loaders`,
+          file,
+          path: PLURAL[kind],
+        })
         continue
       }
       for (const [key, loader] of Object.entries(loaders)) {

@@ -252,6 +252,11 @@ const invalid: ReadonlyArray<Case> = [
       error("package_parent_hooks_mismatch", "agents/packed/broken/package.json:standardagent.parentHooks.relay"),
       error("package_invalid", "agents/packed/no-manifest/package.json"),
       error("package_meta_invalid", "agents/packed/no-meta/index.js"),
+      error("package_invalid", "agents/packed/tools-only/index.js:agents"),
+      error("package_invalid", "agents/packed/tools-only/index.js:handlers"),
+      error("package_invalid", "agents/packed/tools-only/index.js:hooks"),
+      error("package_invalid", "agents/packed/tools-only/index.js:models"),
+      error("package_invalid", "agents/packed/tools-only/index.js:prompts"),
     ],
   ],
   [
