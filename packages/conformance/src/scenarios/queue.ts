@@ -1213,4 +1213,93 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       )
     },
   },
+  {
+    name: "Q26 commits nothing for a queueTool that throws, and runs each accepted call once when its arguments queue another",
+    requirements: ["304b015d"],
+    run: async (driver) => {
+      const held = gate()
+      const release = gate()
+      const ran: Array<string> = []
+      const work = defineTool({
+        description: "Record the label",
+        args: z.object({ label: z.string() }),
+        execute: async (_state, { label }) => {
+          ran.push(label)
+          return ok(label)
+        },
+      })
+      const provider = new ScriptedProvider([
+        async () => {
+          held.release()
+          await release.opened
+          return { text: "continue" }
+        },
+        { text: "done" },
+        { text: "spare" },
+      ])
+      await using(driver, { provider, tools: { work } }, async (session, thread) => {
+        const run = quiet(session.send(thread, "go"))
+        await held.opened
+        const state = await session.state(thread)
+        const queue = (label: string, args: Record<string, unknown> = { label }) => {
+          try {
+            state.queueTool("work", args)
+            return "accepted"
+          } catch {
+            return "threw"
+          }
+        }
+        let reads = 0
+        let inner = "not called"
+        const outer = queue("outer", {
+          get label() {
+            reads += 1
+            if (reads === 1) inner = queue("inner")
+            return "outer"
+          },
+        })
+        // A caller whose call threw queues the same work again, because a throw means that nothing was queued.
+        const retried = {
+          inner: inner === "threw" ? queue("inner") : inner,
+          outer: outer === "threw" ? queue("outer") : outer,
+        }
+        const queued = (await session.inspect(thread)).queue.length
+        release.release()
+        expect(await run).toMatchObject({ status: "idle" })
+        expect({ ran: [...ran].sort(), queued, reads, retried }).toEqual({
+          ran: ["inner", "outer"],
+          queued: 2,
+          reads: 1,
+          retried: { inner: "accepted", outer: "accepted" },
+        })
+      })
+    },
+  },
+  {
+    name: "Q27 reads a getter on queued arguments once and runs the tool once with the value it returned",
+    requirements: [],
+    run: async (driver) => {
+      const ran: Array<string> = []
+      const work = defineTool({
+        description: "Record the label",
+        args: z.object({ label: z.string() }),
+        execute: async (_state, { label }) => {
+          ran.push(label)
+          return ok(label)
+        },
+      })
+      const provider = new ScriptedProvider([{ text: "saw it" }])
+      await using(driver, { provider, tools: { work } }, async (session, thread) => {
+        let reads = 0
+        ;(await session.state(thread)).queueTool("work", {
+          get label() {
+            reads += 1
+            return `read ${reads}`
+          },
+        })
+        expect(await session.settled(thread)).toMatchObject({ status: "idle", steps: 1 })
+        expect([reads, ran]).toEqual([1, ["read 1"]])
+      })
+    },
+  },
 ]
