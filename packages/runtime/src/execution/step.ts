@@ -554,7 +554,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         let prompted = false
         let count = 0
         while (run.stop === undefined) {
-          const entry = yield* store.nextQueued(threadId)
+          const entry = yield* store.nextQueued(threadId, flowId)
           if (entry === undefined) break
           count += 1
           if (entry.kind === "tool") {

@@ -11,6 +11,7 @@ export default Effect.gen(function* () {
       pid INTEGER NOT NULL
     ) STRICT`
 
+  yield* sql`ALTER TABLE queue ADD COLUMN disposition TEXT NOT NULL DEFAULT 'pending' CHECK(disposition IN ('pending', 'failed_delivery'))`
   yield* sql`ALTER TABLE threads ADD COLUMN holder_id TEXT`
   yield* sql`ALTER TABLE threads ADD COLUMN flow_id TEXT`
   yield* sql`ALTER TABLE messages ADD COLUMN flow_id TEXT`

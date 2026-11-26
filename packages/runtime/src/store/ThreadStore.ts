@@ -232,7 +232,7 @@ export class ThreadStore extends Context.Service<
     readonly claim: (threadId: string, claim: Claim) => Effect.Effect<boolean, SqlError>
     readonly isQueued: (threadId: string, seq: number) => Effect.Effect<boolean, SqlError>
     // The oldest entry, which stays queued until the message that delivers it is inserted.
-    readonly nextQueued: (threadId: string) => Effect.Effect<Queued | undefined, SqlError>
+    readonly nextQueued: (threadId: string, flowId?: string) => Effect.Effect<Queued | undefined, SqlError>
     readonly queueLength: (threadId: string) => Effect.Effect<number, SqlError>
     // Ends the flow's run. Every call of the run that has no result gets an error result with the closing text.
     readonly settle: (
