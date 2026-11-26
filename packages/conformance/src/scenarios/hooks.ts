@@ -1045,6 +1045,59 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H15c refuses a write nested deeper than the limit and names the hook that made it",
+    requirements: ["3d8dede1"],
+    run: async (driver) => {
+      const refused: Array<string> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "recurse",
+          execute: async (state, message) => {
+            const depth = message.content === "start" ? 0 : Number(message.content?.match(/^nested (\d+)$/)?.[1] ?? 12)
+            if (depth < 12)
+              await state.injectMessage({ role: "user", content: `nested ${depth + 1}` }).catch((error: Error) => {
+                refused.push(`${error.name}: ${error.message}`)
+              })
+            return message
+          },
+        }),
+      ]
+      const tools = {
+        start: defineTool({
+          description: "Inject the first message",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "start" })
+            return ok("started")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "start", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools, hooks, prompt: { hooks: ["recurse"] } }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const nested = (await session.messages(thread)).flatMap((m) =>
+          m.content?.startsWith("nested") ? [m.content] : [],
+        )
+        expect(nested.sort()).toEqual([
+          "nested 1",
+          "nested 2",
+          "nested 3",
+          "nested 4",
+          "nested 5",
+          "nested 6",
+          "nested 7",
+          "nested 8",
+        ])
+      })
+      expect(refused).toEqual([
+        "NestedWriteTooDeep: Hook recurse (before_create_message) made a write 9 hook writes deep, past the limit of 8, so Spindle refused it",
+      ])
+    },
+  },
+  {
     name: "H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
     requirements: ["732b2d4b", "3d8dede1", "41bdae5c"],
     run: async (driver) => {

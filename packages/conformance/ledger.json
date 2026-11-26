@@ -4720,7 +4720,8 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn",
 			"packages/runtime/test/conformance.test.ts > hooks > H23b fails a before_create_message hook that changes a message's role or a tool result's call id",
 			"packages/runtime/test/conformance.test.ts > hooks > H9c fails the hook that gives the human's message, the model's response, or a tool result a taken id, and keeps the later hooks' changes",
-			"packages/runtime/test/conformance.test.ts > hooks > H15b discards a return that comes after the time limit and refuses later calls from that hook's state"
+			"packages/runtime/test/conformance.test.ts > hooks > H15b discards a return that comes after the time limit and refuses later calls from that hook's state",
+			"packages/runtime/test/conformance.test.ts > hooks > H15c refuses a write nested deeper than the limit and names the hook that made it"
 		],
 		"reason": ""
 	},

@@ -17,6 +17,10 @@ export const HookTimeout = Context.Reference<Duration.Duration>("spindle/HookTim
   defaultValue: () => Duration.seconds(30),
 })
 
+// A hook that writes a message runs the create hooks again, and those may write too. One setting bounds how deep a
+// chain of such writes may go.
+export const NestedWriteLimit = Context.Reference<number>("spindle/NestedWriteLimit", { defaultValue: () => 8 })
+
 // The value each position hands its hooks in turn. A transforming hook replaces it, an observing hook only sees it.
 export interface Values {
   readonly after_thread_created: undefined
@@ -270,10 +274,13 @@ export interface HookSet {
   readonly byPosition: ReadonlyMap<string, ReadonlyArray<SelectedHook>>
 }
 
-// One call of one hook. Its ThreadState refuses every call once the call runs past the hook time limit.
+// One call of one hook. Its ThreadState refuses every call once the call runs past the hook time limit. A write that
+// the loop, a tool, or a caller at rest makes has depth 0, and a hook called for a write of depth d has depth d + 1,
+// which its own writes carry.
 export interface HookCall {
   readonly hook: string
   readonly position: Position
+  readonly depth: number
   expired: boolean
 }
 
@@ -335,6 +342,17 @@ export class HookExpired extends Data.TaggedError("HookExpired")<{
   }
 }
 
+export class NestedWriteTooDeep extends Data.TaggedError("NestedWriteTooDeep")<{
+  readonly hook: string
+  readonly position: Position
+  readonly depth: number
+  readonly limit: number
+}> {
+  override get message() {
+    return `Hook ${this.hook} (${this.position}) made a write ${this.depth} hook writes deep, past the limit of ${this.limit}, so Spindle refused it`
+  }
+}
+
 export class HookFailed extends Data.TaggedError("HookFailed")<{
   readonly hook: string
   readonly position: Position
@@ -369,6 +387,8 @@ export const runHooks = <K extends Position>(
   value: Values[K],
   options: {
     readonly essential?: boolean
+    // The depth of the write these hooks decorate. Anything else they decorate has depth 0.
+    readonly depth?: number
     // A check the return passes only against stored state, such as an id that no message holds yet. It gives the
     // problem, or undefined when there is none.
     readonly check?: (next: Values[K], current: Values[K]) => Effect.Effect<string | undefined>
@@ -382,7 +402,7 @@ export const runHooks = <K extends Position>(
     const check = options.check ?? (() => Effect.succeed(undefined))
     let current = value
     for (const hook of hooks) {
-      const call: HookCall = { hook: hook.id, position, expired: false }
+      const call: HookCall = { hook: hook.id, position, depth: (options.depth ?? 0) + 1, expired: false }
       const args = [
         scope.stateFor(hook, call),
         ...lead.map(copy),

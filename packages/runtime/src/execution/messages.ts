@@ -2,7 +2,7 @@ import type { Message, MessageUpdates } from "@standardagents/spec"
 import { Clock, Effect } from "effect"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
-import { type HookScope, runHooks, TEXT_FIELDS } from "./hooks.ts"
+import { type HookCall, type HookScope, NestedWriteLimit, NestedWriteTooDeep, runHooks, TEXT_FIELDS } from "./hooks.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
 
@@ -10,7 +10,19 @@ export interface WriteContext {
   readonly threadId: string
   readonly hooks: HookScope
   readonly secrets: Secrets
+  // The hook call whose ThreadState writes, when a hook writes.
+  readonly call: HookCall | undefined
 }
+
+// A write from a hook is one level deeper than the write or the step that called the hook.
+const depthOf = Effect.fnUntraced(function* (write: WriteContext) {
+  const { call } = write
+  if (call === undefined) return 0
+  const limit = yield* NestedWriteLimit
+  if (call.depth > limit)
+    return yield* new NestedWriteTooDeep({ hook: call.hook, position: call.position, depth: call.depth, limit })
+  return call.depth
+})
 
 const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
 
@@ -105,6 +117,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   writer: Writer,
 ) {
   const store = yield* ThreadStore
+  const depth = yield* depthOf(write)
   const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
   const taken = (next: Message, current: Message) =>
@@ -119,13 +132,13 @@ export const createMessage = Effect.fn("createMessage")(function* (
     "before_create_message",
     [],
     original,
-    essential ? { essential, check: taken } : {},
+    essential ? { depth, essential, check: taken } : { depth },
   )
   const stored = yield* store.insertMessage(
     write.threadId,
     redactWrite(writer, original, hooked, redactor(write.secrets.values)),
   )
-  yield* runHooks(write.hooks, "after_create_message", [], stored)
+  yield* runHooks(write.hooks, "after_create_message", [], stored, { depth })
   return stored
 })
 
@@ -144,9 +157,10 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   updates: MessageUpdates,
 ) {
   const store = yield* ThreadStore
-  const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates })
+  const depth = yield* depthOf(write)
+  const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
   const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates)
-  yield* runHooks(write.hooks, "after_update_message", [], message)
+  yield* runHooks(write.hooks, "after_update_message", [], message, { depth })
   return message
 })

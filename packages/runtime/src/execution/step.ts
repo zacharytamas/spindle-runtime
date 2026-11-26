@@ -321,7 +321,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         secrets,
         hooks,
       }
-      const write = { threadId, hooks, secrets }
+      const write = { threadId, hooks, secrets, call: undefined }
       const toolContext: ToolContext = {
         turn,
         stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined): ThreadState =>

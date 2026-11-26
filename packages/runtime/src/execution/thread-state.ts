@@ -98,7 +98,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () =>
     registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
-  const write = { threadId, hooks: state.hooks, secrets: state.secrets }
+  const write = { threadId, hooks: state.hooks, secrets: state.secrets, call }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
     else state.secrets.values.add(value)
