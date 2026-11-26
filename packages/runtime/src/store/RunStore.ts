@@ -14,7 +14,7 @@ import {
   runColumns,
   unyielding,
 } from "./database.ts"
-import { type Claim, external, type Holder, type QueueEntry, type Thread, type WriteOrigin } from "./model.ts"
+import type { Claim, Holder, QueueEntry, Thread, WriteOrigin } from "./model.ts"
 import {
   decodeQueued,
   type MessageRow,
@@ -140,7 +140,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     claim: Effect.fn("RunStore.claim")(
       function* (threadId: string, claim: Claim) {
         const [row] = yield* runRows(threadId)
-        if (row === undefined || authorize(threadId, row, external)) return false
+        if (row === undefined || row.terminated_at !== null) return false
         return (yield* hasPending(threadId)) && (yield* claimRun(threadId, row, claim, yield* nowMicros))
       },
       sql.withTransaction,
@@ -165,7 +165,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         const changed = yield* sql.withTransaction(
           Effect.gen(function* () {
             const [run] = yield* runRows(threadId)
-            if (!run || authorize(threadId, run, origin, "owner")) return []
+            if (!run || run.flow_id !== origin.flowId) return []
             return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(sql, threadId)} AND seq = ${row.seq} RETURNING seq`
           }),
         )
@@ -192,7 +192,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         options: { readonly continueIfQueued: boolean; readonly atCap?: boolean; readonly closing: string },
       ) {
         const [row] = yield* runRows(threadId)
-        if (row === undefined || authorize(threadId, row, origin, "owner") || row.run_state !== "running")
+        if (row === undefined || row.flow_id !== origin.flowId || row.run_state !== "running")
           return "superseded" as const
         // The check and the release share one transaction, so work queued after the last drain either keeps this
         // run going or finds the thread released and starts the next one.

@@ -31,7 +31,7 @@ export const authorize = (
   threadId: string,
   row: { flow_id: string | null; terminated_at: number | null },
   origin: WriteOrigin,
-  operation?: "insert" | "owner",
+  operation?: "insert",
 ) => {
   if (origin.flowId !== undefined && row.flow_id !== origin.flowId)
     return new FlowEnded({
@@ -40,11 +40,7 @@ export const authorize = (
       why: row.terminated_at === null ? "superseded" : "terminated",
     })
   if (origin.handle?.expired()) return new HandleExpired()
-  if (
-    row.terminated_at !== null &&
-    operation !== "owner" &&
-    !(operation === "insert" && origin.handle?.terminated === row.terminated_at)
-  )
+  if (row.terminated_at !== null && !(operation === "insert" && origin.handle?.terminated === row.terminated_at))
     return new ThreadTerminated({ threadId, terminated: row.terminated_at })
 }
 export const requireThread = <A>(threadId: string, rows: ReadonlyArray<A>) =>
