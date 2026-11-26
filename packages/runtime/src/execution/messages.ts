@@ -22,8 +22,12 @@ const depthOf = Effect.fnUntraced(function* (write: WriteContext) {
   const { call } = write
   if (call === undefined) return 0
   const limit = yield* NestedWriteLimit
-  if (call.depth > limit)
-    return yield* new NestedWriteTooDeep({ hook: call.hook, position: call.position, depth: call.depth, limit })
+  if (call.depth > limit) {
+    const error = new NestedWriteTooDeep({ hook: call.hook, position: call.position, depth: call.depth, limit })
+    // Every hook above this write sees only that its own write failed, so this is the one line that says why.
+    yield* Effect.logWarning(error.message)
+    return yield* error
+  }
   return call.depth
 })
 

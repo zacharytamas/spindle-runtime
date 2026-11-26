@@ -314,4 +314,39 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
       }
     },
   },
+  {
+    name: "I9 logs one line that names the hook and the limit when a nested write goes past the depth limit",
+    requirements: [],
+    run: async (driver) => {
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "always_inject",
+          execute: async (state, message) => {
+            if (message.role === "user") await state.injectMessage({ role: "user", content: "again" })
+            return message
+          },
+        }),
+      ]
+      const tools = {
+        start: defineTool({
+          description: "Inject the first message",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "start" }).catch(() => undefined)
+            return ok("started")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "start", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools, hooks, prompt: { hooks: ["always_inject"] } }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const lines = session.logs().filter((line) => line.includes("limit of 8"))
+        expect(lines).toHaveLength(1)
+        expect(lines[0]).toContain("Hook always_inject (before_create_message)")
+      })
+    },
+  },
 ]
