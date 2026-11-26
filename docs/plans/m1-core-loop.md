@@ -286,6 +286,8 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 
 ## Run the step loop for a prompt side (M1-4)
 
+Read `docs/plans/briefs/m1-4.md` before this section. A reviewer wrote it from the spec text before the build, and it corrects boxes and lanes below. Where the brief and this section differ, follow the brief. Where the brief and the spec differ, follow the spec and record the difference in Appendix A.
+
 An execution moves through one ordered list of phases per step, which are drain, assemble, call, persist the response, run the tools, persist the results, and evaluate the stop rules. The loop records each phase in an `ExecutionTrace`. The stop rules are one ordered table that the loop reads top to bottom. User code is Promise-based and runs at the edge. The loop wraps each tool call in an Effect and builds the `ThreadState` object from the services the execution holds.
 
 **Depends on.** M1-2 and M1-3.
@@ -358,6 +360,8 @@ An execution moves through one ordered list of phases per step, which are drain,
 
 ## Run hooks at every specified position (M1-5)
 
+Read `docs/plans/briefs/m1-5.md` before this section. A reviewer wrote it from the spec text before the build, and it corrects boxes and lanes below. Where the brief and this section differ, follow the brief. Where the brief and the spec differ, follow the spec and record the difference in Appendix A.
+
 The spec defines fourteen hooks, and this PR implements thirteen of them. The hook positions are one table from `HookName` to where the loop calls it, what the return value replaces, and what a failure does. The loop reads the table. No phase has its own hook code. A context assembly owns one history snapshot, and a message that arrives after the snapshot starts belongs to the next assembly.
 
 **Depends on.** M1-4.
@@ -420,6 +424,8 @@ The spec defines fourteen hooks, and this PR implements thirteen of them. The ho
 - [ ] The root appends M1-5 to the stack above M1-4 and the operator lands the stack bottom-up.
 
 ## Queue work and keep one execution per thread (M1-6)
+
+Read `docs/plans/briefs/m1-6.md` before this section. A reviewer wrote it from the spec text before the build, and it corrects boxes and lanes below. Where the brief and this section differ, follow the brief. Where the brief and the spec differ, follow the spec and record the difference in Appendix A.
 
 A thread's run status is one state machine with the states `idle`, `running`, and `failed`, plus a reason. Each thread has one durable inbox, the `queue` table, and at most one fiber that drains it. A lease row in the store names the process that holds a thread, so a second process cannot start a second execution and a restart can find the executions that died.
 
