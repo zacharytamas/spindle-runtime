@@ -1657,4 +1657,187 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       })
     },
   },
+  {
+    name: "Q36 shows the termination time on the handle whose terminate() resolved",
+    requirements: ["7b26e7c9"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([])
+      await using(driver, { provider }, async (session, thread) => {
+        const state = await session.state(thread)
+        expect(state.terminated).toBeNull()
+        await state.terminate()
+        const fresh = (await session.state(thread)).terminated
+        expect(fresh).toEqual(expect.any(Number))
+        expect(state.terminated).toBe(fresh)
+      })
+    },
+  },
+  {
+    name: "Q37 throws from queueTool when the arguments are null, and queues nothing",
+    requirements: ["304b015d"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([{ text: "a reply that no refused call asks for" }])
+      await using(driver, { provider, tools: { echo } }, async (session, thread) => {
+        const state = await session.state(thread)
+        const outcome = await attempt(() => state.queueTool("echo", null as never))
+        const run = await session.settled(thread)
+        const stored = (await session.messages(thread)).map((message) => message.tool_status ?? message.role)
+        expect({ outcome, ran: run !== undefined, stored }).toEqual({
+          outcome: "InvalidArguments",
+          ran: false,
+          stored: [],
+        })
+      })
+    },
+  },
+  {
+    name: "Q38 lets a tool with a uses list leave out the arguments of queueTool",
+    requirements: [],
+    run: async (driver) => {
+      const ran: Array<string> = []
+      const target = defineTool({
+        description: "Record the run",
+        execute: async () => {
+          ran.push("target")
+          return ok("ran")
+        },
+      })
+      const caller = defineTool({
+        description: "Queue the target without arguments",
+        uses: ["target"] as Array<string>,
+        execute: async (state: ThreadState) => {
+          // The package types the arguments as optional only on the ThreadState of a tool that lists its uses.
+          ;(state as unknown as { queueTool: (name: string) => void }).queueTool("target")
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_caller", name: "caller", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools: { caller, target } }, async (session, thread) => {
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(ran).toEqual(["target"])
+      })
+    },
+  },
+  {
+    name: "Q39 does not claim an unknown outcome in the result of a call that a lost execution never started",
+    requirements: ["286367b3"],
+    run: async (driver) => {
+      const entered = gate()
+      const leave = gate()
+      const ran: Array<string> = []
+      const hold = defineTool({
+        description: "Wait for the test",
+        execute: async () => {
+          ran.push("hold")
+          entered.release()
+          await leave.opened
+          return ok("returned")
+        },
+      })
+      const later = defineTool({
+        description: "Record the run",
+        execute: async () => {
+          ran.push("later")
+          return ok("ran")
+        },
+      })
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c_hold", name: "hold", arguments: {} },
+            { id: "c_later", name: "later", arguments: {} },
+          ],
+        },
+      ])
+      await using(
+        driver,
+        { provider, tools: { hold, later } },
+        async (session, thread) => {
+          const peer = await session.peer()
+          try {
+            const run = quiet(session.send(thread, "go")).catch(() => undefined)
+            await entered.opened
+            try {
+              await peer.forceRecover(thread)
+            } finally {
+              leave.release()
+            }
+            await run
+            const results = (await peer.messages(thread)).filter((message) => message.role === "tool")
+            const unknown = /does not know whether/
+            expect(results.map((m) => [m.tool_call_id, m.tool_status, unknown.test(m.content ?? "")])).toEqual([
+              ["c_hold", "error", true],
+              ["c_later", "error", false],
+            ])
+            expect(ran).toEqual(["hold"])
+          } finally {
+            await peer.close()
+          }
+        },
+        { holderTimeoutMs: 60_000 },
+      )
+    },
+  },
+  {
+    name: "Q40 puts every entry that one drain delivers at the start of a turn into the first request after it",
+    requirements: ["109134a1", "5012a6bc"],
+    run: async (driver) => {
+      const asked: Record<string, unknown> = {}
+      for (const first of ["message", "tool"] as const) {
+        const held = gate()
+        const release = gate()
+        let execution: ExecutionState | null = null
+        const hold = defineTool({
+          description: "Wait for the test",
+          execute: async (state: ThreadState) => {
+            execution = state.execution
+            held.release()
+            await release.opened
+            return ok("held")
+          },
+        })
+        const provider = new ScriptedProvider([
+          { toolCalls: [{ id: "c_hold", name: "hold", arguments: {} }] },
+          acknowledge,
+        ])
+        await using(driver, { provider, tools: { hold, echo } }, async (session, thread) => {
+          const run = quiet(session.send(thread, "go"))
+          await held.opened
+          const state = await session.state(thread)
+          if (first === "message") await state.queueMessage({ role: "user", content: "A" })
+          else state.queueTool("echo", { text: "queued" })
+          const waiting = quiet(session.send(thread, "B"))
+          for (let tries = 0; tries < 500 && (await session.inspect(thread)).queue.length < 2; tries++)
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          ;(execution as ExecutionState | null)?.stop()
+          release.release()
+          expect(await run).toMatchObject({ status: "idle", reason: "aborted" })
+          expect(await waiting).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
+          const queuedCall = callsOf((await session.messages(thread)).find((m) => m.metadata?.queued === true))[0]?.id
+          asked[first] = history(provider.requests[1])
+            .map(sideOf)
+            .slice(first === "message" ? -2 : -3)
+            .map((row) =>
+              queuedCall !== undefined && (row[1] === queuedCall || row[2]?.[0] === queuedCall)
+                ? [row[0], "the queued call"]
+                : row.slice(0, 2),
+            )
+        })
+      }
+      expect(asked).toEqual({
+        message: [
+          ["user", "A"],
+          ["user", "B"],
+        ],
+        tool: [
+          ["assistant", "the queued call"],
+          ["tool", "the queued call"],
+          ["user", "B"],
+        ],
+      })
+    },
+  },
 ]
