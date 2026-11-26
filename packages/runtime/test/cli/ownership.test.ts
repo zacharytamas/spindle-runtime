@@ -54,6 +54,13 @@ const takeFromLiveProcess = (gate: string, db: string, thread: string) =>
   })
 
 describe("spindle ownership across processes", () => {
+  it.live("recover names a missing thread in one line", () =>
+    Effect.gen(function* () {
+      const { gate, db } = yield* setup
+      const child = yield* spindle(gate, ["recover", "absent", "--db", db])
+      expect([yield* child.exit, child.out, child.err]).toEqual([1, [], [`spindle: no thread absent in ${db}`]])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
   it.live(
     "a status read settles a thread whose process was killed as lost at once, even with a clock that is a day behind",
     () =>

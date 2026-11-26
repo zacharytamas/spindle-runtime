@@ -45,9 +45,12 @@ export const statusCommand = Command.make(
 export const recoverCommand = Command.make(
   "recover",
   {
-    thread: Argument.String("thread"),
-    db: Flag.String("db"),
-    force: Flag.Boolean("force").pipe(Flag.withDefault(false)),
+    thread: Argument.String("thread").pipe(Argument.withDescription("The id of the thread to recover")),
+    db: Flag.String("db").pipe(Flag.withDescription("The SQLite database file that holds the thread")),
+    force: Flag.Boolean("force").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("Recover even when the holder process appears alive"),
+    ),
   },
   ({ thread, db, force }) =>
     Effect.gen(function* () {
@@ -55,7 +58,9 @@ export const recoverCommand = Command.make(
       const line = yield* ThreadStore.use((store) =>
         store.transaction(
           Effect.gen(function* () {
-            const before = yield* store.getThread(thread)
+            const before = yield* store
+              .getThread(thread)
+              .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)))
             const holder = yield* store.holderOf(thread)
             if (before.status.state !== "running")
               return `thread ${thread} is not running (${before.status.state} ${before.status.reason ?? "none"}). Nothing changed.`
@@ -72,4 +77,4 @@ export const recoverCommand = Command.make(
       ).pipe(Effect.provide(database))
       yield* Console.log(line)
     }),
-)
+).pipe(Command.withDescription("Settle a thread whose execution was lost"))
