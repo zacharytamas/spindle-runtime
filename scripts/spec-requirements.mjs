@@ -116,27 +116,32 @@ const extract = (specDir) => {
   return requirements
 }
 
-const locate = (markdown, quote) => {
-  let section = ""
+const sections = (markdown) => {
+  const found = [{ section: "", text: "", starts: [] }]
   let fenced = false
-  let text = ""
-  const starts = []
   markdown.split(/\r?\n/).forEach((line, index) => {
     if (FENCE.test(line)) fenced = !fenced
     const heading = !fenced && line.match(HEADING)
-    if (heading) section = heading[1].trim()
+    if (heading) found.push({ section: heading[1].trim(), text: "", starts: [] })
     const part = normalize(line.replace(ITEM, ""))
     if (fenced || FENCE.test(line) || heading || part === "") return
-    starts.push({ at: text.length, line: index + 1, section })
-    text += `${part} `
+    const current = found.at(-1)
+    current.starts.push({ at: current.text.length, line: index + 1 })
+    current.text += `${part} `
   })
-  const at = text.indexOf(normalize(quote))
-  return at === -1 ? undefined : starts.findLast((start) => start.at <= at)
+  return found
 }
+
+// A quote is matched inside one section at a time, so it cannot be stitched together across a heading.
+const locate = (markdown, quote) =>
+  sections(markdown).flatMap(({ section, text, starts }) => {
+    const at = text.indexOf(normalize(quote))
+    return at === -1 ? [] : [{ section, line: starts.findLast((start) => start.at <= at).line }]
+  })
 
 const extras = JSON.parse(fs.readFileSync(extrasFile, "utf8"))
 const curated = (extra, lineOf) => {
-  const text = normalize(extra.text)
+  const text = normalize([extra.lead, extra.text].filter(Boolean).join(" "))
   const id = requirementId(extra.page, extra.section, text)
   return {
     id,
@@ -154,11 +159,16 @@ const curationProblems = []
 const curate = (specDir) =>
   extras.map((extra) => {
     const file = path.join(specDir, `${extra.page.replace(":", "/")}.md`)
-    const found = fs.existsSync(file) ? locate(fs.readFileSync(file, "utf8"), extra.text) : undefined
-    const entry = `requirements.extra.json entry for ${extra.page} "${extra.text}"`
-    if (found === undefined) curationProblems.push(`${entry} is not on its page`)
-    else if (found.section !== extra.section) curationProblems.push(`${entry} is under section "${found.section}"`)
-    return curated(extra, () => found?.line)
+    const markdown = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""
+    const lines = [extra.lead, extra.text].filter(Boolean).map((quote) => {
+      const hits = locate(markdown, quote)
+      const hit = hits.find(({ section }) => section === extra.section)
+      const entry = `requirements.extra.json entry for ${extra.page} "${quote}"`
+      if (hits.length === 0) curationProblems.push(`${entry} is not on its page`)
+      else if (hit === undefined) curationProblems.push(`${entry} is under section "${hits[0].section}"`)
+      return hit?.line
+    })
+    return curated(extra, () => lines.at(-1))
   })
 
 const fetchSpec = ({ repository, commit, path: versionPath }) => {

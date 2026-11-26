@@ -463,9 +463,9 @@
 	},
 	"infrastructure:runtime:bc5ba253": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "M1-4 tests that `maxSteps` is evaluated after `stopTool` and `stopOnResponse`. The `maxSessionTurns` part waits for M2, so mark this entry partial after M1-4."
 	},
 	"infrastructure:runtime:f4e7b1f2": {
 		"status": "planned",
@@ -4037,13 +4037,13 @@
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:71b8c22e": {
+	"infrastructure:runtime:58bf6a6d": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:326c9bc0": {
+	"infrastructure:runtime:3b206e78": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
@@ -4109,25 +4109,25 @@
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:f57e9ceb": {
+	"infrastructure:runtime:b4305106": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:01e5ae34": {
+	"infrastructure:runtime:e95fd065": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:492a4d5d": {
+	"infrastructure:runtime:dc7d7df0": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
-	"infrastructure:runtime:ee44563a": {
+	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
 		"milestone": "M3",
 		"tests": [],
@@ -4592,6 +4592,72 @@
 	"specification:agents:f990f511": {
 		"status": "planned",
 		"milestone": "M3",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:runtime:853d2427": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:runtime:ec3b4b7f": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:hooks:3b4fc9bc": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:hooks:5fc8a060": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:968989f2": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:41278e5e": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:3b0dd02b": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:e551bf33": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:agents:65d917e9": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:agents:bcd0c21d": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:agents:945becb5": {
+		"status": "planned",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	}

@@ -39,12 +39,14 @@
     "page": "infrastructure:runtime",
     "section": "4. Context Assembly",
     "level": "MUST",
+    "lead": "For any prompt-backed side:",
     "text": "the side's own turns appear as `assistant`"
   },
   {
     "page": "infrastructure:runtime",
     "section": "4. Context Assembly",
     "level": "MUST",
+    "lead": "For any prompt-backed side:",
     "text": "the opposite side's turns appear as `user`"
   },
   {
@@ -111,24 +113,28 @@
     "page": "infrastructure:runtime",
     "section": "10. Termination Semantics",
     "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
     "text": "set terminated timestamp"
   },
   {
     "page": "infrastructure:runtime",
     "section": "10. Termination Semantics",
     "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
     "text": "abort in-flight work"
   },
   {
     "page": "infrastructure:runtime",
     "section": "10. Termination Semantics",
     "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
     "text": "reject future execute/queue/send operations"
   },
   {
     "page": "infrastructure:runtime",
     "section": "10. Termination Semantics",
     "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
     "text": "propagate child termination status to parent registry when linked"
   },
   {
@@ -592,5 +598,75 @@
     "section": "7. Human-in-the-Loop Composition",
     "level": "MUST",
     "text": "When execution reaches the human-backed side's turn, the child session pauses: the child's registry status becomes `awaiting_human`, and the session resumes when a human's inbound message arrives on that side's perspective."
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "lead": "For any prompt-backed side:",
+    "text": "opposite-side tool calls are not directly visible"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "4. Context Assembly",
+    "level": "MUST",
+    "lead": "Before each model call, runtime context includes:",
+    "text": "provider/tool configuration"
+  },
+  {
+    "page": "specification:hooks",
+    "section": "2.4 Execution Provenance",
+    "level": "MUST",
+    "text": "Prompt and agent hooks receive their corresponding prompt/agent source. This context is deterministic runtime metadata and must not be inferred from mutable thread data."
+  },
+  {
+    "page": "specification:hooks",
+    "section": "1.1 Available Hooks",
+    "level": "MUST",
+    "text": "| `before_store_tool_result` | Before tool result storage | Transform tool results |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `name` | `string \\| null` | Tool name (for tool results) |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `tool_call_id` | `string \\| null` | Tool call ID (for results) |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `tool_status` | `'success' \\| 'error' \\| null` | Outcome of the tool call (for results) |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `depth` | `number` | Nesting depth (0 = top-level) |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "Agents",
+    "level": "MUST",
+    "text": "An agent has exactly two sides, and each side is backed by exactly one of three things: a human, a prompt, or a handler."
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "lead": "HumanSide",
+    "text": "| `human` | `true` | Required discriminator |"
+  },
+  {
+    "page": "specification:agents",
+    "section": "1.2 SideConfig",
+    "level": "MUST",
+    "lead": "HumanSide",
+    "text": "| `label` | `string` | Optional UI/log label |"
   }
 ]
