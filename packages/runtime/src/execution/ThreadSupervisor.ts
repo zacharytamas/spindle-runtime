@@ -253,7 +253,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               { continueIfQueued: false, closing: CLOSING.lost },
             )
         for (const [threadId, entry] of running)
-          if (owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) {
+          if (!entry.run.ended && owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) {
             entry.run.displaced = (yield* store.getThread(threadId)).terminated === null
             entry.run.releaseWait.abort()
             yield* Fiber.interrupt(entry.fiber)

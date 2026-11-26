@@ -10,7 +10,7 @@ import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
 import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
-import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
@@ -36,9 +36,10 @@ const countingStore = (reads: { count: number }) =>
     }),
   ).pipe(Layer.provide(inMemory()))
 
-const runOnce = (setup: Setup, reads: { count: number }) =>
+const runOnce = (setup: Setup, reads: { count: number }, outside?: (state:ThreadState) => void) =>
   Effect.gen(function* () {
     const thread = yield* createThread("assistant")
+    if (outside) outside(yield* stateAtRest(thread.id))
     const { outcome } = yield* sendMessage(thread.id, "go")
     if (outcome === undefined) return yield* Effect.die("the run had no outcome")
     return outcome
@@ -48,15 +49,6 @@ const runOnce = (setup: Setup, reads: { count: number }) =>
     ),
   )
 
-const keepHandle = (keep: (state: ThreadState) => void) =>
-  defineHook({
-    hook: "after_thread_created",
-    id: "keep_handle",
-    execute: async (state) => {
-      keep(state)
-    },
-  })
-
 describe("the history an execution keeps", () => {
   it.effect("is read whole once over twenty steps that nobody else writes to, and once more after a write", () =>
     Effect.gen(function* () {
@@ -65,9 +57,6 @@ describe("the history an execution keeps", () => {
       const perStep: Array<number> = []
       let last: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "after_system_message",
           id: "write_last",
@@ -95,8 +84,8 @@ describe("the history an execution keeps", () => {
       ])
       const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
       const outcome = yield* runOnce(
-        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_last", "count"] } },
-        reads,
+        { provider, tools, hooks, prompt: { hooks: ["write_last", "count"] } },
+        reads, state => { elsewhere = state },
       )
       expect(outcome.steps).toBe(21)
       expect(perStep).toEqual([...Array.from({ length: 20 }, () => 1), 2])
@@ -149,14 +138,8 @@ describe("the history an execution keeps", () => {
         {
           provider,
           tools,
-          hooks: [
-            keepHandle((state) => {
-              elsewhere = state
-            }),
-          ],
-          agent: { hooks: ["keep_handle"] },
         },
-        reads,
+        reads, state => { elsewhere = state },
       )
       expect(seen).toEqual({
         quiet: {
@@ -175,9 +158,6 @@ describe("the history an execution keeps", () => {
       let elsewhere: ThreadState | undefined
       const seen: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "after_system_message",
           id: "write_later",
@@ -216,8 +196,8 @@ describe("the history an execution keeps", () => {
         { text: "done" },
       ])
       yield* runOnce(
-        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_later", "count"] } },
-        reads,
+        { provider, tools, hooks, prompt: { hooks: ["write_later", "count"] } },
+        reads, state => { elsewhere = state },
       )
       expect(seen).toEqual([
         ["filter", 1, ["go"]],
@@ -279,9 +259,6 @@ describe("the history an execution keeps", () => {
       let wrote = false
       const seen: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "filter_messages",
           id: "compare",
@@ -299,9 +276,10 @@ describe("the history an execution keeps", () => {
         })
       }
       const provider = new ScriptedProvider([{ text: "done" }])
-      const setup = { provider, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["compare"] } }
+      const setup = { provider, hooks, prompt: { hooks: ["compare"] } }
       const stored = yield* Effect.gen(function* () {
         const thread = yield* createThread("assistant")
+        elsewhere = yield* stateAtRest(thread.id)
         yield* sendMessage(thread.id, "go", { observe })
         return (yield* (yield* ThreadStore).history(thread.id)).messages
       }).pipe(

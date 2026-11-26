@@ -224,7 +224,13 @@ export const layer = Layer.effect(
         sql.withTransaction(
           Effect.gen(function* () {
             const now = yield* nowMicros
-            if (yield* WritingHandle) yield* guardWrite(threadId)
+            const handle = yield* WritingHandle
+            if (handle) {
+              const existing = yield* selectRun(threadId)
+              const refusal = checkHandle(threadId, existing, handle, true)
+              if (refusal) return yield* refusal
+              if (existing.terminated_at !== null) return existing.terminated_at
+            }
             const rows = yield* sql<{ terminated_at: number }>`
               UPDATE threads SET terminated_at = coalesce(terminated_at, ${now})
               WHERE id = ${threadId} RETURNING terminated_at`

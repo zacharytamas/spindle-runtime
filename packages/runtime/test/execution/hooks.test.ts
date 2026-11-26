@@ -49,13 +49,15 @@ describe("an interrupted hook", () => {
       const inside = new Promise<void>((resolve) => {
         entered = resolve
       })
+      let release!: () => void
+      const cleanup = new Promise<void>(resolve => {release = resolve})
       const hang = defineHook({
         hook: position,
         id: "hang",
         execute: (async (_state: unknown, message: Message) => {
           if (message.role === "assistant") {
             entered()
-            await new Promise(() => {})
+            await cleanup
           }
           return message
         }) as never,
@@ -70,6 +72,8 @@ describe("an interrupted hook", () => {
         const fiber = yield* Effect.forkChild(sendMessage(thread.id, "go"))
         yield* Effect.promise(() => inside)
         yield* supervisor.abort(thread.id)
+        expect((yield* threads.getThread(thread.id)).status.state).toBe("running")
+        release()
         yield* Fiber.join(fiber)
         const stored = (yield* threads.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
         yield* threads.transaction(threads.appendMessages(thread.id, [{ role: "user", content: "later" }]))
