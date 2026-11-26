@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { PlatformLive } from "#platform"
 import {
+  type Child,
   entries,
   exists,
   freeze,
@@ -26,10 +27,8 @@ const call = (name: string, args: Record<string, unknown>) => `call:${JSON.strin
 // The lines that spindle recover prints on standard output.
 const wouldRecover = (thread: string, pid: number) =>
   `thread ${thread} is running in process ${pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`
-
 const recovered = (thread: string, pid: number) =>
   `thread ${thread} was running in process ${pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
-
 const notRunning = (thread: string, status: string) => `thread ${thread} is not running (${status}). Nothing changed.`
 
 // The last line that a process prints on standard error when it finds that its thread was taken from it.
@@ -279,6 +278,40 @@ describe("spindle ownership across processes", () => {
           [],
         ])
         expect(yield* lines(at("tool-log"))).toEqual(["k"])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "a send that waits behind a run in another process fails when a third process terminates the thread",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const run = yield* spindle(gate, [
+          "run",
+          "assistant",
+          "-m",
+          call("hold", { name: "t", watch: true }),
+          ...project,
+          "--db",
+          db,
+        ])
+        const thread = yield* threadIn(run)
+        yield* until("the tool to start", exists(at("tool-entered-t")))
+        const waiting: Child = yield* spindle(gate, ["send", thread, "-m", "waiting", ...project, "--db", db])
+        yield* until(
+          "the send to queue",
+          Effect.sync(() => waiting.err.some((line) => line.includes("waits in its queue"))),
+        )
+        const terminate = yield* spawn(gate, probe, ["terminate", "--thread", thread, ...project, "--db", db])
+        expect(yield* terminate.exit).toBe(0)
+        expect([yield* waiting.exit, waiting.err.at(-1)]).toEqual([
+          1,
+          `spindle: thread ${thread} is terminated, so it takes no new message, queued work, or execution`,
+        ])
+        expect(waiting.out).toEqual([])
+        yield* run.exit
+        expect((yield* stored(db, thread)).messages.map((message) => message[0])).toEqual(["user", "assistant", "tool"])
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )
