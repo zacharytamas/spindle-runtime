@@ -852,52 +852,70 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:d0bf2dee": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread"
+		],
+		"reason": "The store implements the per-thread key-value semantics. M1-4 owes ThreadState.getValue and ThreadState.setValue on top of it."
 	},
 	"infrastructure:runtime:f80f3471": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:70e01371": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread"
+		],
+		"reason": "The store makes a written value visible to every later read of the same thread. M1-4 owes one store behind getValue in tools and hooks, and M4 owes it in endpoints."
 	},
 	"infrastructure:runtime:534e316a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:bb09eb20": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values round-trip with JSON structure",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue rejects a value JSON cannot represent with an error that names the key, and stores nothing"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:e1a6e704": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:d54cbe9e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:7e531e7a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a value is committed when setValue resolves, so a second connection reads it while the first stays open"
+		],
+		"reason": "The test reads the value through a second connection before the writer closes, so the write committed before setValue resolved. The store sets synchronous to FULL. No unit test can show durability across a power loss."
 	},
 	"infrastructure:runtime:eb83472c": {
 		"status": "planned",
@@ -906,16 +924,16 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:360c5531": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "A permission. Spindle stores values as plain JSON text and does not encrypt them."
 	},
 	"infrastructure:runtime:a9a9d99e": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "A permission. Spindle sets no cap on key length, value size, or key count, so no cap error exists to test."
 	},
 	"infrastructure:runtime:2e5c4cd4": {
 		"status": "planned",
@@ -3379,27 +3397,35 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:37e4432c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes"
+		],
+		"reason": "The store records running, idle, and failed with a reason. M1-6 owes setting running when an execution starts and settling it when the execution ends or throws."
 	},
 	"specification:threads/execution-state:77ce1e15": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart, including a failed execution_lost status"
+		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:286367b3": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart, including a failed execution_lost status"
+		],
+		"reason": "The store persists failed with reason execution_lost across a restart. M1-6 owes the lease that finds a lost executor and the recovery pass that settles the thread."
 	},
 	"specification:threads/execution-state:fd44935b": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes"
+		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:bc901e39": {
@@ -3463,10 +3489,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:7abccc72": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "The store keeps reasoning_content and reasoning_details with the message. M1-4 owes persisting the reasoning the model returns."
 	},
 	"specification:threads/messages:80b5ff9b": {
 		"status": "planned",
@@ -3487,10 +3515,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:c0dc1ab1": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "The store keeps null for a message with no reasoning and the value for a message with reasoning. M1-4 owes passing null when the model returned none."
 	},
 	"specification:threads/messages:22cf59fa": {
 		"status": "planned",
@@ -3499,10 +3529,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:b74ef581": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "appendMessages resolves after the commit, and getMessage and getMessages return the record. M1-5 owes injectMessage on top of it."
 	},
 	"specification:threads/messages:000bf2b7": {
 		"status": "planned",
@@ -3511,10 +3543,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:79171656": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true"
+		],
+		"reason": "Store reads omit silent messages unless includeSilent is true. M1-4 owes ThreadState.getMessages and M6 owes the client API on top of it."
 	},
 	"specification:threads/messages:b93f89a4": {
 		"status": "planned",
@@ -3529,10 +3563,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:da639364": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true"
+		],
+		"reason": "The store persists and returns a silent message like a visible one. M1-5 owes the same lifecycle hooks and same-execution visibility."
 	},
 	"specification:threads/messages:73bce32e": {
 		"status": "planned",
@@ -4426,52 +4462,68 @@
 		"reason": ""
 	},
 	"specification:threads/messages:a232e5b2": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > each thread keeps its own ordered list of messages across a restart"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:6a7975b1": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "The store keeps tool_calls as the JSON-encoded string it receives. M1-4 owes encoding the model's tool calls in that shape."
 	},
 	"specification:threads/messages:2d964c36": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "The store keeps the status it receives. M1-4 and M1-6 owe pending while a message is queued or generating, then completed or failed."
 	},
 	"specification:threads/messages:37e69561": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset"
+		],
+		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:3489685d": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset"
+		],
+		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:f67424cd": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset"
+		],
+		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:bd122f30": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true"
+		],
+		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:7f464a24": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
+		],
+		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:8fe975d3": {
 		"status": "planned",
@@ -4510,22 +4562,28 @@
 		"reason": ""
 	},
 	"specification:threads/messages:129b4a0c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > queue > enqueue and takeQueue keep messages and tool calls in arrival order and empty the queue"
+		],
+		"reason": "The store dequeues messages and tool calls in arrival order. M1-6 owes the drain phase that processes them in that order."
 	},
 	"specification:threads/messages:1edbcdb1": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message"
+		],
+		"reason": "The store's deleteMessage returns true once and false after. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:threads/messages:96307380": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message"
+		],
+		"reason": "The store deletes the tool results whose tool_call_id matches the deleted assistant message's tool_calls. M1-4 owes the ThreadState method that passes this through to the store."
 	},
 	"specification:agents:bf19dc18": {
 		"status": "covered",
@@ -4767,28 +4825,37 @@
 		"reason": ""
 	},
 	"specification:threads/messages:968989f2": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+		],
+		"reason": "The store keeps the tool name of a tool result. M1-4 owes setting it."
 	},
 	"specification:threads/messages:41278e5e": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+		],
+		"reason": "The store keeps the tool call id of a tool result. M1-4 owes setting it."
 	},
 	"specification:threads/messages:3b0dd02b": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+		],
+		"reason": "The store keeps the tool status of a tool result. M1-4 owes setting it."
 	},
 	"specification:threads/messages:e551bf33": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
+		],
+		"reason": "The store defaults depth to 0 and keeps a deeper depth it receives. The PR that adds sub-prompts owes setting it."
 	},
 	"specification:agents:65d917e9": {
 		"status": "covered",
@@ -5043,22 +5110,28 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:ce0b6d35": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0"
+		],
+		"reason": "A thread that never ran reads idle with since 0 and reason null. M1-6 owes settling a run that did not fail to idle."
 	},
 	"specification:threads/execution-state:a46f561c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes"
+		],
+		"reason": "The store keeps reason null while the state is running. M1-6 owes setting running only while an execution is in flight."
 	},
 	"specification:threads:e1c56064": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M2",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0"
+		],
+		"reason": "The store keeps the arguments a thread was created with. M2 owes exposing them on ThreadState.arguments on every run."
 	},
 	"specification:threads:357c07d0": {
 		"status": "planned",
@@ -5079,39 +5152,51 @@
 		"reason": ""
 	},
 	"specification:threads:b680018e": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+		],
+		"reason": "The store keeps values per thread across restarts. M1-4 owes one store behind tools and hooks, and M4 owes it behind endpoints."
 	},
 	"specification:threads:3a998922": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
+		],
 		"reason": ""
 	},
 	"specification:threads:1c6df0f5": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+		],
 		"reason": ""
 	},
 	"specification:threads:e6726838": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values round-trip with JSON structure"
+		],
 		"reason": ""
 	},
 	"specification:threads:20b6e8c4": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written"
+		],
 		"reason": ""
 	},
 	"specification:threads:7373c989": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key"
+		],
 		"reason": ""
 	},
 	"specification:threads:318dc3fd": {
