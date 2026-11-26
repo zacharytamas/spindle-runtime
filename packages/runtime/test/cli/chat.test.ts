@@ -40,6 +40,25 @@ const threadsIn = (db: string) =>
 
 describe("spindle chat", () => {
   it.live(
+    "direction controls are escaped on the terminal and preserved in history",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        const text = "left\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069right"
+        const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
+        yield* session.type(`${text}\n${call("echo", { text })}\n`)
+        yield* session.end
+        expect(yield* session.exit).toBe(0)
+        const escaped = String.raw`left\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069right`
+        expect(session.out()).toContain(`ack: ${escaped}`)
+        expect(session.out()).toContain(`[tool call] echo {"text":"${escaped}"}`)
+        expect(session.out()).not.toMatch(/\p{Bidi_Control}/u)
+        expect(yield* messagesOf(db, yield* threadOf(session))).toContainEqual(["assistant", `ack: ${text}`])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "a declared digit preserves identifiers in the printed commands",
     () =>
       Effect.gen(function* () {

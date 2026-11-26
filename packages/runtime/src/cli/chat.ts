@@ -20,8 +20,10 @@ const shellWord = (word: string) =>
   /^[a-zA-Z0-9_./:@%+=,-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
 
 const escapeControls = (text: string) =>
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: keep model and tool text from driving the terminal
-  text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`)
+  text
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: keep model and tool text from driving the terminal
+    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`)
+    .replace(/\p{Bidi_Control}/gu, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)
 
 const note = (text: string) => Console.error(`spindle: ${text}`)
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
