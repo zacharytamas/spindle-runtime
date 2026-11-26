@@ -36,7 +36,7 @@
           "schemaNumber": "warning",
           "tryCatchInEffectGen": "warning",
           "unknownInEffectCatch": "warning",
-          "unsafeEffectTypeAssertion": "warning",
+          "unsafeEffectTypeAssertion": "suggestion",
           "unstableApiUsage": "off"
         }
       }
