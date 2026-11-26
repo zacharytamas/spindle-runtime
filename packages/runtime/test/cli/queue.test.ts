@@ -318,6 +318,39 @@ describe("spindle across processes", () => {
   )
 
   it.live(
+    "one Ctrl-C ends a waiting sender and leaves its message with the running process",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const hold = JSON.stringify([{ name: "hold", arguments: { name: "owner" } }])
+        const owner = yield* spindle(gate, ["run", "assistant", "-m", `call:${hold}`, ...project, "--db", db])
+        const thread = yield* threadIn(owner)
+        yield* until("the owner to enter the tool", exists(at("tool-entered-owner")))
+        const waiter = yield* spindle(gate, ["send", thread, "-m", "waiting", ...project, "--db", db])
+        yield* until(
+          "the sender to queue its message",
+          Effect.sync(() => waiter.err.some((line) => line.includes("waits in its queue"))),
+        )
+        const store = yield* Effect.provide(threadStore, yield* Layer.build(storeAt(db)))
+        const claim = yield* store.holderOf(thread)
+        const entry = yield* store.nextQueued(thread)
+        expect(claim?.pid).toBe(owner.pid)
+        expect(entry).toMatchObject({ kind: "message", message: { content: "waiting" } })
+        yield* waiter.signal("SIGINT")
+        expect(yield* waiter.exit.pipe(Effect.timeout("5 seconds"))).toBe(130)
+        expect(waiter.err.at(-1)).toBe(
+          "spindle: Your message is still queued and the next run of this thread will deliver it.",
+        )
+        expect(yield* store.holderOf(thread)).toEqual(claim)
+        expect(yield* store.nextQueued(thread)).toEqual(entry)
+        yield* touch(at("release-owner"))
+        expect(yield* owner.exit).toBe(0)
+        expect(owner.out.at(-1)).toBe("ack: waiting")
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "the first Ctrl-C of spindle run lets the running tool finish and stops before the next step",
     () =>
       Effect.gen(function* () {

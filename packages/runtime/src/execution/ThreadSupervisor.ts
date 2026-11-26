@@ -337,7 +337,14 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                     yield* options.observe({ type: "queued", threadId, pid: holderNow.pid })
                 }
               }
-              const status = yield* awaitRest(threadId)
+              const status = yield* awaitRest(threadId).pipe(
+                Effect.onInterrupt(() =>
+                  Effect.gen(function* () {
+                    if (options.observe && (yield* store.isQueued(threadId, admitted.seq)))
+                      yield* options.observe({ type: "interrupted_while_queued" })
+                  }),
+                ),
+              )
               const current = yield* store.getThread(threadId)
               if (current.terminated !== null)
                 return yield* new ThreadTerminated({ threadId, terminated: current.terminated })

@@ -50,11 +50,14 @@ const redacting = (console: Console.Console, redact: (text: string) => string): 
   })
 }
 
+const stillQueued = "Your message is still queued and the next run of this thread will deliver it."
+
 const printer =
   (modelRole: Message["role"], options: { readonly trace: boolean; readonly dumpRequests: boolean }) =>
   (event: ExecutionEvent): Effect.Effect<void> => {
     const print = (line: string) => Console.log(line)
     if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
+    if (event.type === "interrupted_while_queued") return Console.error(`spindle: ${stillQueued}`)
     if (event.type === "queued")
       return Console.error(
         `spindle: thread ${event.threadId} is running in ${event.pid === null ? "another process" : `process ${event.pid}`}, so the message waits in its queue`,
@@ -194,9 +197,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           if (filename !== ":memory:") yield* Console.error(`spindle: thread ${threadId}`)
           const delivery = yield* sendMessage(threadId, args.message, options).pipe(answerInterrupts(threadId))
           const { outcome } = delivery
-          const queuedNote = delivery.stillQueued
-            ? ". Your message is still queued and the next run of this thread will deliver it."
-            : ""
+          const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
           if (outcome !== undefined) {
             if (outcome.reason === "execution_lost")
               return yield* fail(
@@ -237,19 +238,24 @@ const answerInterrupts =
     Effect.gen(function* () {
       const supervisor = yield* ThreadSupervisor
       const context = yield* Effect.context<never>()
-      let presses = 0
+      const sender = yield* Effect.fiber
+      let stopping = false
       const remove = onInterrupt(() => {
-        presses += 1
-        const answer =
-          presses === 1
-            ? Console.error(
+        Effect.runForkWith(context)(
+          Effect.gen(function* () {
+            const controlled = yield* stopping ? supervisor.abort(threadId, true) : supervisor.stop(threadId)
+            if (!controlled) return sender.interruptUnsafe(sender.id)
+            if (stopping) {
+              remove()
+              yield* Console.error(`spindle: aborting thread ${threadId}`)
+            } else {
+              stopping = true
+              yield* Console.error(
                 `spindle: stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`,
-              ).pipe(Effect.andThen(supervisor.stop(threadId)))
-            : Console.error(`spindle: aborting thread ${threadId}`).pipe(
-                Effect.andThen(Effect.sync(() => remove())),
-                Effect.andThen(supervisor.abort(threadId, true)),
               )
-        Effect.runForkWith(context)(answer)
+            }
+          }),
+        )
       })
       return yield* Effect.ensuring(
         effect,

@@ -66,6 +66,7 @@ export type ExecutionEvent =
   | { readonly type: "request"; readonly request: ProviderRequest }
   // The message entered the queue of an execution that another process runs.
   | { readonly type: "queued"; readonly threadId: string; readonly pid: number | null }
+  | { readonly type: "interrupted_while_queued" }
 
 export interface ExecutionOptions {
   readonly retries?: number
