@@ -1156,6 +1156,24 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           description: "Returns a null attachment",
           execute: async () => ({ status: "success" as const, result: "partial", attachments: [null] }) as never,
         }),
+        reference: defineTool({
+          description: "Returns an unreadable attachment",
+          execute: async () => ({
+            status: "success" as const,
+            attachments: [
+              {
+                id: "file",
+                type: "file" as const,
+                path: "/file",
+                mimeType: "text/plain",
+                size: 1,
+                get name(): string {
+                  throw new Error("no name")
+                },
+              },
+            ],
+          }),
+        }),
         guarded: defineTool({
           description: "Returns error data whose getter throws",
           execute: async () => ({
@@ -1186,7 +1204,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }),
         fine: defineTool({ description: "Returns at once", execute: async () => ok("fine") }),
       }
-      const names = ["tangled", "hollow", "guarded", "prickly", "thrower", "fine"]
+      const names = ["tangled", "hollow", "guarded", "reference", "prickly", "thrower", "fine"]
       const provider = new ScriptedProvider([
         { toolCalls: names.map((name) => ({ id: `c_${name}`, name, arguments: {} })) },
         { text: "recovered" },
@@ -1219,6 +1237,14 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             "guarded",
             "error",
             "guarded\n\nSpindle dropped the error data of this result, because reading it threw: no access",
+            null,
+            {},
+          ],
+          [
+            "c_reference",
+            "reference",
+            "error",
+            "Spindle dropped the attachments of this result, because reading it threw: no name",
             null,
             {},
           ],

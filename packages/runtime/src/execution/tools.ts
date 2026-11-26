@@ -200,7 +200,7 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
 export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
-  const refs = attachments.filter(isAttachmentRef)
+  const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
   const odd = attachments.length - refs.length - fresh.length
   const dropped = [
