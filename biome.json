@@ -32,7 +32,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/runtime/**", "!packages/runtime/src/platform/**"],
+      "includes": ["packages/runtime/**", "!packages/runtime/src/platform/**", "!packages/runtime/scripts/**"],
       "linter": {
         "rules": {
           "style": {
