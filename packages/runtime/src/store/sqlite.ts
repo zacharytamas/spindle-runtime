@@ -9,9 +9,12 @@ import {
   messageRow,
   type QueueRow,
   queuePayload,
+  runReasonColumn,
   type ThreadRow,
+  threadColumns,
   toMessage,
   toQueued,
+  toStatus,
   toThread,
 } from "./schema.ts"
 import { MessageNotFound, ThreadNotFound, ThreadStore, ValueNotJson } from "./ThreadStore.ts"
@@ -54,17 +57,20 @@ export const layer = Layer.effect(
               arguments: JSON.stringify(thread.arguments ?? {}),
               created_at: yield* nowMicros,
             }
-            const inserted = yield* sql<ThreadRow>`INSERT INTO threads ${sql.insert(row)} RETURNING *`
+            const inserted =
+              yield* sql<ThreadRow>`INSERT INTO threads ${sql.insert(row)} RETURNING ${sql.literal(threadColumns)}`
             return toThread(yield* first(inserted, () => new ThreadNotFound({ threadId: row.id })))
           }),
         ),
 
       getThread: (threadId) =>
-        Effect.flatMap(sql<ThreadRow>`SELECT * FROM threads WHERE id = ${threadId}`, (rows) =>
-          Effect.map(
-            first(rows, () => new ThreadNotFound({ threadId })),
-            toThread,
-          ),
+        Effect.flatMap(
+          sql<ThreadRow>`SELECT ${sql.literal(threadColumns)} FROM threads WHERE id = ${threadId}`,
+          (rows) =>
+            Effect.map(
+              first(rows, () => new ThreadNotFound({ threadId })),
+              toThread,
+            ),
         ),
 
       terminate: (threadId) =>
@@ -87,9 +93,9 @@ export const layer = Layer.effect(
               run_since = CASE WHEN run_state = ${status.state} AND run_reason IS ${reason} THEN run_since ELSE ${now} END,
               run_state = ${status.state},
               run_reason = ${reason}
-            WHERE id = ${threadId} RETURNING run_state, run_since, run_reason`
+            WHERE id = ${threadId} RETURNING run_state, run_since, ${sql.literal(runReasonColumn)}`
           const row = yield* first(rows, () => new ThreadNotFound({ threadId }))
-          return { state: row.run_state, since: row.run_since, reason: row.run_reason }
+          return toStatus(row)
         }),
 
       appendMessages: (threadId, messages) =>
@@ -131,8 +137,13 @@ export const layer = Layer.effect(
               yield* selectMessages(where),
               () => new MessageNotFound({ threadId, messageId }),
             )
-            const metadata = JSON.stringify({ ...JSON.parse(current.metadata), ...updates.metadata })
-            yield* sql`UPDATE messages SET content = ${updates.content ?? current.content}, metadata = ${metadata} WHERE ${where}`
+            const changes = {
+              ...(updates.content === undefined ? {} : { content: updates.content }),
+              ...(updates.metadata === undefined
+                ? {}
+                : { metadata: JSON.stringify({ ...JSON.parse(current.metadata), ...updates.metadata }) }),
+            }
+            if (Object.keys(changes).length > 0) yield* sql`UPDATE messages SET ${sql.update(changes)} WHERE ${where}`
             const updated = yield* selectMessages(where)
             return toMessage(yield* first(updated, () => new MessageNotFound({ threadId, messageId })))
           }),

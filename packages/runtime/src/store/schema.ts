@@ -1,66 +1,116 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 
+type Text = string | Uint8Array
+
+const utf8 = new TextDecoder()
+function text(value: Text): string
+function text(value: Text | null): string | null
+function text(value: Text | null) {
+  return value instanceof Uint8Array ? utf8.decode(value) : value
+}
+
+// node:sqlite cuts a TEXT value at its first NUL when it reads it, so such a value is read as its bytes.
+const textColumn = (name: string) =>
+  `CASE WHEN instr(CAST(${name} AS BLOB), x'00') > 0 THEN CAST(${name} AS BLOB) ELSE ${name} END AS ${name}`
+
 export interface ThreadRow {
   readonly id: string
-  readonly agent_id: string
+  readonly agent_id: Text
   readonly parent_id: string | null
   readonly arguments: string
   readonly created_at: number
   readonly terminated_at: number | null
   readonly run_state: ThreadStatus["state"]
-  readonly run_reason: string | null
+  readonly run_reason: Text | null
   readonly run_since: number
 }
 
+export const threadColumns = [
+  "id",
+  textColumn("agent_id"),
+  "parent_id",
+  "arguments",
+  "created_at",
+  "terminated_at",
+  "run_state",
+  textColumn("run_reason"),
+  "run_since",
+].join(", ")
+
+export const runReasonColumn = textColumn("run_reason")
+
+export const toStatus = (row: Pick<ThreadRow, "run_state" | "run_since" | "run_reason">): ThreadStatus => ({
+  state: row.run_state,
+  since: row.run_since,
+  reason: text(row.run_reason),
+})
+
 export const toThread = (row: ThreadRow): Thread => ({
   id: row.id,
-  agentId: row.agent_id,
+  agentId: text(row.agent_id),
   parentId: row.parent_id,
   arguments: JSON.parse(row.arguments),
   createdAt: row.created_at,
   terminated: row.terminated_at,
-  status: { state: row.run_state, since: row.run_since, reason: row.run_reason },
+  status: toStatus(row),
 })
 
 export type MessageRow = {
   readonly id: string
   readonly role: Message["role"]
-  readonly content: string | null
-  readonly name: string | null
-  readonly tool_calls: string | null
-  readonly tool_call_id: string | null
+  readonly content: Text | null
+  readonly name: Text | null
+  readonly tool_calls: Text | null
+  readonly tool_call_id: Text | null
   readonly tool_status: "success" | "error" | null
   readonly status: "pending" | "completed" | "failed" | null
   readonly attachments: string | null
-  readonly reasoning_content: string | null
-  readonly reasoning_details: string | null
-  readonly prompt: string | null
+  readonly reasoning_content: Text | null
+  readonly reasoning_details: Text | null
+  readonly prompt: Text | null
   readonly created_at: number
-  readonly parent_id: string | null
+  readonly parent_id: Text | null
   readonly depth: number
   readonly silent: 0 | 1
   readonly metadata: string
 }
 
-export const messageColumns =
-  "id, role, content, name, tool_calls, tool_call_id, tool_status, status, attachments, reasoning_content, reasoning_details, prompt, created_at, parent_id, depth, silent, metadata"
+export const messageColumns = [
+  "id",
+  "role",
+  textColumn("content"),
+  textColumn("name"),
+  textColumn("tool_calls"),
+  textColumn("tool_call_id"),
+  "tool_status",
+  "status",
+  "attachments",
+  textColumn("reasoning_content"),
+  textColumn("reasoning_details"),
+  textColumn("prompt"),
+  "created_at",
+  textColumn("parent_id"),
+  "depth",
+  "silent",
+  "metadata",
+].join(", ")
 
 export const toMessage = (row: MessageRow): Message => ({
   id: row.id,
   role: row.role,
-  content: row.content,
-  name: row.name,
-  tool_calls: row.tool_calls,
-  tool_call_id: row.tool_call_id,
+  content: text(row.content),
+  name: text(row.name),
+  tool_calls: text(row.tool_calls),
+  tool_call_id: text(row.tool_call_id),
   tool_status: row.tool_status,
   status: row.status,
   attachments: row.attachments === null ? null : JSON.parse(row.attachments),
-  reasoning_content: row.reasoning_content,
-  reasoning_details: row.reasoning_details,
-  prompt: row.prompt,
+  reasoning_content: text(row.reasoning_content),
+  reasoning_details: text(row.reasoning_details),
+  prompt: text(row.prompt),
   created_at: row.created_at,
-  parent_id: row.parent_id,
+  parent_id: text(row.parent_id),
   depth: row.depth,
   silent: row.silent === 1,
   metadata: JSON.parse(row.metadata),

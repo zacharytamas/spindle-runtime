@@ -562,4 +562,88 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
   })
+
+  describe("text", () => {
+    const nul = (label: string) => `${label}\u0000after`
+
+    it.effect("every text column reads back exactly as written, including a NUL character", () =>
+      withDatabaseFile((filename) =>
+        Effect.gen(function* () {
+          const written = yield* Effect.gen(function* () {
+            const store = yield* ThreadStore
+            const parent = yield* store.createThread({ agentId: "parent" })
+            const thread = yield* store.createThread({
+              agentId: nul("agent"),
+              parentId: parent.id,
+              arguments: { [nul("argument key")]: nul("argument") },
+            })
+            const status = yield* store.setStatus(thread.id, { state: "idle", reason: nul("reason") })
+            const [message] = yield* store.appendMessages(thread.id, [
+              {
+                role: "tool",
+                content: nul("content"),
+                name: nul("name"),
+                tool_calls: nul("tool_calls"),
+                tool_call_id: nul("tool_call_id"),
+                reasoning_content: nul("reasoning_content"),
+                reasoning_details: nul("reasoning_details"),
+                prompt: nul("prompt"),
+                parent_id: nul("parent_id"),
+                attachments: [
+                  {
+                    id: nul("id"),
+                    type: "file",
+                    path: nul("path"),
+                    name: nul("name"),
+                    mimeType: "text/plain",
+                    size: 1,
+                  },
+                ],
+                metadata: { [nul("metadata key")]: nul("metadata") },
+              },
+            ])
+            yield* store.enqueue(thread.id, { kind: "message", message: { role: "user", content: nul("queued") } })
+            yield* store.enqueue(thread.id, {
+              kind: "tool",
+              toolName: nul("tool"),
+              args: { [nul("arg")]: nul("value") },
+            })
+            yield* store.setValue(thread.id, nul("key"), { [nul("value key")]: nul("value") })
+            return { thread: yield* store.getThread(thread.id), status, message }
+          }).pipe(Effect.provide(storeAt(filename)))
+          expect(written.thread.agentId).toBe(nul("agent"))
+          expect(written.thread.arguments).toEqual({ [nul("argument key")]: nul("argument") })
+          expect(written.status.reason).toBe(nul("reason"))
+          expect(written.thread.status).toEqual(written.status)
+
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore
+            const threadId = written.thread.id
+            expect(yield* store.getThread(threadId)).toEqual(written.thread)
+            expect(yield* store.getMessage(threadId, written.message?.id ?? "")).toEqual(written.message)
+            expect((yield* store.getMessages(threadId)).messages).toEqual([written.message])
+            expect(written.message?.content).toBe(nul("content"))
+            expect(yield* store.takeQueue(threadId)).toMatchObject([
+              { kind: "message", message: { role: "user", content: nul("queued") } },
+              { kind: "tool", toolName: nul("tool"), args: { [nul("arg")]: nul("value") } },
+            ])
+            expect(yield* store.getValue(threadId, nul("key"))).toEqual({ [nul("value key")]: nul("value") })
+            expect(yield* store.getValue(threadId, "key")).toBeNull()
+          }).pipe(Effect.provide(storeAt(filename)))
+        }),
+      ),
+    )
+
+    it.effect("updateMessage with only metadata leaves the content as written", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [message] = yield* store.appendMessages(thread.id, [user(nul("before"))])
+        yield* store.updateMessage(thread.id, message?.id ?? "", { metadata: { touched: true } })
+        const updated = yield* store.updateMessage(thread.id, message?.id ?? "", { metadata: { again: true } })
+        expect(updated).toEqual({ ...message, metadata: { touched: true, again: true } })
+        expect(yield* store.getMessage(thread.id, message?.id ?? "")).toEqual(updated)
+      }).pipe(Effect.provide(inMemory)),
+    )
+  })
 })
