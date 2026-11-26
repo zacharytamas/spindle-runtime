@@ -64,6 +64,28 @@ describe("spindle run", () => {
     }),
   )
 
+  it.effect("runs a hook from an installed package only for the agent whose list names it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" })
+      const stamps = (agent: string, db: string) =>
+        Effect.gen(function* () {
+          const { exit, err } = yield* run([agent, "-m", "hi", "--script", "@text-reply.json", "--db", db], {}, "hooks")
+          expect(Exit.isSuccess(exit)).toBe(true)
+          return (yield* storedMessages(db, err)).map((message) => [message.role, message.metadata?.loud ?? null])
+        })
+      expect(yield* stamps("plain", path.join(dir, "plain.db"))).toEqual([
+        ["user", null],
+        ["assistant", null],
+      ])
+      expect(yield* stamps("standardagent-loud/loud", path.join(dir, "loud.db"))).toEqual([
+        ["user", true],
+        ["assistant", true],
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.live("goes on after --hook-timeout and prints the hook's id on standard error without the message", () =>
     Effect.gen(function* () {
       const started = Date.now()
