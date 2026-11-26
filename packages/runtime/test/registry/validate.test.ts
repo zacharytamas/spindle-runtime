@@ -38,6 +38,11 @@ const invalid: ReadonlyArray<Case> = [
     [error("agent_both_sides_human", "agents/agents/both_human.ts:sideB")],
   ],
   [
+    "rejects an agent without a name",
+    "agent-name-missing",
+    [error("agent_name_missing", "agents/agents/nameless.ts:name")],
+  ],
+  [
     "rejects a side that sets both prompt and handler",
     "two-backings",
     [error("agent_side_backing_conflict", "agents/agents/two_backings.ts:sideA")],
@@ -77,13 +82,19 @@ const invalid: ReadonlyArray<Case> = [
       error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideB.sessionStatus"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.maxSteps"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.sessionStop"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.stopOnResponse"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideB.stopOnResponse"),
     ],
   ],
   [
-    "rejects a session binding in string form",
+    "rejects a session binding that is a string, null, an array, or a number",
     "session-binding-string",
-    [error("agent_session_binding_legacy_string", "agents/agents/assistant.ts:sideA.sessionStop")],
+    [
+      error("agent_session_binding_legacy_string", "agents/agents/assistant.ts:sideA.sessionStop"),
+      error("agent_session_binding_invalid", "agents/agents/other_forms.ts:sideA.sessionFail.name"),
+      error("agent_session_binding_invalid", "agents/agents/other_forms.ts:sideA.sessionStatus.name"),
+      error("agent_session_binding_invalid", "agents/agents/other_forms.ts:sideA.sessionStop.name"),
+    ],
   ],
   [
     "rejects a side that names an undefined prompt or handler",
@@ -176,6 +187,7 @@ const invalid: ReadonlyArray<Case> = [
       error("prompt_content_invalid", "agents/prompts/bad_content.ts:prompt[0]"),
       error("prompt_name_missing", "agents/prompts/empty_name.ts:name"),
       error("prompt_include_undefined", "agents/prompts/missing_include.ts:prompt[0].prompt"),
+      error("prompt_content_invalid", "agents/prompts/no_content.ts:prompt"),
       error("prompt_tool_description_missing", "agents/prompts/no_description.ts:toolDescription"),
       error("prompt_model_undefined", "agents/prompts/no_model.ts:model"),
       error("prompt_name_missing", "agents/prompts/no_name.ts:name"),
@@ -302,6 +314,7 @@ const invalid: ReadonlyArray<Case> = [
       error("package_parent_hooks_mismatch", "agents/packed/broken/package.json:standardagent.parentHooks.relay"),
       error("package_invalid", "agents/packed/no-manifest/package.json"),
       error("package_meta_invalid", "agents/packed/no-meta/index.js"),
+      error("package_invalid", "agents/packed/no-tools/index.js:tools"),
       error("package_invalid", "agents/packed/tools-only/index.js:agents"),
       error("package_invalid", "agents/packed/tools-only/index.js:handlers"),
       error("package_invalid", "agents/packed/tools-only/index.js:hooks"),
@@ -392,6 +405,17 @@ describe("validate", () => {
       )
   })
 
+  describe("includes", () => {
+    it.effect("rejects an include part that names no defined prompt", () =>
+      Effect.gen(function* () {
+        const { issues } = yield* validateFixture("invalid/prompt-required-fields")
+        expect(located(issues.filter((issue) => issue.file === "agents/prompts/missing_include.ts"))).toEqual([
+          error("prompt_include_undefined", "agents/prompts/missing_include.ts:prompt[0].prompt"),
+        ])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+  })
+
   describe("valid fixtures", () => {
     it.effect("loads one definition of every kind from agents-basic with no issues", () =>
       Effect.gen(function* () {
@@ -435,6 +459,19 @@ describe("validate", () => {
         const relay = definitions.find((d) => d.kind === "agent" && d.name === "relay")
         expect(yield* relay?.load ?? Effect.succeed(undefined)).not.toHaveProperty("maxSessionTurns")
         expect(issues.filter((issue) => issue.file.startsWith("agents/agents/"))).toEqual([])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("accepts maxSessionTurns, or no maxSessionTurns, on two-prompt and handler-and-prompt agents", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("session-turns")
+        expect(issues).toEqual([])
+        expect(definitions.filter((d) => d.kind === "agent").map((d) => d.name)).toEqual([
+          "handler_and_prompt",
+          "prompt_and_handler_uncapped",
+          "two_prompts",
+          "two_prompts_uncapped",
+        ])
       }).pipe(Effect.provide(PlatformLive)),
     )
 
@@ -637,17 +674,30 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
-    it.effect("attaches a package signature to each packed definition at load time", () =>
+    it.effect("attaches a package signature to each packed definition of every kind at load time", () =>
       Effect.gen(function* () {
-        const { definitions } = yield* validateFixture("namespace-isolation")
-        const search = definitions.find((d) => d.qualifiedName === "packed-a/search")
-        expect(yield* search?.load ?? Effect.succeed(undefined)).toMatchObject({
-          __package: { packageId: "packed-a", version: "1.0.0", source: "local", packedAt: 1764028800000 },
-        })
+        const { definitions, issues } = yield* validateFixture("packed-every-kind")
+        expect(issues).toEqual([])
+        expect(definitions.map((d) => d.kind)).toEqual([
+          "agent",
+          "prompt",
+          "tool",
+          "model",
+          "hook",
+          "handler",
+          "effect",
+        ])
         const signatures = yield* Effect.forEach(definitions, (d) =>
-          d.load.pipe(Effect.map((value) => [d.qualifiedName, Reflect.get(Object(value), "__package")?.packageId])),
+          d.load.pipe(Effect.map((value) => Reflect.get(Object(value), "__package"))),
         )
-        expect(signatures).toEqual(definitions.map((d) => [d.qualifiedName, d.package?.signature.packageId]))
+        expect(signatures).toEqual(
+          definitions.map(() => ({
+            packageId: "standardagent-every-kind",
+            version: "1.0.0",
+            source: "local",
+            packedAt: 1764028800000,
+          })),
+        )
       }).pipe(Effect.provide(PlatformLive)),
     )
   })

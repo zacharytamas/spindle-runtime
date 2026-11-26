@@ -1,11 +1,11 @@
 {
 	"distribution:packaging:3b8a316c": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
 		],
-		"reason": ""
+		"reason": "M1-2 rejects a packed agent whose handler the package does not define and a packed tool whose uses target resolves to nothing the package can see. It accepts a uses target that resolves to another package's entry agent, which the package does not include. A later M1 packaging PR owes the rule for that case."
 	},
 	"distribution:packaging:149aa7e2": {
 		"status": "not-testable",
@@ -39,9 +39,10 @@
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts parent hook disclosures whose object keys are in another order",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields"
 		],
-		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, compared by structure, and a required hook that the package does not define. M3 owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
+		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, read index by index and key by key, so a missing element is a difference. It also rejects a required hook that the package does not define. M3 owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
 	},
 	"distribution:packaging:dcf81bec": {
 		"status": "covered",
@@ -1138,7 +1139,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a session binding in string form"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a session binding that is a string, null, an array, or a number"
 		],
 		"reason": ""
 	},
@@ -1150,7 +1151,9 @@
 			"packages/runtime/test/cli/validate.test.ts > spindle validate > prints one line per issue as code, severity, path, and message, and exits 1",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports every issue that the defineAgent helper throws",
 			"packages/runtime/test/cli/validate.test.ts > spindle validate > prints JSON for every issue when a package manifest is not JSON",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports a kind directory or a package scope that is not a directory and goes on"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports a kind directory or a package scope that is not a directory and goes on",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports each definition or package that throws while Spindle reads it and goes on",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports every issue that the defineAgent helper throws inside a packed loader"
 		],
 		"reason": ""
 	},
@@ -1161,13 +1164,13 @@
 		"reason": ""
 	},
 	"specification:effects:b7593fb4": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
 		],
-		"reason": ""
+		"reason": "M1-2 rejects an effect file with no default export and a default export that is not the [description, args, handler] tuple. defineEffect returns that tuple with no brand, so the registry cannot tell whether defineEffect made it."
 	},
 	"specification:effects:2591f11c": {
 		"status": "covered",
@@ -1267,21 +1270,21 @@
 		"reason": ""
 	},
 	"specification:hooks:f3dc7790": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
 		],
-		"reason": ""
+		"reason": "M1-2 rejects a hook whose hook is not one of the 14 types. defineHook returns a plain object with hook, id, and execute, so the registry cannot tell whether defineHook made it."
 	},
 	"specification:hooks:ebcb97e7": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
 		],
-		"reason": ""
+		"reason": "M1-2 rejects a hook whose id is missing or not snake_case and two hooks that declare one id. defineHook returns a plain object with hook, id, and execute, so the registry cannot tell whether defineHook made it."
 	},
 	"specification:hooks:986689ca": {
 		"status": "partial",
@@ -1837,9 +1840,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two prompts that include each other",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt that includes itself"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt that includes itself",
+			"packages/runtime/test/registry/validate.test.ts > validate > includes > rejects an include part that names no defined prompt"
 		],
-		"reason": "M1-2 resolves every include part and rejects a cycle. M1-4 owes the recursive expansion when it renders the system prompt."
+		"reason": "M1-2 resolves every include part, rejects an include that names no defined prompt, and rejects a cycle. M1-4 owes the recursive expansion when it renders the system prompt."
 	},
 	"specification:prompts:e9cb2058": {
 		"status": "covered",
@@ -3633,7 +3637,7 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
 		],
-		"reason": "M1-2 rejects a package whose tool declares a uses target that the package does not include. M1-6 owes rejecting a queueTool call to a target outside uses, and M2 owes the same for invokeTool."
+		"reason": "M1-2 rejects a packed tool whose uses target resolves to nothing the package can see. It accepts a target that resolves to another package's entry agent, which the package does not include. The M1-4 brief owes an invokeTool call outside uses, M1-6 owes the same for queueTool, and M2 owes the other callable categories."
 	},
 	"specification:tools:462ec47b": {
 		"status": "planned",
@@ -4586,7 +4590,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape"
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts maxSessionTurns, or no maxSessionTurns, on two-prompt and handler-and-prompt agents"
 		],
 		"reason": ""
 	},
@@ -4601,7 +4606,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name",
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an agent without a name"
 		],
 		"reason": ""
 	},
@@ -4638,12 +4644,12 @@
 		"reason": ""
 	},
 	"specification:agents:13907439": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts packaging metadata on an agent"
 		],
-		"reason": ""
+		"reason": "M1-2 accepts packageName, version, author, and license on an agent and keeps them on the loaded value. Spindle does not pack agents, so no Spindle code consumes the fields, and no test can show that they are consumed only when an agent is packed."
 	},
 	"specification:agents:e7466e70": {
 		"status": "planned",
@@ -4824,7 +4830,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields"
 		],
 		"reason": ""
 	},
@@ -4906,7 +4913,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > packages > attaches a package signature to each packed definition at load time"
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > attaches a package signature to each packed definition of every kind at load time"
 		],
 		"reason": ""
 	},
@@ -4931,7 +4938,11 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in node_modules by their standardagent field",
-			"packages/runtime/test/registry/validate.test.ts > validate > packages > imports nothing from a package whose entry resolves outside its directory"
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > imports nothing from a package whose entry resolves outside its directory",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > loads the root entry that Node and Bun import for each exports and main shape",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > loads a package whose main is an absolute path inside the package",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > rejects a package entry that Node or Bun would not import, names the package, and imports nothing",
+			"packages/runtime/test/cli/validate.test.ts > spindle validate > loads each package entry shape when the runtime itself imports it"
 		],
 		"reason": ""
 	},
@@ -4966,9 +4977,10 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects provider options that fail the provider's schema"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects provider options that fail the provider's schema",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields"
 		],
-		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. M1-4, which adds the first provider with a schema, owes a test that calls defineModel."
+		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. It rejects options that the schema rejects and accepts a scalar that the schema allows. M1-4, which adds the first provider with a schema, owes a test that calls defineModel."
 	},
 	"specification:handlers:cdfccc99": {
 		"status": "partial",
@@ -4977,7 +4989,7 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
 		],
-		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M1-6 owes the decision, before it runs handlers."
+		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M2, which runs handler sides, owes the decision."
 	},
 	"specification:handlers:6ce44191": {
 		"status": "partial",
@@ -4985,7 +4997,7 @@
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
 		],
-		"reason": "M1-2 rejects a handler whose execute is not a function. M1-6, which delivers messages to handlers, owes calling execute with the ThreadState and the persisted message."
+		"reason": "M1-2 rejects a handler whose execute is not a function. M2, which runs handler sides, owes calling execute with the ThreadState and the persisted message."
 	},
 	"specification:handlers:16efc360": {
 		"status": "partial",

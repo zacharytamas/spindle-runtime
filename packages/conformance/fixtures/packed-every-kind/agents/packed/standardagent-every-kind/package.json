@@ -1,0 +1,17 @@
+{
+  "name": "standardagent-every-kind",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": [
+      "relay"
+    ],
+    "effects": [
+      "send_digest"
+    ]
+  }
+}
