@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Layer } from "effect"
+import * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
 import { PlatformLive, SqliteLive } from "#platform"
 import { layer } from "../../src/store/sqlite.ts"
@@ -283,6 +284,35 @@ describe("ThreadStore", () => {
         })
         expect(yield* page({ limit: 2, offset: 4 })).toEqual({ contents: ["m1"], total: 5, hasMore: false })
       }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("getMessages counts and pages from one snapshot while another connection inserts between the reads", () =>
+      withDatabaseFile((filename) =>
+        Effect.gen(function* () {
+          const writer = yield* ThreadStore
+          const thread = yield* writer.createThread({ agentId: "assistant" })
+          yield* writer.appendMessages(thread.id, [user("first")])
+          let inserted = false
+          const insertBeforePage: Statement.Transformer = (statement) => {
+            if (inserted || !statement.compile()[0].includes("ORDER BY seq")) return Effect.succeed(statement)
+            inserted = true
+            return Effect.as(Effect.orDie(writer.appendMessages(thread.id, [user("second")])), statement)
+          }
+          const read = yield* Effect.gen(function* () {
+            const reader = yield* ThreadStore
+            return yield* reader
+              .getMessages(thread.id)
+              .pipe(Effect.provideService(Statement.CurrentTransformer, insertBeforePage))
+          }).pipe(Effect.provide(storeAt(filename)))
+          expect(inserted).toBe(true)
+          expect({ contents: read.messages.map((m) => m.content), total: read.total, hasMore: read.hasMore }).toEqual({
+            contents: ["first"],
+            total: 1,
+            hasMore: false,
+          })
+          expect((yield* writer.getMessages(thread.id)).total).toBe(2)
+        }).pipe(Effect.provide(storeAt(filename))),
+      ),
     )
 
     it.effect("getMessages omits silent messages unless includeSilent is true", () =>

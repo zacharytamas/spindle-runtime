@@ -1,6 +1,6 @@
 import { Clock, Effect, Layer } from "effect"
 import * as Migrator from "effect/sql/Migrator"
-import { SqlClient } from "effect/sql/SqlClient"
+import { BeginTransaction, SqlClient } from "effect/sql/SqlClient"
 import threads from "./migrations/0001_threads.ts"
 import {
   type MessageRow,
@@ -141,7 +141,11 @@ export const layer = Layer.effect(
           const rows = yield* sql<MessageRow>`${selectMessages(where)}
             ORDER BY seq ${sql.literal(order === "asc" ? "ASC" : "DESC")} LIMIT ${limit ?? -1} OFFSET ${offset}`
           return { messages: rows.map(toMessage), total, hasMore: offset + rows.length < total }
-        }),
+        }).pipe(
+          sql.withTransaction,
+          // The client's BEGIN IMMEDIATE would block writers. A deferred BEGIN gives both reads one snapshot without it.
+          Effect.provideService(BeginTransaction, "BEGIN"),
+        ),
 
       getMessage: (threadId, messageId) =>
         Effect.map(selectMessages(sql.and([sql`thread_id = ${threadId}`, sql`id = ${messageId}`])), (rows) =>
