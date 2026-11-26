@@ -19,6 +19,7 @@ import {
   type ProviderToolResultContent,
   type ProviderUsage,
 } from "@standardagents/spec"
+import { isTimeout } from "./timeout.ts"
 
 const NAME = "openai_compatible"
 const ORIGIN = `provider:${NAME}` as const
@@ -441,7 +442,8 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
       /\/+$/,
       "",
     )
-    // The timeout covers the body too, so a failure while reading it is classified like a failed send.
+    // The timeout covers the body too, so a failure while reading it is classified like a failed send. A timeout
+    // that the transport raises counts too, and a cancelled request never does.
     const post = async (request: ProviderRequest, stream: boolean) => {
       const headers: Record<string, string> = { ...config.defaultHeaders, "content-type": "application/json" }
       if (config.apiKey !== "") headers.authorization = `Bearer ${config.apiKey}`
@@ -449,7 +451,7 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
       const signals = [request.signal, timeout].filter((signal) => signal !== undefined)
       const signal = signals.length === 0 ? undefined : AbortSignal.any(signals)
       const fail = (cause: unknown) =>
-        transportError(cause, timeout?.aborted === true && request.signal?.aborted !== true)
+        transportError(cause, request.signal?.aborted !== true && (timeout?.aborted === true || isTimeout(cause)))
       let response: Response
       try {
         response = await send(`${baseUrl}/chat/completions`, {

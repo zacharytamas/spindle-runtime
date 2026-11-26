@@ -234,6 +234,33 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.live("retries a response whose body the transport times out after the headers arrived", () =>
+    Effect.gen(function* () {
+      let sends = 0
+      const fetch = async (_input: string | URL | Request, _init?: RequestInit) => {
+        sends += 1
+        if (sends === 1)
+          return new Response(
+            new ReadableStream({
+              start: (controller) => controller.error(new DOMException("transport deadline", "TimeoutError")),
+            }),
+          )
+        const done = { choices: [{ delta: { content: "Done." }, finish_reason: "stop" }] }
+        return new Response(`data: ${JSON.stringify(done)}\n\ndata: [DONE]\n\n`)
+      }
+      const { exit, out, err } = yield* run(["assistant", "-m", "hi", "--trace"], {
+        SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
+      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(sends).toBe(2)
+      expect(out.filter((line) => line.startsWith("step 1 call "))).toEqual([
+        "step 1 call             spindle_test claude-haiku-5-5 attempt 1",
+        "step 1 call             spindle_test claude-haiku-5-5 attempt 2",
+      ])
+      expect(err).toEqual([expect.stringMatching(/^spindle: idle \(stop_on_response\) after 1 step, thread /)])
+    }),
+  )
+
   it.effect("sends the reasoning text and details of an earlier response back through openaiCompatible", () =>
     Effect.gen(function* () {
       const details = [

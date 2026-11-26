@@ -5641,7 +5641,9 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError",
-			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a body that outlives the timeout slot after the headers arrived with a timeout ProviderError"
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a body that outlives the timeout slot after the headers arrived with a timeout ProviderError",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails with a retryable timeout when the transport times out, and never for a request the caller cancelled",
+			"packages/runtime/test/cli/run.test.ts > spindle run > retries a response whose body the transport times out after the headers arrived"
 		],
 		"reason": ""
 	},

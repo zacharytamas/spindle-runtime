@@ -168,6 +168,42 @@ describe("openaiCompatible", () => {
     ])
   })
 
+  it("fails with a retryable timeout when the transport times out, and never for a request the caller cancelled", async () => {
+    const deadline = () => new DOMException("transport deadline", "TimeoutError")
+    const erroring = (error: unknown) => async () =>
+      new Response(new ReadableStream({ start: (controller) => controller.error(error) }))
+    const wrapped = Object.assign(new Error("Headers Timeout Error"), {
+      name: "HeadersTimeoutError",
+      code: "UND_ERR_HEADERS_TIMEOUT",
+    })
+    const transports = [
+      erroring(deadline()),
+      erroring(new TypeError("terminated", { cause: { code: "UND_ERR_BODY_TIMEOUT" } })),
+      async () => Promise.reject(new TypeError("fetch failed", { cause: wrapped })),
+    ]
+    for (const fetch of transports) {
+      const provider = openaiCompatible({ apiKey: "", fetch })
+      const failures = [
+        await provider.generate(request).catch((cause) => cause),
+        await provider
+          .stream(request)
+          .then(collect)
+          .catch((cause) => cause),
+      ]
+      for (const error of failures)
+        expect([error.code, error.isRetryable, error.origin]).toEqual(["timeout", true, "provider:openai_compatible"])
+    }
+    const cancel = new AbortController()
+    cancel.abort(deadline())
+    const cancelled = await openaiCompatible({
+      apiKey: "",
+      fetch: async (_input, init) => Promise.reject(init?.signal?.reason),
+    })
+      .generate({ ...request, signal: cancel.signal })
+      .catch((cause) => cause)
+    expect([cancelled.code, cancelled.isRetryable]).toEqual(["unknown", false])
+  })
+
   it("maps the standard request to chat completions, and a reasoning level replaces only the native effort", () => {
     const body = requestBody(request, true)
     expect(body).toMatchObject({

@@ -9,6 +9,7 @@ import type {
   ResponseSummary,
 } from "@standardagents/spec"
 import { Data, Effect, type Fiber, Result } from "effect"
+import { isTimeout } from "../providers/timeout.ts"
 import type { SetupError } from "./turn.ts"
 
 const CODES: ReadonlyArray<ProviderErrorCode> = [
@@ -42,17 +43,18 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
 export class ResponseRejected extends Data.TaggedError("ResponseRejected")<{ readonly message: string }> {}
 
 // Providers SHOULD attribute their errors, and the runtime MAY attribute the request boundary when they do not.
-// A native TimeoutError, which AbortSignal.timeout raises, is the timeout of Providers section 7.1.
+// An error with no code, or with the code unknown, that a timeout caused is the timeout of Providers section 7.1.
 const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFailure => {
   const fields = isRecord(cause) || cause instanceof Error ? (cause as unknown as Record<string, unknown>) : {}
   const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
   const statusCode = number(fields.statusCode)
   const retryAfter = number(fields.retryAfter)
   const upstream = typeof fields.upstream === "string" ? fields.upstream : undefined
+  const code = isCode(fields.code) ? fields.code : "unknown"
   return new ProviderFailure({
     message:
       cause instanceof Error ? cause.message : typeof fields.message === "string" ? fields.message : String(cause),
-    code: isCode(fields.code) ? fields.code : fields.name === "TimeoutError" ? "timeout" : "unknown",
+    code: code === "unknown" && isTimeout(cause) ? "timeout" : code,
     origin: typeof fields.origin === "string" ? fields.origin : `provider:${provider.name}`,
     ...(statusCode === undefined ? {} : { statusCode }),
     ...(retryAfter === undefined ? {} : { retryAfter }),
