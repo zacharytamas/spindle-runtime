@@ -10,7 +10,7 @@
 	"scripts": {
 		"build": "pnpm --filter spindle-runtime build",
 		"test": "vitest run",
-		"check": "biome check && tsc --noEmit -p tsconfig.json && vitest run"
+		"check": "biome check && tsc --noEmit -p tsconfig.json && vitest run && node scripts/spec-requirements.mjs --check"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.9",

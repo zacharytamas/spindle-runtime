@@ -1,0 +1,4610 @@
+[
+	{
+		"id": "distribution:packaging:3b8a316c",
+		"page": "distribution:packaging",
+		"line": 5,
+		"section": "Packaging",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A package MUST include the handlers referenced by its agents. Packers discover a tool's named invocation dependencies from its `uses` declaration. A package MUST include the required tool dependencies declared there."
+	},
+	{
+		"id": "distribution:packaging:149aa7e2",
+		"page": "distribution:packaging",
+		"line": 9,
+		"section": "Portability requirements",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A packed agent's required behavior must be expressible through surfaces defined by this specification. Packed definitions MUST NOT require private runtime RPCs, implementation-specific storage schemas or bindings, undocumented events, sidecar services that substitute for runtime behavior, or `_notPackableRuntimeContext`."
+	},
+	{
+		"id": "distribution:packaging:ed70cfbb",
+		"page": "distribution:packaging",
+		"line": 15,
+		"section": "Portability requirements",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Runtime-specific enhancements MAY be capability-detected and optional, but the package's declared agents and required dependencies MUST execute correctly when those enhancements are absent. When an agent category needs a new runtime primitive, that primitive belongs in the specification and its conformance surface rather than in a product-private package/runtime agreement."
+	},
+	{
+		"id": "distribution:packaging:d6db1e74",
+		"page": "distribution:packaging",
+		"line": 21,
+		"section": "Portability requirements",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Authentication, billing, deployment, and branded client services may remain outside an agent package. They MUST NOT be necessary for the installed agent's core execution semantics unless the package explicitly declares the external service as part of the agent's purpose rather than as a replacement for a missing runtime capability."
+	},
+	{
+		"id": "distribution:packaging:d318cad3",
+		"page": "distribution:packaging",
+		"line": 187,
+		"section": "package.json Requirements",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The `keywords` array MUST include `\"standardagent\"` for discovery."
+	},
+	{
+		"id": "distribution:packaging:e7c13b74",
+		"page": "distribution:packaging",
+		"line": 210,
+		"section": "PackedMeta",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Packers MUST include every hook referenced by an entry agent's `parentHooks`, even when no prompt or agent `hooks` array references it, and MUST reproduce those declarations in both `__meta.parentHooks` and `package.json.standardagent.parentHooks`. Hook code remains inert after package installation; the declarations activate only when a host composes the entry agent into an enabled direct child relationship."
+	},
+	{
+		"id": "distribution:packaging:dcf81bec",
+		"page": "distribution:packaging",
+		"line": 263,
+		"section": "Naming Conventions",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Package names SHOULD start with `standardagent-`"
+	},
+	{
+		"id": "distribution:packaging:e3d09b4c",
+		"page": "distribution:packaging",
+		"line": 265,
+		"section": "Naming Conventions",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Only expose agents that should be callable from outside as entry points"
+	},
+	{
+		"id": "distribution:packaging:a16fd662",
+		"page": "distribution:packaging",
+		"line": 266,
+		"section": "Naming Conventions",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Internal helper agents SHOULD NOT be entry points"
+	},
+	{
+		"id": "distribution:packaging:d00eb5d2",
+		"page": "distribution:packaging",
+		"line": 278,
+		"section": "Packed Thread Endpoints",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Requests beneath the thread endpoint prefix that do not match any local or packed thread endpoint route MUST return HTTP 404."
+	},
+	{
+		"id": "getting-started:examples:f31af4c7",
+		"page": "getting-started:examples",
+		"line": 74,
+		"section": "2. An Agent with Tools",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build an assistant that finds a GitHub issue from its number or description. It should add a category label and a priority label, then tell me why it chose them. It should ask me when it needs a repository or a clearer search result.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:560d6af8",
+		"page": "getting-started:examples",
+		"line": 306,
+		"section": "3. Hooks",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build an assistant that checks a GitHub issue for a duplicate. It should close the issue with a comment that links an older open issue when both report the same problem. Redact email addresses from tool results before storage.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:ea8f592e",
+		"page": "getting-started:examples",
+		"line": 554,
+		"section": "4. Effects",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build a reminder assistant that lets me request a reminder in a thread. It should confirm the request and post the reminder in that thread 24 hours later, even if the conversation has ended.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:0ec751a6",
+		"page": "getting-started:examples",
+		"line": 657,
+		"section": "5. Handlers",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build a chat agent that closes an issue in acme/widgets when I send /close and an issue number. It should reply with the issue title or report a failure. Use a handler without a model.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:bac66317",
+		"page": "getting-started:examples",
+		"line": 739,
+		"section": "6. Composition",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build a repository assistant that gives an issue to a separate triage agent. The child should read the GitHub issue and add a category label and a priority label. The assistant should wait for the child and tell me which labels it added and why, or explain a failure.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:aefb6ca1",
+		"page": "getting-started:examples",
+		"line": 994,
+		"section": "7. Dual AI agents",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build a design assistant that gives each banner request to a separate agent with an artist and a reviewer, without a person in the child thread. The artist should generate a banner and revise it when the reviewer asks for changes; the reviewer should inspect each image for the original request and readable text. Give me the approved banner's file path, or explain when the review ends without an approved banner.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:3905e972",
+		"page": "getting-started:examples",
+		"line": 1243,
+		"section": "8. Packaging",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build a repository assistant that uses the issue triage agent from the standardagent-triage package. The child should add a category label and a priority label to a GitHub issue. The assistant should wait for the result and tell me which labels it added and why.</p></aside>"
+	},
+	{
+		"id": "getting-started:examples:43a04fec",
+		"page": "getting-started:examples",
+		"line": 1342,
+		"section": "9. Remote Trigger",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build an agent that triages new GitHub issues without a person in its thread. A GitHub Actions workflow should run when an issue opens and send it to an authenticated thread endpoint using an API key. The agent should treat issue text as data, apply a category and priority label, post a one-sentence explanation on GitHub, and end each session while keeping the thread available for the next issue.</p></aside>"
+	},
+	{
+		"id": "infrastructure:providers:1939dbe3",
+		"page": "infrastructure:providers",
+		"line": 12,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include:"
+	},
+	{
+		"id": "infrastructure:providers:a7bed683",
+		"page": "infrastructure:providers",
+		"line": 24,
+		"section": "Provider Packages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST treat provider extensions as separate provider identities from their base providers."
+	},
+	{
+		"id": "infrastructure:providers:33410ffe",
+		"page": "infrastructure:providers",
+		"line": 28,
+		"section": "Extending a Provider",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A provider extension MAY be defined when an API is compatible with an existing provider package but requires a distinct name, API key, base URL, model list, icons, tools, pricing, or request behavior."
+	},
+	{
+		"id": "infrastructure:providers:2026f11f",
+		"page": "infrastructure:providers",
+		"line": 53,
+		"section": "Extending a Provider",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A model definition MAY reference the extension provider:"
+	},
+	{
+		"id": "infrastructure:providers:522ee18b",
+		"page": "infrastructure:providers",
+		"line": 72,
+		"section": "Provider Configuration",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Provider config values MAY include:"
+	},
+	{
+		"id": "infrastructure:providers:8a969663",
+		"page": "infrastructure:providers",
+		"line": 100,
+		"section": "Provider Configuration",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A provider extension's `config` object chooses where each slot gets its value. If a slot is not overridden, the base provider's `defaultEnv` and `default` are used. For example, an OpenAI-based extension that only overrides `baseUrl` still uses `OPENAI_API_KEY`; to use its own key, the extension MUST override `apiKey`."
+	},
+	{
+		"id": "infrastructure:providers:099bc6aa",
+		"page": "infrastructure:providers",
+		"line": 112,
+		"section": "Provider Configuration",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A config slot MAY be a nested map whose leaves are individual config values, letting a single slot combine environment and constant entries. The `defaultHeaders` slot uses this form to declare per-request headers, mixing secret env values with constant ones. When a leaf resolves to no value — an optional environment variable that is unset — that leaf is omitted rather than sent as an empty value."
+	},
+	{
+		"id": "infrastructure:providers:c55ceba3",
+		"page": "infrastructure:providers",
+		"line": 136,
+		"section": "Provider Configuration",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`defaultHeaders` is a connection-level slot that HTTP-client provider implementations SHOULD forward on every request, so a provider extension can target an API-compatible backend that requires additional headers (account ids, API betas, relay authentication) without overriding a method."
+	},
+	{
+		"id": "infrastructure:providers:02a0961f",
+		"page": "infrastructure:providers",
+		"line": 173,
+		"section": "Method Overrides",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "An override MUST call `next()` to compose with the base provider. If it does not call `next()`, it replaces the base provider behavior."
+	},
+	{
+		"id": "infrastructure:providers:9f6f4255",
+		"page": "infrastructure:providers",
+		"line": 205,
+		"section": "API Key Management",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "API keys and other credentials MUST be declared as provider config slots or provider extension value sources with `type`/`valueType: 'secret'`."
+	},
+	{
+		"id": "infrastructure:providers:6e6fe077",
+		"page": "infrastructure:providers",
+		"line": 207,
+		"section": "API Key Management",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes and setup UIs SHOULD:"
+	},
+	{
+		"id": "infrastructure:providers:1dba6d8f",
+		"page": "infrastructure:providers",
+		"line": 214,
+		"section": "API Key Management",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "An OpenAI model MAY use `OPENAI_API_KEY` while an OpenAI-compatible extension uses `EXAMPLE_PROVIDER_API_KEY` and `EXAMPLE_PROVIDER_BASE_URL`."
+	},
+	{
+		"id": "infrastructure:runtime:4f561390",
+		"page": "infrastructure:runtime",
+		"line": 9,
+		"section": "1. Overview",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:e4001a8f",
+		"page": "infrastructure:runtime",
+		"line": 21,
+		"section": "1.1 Decision Inference",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST expose `ThreadState.decide()` in accordance with [Decisions](/0.2.0/specification/threads/decisions). Decision invocation is independent of conversation execution and MUST be available when `state.execution` is `null`. Its request, result, provider configuration, and conversation semantics are defined by that contract."
+	},
+	{
+		"id": "infrastructure:runtime:2b1a7e45",
+		"page": "infrastructure:runtime",
+		"line": 42,
+		"section": "3. Step Cycle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For a prompt-backed side, each execution step MUST run in order:"
+	},
+	{
+		"id": "infrastructure:runtime:af25bb90",
+		"page": "infrastructure:runtime",
+		"line": 61,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Each model-context assembly MUST proceed in this order:"
+	},
+	{
+		"id": "infrastructure:runtime:41fe7364",
+		"page": "infrastructure:runtime",
+		"line": 71,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The snapshot MUST be the set of eligible persisted messages at the moment the runtime starts `filter_messages`. Messages persisted before that moment MUST be eligible for the current assembly. Messages injected after that moment MUST become eligible for the following assembly."
+	},
+	{
+		"id": "infrastructure:runtime:8233eb0b",
+		"page": "infrastructure:runtime",
+		"line": 73,
+		"section": "4. Context Assembly",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`injectMessage()` MUST NOT restart steps 3–6. Live execution history stays independent of the request context. See [Messages §3](/0.2.0/specification/threads/messages#3-injecting-messages) and [Hooks §3.4](/0.2.0/specification/hooks#34-stored-history-and-the-request-context)."
+	},
+	{
+		"id": "infrastructure:runtime:83735bf6",
+		"page": "infrastructure:runtime",
+		"line": 88,
+		"section": "5.1 Ordering",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Tool calls MUST execute sequentially in the returned order."
+	},
+	{
+		"id": "infrastructure:runtime:732b2d4b",
+		"page": "infrastructure:runtime",
+		"line": 92,
+		"section": "5.2 Error Handling",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Tool errors MUST be persisted as tool results and MUST NOT crash the execution loop."
+	},
+	{
+		"id": "infrastructure:runtime:010fa480",
+		"page": "infrastructure:runtime",
+		"line": 96,
+		"section": "5.3 Tool Classes",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST support:"
+	},
+	{
+		"id": "infrastructure:runtime:7e50759c",
+		"page": "infrastructure:runtime",
+		"line": 104,
+		"section": "6. Stop Conditions",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Stop evaluation order should be:"
+	},
+	{
+		"id": "infrastructure:runtime:c369e8bf",
+		"page": "infrastructure:runtime",
+		"line": 117,
+		"section": "7.1 Parent/Child Threading",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:b987b6e8",
+		"page": "infrastructure:runtime",
+		"line": 131,
+		"section": "7.2 Lifecycle Tooling",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Creation attempts beyond `maxInstances` MUST return tool errors with actionable guidance."
+	},
+	{
+		"id": "infrastructure:runtime:7e19608c",
+		"page": "infrastructure:runtime",
+		"line": 135,
+		"section": "7.2.1 Parent Communication Modes",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The effective `parentCommunication` mode is the relationship's `parentCommunication`, defaulting to `implicit`. When the effective mode is `explicit`, runtimes MUST NOT auto-queue child completion/failure to the parent — and because that queued message is what schedules a parent turn, an `explicit` child's completion does not wake the parent. Runtimes should persist the effective mode on the child registry entry so both the parent-side and child-side completion paths can honor it."
+	},
+	{
+		"id": "infrastructure:runtime:4a5b7b32",
+		"page": "infrastructure:runtime",
+		"line": 139,
+		"section": "7.3 Optional + Immediate + Hidden Branches",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Runtimes should evaluate relationship flags before exposing/executing them:"
+	},
+	{
+		"id": "infrastructure:runtime:a5eb5f2e",
+		"page": "infrastructure:runtime",
+		"line": 143,
+		"section": "7.3 Optional + Immediate + Hidden Branches",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`hidden`: the relationship stays declared and spawnable by runtime code (`invokeTool`/`queueTool` from hooks, tools, and handlers), but the tool MUST NOT appear in any LLM request's tool list — for infrastructure children (e.g. background context compaction) the model must never invoke itself"
+	},
+	{
+		"id": "infrastructure:runtime:d93cf063",
+		"page": "infrastructure:runtime",
+		"line": 145,
+		"section": "7.3 Optional + Immediate + Hidden Branches",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Immediate spawning should be recursive across activated child threads."
+	},
+	{
+		"id": "infrastructure:runtime:a7507250",
+		"page": "infrastructure:runtime",
+		"line": 149,
+		"section": "7.3.1 Required Parent-Hook Composition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For each active prompt, runtimes MUST resolve the complete thread-hook set from the side's enabled direct subagent relationships before a hook position runs. Resolution is declarative and does not require the child thread to have been spawned. Installed packages that are not added to a prompt contribute nothing."
+	},
+	{
+		"id": "infrastructure:runtime:54b1505b",
+		"page": "infrastructure:runtime",
+		"line": 155,
+		"section": "7.3.1 Required Parent-Hook Composition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Child requirements load from the implementing child's package namespace and execute against the parent thread. Resolution MUST fail closed if a required hook cannot be loaded or is user-scoped. The same composition applies to every thread hook position, including `after_thread_created`; runtimes must not special-case a subset of hook types."
+	},
+	{
+		"id": "infrastructure:runtime:71c24464",
+		"page": "infrastructure:runtime",
+		"line": 161,
+		"section": "7.3.1 Required Parent-Hook Composition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Within one hook position, runtimes MUST run child `before_parent` hooks in prompt tool order and declaration order, then the parent's effective prompt-or- agent hook set, then child `after_parent` hooks in the same stable order."
+	},
+	{
+		"id": "infrastructure:runtime:8e8fb06b",
+		"page": "infrastructure:runtime",
+		"line": 172,
+		"section": "7.4 Initial Payload Mapping",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "For runtime lifecycle creation, `subagent_create` must receive a non-empty `name` argument and runtimes should persist that name for child thread display."
+	},
+	{
+		"id": "infrastructure:runtime:a3334b21",
+		"page": "infrastructure:runtime",
+		"line": 174,
+		"section": "7.4 Initial Payload Mapping",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "`subagent_create.arguments` should be validated against the `requiredSchema` of the child's side A prompt — parent traffic enters the child in the side B perspective (`role: 'user'`), so side A acts on it, exactly as for an external caller. Runtimes must persist those initial arguments with the child thread's metadata/properties and expose them to both child sides on future executions through `ThreadState.arguments` and the prompt render flow: top-level argument keys are available to prompt variable interpolation for whichever side is currently rendering, including included prompts."
+	},
+	{
+		"id": "infrastructure:runtime:021cec7c",
+		"page": "infrastructure:runtime",
+		"line": 178,
+		"section": "7.4 Initial Payload Mapping",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "`scopedEnv` values must remain encrypted at rest and runtime-only during transfer"
+	},
+	{
+		"id": "infrastructure:runtime:aa3bc01f",
+		"page": "infrastructure:runtime",
+		"line": 179,
+		"section": "7.4 Initial Payload Mapping",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "copied child env must never be injected into LLM-visible prompt text unless explicitly promoted through `nameEnv` or `descriptionEnv`"
+	},
+	{
+		"id": "infrastructure:runtime:a8a43c64",
+		"page": "infrastructure:runtime",
+		"line": 183,
+		"section": "7.5 Scoped Variable Bootstrap",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "If `subagent_create` cannot proceed because required scoped variables are missing, runtimes should return a structured bootstrap error and expose a temporary completion flow:"
+	},
+	{
+		"id": "infrastructure:runtime:128dcfef",
+		"page": "infrastructure:runtime",
+		"line": 194,
+		"section": "8.1 Parent -> Child",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "referenced attachments MUST be copied parent filesystem -> child filesystem"
+	},
+	{
+		"id": "infrastructure:runtime:ad46a01d",
+		"page": "infrastructure:runtime",
+		"line": 195,
+		"section": "8.1 Parent -> Child",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "queued child messages must use child-local attachment paths"
+	},
+	{
+		"id": "infrastructure:runtime:927e781c",
+		"page": "infrastructure:runtime",
+		"line": 201,
+		"section": "8.2 Child -> Parent",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "payload attachments MUST be copied child filesystem -> parent filesystem"
+	},
+	{
+		"id": "infrastructure:runtime:ec175c0b",
+		"page": "infrastructure:runtime",
+		"line": 202,
+		"section": "8.2 Child -> Parent",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "parent message content should include subagent reference and result summary"
+	},
+	{
+		"id": "infrastructure:runtime:1a18a5ea",
+		"page": "infrastructure:runtime",
+		"line": 217,
+		"section": "8.3 Status Updates",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "`state.stopSession()` marks the active session terminal without requiring a `sessionStop` tool call. Implementations should treat this as a successful terminal child run for blocking and non-blocking subagent lifecycle handling. The optional `notifyParent` and `status` fields perform the same parent-message and registry-status effects as `notifyParent()` and `setStatus()`."
+	},
+	{
+		"id": "infrastructure:runtime:34b9e0d8",
+		"page": "infrastructure:runtime",
+		"line": 225,
+		"section": "9. Queue and Delivery Semantics",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "persistence should survive DO eviction"
+	},
+	{
+		"id": "infrastructure:runtime:86cae814",
+		"page": "infrastructure:runtime",
+		"line": 235,
+		"section": "10. Termination Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Session end — stop, fail, error, or turn-cap — MUST NOT terminate a child thread; only explicit termination destroys an instance. Retention of idle threads (archival, eviction, listing policy) is runtime-defined and out of scope for this specification."
+	},
+	{
+		"id": "infrastructure:runtime:0953e887",
+		"page": "infrastructure:runtime",
+		"line": 239,
+		"section": "11. Concurrency",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A single thread MUST NOT execute multiple concurrent flows. Cross-thread concurrency is allowed."
+	},
+	{
+		"id": "infrastructure:runtime:f891d849",
+		"page": "infrastructure:runtime",
+		"line": 247,
+		"section": "13. Runtime Streams",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "When implemented, runtime streams are live, non-durable resources authorized by the runtime. Capability names and metadata remain opaque to the shared runtime layer. Streams must route to the selected execution host, must not park, and must terminate when that host disconnects. See the complete [Runtime Streams contract](/0.2.0/specification/threads/runtime-streams)."
+	},
+	{
+		"id": "infrastructure:runtime:0d394cff",
+		"page": "infrastructure:runtime",
+		"line": 259,
+		"section": "14.1 Isolation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming implementation MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:e3668e6b",
+		"page": "infrastructure:runtime",
+		"line": 262,
+		"section": "14.1 Isolation",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Present a `globalThis` containing only ECMAScript intrinsics. Host APIs (`fetch`, `setTimeout`, `console`, `process`, `require`, etc.) MUST NOT be present unless the caller installed them via `options.globals`."
+	},
+	{
+		"id": "infrastructure:runtime:e9ae33df",
+		"page": "infrastructure:runtime",
+		"line": 263,
+		"section": "14.1 Isolation",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Install `options.globals` identifiers at module scope only — they MUST NOT appear on `globalThis` or be enumerable via `Object.keys(globalThis)`."
+	},
+	{
+		"id": "infrastructure:runtime:21a61cde",
+		"page": "infrastructure:runtime",
+		"line": 264,
+		"section": "14.1 Isolation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Freshly construct the sandbox's intrinsic prototypes; mutating `Object.prototype`, `Array.prototype`, or any other intrinsic inside the sandbox MUST have zero effect on the host."
+	},
+	{
+		"id": "infrastructure:runtime:37675589",
+		"page": "infrastructure:runtime",
+		"line": 269,
+		"section": "14.2 Module Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Bare specifiers resolve only from `options.imports`. Relative specifiers resolve only from `options.modules`. Unknown specifiers and URL specifiers (`https://…`) MUST fail linkage and settle with `status: 'link_error'`."
+	},
+	{
+		"id": "infrastructure:runtime:15c880a1",
+		"page": "infrastructure:runtime",
+		"line": 272,
+		"section": "14.2 Module Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`import.meta.url` MUST be a synthetic `sandbox:<filename>` URL. Host paths MUST NOT be exposed."
+	},
+	{
+		"id": "infrastructure:runtime:e64ada3a",
+		"page": "infrastructure:runtime",
+		"line": 281,
+		"section": "14.3 Value Marshaling",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Class instances, `WeakMap`, `WeakRef`, and symbols with host identity are not transferable. Runtimes MAY throw a `SerializationError`."
+	},
+	{
+		"id": "infrastructure:runtime:5c46f75f",
+		"page": "infrastructure:runtime",
+		"line": 282,
+		"section": "14.3 Value Marshaling",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Bridged functions MUST NOT expose host `this` or host closure state to the sandbox beyond their explicit arguments."
+	},
+	{
+		"id": "infrastructure:runtime:4d0f7ec5",
+		"page": "infrastructure:runtime",
+		"line": 286,
+		"section": "14.4 Resource Enforcement",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Memory: when the engine supports heap accounting, the runtime MUST enforce `options.memoryLimitBytes` and settle with `status: 'memory'` on overrun. When `memoryLimitBytes` is omitted, a runtime-defined default applies; the runtime SHOULD document it. Implementations MAY impose a platform-fixed ceiling that caller values cannot exceed. When a caller requests a limit above that ceiling, runtimes MUST either (a) clamp to the ceiling and settle overruns with `status: 'memory'` and an `error.message` naming the effective limit, or (b) reject the call with `status: 'link_error'` naming the cap. Runtimes MUST document which behavior they use and the effective ceiling."
+	},
+	{
+		"id": "infrastructure:runtime:a847c733",
+		"page": "infrastructure:runtime",
+		"line": 287,
+		"section": "14.4 Resource Enforcement",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination: `handle.terminate()` MUST signal the sandbox to stop. The handle MUST settle at the next ECMAScript yield point (microtask boundary, async operation, or runtime interrupt) — SHOULD be within 50 ms and typically a few. A sandbox running a pure-synchronous tight loop may not reach a yield point; runtimes MAY rely on their own safety cap (next bullet) to force settlement. `terminate` is idempotent; subsequent calls are no-ops. When the caller passes `reason`, it surfaces in `result.error.message`."
+	},
+	{
+		"id": "infrastructure:runtime:a2cceddd",
+		"page": "infrastructure:runtime",
+		"line": 288,
+		"section": "14.4 Resource Enforcement",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Safety caps (optional): runtimes MAY apply their own caps (for example, interrupting a pure-JS infinite loop under sustained CPU pressure). When a cap fires, the handle settles with `status: 'terminated'` and a diagnosable `error.message` — the same channel as caller-initiated termination."
+	},
+	{
+		"id": "infrastructure:runtime:bd5bf2a9",
+		"page": "infrastructure:runtime",
+		"line": 289,
+		"section": "14.4 Resource Enforcement",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The spec does not require a wall-clock timeout. Runtimes MUST NOT invent one silently; callers impose deadlines by calling `handle.terminate()`."
+	},
+	{
+		"id": "infrastructure:runtime:760facdf",
+		"page": "infrastructure:runtime",
+		"line": 293,
+		"section": "14.5 Configured Export Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "After module evaluation, the runtime MUST resolve the export selected by `options.execute` in this order:"
+	},
+	{
+		"id": "infrastructure:runtime:41113299",
+		"page": "infrastructure:runtime",
+		"line": 300,
+		"section": "14.5 Configured Export Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "If the selected export is missing, the runtime MUST settle with `status: 'link_error'`. If the selected export is not a function and `execute.args` is non-empty, the runtime MUST settle with `status: 'error'`. An uncaught throw from the selected-export function (or a rejection from its returned promise) MUST settle with `status: 'error'`."
+	},
+	{
+		"id": "infrastructure:runtime:576d49ca",
+		"page": "infrastructure:runtime",
+		"line": 304,
+		"section": "14.6 TypeScript Erasure",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When `options.language === 'typescript'` (the default), the runtime MUST strip types before evaluation. Runtimes SHOULD use a type-erasure implementation (`sucrase`, `esbuild-transform`, `swc`, or native type-stripping). Runtimes MUST NOT invoke a TypeScript type-checker as part of `runCode` — only erasure runs."
+	},
+	{
+		"id": "infrastructure:runtime:169d4b62",
+		"page": "infrastructure:runtime",
+		"line": 323,
+		"section": "14.9 Conformance Checklist",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime that implements code execution MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:7b1869c9",
+		"page": "infrastructure:runtime",
+		"line": 338,
+		"section": "14.9 Conformance Checklist",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD:"
+	},
+	{
+		"id": "infrastructure:runtime:d0bf2dee",
+		"page": "infrastructure:runtime",
+		"line": 346,
+		"section": "14. Durable Key-Value Store",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "`ThreadState.getValue` / `ThreadState.setValue` expose a simple durable key-value store scoped to the thread. The caller-facing surface is specified in [Threads §7](/0.2.0/specification/threads#7-durable-key-value-store); the runtime semantics below define how implementations must back it."
+	},
+	{
+		"id": "infrastructure:runtime:f80f3471",
+		"page": "infrastructure:runtime",
+		"line": 350,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Values MUST be persisted to durable per-thread storage that survives execution boundaries, process restarts, and runtime redeploys."
+	},
+	{
+		"id": "infrastructure:runtime:70e01371",
+		"page": "infrastructure:runtime",
+		"line": 351,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A value written by `setValue(key, value)` MUST be visible to every subsequent `getValue(key)` on the same thread, across any execution context (tools, hooks, endpoints)."
+	},
+	{
+		"id": "infrastructure:runtime:534e316a",
+		"page": "infrastructure:runtime",
+		"line": 352,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Each thread MUST maintain its own isolated key space. Values MUST NOT be readable by any other thread, including parent, child, or sibling threads."
+	},
+	{
+		"id": "infrastructure:runtime:bb09eb20",
+		"page": "infrastructure:runtime",
+		"line": 353,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Values MUST round-trip with JSON-equivalent structure (objects, arrays, strings, numbers, booleans, `null`). Runtimes MAY reject non-JSON-serializable values with a thrown error."
+	},
+	{
+		"id": "infrastructure:runtime:e1a6e704",
+		"page": "infrastructure:runtime",
+		"line": 354,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`getValue(key)` MUST return `null` when no value has been set for the key, when the value has been deleted, or when the thread is accessed after the store has never been written."
+	},
+	{
+		"id": "infrastructure:runtime:d54cbe9e",
+		"page": "infrastructure:runtime",
+		"line": 355,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`setValue(key, null)` and `setValue(key, undefined)` MUST delete the key so that subsequent `getValue(key)` calls return `null`."
+	},
+	{
+		"id": "infrastructure:runtime:7e531e7a",
+		"page": "infrastructure:runtime",
+		"line": 356,
+		"section": "14.1 Runtime Semantics",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Writes SHOULD be durable before the promise returned by `setValue` resolves."
+	},
+	{
+		"id": "infrastructure:runtime:eb83472c",
+		"page": "infrastructure:runtime",
+		"line": 357,
+		"section": "14.1 Runtime Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Values MUST NOT be automatically copied, inherited, or synchronized between threads when subagents are spawned."
+	},
+	{
+		"id": "infrastructure:runtime:360c5531",
+		"page": "infrastructure:runtime",
+		"line": 358,
+		"section": "14.1 Runtime Semantics",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Storage is not required to be encrypted at rest (unlike `env`); runtimes MAY encrypt at their discretion."
+	},
+	{
+		"id": "infrastructure:runtime:a9a9d99e",
+		"page": "infrastructure:runtime",
+		"line": 362,
+		"section": "14.2 Capacity and Errors",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Runtimes MAY enforce implementation-defined caps on key length, value size, and total number of keys per thread. When a cap is exceeded, `setValue` SHOULD reject with an error that identifies which limit was hit. Caps SHOULD be documented with the runtime."
+	},
+	{
+		"id": "infrastructure:runtime:2e5c4cd4",
+		"page": "infrastructure:runtime",
+		"line": 366,
+		"section": "15. Thread Client API",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD expose the [Thread Client API](/0.2.0/specification/threads/client-api): HTTP routes to list agents, create, list, read, update, and delete threads, read, send, and delete messages, read thread files, and stop execution, plus a WebSocket thread stream and the stream tickets that authorize it. These routes and frames are fixed by the specification so that one client works against any conforming runtime."
+	},
+	{
+		"id": "infrastructure:runtime:f3c428a1",
+		"page": "infrastructure:runtime",
+		"line": 368,
+		"section": "15. Thread Client API",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime that exposes the API MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:7593dc95",
+		"page": "infrastructure:runtime",
+		"line": 384,
+		"section": "16. Conformance Summary",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST:"
+	},
+	{
+		"id": "infrastructure:runtime:5ef21e87",
+		"page": "infrastructure:runtime",
+		"line": 394,
+		"section": "16. Conformance Summary",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Implementations SHOULD:"
+	},
+	{
+		"id": "specification:agents:7f7ad6d6",
+		"page": "specification:agents",
+		"line": 23,
+		"section": "1.2 SideConfig",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A side's configuration is discriminated by its backing: exactly one of `human`, `prompt`, or `handler` MUST be present."
+	},
+	{
+		"id": "specification:agents:6b09f66f",
+		"page": "specification:agents",
+		"line": 134,
+		"section": "6. Required Parent Hooks",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "An exposed agent MAY declare thread-scoped hooks that are required for the composed relationship to work correctly:"
+	},
+	{
+		"id": "specification:agents:33001fe2",
+		"page": "specification:agents",
+		"line": 155,
+		"section": "6. Required Parent Hooks",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Downloading or installing a package is inert. Declaring a `SubagentRelationship` targeting the agent (or adding it to an enabled parent prompt as a handoff) is what composes it, and composing it MUST activate every `parentHooks` requirement automatically. A second accept-list is not required: composition UIs MUST disclose the hook ID, reason, and stage before the relationship is added or enabled."
+	},
+	{
+		"id": "specification:agents:fd653f22",
+		"page": "specification:agents",
+		"line": 159,
+		"section": "6. Required Parent Hooks",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Any agent with `exposeAsTool: true` MAY declare `parentHooks` — any agent is composable, so any exposed agent may carry composition requirements."
+	},
+	{
+		"id": "specification:agents:0e84ace1",
+		"page": "specification:agents",
+		"line": 164,
+		"section": "6. Required Parent Hooks",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Missing, invalid, or unloadable required hooks MUST fail composition closed. Runtimes must not silently run a partially installed child."
+	},
+	{
+		"id": "specification:agents:054e2652",
+		"page": "specification:agents",
+		"line": 195,
+		"section": "8. Definition-Time Errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST reject the following at definition time:"
+	},
+	{
+		"id": "specification:agents:36114463",
+		"page": "specification:agents",
+		"line": 197,
+		"section": "8. Definition-Time Errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Both sides human — reserved. The mediated human↔human thread is coherent and the restriction may lift in a later version, but 0.2.0 runtimes MUST reject it."
+	},
+	{
+		"id": "specification:agents:51e46a92",
+		"page": "specification:agents",
+		"line": 205,
+		"section": "8. Definition-Time Errors",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Validation issues SHOULD be reported as a structured list (`code`, `severity`, `message`, `path`) so tooling can surface every problem in one pass."
+	},
+	{
+		"id": "specification:effects:65e76fed",
+		"page": "specification:effects",
+		"line": 3,
+		"section": "Effects",
+		"level": "SHOULD NOT",
+		"rfc2119": false,
+		"text": "Effects are scheduled side-effect handlers that run outside normal tool execution. They are ideal for delayed notifications, background cleanup, and async operations that should not block a model step."
+	},
+	{
+		"id": "specification:effects:b7593fb4",
+		"page": "specification:effects",
+		"line": 17,
+		"section": "1.2 defineEffect",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Effects MUST be declared with `defineEffect()` and exported as the default export from a file in `agents/effects/`."
+	},
+	{
+		"id": "specification:effects:2591f11c",
+		"page": "specification:effects",
+		"line": 54,
+		"section": "1.3 Naming",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Names SHOULD use `snake_case`"
+	},
+	{
+		"id": "specification:effects:aa72cc95",
+		"page": "specification:effects",
+		"line": 55,
+		"section": "1.3 Naming",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Names MUST be unique within the active namespace"
+	},
+	{
+		"id": "specification:effects:dcb27a3b",
+		"page": "specification:effects",
+		"line": 71,
+		"section": "2.1 Packed Effect Names",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Runtimes should support [qualified names](/0.2.0/distribution/packaging#qualified-names) for packed effects."
+	},
+	{
+		"id": "specification:effects:34bb2d17",
+		"page": "specification:effects",
+		"line": 85,
+		"section": "3. Execution Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "MUST enqueue effects asynchronously for execution."
+	},
+	{
+		"id": "specification:effects:90890926",
+		"page": "specification:effects",
+		"line": 86,
+		"section": "3. Execution Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "MUST preserve scheduled `args` until execution time."
+	},
+	{
+		"id": "specification:effects:d9d74d81",
+		"page": "specification:effects",
+		"line": 87,
+		"section": "3. Execution Semantics",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "SHOULD expose inspection and cancellation APIs (`getScheduledEffects`, `removeScheduledEffect`)."
+	},
+	{
+		"id": "specification:effects:b0cdd3c5",
+		"page": "specification:effects",
+		"line": 88,
+		"section": "3. Execution Semantics",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "SHOULD keep effect handlers idempotent."
+	},
+	{
+		"id": "specification:handlers:54c3a9d8",
+		"page": "specification:handlers",
+		"line": 42,
+		"section": "2. Referencing a Handler",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Handlers MUST NOT be referenced by prompt `tools` arrays, hook lists, or effect schedules. Implementations MUST reject such references at definition time. This keeps the taxonomy crisp — code that wants a capability writes a tool; code that wants to decorate writes a hook; code that owns turns is a handler."
+	},
+	{
+		"id": "specification:handlers:0747a620",
+		"page": "specification:handlers",
+		"line": 61,
+		"section": "4. Delivery Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST invoke the handler exactly once for each inbound message on the side's perspective, in message persistence order."
+	},
+	{
+		"id": "specification:handlers:ab2038a6",
+		"page": "specification:handlers",
+		"line": 62,
+		"section": "4. Delivery Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT invoke a handler concurrently for the same thread. Messages that arrive while a handler turn is in flight MUST wait in the queue and be delivered one at a time, in order, after the current turn completes."
+	},
+	{
+		"id": "specification:handlers:78f43349",
+		"page": "specification:handlers",
+		"line": 63,
+		"section": "4. Delivery Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT automatically redeliver a message whose handler invocation failed. Retry is a userland decision (re-send the message)."
+	},
+	{
+		"id": "specification:handlers:dea03971",
+		"page": "specification:handlers",
+		"line": 65,
+		"section": "4. Delivery Semantics",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "> Warning: Because queued messages wait behind the in-flight turn, a long-running handler stalls its thread. In particular, a handler that awaits a `blocking` child session holds the delivery slot for that session's entire duration — and if that child can only finish after *another* inbound message on this thread, the thread deadlocks. Relay-style handlers SHOULD forward without blocking (`queueMessage` toward the child) and treat the child's replies as ordinary later turns."
+	},
+	{
+		"id": "specification:handlers:2c8bc235",
+		"page": "specification:handlers",
+		"line": 73,
+		"section": "5. Error Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The turn is marked failed. The error MUST be surfaced on the runtime's request/execution log as a runtime-origin failure — a throwing handler never silently swallows a message."
+	},
+	{
+		"id": "specification:handlers:00d791ec",
+		"page": "specification:handlers",
+		"line": 77,
+		"section": "5. Error Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "This is deliberately unlike hooks (whose failures are non-fatal to the turn they decorate) and unlike session failure (`sessionFail` / `stopSession`), which a handler must invoke explicitly if an error should end the session."
+	},
+	{
+		"id": "specification:handlers:ea88514a",
+		"page": "specification:handlers",
+		"line": 92,
+		"section": "7. The Outbound Boundary",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Handlers get no auto-injected reply channel. If a handler (or the side it feeds) should speak to a user or an external surface, that is userland code — a tool or handler calling the messaging surface it chooses (the `message_user` pattern)."
+	},
+	{
+		"id": "specification:hooks:ef8bf117",
+		"page": "specification:hooks",
+		"line": 40,
+		"section": "1.2 Hook Definition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Each hook implementation MUST be created using `defineHook()` with three properties:"
+	},
+	{
+		"id": "specification:hooks:de7e582d",
+		"page": "specification:hooks",
+		"line": 62,
+		"section": "1.2 Hook Definition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The `hook` property MUST reference one of the hook types in §1.1."
+	},
+	{
+		"id": "specification:hooks:f6094d6c",
+		"page": "specification:hooks",
+		"line": 63,
+		"section": "1.2 Hook Definition",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The `id` property MUST be unique across all hooks and follow `snake_case` format."
+	},
+	{
+		"id": "specification:hooks:e6324c34",
+		"page": "specification:hooks",
+		"line": 64,
+		"section": "1.2 Hook Definition",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Multiple hooks of the same type MAY exist, each with a distinct `id`."
+	},
+	{
+		"id": "specification:hooks:95b662e4",
+		"page": "specification:hooks",
+		"line": 65,
+		"section": "1.2 Hook Definition",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Hook implementations SHOULD be idempotent."
+	},
+	{
+		"id": "specification:hooks:cb48415f",
+		"page": "specification:hooks",
+		"line": 66,
+		"section": "1.2 Hook Definition",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD enforce a timeout on hook execution."
+	},
+	{
+		"id": "specification:hooks:c9953055",
+		"page": "specification:hooks",
+		"line": 67,
+		"section": "1.2 Hook Definition",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Hooks SHOULD NOT perform blocking operations that could exceed that timeout."
+	},
+	{
+		"id": "specification:hooks:48c6c25e",
+		"page": "specification:hooks",
+		"line": 68,
+		"section": "1.2 Hook Definition",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Hooks MUST NOT expose sensitive data in logs or error messages."
+	},
+	{
+		"id": "specification:hooks:e1f01e0b",
+		"page": "specification:hooks",
+		"line": 95,
+		"section": "1.3 Hook Scoping",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Child hook IDs resolve in the child's package namespace and execute with the parent's `ThreadState`. A missing, invalid, unloadable, or user-scoped required hook MUST fail composition closed. See [Agents §6](/0.2.0/specification/agents#6-required-parent-hooks)."
+	},
+	{
+		"id": "specification:hooks:44aec096",
+		"page": "specification:hooks",
+		"line": 191,
+		"section": "2.4 Execution Provenance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`relationshipName` is the relationship name (`as`, defaulting to the agent name); `agentName` is the resolved implementing agent. Package provenance, when present, MUST identify the namespace from which the child hook was loaded. Prompt and agent hooks receive their corresponding prompt/agent source. This context is deterministic runtime metadata and must not be inferred from mutable thread data."
+	},
+	{
+		"id": "specification:hooks:29e645c3",
+		"page": "specification:hooks",
+		"line": 212,
+		"section": "3.1 after_system_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST invoke this hook after system-prompt interpolation and before the history snapshot."
+	},
+	{
+		"id": "specification:hooks:a237deef",
+		"page": "specification:hooks",
+		"line": 213,
+		"section": "3.1 after_system_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A returned string MUST replace the rendered system message for the current request."
+	},
+	{
+		"id": "specification:hooks:a72bbc07",
+		"page": "specification:hooks",
+		"line": 214,
+		"section": "3.1 after_system_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`null` or `undefined` MUST leave the current system message unchanged."
+	},
+	{
+		"id": "specification:hooks:f88b47c5",
+		"page": "specification:hooks",
+		"line": 215,
+		"section": "3.1 after_system_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A message injected here is persisted before the snapshot. It MUST be eligible for the current assembly and MUST pass through `filter_messages`."
+	},
+	{
+		"id": "specification:hooks:62ac4caa",
+		"page": "specification:hooks",
+		"line": 227,
+		"section": "3.2 filter_messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST take a stable snapshot of eligible persisted history and invoke this hook exactly once on that snapshot."
+	},
+	{
+		"id": "specification:hooks:e44a42aa",
+		"page": "specification:hooks",
+		"line": 228,
+		"section": "3.2 filter_messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The snapshot MUST include silent messages."
+	},
+	{
+		"id": "specification:hooks:d2ff2793",
+		"page": "specification:hooks",
+		"line": 229,
+		"section": "3.2 filter_messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The returned array MUST become the persisted-history input for provider-message transformation."
+	},
+	{
+		"id": "specification:hooks:2eca3c1a",
+		"page": "specification:hooks",
+		"line": 230,
+		"section": "3.2 filter_messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Synthetic or transformed messages returned here MUST remain confined to the request context. They MUST NOT replace [`execution.messageHistory`](/0.2.0/specification/threads/execution-state#22-live-execution-history)."
+	},
+	{
+		"id": "specification:hooks:61b94fc9",
+		"page": "specification:hooks",
+		"line": 231,
+		"section": "3.2 filter_messages",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A message injected from this hook MUST NOT restart context assembly. It becomes eligible for the following context assembly."
+	},
+	{
+		"id": "specification:hooks:dfde10dc",
+		"page": "specification:hooks",
+		"line": 261,
+		"section": "3.3 prefilter_llm_history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST invoke this hook after provider-message transformation and before dispatch."
+	},
+	{
+		"id": "specification:hooks:5cf7c4b6",
+		"page": "specification:hooks",
+		"line": 262,
+		"section": "3.3 prefilter_llm_history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The returned array MUST be the provider request history."
+	},
+	{
+		"id": "specification:hooks:a0834ffa",
+		"page": "specification:hooks",
+		"line": 263,
+		"section": "3.3 prefilter_llm_history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Changes here MUST remain confined to the current request. They MUST NOT replace live execution history."
+	},
+	{
+		"id": "specification:hooks:b7d299a8",
+		"page": "specification:hooks",
+		"line": 264,
+		"section": "3.3 prefilter_llm_history",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A message injected from this hook MUST NOT restart context assembly. It becomes eligible for the following context assembly."
+	},
+	{
+		"id": "specification:hooks:00bf29ce",
+		"page": "specification:hooks",
+		"line": 271,
+		"section": "3.3 prefilter_llm_history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Hooks that modify message content MUST validate inputs against an expected schema to prevent prompt-injection attacks."
+	},
+	{
+		"id": "specification:hooks:d492805f",
+		"page": "specification:hooks",
+		"line": 302,
+		"section": "3.4 Stored history and the request context",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For each model-context assembly, the runtime MUST snapshot eligible persisted history and invoke `filter_messages` exactly once on that snapshot."
+	},
+	{
+		"id": "specification:hooks:404eb18a",
+		"page": "specification:hooks",
+		"line": 303,
+		"section": "3.4 Stored history and the request context",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST then transform the filtered result into provider messages and invoke `prefilter_llm_history` before dispatch."
+	},
+	{
+		"id": "specification:hooks:6d8b1d0c",
+		"page": "specification:hooks",
+		"line": 304,
+		"section": "3.4 Stored history and the request context",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Messages injected after the snapshot begins MUST become eligible for the following context assembly."
+	},
+	{
+		"id": "specification:hooks:8a28a42b",
+		"page": "specification:hooks",
+		"line": 305,
+		"section": "3.4 Stored history and the request context",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`injectMessage()` MUST NOT recursively restart `filter_messages` or `prefilter_llm_history`."
+	},
+	{
+		"id": "specification:hooks:e73207b8",
+		"page": "specification:hooks",
+		"line": 320,
+		"section": "4.1 before_create_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook before inserting any message, including every `injectMessage()` path"
+	},
+	{
+		"id": "specification:hooks:41d77a88",
+		"page": "specification:hooks",
+		"line": 321,
+		"section": "4.1 before_create_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The returned object MUST be used for insertion"
+	},
+	{
+		"id": "specification:hooks:765e84ae",
+		"page": "specification:hooks",
+		"line": 322,
+		"section": "4.1 before_create_message",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Failures SHOULD prevent message creation"
+	},
+	{
+		"id": "specification:hooks:b89bae84",
+		"page": "specification:hooks",
+		"line": 334,
+		"section": "4.2 after_create_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook after successful insertion, including every `injectMessage()` path"
+	},
+	{
+		"id": "specification:hooks:9d7eaeac",
+		"page": "specification:hooks",
+		"line": 335,
+		"section": "4.2 after_create_message",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Failures SHOULD NOT affect the created message"
+	},
+	{
+		"id": "specification:hooks:d44aaea6",
+		"page": "specification:hooks",
+		"line": 348,
+		"section": "4.3 before_update_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook before updating"
+	},
+	{
+		"id": "specification:hooks:91bb4c62",
+		"page": "specification:hooks",
+		"line": 349,
+		"section": "4.3 before_update_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The returned object MUST be used for the update"
+	},
+	{
+		"id": "specification:hooks:e1b53f31",
+		"page": "specification:hooks",
+		"line": 350,
+		"section": "4.3 before_update_message",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Failures SHOULD prevent the update"
+	},
+	{
+		"id": "specification:hooks:c6b52c77",
+		"page": "specification:hooks",
+		"line": 362,
+		"section": "4.4 after_update_message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook after successful update"
+	},
+	{
+		"id": "specification:hooks:d7e8a202",
+		"page": "specification:hooks",
+		"line": 363,
+		"section": "4.4 after_update_message",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Failures SHOULD NOT affect the updated message"
+	},
+	{
+		"id": "specification:hooks:bdfd2d2d",
+		"page": "specification:hooks",
+		"line": 378,
+		"section": "5.1 tool_call_started",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "When the tool does not declare a `progressArgument`, the hook fires as soon as the tool call appears in the stream. Its name is known, but `toolCall.function.arguments` MAY be an incomplete JSON fragment (or empty), and `progress` is `undefined`."
+	},
+	{
+		"id": "specification:hooks:7bef4e87",
+		"page": "specification:hooks",
+		"line": 381,
+		"section": "5.1 tool_call_started",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook exactly once per tool call."
+	},
+	{
+		"id": "specification:hooks:295f041d",
+		"page": "specification:hooks",
+		"line": 382,
+		"section": "5.1 tool_call_started",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The return value MUST be ignored; the hook cannot modify the tool call."
+	},
+	{
+		"id": "specification:hooks:cf1fb96d",
+		"page": "specification:hooks",
+		"line": 383,
+		"section": "5.1 tool_call_started",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD also broadcast a matching `tool_call_started` thread event to connected clients with `{ id, name, progress }` at the same moment."
+	},
+	{
+		"id": "specification:hooks:e7ff07c0",
+		"page": "specification:hooks",
+		"line": 428,
+		"section": "5.4 after_tool_call_failure",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Hooks accessing external services MUST handle failures gracefully."
+	},
+	{
+		"id": "specification:hooks:6d96f2a3",
+		"page": "specification:hooks",
+		"line": 440,
+		"section": "5.5 tool_call_done",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST call this hook once per tool call, whether it succeeded or failed."
+	},
+	{
+		"id": "specification:hooks:baf0fc02",
+		"page": "specification:hooks",
+		"line": 441,
+		"section": "5.5 tool_call_done",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The return value MUST be ignored; the hook cannot modify the result."
+	},
+	{
+		"id": "specification:hooks:eaca9825",
+		"page": "specification:hooks",
+		"line": 443,
+		"section": "5.5 tool_call_done",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD also broadcast a matching `tool_call_done` thread event to connected clients with `{ id, name, status }` at the same moment."
+	},
+	{
+		"id": "specification:hooks:8e371f2b",
+		"page": "specification:hooks",
+		"line": 490,
+		"section": "6.3 HookToolResult",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Files returned by a tool are surfaced through `attachments`. Each entry is either a new `ToolAttachment` (binary data to store) or an `AttachmentRef` (pointer to an existing file in the thread filesystem). Hooks that inspect tool output can read these; hooks that rewrite tool results MUST preserve or replace this field deliberately."
+	},
+	{
+		"id": "specification:models:41fea479",
+		"page": "specification:models",
+		"line": 13,
+		"section": "1.1 Required Properties",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A model definition MUST include the following properties:"
+	},
+	{
+		"id": "specification:models:b020a9d7",
+		"page": "specification:models",
+		"line": 23,
+		"section": "1.2 Optional Properties",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A model definition MAY include the following properties:"
+	},
+	{
+		"id": "specification:models:0157aac0",
+		"page": "specification:models",
+		"line": 44,
+		"section": "3.1 Fallback Behavior",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "When a model definition includes `fallbacks`, implementations SHOULD:"
+	},
+	{
+		"id": "specification:models:6608e845",
+		"page": "specification:models",
+		"line": 52,
+		"section": "3.2 Fallback References",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Fallback model names MUST reference other defined models by their `name` property. Implementations SHOULD validate that all referenced fallback models exist at startup."
+	},
+	{
+		"id": "specification:models:24f418bc",
+		"page": "specification:models",
+		"line": 68,
+		"section": "4.2 Pricing Priority",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Pricing configuration is optional. Providers MAY return pricing information per-request (e.g. in response headers or metadata). When provider-reported pricing is available:"
+	},
+	{
+		"id": "specification:models:8e186a9a",
+		"page": "specification:models",
+		"line": 70,
+		"section": "4.2 Pricing Priority",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Provider-reported pricing SHOULD take priority over static model configuration."
+	},
+	{
+		"id": "specification:models:8c4f6857",
+		"page": "specification:models",
+		"line": 72,
+		"section": "4.2 Pricing Priority",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST restrict cost information to authorized parties."
+	},
+	{
+		"id": "specification:models:e4b604d0",
+		"page": "specification:models",
+		"line": 117,
+		"section": "6. Validation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST validate that:"
+	},
+	{
+		"id": "specification:models:41315f13",
+		"page": "specification:models",
+		"line": 123,
+		"section": "6. Validation",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Implementations SHOULD validate that all `fallbacks` entries reference valid model names."
+	},
+	{
+		"id": "specification:prompts:b5e3375e",
+		"page": "specification:prompts",
+		"line": 11,
+		"section": "1.1 Required Properties",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A prompt definition MUST include the following properties:"
+	},
+	{
+		"id": "specification:prompts:6a295106",
+		"page": "specification:prompts",
+		"line": 22,
+		"section": "1.2 Optional Properties",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A prompt definition MAY include the following properties:"
+	},
+	{
+		"id": "specification:prompts:d263e879",
+		"page": "specification:prompts",
+		"line": 50,
+		"section": "2.1 String Prompts",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "System prompts MUST NOT contain secrets or sensitive credentials. Implementations MUST sanitize prompt content that incorporates untrusted input to prevent injection."
+	},
+	{
+		"id": "specification:prompts:97e0539c",
+		"page": "specification:prompts",
+		"line": 88,
+		"section": "2.4 Include Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST recursively resolve all includes"
+	},
+	{
+		"id": "specification:prompts:e9cb2058",
+		"page": "specification:prompts",
+		"line": 89,
+		"section": "2.4 Include Resolution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST detect and reject circular includes"
+	},
+	{
+		"id": "specification:prompts:bf53f925",
+		"page": "specification:prompts",
+		"line": 131,
+		"section": "3.3 Sub-Prompt Tool Configuration",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "Since sub-prompts return their results as tool call responses, all output must be serialized into a single text string. The configuration options control what gets included in that string."
+	},
+	{
+		"id": "specification:prompts:949d0585",
+		"page": "specification:prompts",
+		"line": 166,
+		"section": "3.3 Sub-Prompt Tool Configuration",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "The `initAttachmentsProperty` allows passing file attachments (images, documents) to the sub-prompt. The property value should be a file path string or an array of paths. For example, if `initAttachmentsProperty: 'image'` is set and the caller passes `{ image: '/attachments/photo.jpg' }`, the sub-prompt receives the image as an attachment."
+	},
+	{
+		"id": "specification:prompts:9e236144",
+		"page": "specification:prompts",
+		"line": 172,
+		"section": "3.4 Subagent Lifecycle Tools",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Prompts do not declare subagent relationships, and a `tools` entry attempting to configure one MUST be rejected at definition time."
+	},
+	{
+		"id": "specification:prompts:d0ac352d",
+		"page": "specification:prompts",
+		"line": 187,
+		"section": "4.1 Strategy Values",
+		"level": "MUST NOT",
+		"rfc2119": false,
+		"text": "| `'none'` | The model must not call tools (definitions may still be sent) |"
+	},
+	{
+		"id": "specification:prompts:20479ea7",
+		"page": "specification:prompts",
+		"line": 193,
+		"section": "4.2 Tool Choice Behavior",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The LLM MUST include at least one tool call in its response"
+	},
+	{
+		"id": "specification:prompts:cb3cc2b1",
+		"page": "specification:prompts",
+		"line": 194,
+		"section": "4.2 Tool Choice Behavior",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Implementations SHOULD retry if the LLM fails to call a tool"
+	},
+	{
+		"id": "specification:prompts:975e02f5",
+		"page": "specification:prompts",
+		"line": 197,
+		"section": "4.2 Tool Choice Behavior",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The LLM MUST NOT call a tool in its response"
+	},
+	{
+		"id": "specification:prompts:ea4bf54e",
+		"page": "specification:prompts",
+		"line": 198,
+		"section": "4.2 Tool Choice Behavior",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST pass `toolChoice: 'none'` to the provider with any tool definitions they send"
+	},
+	{
+		"id": "specification:prompts:2f53909a",
+		"page": "specification:prompts",
+		"line": 199,
+		"section": "4.2 Tool Choice Behavior",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Tool definitions MAY still be sent. Sending them keeps the request prefix identical to that of a prompt that shares the same tools, which preserves provider prompt caching. An implementation that sends no tool definitions may omit the tool choice."
+	},
+	{
+		"id": "specification:prompts:64c83f9a",
+		"page": "specification:prompts",
+		"line": 218,
+		"section": "5.2 Schema Usage",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST validate inputs against the schema"
+	},
+	{
+		"id": "specification:prompts:551cdfc5",
+		"page": "specification:prompts",
+		"line": 219,
+		"section": "5.2 Schema Usage",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST generate JSON Schema for LLM tool definitions"
+	},
+	{
+		"id": "specification:prompts:8ccbefff",
+		"page": "specification:prompts",
+		"line": 220,
+		"section": "5.2 Schema Usage",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Field descriptions from `.describe()` SHOULD be included"
+	},
+	{
+		"id": "specification:prompts:61b7d2b3",
+		"page": "specification:prompts",
+		"line": 222,
+		"section": "5.2 Schema Usage",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "User inputs MUST be validated before inclusion in prompts."
+	},
+	{
+		"id": "specification:prompts:4e22139b",
+		"page": "specification:prompts",
+		"line": 283,
+		"section": "9.1 Required Field Validation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST validate that:"
+	},
+	{
+		"id": "specification:prompts:62202ae5",
+		"page": "specification:prompts",
+		"line": 292,
+		"section": "9.2 Optional Field Validation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST validate that:"
+	},
+	{
+		"id": "specification:providers:418c0a3c",
+		"page": "specification:providers",
+		"line": 79,
+		"section": "1.3 Provider Extension Factories",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A provider extension MUST declare a `baseProvider`. Models that import the base provider and models that import the extension remain separate provider choices."
+	},
+	{
+		"id": "specification:providers:9c5f88d3",
+		"page": "specification:providers",
+		"line": 149,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Therefore, an OpenAI-compatible extension that only overrides `baseUrl` still uses `OPENAI_API_KEY`. To use its own key, it MUST also override `apiKey` with a value source such as `providerEnv('EXAMPLE_PROVIDER_API_KEY', { valueType: 'secret' })`."
+	},
+	{
+		"id": "specification:providers:2c950b6a",
+		"page": "specification:providers",
+		"line": 161,
+		"section": "Config Slots",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A config slot MAY also be a nested map whose leaves are individual value sources, so one slot can combine environment and constant entries. `defaultHeaders` uses this form. A leaf that resolves to no value — an unset optional environment variable — is omitted from the resolved map rather than sent empty."
+	},
+	{
+		"id": "specification:providers:1932c6dc",
+		"page": "specification:providers",
+		"line": 176,
+		"section": "Method Overrides",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Provider extensions can override any provider hook. Each override receives a context object plus `next()`, where `next()` calls the base provider implementation. An override MUST call `next()` to compose with the base provider. If it does not call `next()`, it replaces that behavior."
+	},
+	{
+		"id": "specification:providers:654558e2",
+		"page": "specification:providers",
+		"line": 216,
+		"section": "Method Overrides",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`supportsModel` and `getIcon` are synchronous. Implementations SHOULD use `getModels` or `getModelsPage` for asynchronous model discovery."
+	},
+	{
+		"id": "specification:providers:e50614cd",
+		"page": "specification:providers",
+		"line": 423,
+		"section": "7. Error Handling",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Provider packages SHOULD set `origin: 'provider:<id>'` when they rethrow an upstream failure. Wrapped or delegated endpoints SHOULD also set `upstream` to the backend that actually handled the request. Runtimes use these fields for logs and operator interfaces; attribution MUST NOT require parsing the human error message. When a provider omits them, the runtime MAY attribute the known request boundary (direct provider or hosted router)."
+	},
+	{
+		"id": "specification:providers:016dca2f",
+		"page": "specification:providers",
+		"line": 564,
+		"section": "9.5 Implementation Notes",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST invoke it asynchronously and MUST NOT block the flow on it."
+	},
+	{
+		"id": "specification:providers:8b317fb8",
+		"page": "specification:providers",
+		"line": 653,
+		"section": "10.4 Model-Specific Tools",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Implementations SHOULD use `getTools(modelId)` to determine which tools are available."
+	},
+	{
+		"id": "specification:subagents:fe1c0e17",
+		"page": "specification:subagents",
+		"line": 38,
+		"section": "1. SubagentRelationship",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "| `maxInstances` | Cap on simultaneous instances. When reached, creation attempts SHOULD return a tool error explaining the cap and suggesting messaging an existing instance. |"
+	},
+	{
+		"id": "specification:subagents:c2501258",
+		"page": "specification:subagents",
+		"line": 45,
+		"section": "1. SubagentRelationship",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "| `hidden` | The relationship stays declared — code paths can still spawn the child — but it is excluded from every LLM request's tool surface. For infrastructure children the model must never invoke. |"
+	},
+	{
+		"id": "specification:subagents:827f7a60",
+		"page": "specification:subagents",
+		"line": 78,
+		"section": "2.4 Reserved Names",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Relationship names share the tool namespace. A relationship name that collides with another tool name is a definition-time error, and the injected lifecycle tool names — `subagents`, `subagent_create`, `subagent_message` — are explicitly reserved: a colliding `as` MUST be rejected with a dedicated validation code."
+	},
+	{
+		"id": "specification:subagents:34e53437",
+		"page": "specification:subagents",
+		"line": 102,
+		"section": "3.2 Immediate Spawning",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "runtimes MAY use `nameEnv` and `descriptionEnv` as model-visible hints when deriving initial child arguments via a bootstrap pass."
+	},
+	{
+		"id": "specification:subagents:149f2374",
+		"page": "specification:subagents",
+		"line": 103,
+		"section": "3.2 Immediate Spawning",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "runtimes MUST treat `scopedEnv` as runtime-only transfer data."
+	},
+	{
+		"id": "specification:subagents:bf140dbe",
+		"page": "specification:subagents",
+		"line": 104,
+		"section": "3.2 Immediate Spawning",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "runtimes MUST NOT expose `scopedEnv` values to the model unless the same env name is explicitly designated by `nameEnv` or `descriptionEnv`."
+	},
+	{
+		"id": "specification:subagents:2adf940e",
+		"page": "specification:subagents",
+		"line": 110,
+		"section": "3.3 Blocking and Create-or-Continue",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When `blocking: true` is combined with `maxInstances: 1` and an instance already exists, `subagent_create` MUST behave as create-or-continue: message the existing instance and await *that* session's close, rather than erroring on the cap. This is what callers invariably mean by \"run the child again.\""
+	},
+	{
+		"id": "specification:subagents:f90a913f",
+		"page": "specification:subagents",
+		"line": 120,
+		"section": "4.1 Persistence Is Universal",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Session end never terminates a thread. When a child session ends — stop, fail, error, or turn-cap — the registry status transitions (`running` → `idle` / `failed`), the thread remains addressable, and a later message starts a new session with history intact. Runtimes MUST NOT destroy or orphan child threads on any session-finalization path."
+	},
+	{
+		"id": "specification:subagents:33e1b504",
+		"page": "specification:subagents",
+		"line": 149,
+		"section": "4.2 Registry",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Child visibility is pull-based: runtimes inject the `subagents` query tool ([§5](#5-lifecycle-tools)) and MUST NOT additionally inject an ambient registry system message — a registry block that mutates between requests invalidates provider prefix caches and reads as out-of-dialogue state. Completions arrive as messages."
+	},
+	{
+		"id": "specification:subagents:d5c2f061",
+		"page": "specification:subagents",
+		"line": 159,
+		"section": "5. Lifecycle Tools",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`subagents` — the pull-based visibility surface. Takes no arguments; returns the registry snapshot for the side's relationships — reference, relationship name, agent name, status, working-status text, initial arguments, creation time. Injected tool descriptions SHOULD direct the model to call `subagents` before `subagent_create` so existing instances are reused rather than duplicated."
+	},
+	{
+		"id": "specification:subagents:acaa04fa",
+		"page": "specification:subagents",
+		"line": 160,
+		"section": "5. Lifecycle Tools",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`subagent_create` — creates (or continues, [§3.3](#33-blocking-and-create-or-continue)) an instance. Its `agent` argument MUST enumerate the side's enabled relationship *names*. It MUST require a non-empty `name` argument for the spawned instance; runtimes SHOULD persist this as a human-readable child thread display name."
+	},
+	{
+		"id": "specification:subagents:0d1b886d",
+		"page": "specification:subagents",
+		"line": 163,
+		"section": "5. Lifecycle Tools",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "All lifecycle references use relationship names, never an internal agent identifier that differs from them. Runtimes MUST reject lifecycle invocations that target undeclared or disabled relationships without creating a child."
+	},
+	{
+		"id": "specification:subagents:d4f8fd38",
+		"page": "specification:subagents",
+		"line": 165,
+		"section": "5. Lifecycle Tools",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`subagent_create` SHOULD expose a structured `arguments` object whose schema is dictated by the receiving child ([§5.1](#51-persistent-invocation-arguments))."
+	},
+	{
+		"id": "specification:subagents:48abb804",
+		"page": "specification:subagents",
+		"line": 173,
+		"section": "5.1 Persistent Invocation Arguments",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "runtimes MUST validate them against the schema and persist the validated arguments for the life of the child thread."
+	},
+	{
+		"id": "specification:subagents:3890a235",
+		"page": "specification:subagents",
+		"line": 174,
+		"section": "5.1 Persistent Invocation Arguments",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "runtimes MUST hydrate them into `ThreadState.arguments` and prompt variable interpolation for both child sides on every activation — the initial invocation and every later resume — so spawn-time context (a stylist child that needs sizes and preferences, say) is available for as long as the thread lives."
+	},
+	{
+		"id": "specification:subagents:d1a641f8",
+		"page": "specification:subagents",
+		"line": 175,
+		"section": "5.1 Persistent Invocation Arguments",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "if required arguments are missing, runtimes MUST reject creation with a structured `subagent_arguments_required` error rather than spawning the child."
+	},
+	{
+		"id": "specification:subagents:bf74a7d2",
+		"page": "specification:subagents",
+		"line": 179,
+		"section": "5.2 Scoped Variable Bootstrap",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "If `subagent_create` cannot proceed because required scoped variables for the child graph are missing, runtimes SHOULD return a structured error (e.g. `subagent_env_required`) with a request ID and expose a temporary bootstrap endpoint:"
+	},
+	{
+		"id": "specification:subagents:33a03ae5",
+		"page": "specification:subagents",
+		"line": 193,
+		"section": "6.1 Parent → Child",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Attachment paths MUST be copied from the parent filesystem to the child filesystem before queuing ([§7](#7-attachment-copying))."
+	},
+	{
+		"id": "specification:subagents:5ad9be05",
+		"page": "specification:subagents",
+		"line": 213,
+		"section": "6.4 Child → Parent: Explicit Escalation",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "When the effective `parentCommunication` is `explicit`, runtimes MUST NOT auto-queue completion/failure to the parent. Because the auto-queued completion is what triggers a parent turn, `explicit` means a child's finish does not wake the parent at all. Tools, hooks, and handlers escalate deliberately:"
+	},
+	{
+		"id": "specification:subagents:ea625820",
+		"page": "specification:subagents",
+		"line": 223,
+		"section": "6.5 Provenance Metadata",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD set standard, OPTIONAL provenance metadata on cross-thread traffic (see [Messages §1.1](/0.2.0/specification/threads/messages#11-provenance-metadata-conventions)):"
+	},
+	{
+		"id": "specification:subagents:de0cc72e",
+		"page": "specification:subagents",
+		"line": 232,
+		"section": "7. Attachment Copying",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Subagent communication that crosses thread boundaries MUST copy filesystem references:"
+	},
+	{
+		"id": "specification:subagents:99c0788e",
+		"page": "specification:subagents",
+		"line": 237,
+		"section": "7. Attachment Copying",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The destination thread MUST receive destination-local attachment paths."
+	},
+	{
+		"id": "specification:threads:6a7a34b7",
+		"page": "specification:threads",
+		"line": 227,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST NOT",
+		"rfc2119": false,
+		"text": "The optional `instanceEnv(propertyName)` capability reads exclusively from the runtime instance. It must not consider thread, agent, prompt, or user values. It returns `undefined` when the key is not configured and rejects when the runtime cannot read its instance environment. Use it when a value establishes a trust boundary, such as a service endpoint and the credential sent to that endpoint. Consumers that require this boundary must feature-detect the method and fail closed if the capability is unavailable or the required instance value is missing."
+	},
+	{
+		"id": "specification:threads:287f2aef",
+		"page": "specification:threads",
+		"line": 236,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "`envType(propertyName)` returns the display/redaction classification for a resolved environment value. Unknown or non-thread sources default to `secret`. Values marked `secret` should be redacted from tool output and logs; values marked `text` may be displayed."
+	},
+	{
+		"id": "specification:threads:4e919532",
+		"page": "specification:threads",
+		"line": 238,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "`setEnv(propertyName, value, options?)` writes to thread storage and propagates recursively to active descendants. Pass `{ type: 'text' }` or `{ type: 'secret' }` to choose the display/redaction classification. Omitting `type` preserves any existing classification for that key, or defaults a new key to `secret`. During propagation, descendants must filter out inherited values for variable names marked `scoped` in that descendant's agent graph. Terminated descendants are skipped."
+	},
+	{
+		"id": "specification:threads:274ed7a7",
+		"page": "specification:threads",
+		"line": 240,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Thread, user, and instance environment values should be encrypted at rest when the runtime supports encrypted storage."
+	},
+	{
+		"id": "specification:threads:682ba8c5",
+		"page": "specification:threads",
+		"line": 346,
+		"section": "5.2 Event Guidelines",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Event names SHOULD be lowercase with underscores"
+	},
+	{
+		"id": "specification:threads:3568b54d",
+		"page": "specification:threads",
+		"line": 347,
+		"section": "5.2 Event Guidelines",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Event data MUST be JSON-serializable"
+	},
+	{
+		"id": "specification:threads:b1cf2198",
+		"page": "specification:threads",
+		"line": 348,
+		"section": "5.2 Event Guidelines",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Events SHOULD NOT contain sensitive information"
+	},
+	{
+		"id": "specification:threads:ef0531e9",
+		"page": "specification:threads",
+		"line": 357,
+		"section": "6.1 Thread Arguments",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For subagent threads, runtimes MUST restore the creation-time `subagent_create.arguments` object into `ThreadState.arguments` on every run and when exposing the child through endpoints, hooks, effects, or other `ThreadState` access. Both child sides see the same argument object:"
+	},
+	{
+		"id": "specification:threads:9b4acd53",
+		"page": "specification:threads",
+		"line": 367,
+		"section": "6.1 Thread Arguments",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Runtimes should keep the durable copy with child thread metadata/properties. They should also expose top-level argument keys to prompt variable interpolation, for whichever child side is currently rendering, including included prompts, without requiring callers to put those values in `state.context`."
+	},
+	{
+		"id": "specification:threads:3aa13eec",
+		"page": "specification:threads",
+		"line": 374,
+		"section": "6.2 Per-Execution Context",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "The `context` property is mutable execution-scoped scratch storage for values that should be shared while the current agent run is being assembled and executed. It is used for:"
+	},
+	{
+		"id": "specification:threads:658d7beb",
+		"page": "specification:threads",
+		"line": 379,
+		"section": "6.2 Per-Execution Context",
+		"level": "SHOULD NOT",
+		"rfc2119": false,
+		"text": "runtime-internal coordination data that should not become a thread argument"
+	},
+	{
+		"id": "specification:threads:97affdf6",
+		"page": "specification:threads",
+		"line": 453,
+		"section": "7.4 Agent Skills",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Skills are stored server-side and scoped to the calling principal. A principal's private skills MUST NOT be visible to another principal. Runtimes MAY add an explicitly shared, administrator-reviewed library and MUST NOT require client-side storage for skill content."
+	},
+	{
+		"id": "specification:threads:248c6339",
+		"page": "specification:threads",
+		"line": 454,
+		"section": "7.4 Agent Skills",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When an owner-scoped skill and a shared skill have the same name, the owner-scoped skill MUST take precedence for that owner."
+	},
+	{
+		"id": "specification:threads:9a403618",
+		"page": "specification:threads",
+		"line": 455,
+		"section": "7.4 Agent Skills",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A skill's identity MUST come from its `SKILL.md` frontmatter — never from a caller-supplied name — and installs MUST validate the frontmatter against the standard."
+	},
+	{
+		"id": "specification:threads:d689621f",
+		"page": "specification:threads",
+		"line": 456,
+		"section": "7.4 Agent Skills",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST authorize mutations and confine them to the calling principal's scope. Multi-tenant runtimes MUST NOT allow ordinary tenant agent code to install, replace, enable, disable, or remove shared skills; an administrative or equivalently trusted principal is required for shared-library changes."
+	},
+	{
+		"id": "specification:threads:8d2240d5",
+		"page": "specification:threads",
+		"line": 457,
+		"section": "7.4 Agent Skills",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD surface skills to agents with progressive disclosure: only `name` + `description` ride in ambient context; the `SKILL.md` body (and bundled files) load on demand when the agent judges the skill applicable."
+	},
+	{
+		"id": "specification:threads:7c4efcef",
+		"page": "specification:threads",
+		"line": 458,
+		"section": "7.4 Agent Skills",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Disabled skills stay installed but MUST be hidden from ambient agent context."
+	},
+	{
+		"id": "specification:threads:e674679a",
+		"page": "specification:threads",
+		"line": 474,
+		"section": "8. Lifecycle",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "Parent registries should reflect `'terminated'` status"
+	},
+	{
+		"id": "specification:threads:fd9152b3",
+		"page": "specification:threads",
+		"line": 510,
+		"section": "9. Subagent Hierarchy, Communication, and Termination",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "`initialArguments` stores the structured values supplied at child creation. The registry copy is parent-visible metadata; the durable child-side source should live with the child thread's own metadata/properties and be exposed to both child sides as `ThreadState.arguments` and prompt interpolation variables."
+	},
+	{
+		"id": "specification:threads:fdcf9a01",
+		"page": "specification:threads",
+		"line": 516,
+		"section": "9.1 Cross-Thread Attachment Copying",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "When communication crosses thread boundaries, filesystem references must be copied:"
+	},
+	{
+		"id": "specification:threads:9e3d249c",
+		"page": "specification:threads",
+		"line": 520,
+		"section": "9.1 Cross-Thread Attachment Copying",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "Returned attachment paths must be valid in the receiving thread filesystem."
+	},
+	{
+		"id": "specification:threads:6a8e34ca",
+		"page": "specification:threads",
+		"line": 540,
+		"section": "9.3 Parent Messaging",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`stopSession()` is distinct from `state.execution.stop()`: it marks the active agent session as terminal for lifecycle/subagent purposes. It MUST NOT terminate the thread — the thread remains addressable and a later message starts a new session with history intact. By default it only stops the session; `notifyParent` and `status` are optional side effects."
+	},
+	{
+		"id": "specification:threads:23a9a5c8",
+		"page": "specification:threads",
+		"line": 595,
+		"section": "11.2 Platform Independence",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`ThreadState` is an abstract interface. Implementations MUST NOT expose:"
+	},
+	{
+		"id": "specification:threads:f6811a4b",
+		"page": "specification:threads",
+		"line": 602,
+		"section": "11.3 Error Handling",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Methods that return promises SHOULD throw on:"
+	},
+	{
+		"id": "specification:threads:06afb36e",
+		"page": "specification:threads",
+		"line": 607,
+		"section": "11.3 Error Handling",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "Methods SHOULD NOT throw on:"
+	},
+	{
+		"id": "specification:threads/client-api:0d171793",
+		"page": "specification:threads/client-api",
+		"line": 9,
+		"section": "1. Scope",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD expose the thread client API."
+	},
+	{
+		"id": "specification:threads/client-api:a6f77933",
+		"page": "specification:threads/client-api",
+		"line": 10,
+		"section": "1. Scope",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime that exposes it MUST implement every route in §2 as specified in this section."
+	},
+	{
+		"id": "specification:threads/client-api:14da923f",
+		"page": "specification:threads/client-api",
+		"line": 11,
+		"section": "1. Scope",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A runtime MAY define routes, query parameters, request fields, response fields, and stream frame types beyond those specified here."
+	},
+	{
+		"id": "specification:threads/client-api:3514aab2",
+		"page": "specification:threads/client-api",
+		"line": 12,
+		"section": "1. Scope",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A client MUST ignore response fields and stream frame types it does not recognize."
+	},
+	{
+		"id": "specification:threads/client-api:d9e56a97",
+		"page": "specification:threads/client-api",
+		"line": 35,
+		"section": "2. Routes",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "[Thread endpoints](/0.2.0/specification/threads/endpoints) are mounted beneath the same `{runtime_prefix}/threads/{threadId}/` prefix. The endpoint paths `messages`, `fs`, `stop`, and `stream`, and every path beneath `messages/` and `fs/`, are reserved for this API. A package SHOULD NOT define thread endpoints at those paths."
+	},
+	{
+		"id": "specification:threads/client-api:e2fedec8",
+		"page": "specification:threads/client-api",
+		"line": 41,
+		"section": "3.1 Authentication and access",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Every route MUST require an authenticated caller."
+	},
+	{
+		"id": "specification:threads/client-api:a7366fa9",
+		"page": "specification:threads/client-api",
+		"line": 42,
+		"section": "3.1 Authentication and access",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST accept a credential presented in the request header `Authorization: Bearer {credential}` on every HTTP route."
+	},
+	{
+		"id": "specification:threads/client-api:83720726",
+		"page": "specification:threads/client-api",
+		"line": 43,
+		"section": "3.1 Authentication and access",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST accept a stream ticket (§4) on the thread stream upgrade (§16)."
+	},
+	{
+		"id": "specification:threads/client-api:8e022256",
+		"page": "specification:threads/client-api",
+		"line": 44,
+		"section": "3.1 Authentication and access",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT accept a long-lived credential in a URL."
+	},
+	{
+		"id": "specification:threads/client-api:9a043b83",
+		"page": "specification:threads/client-api",
+		"line": 45,
+		"section": "3.1 Authentication and access",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A runtime MAY accept other credential transports, such as a session cookie."
+	},
+	{
+		"id": "specification:threads/client-api:b37e6cf3",
+		"page": "specification:threads/client-api",
+		"line": 46,
+		"section": "3.1 Authentication and access",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A route addressed to a thread MUST enforce the runtime's thread access policy for the resolved caller before it reads or changes the thread."
+	},
+	{
+		"id": "specification:threads/client-api:d2250172",
+		"page": "specification:threads/client-api",
+		"line": 50,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Request and response bodies MUST be JSON, except the file response in §14."
+	},
+	{
+		"id": "specification:threads/client-api:2487b55b",
+		"page": "specification:threads/client-api",
+		"line": 51,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Property names are case-sensitive and MUST be spelled exactly as given in this section."
+	},
+	{
+		"id": "specification:threads/client-api:653f5213",
+		"page": "specification:threads/client-api",
+		"line": 52,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A failed request MUST return a non-2xx status with the body `{ \"error\": { \"code\": string, \"message\": string } }`. The body MAY carry other members. A client MUST decide the outcome from the status. The `code` and `message` values are informational. A refused stream upgrade (§16) is a failed request: the runtime MUST answer it with an HTTP response that carries the status and this body, and MUST NOT close the connection without one."
+	},
+	{
+		"id": "specification:threads/client-api:1ea80aea",
+		"page": "specification:threads/client-api",
+		"line": 53,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For each condition in the table below, the runtime MUST return the corresponding status."
+	},
+	{
+		"id": "specification:threads/client-api:ed8c882c",
+		"page": "specification:threads/client-api",
+		"line": 54,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For an internal failure or temporary unavailability, the runtime MUST return a `5xx` status. It MUST NOT report such a failure with a status from the table."
+	},
+	{
+		"id": "specification:threads/client-api:bfa87f9e",
+		"page": "specification:threads/client-api",
+		"line": 55,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread."
+	},
+	{
+		"id": "specification:threads/client-api:cb8915ae",
+		"page": "specification:threads/client-api",
+		"line": 94,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with a `StreamTicketResponse` and the response header `Cache-Control: no-store`."
+	},
+	{
+		"id": "specification:threads/client-api:76165de4",
+		"page": "specification:threads/client-api",
+		"line": 95,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `400` when `pathname` is absent, is not a normalized path beneath `{runtime_prefix}`, or contains a query or fragment. A path is normalized when it has no `.` or `..` segment, no empty segment, no trailing slash, and no percent-encoded `.`, `/`, or `\\` (`%2E`, `%2F`, `%5C`, in either letter case)."
+	},
+	{
+		"id": "specification:threads/client-api:05456b1a",
+		"page": "specification:threads/client-api",
+		"line": 97,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST authenticate an upgrade that presents a valid ticket as the caller who requested the ticket."
+	},
+	{
+		"id": "specification:threads/client-api:addf6b15",
+		"page": "specification:threads/client-api",
+		"line": 98,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A ticket MUST be valid only for an upgrade whose path equals `pathname`. The comparison is of the exact strings."
+	},
+	{
+		"id": "specification:threads/client-api:e9f2105f",
+		"page": "specification:threads/client-api",
+		"line": 99,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A ticket MUST be valid for at most one upgrade."
+	},
+	{
+		"id": "specification:threads/client-api:88e7aab4",
+		"page": "specification:threads/client-api",
+		"line": 100,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A ticket MUST expire no later than `expires_in` seconds after it is issued. `expires_in` SHOULD NOT exceed `60`."
+	},
+	{
+		"id": "specification:threads/client-api:5a80f0da",
+		"page": "specification:threads/client-api",
+		"line": 101,
+		"section": "4. Stream Tickets",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST reject an upgrade that presents an unknown, expired, used, or mismatched ticket with `401`."
+	},
+	{
+		"id": "specification:threads/client-api:c86417e2",
+		"page": "specification:threads/client-api",
+		"line": 102,
+		"section": "4. Stream Tickets",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A ticket authorizes a stream upgrade only. The runtime MUST NOT accept it as a bearer credential."
+	},
+	{
+		"id": "specification:threads/client-api:7039e594",
+		"page": "specification:threads/client-api",
+		"line": 131,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with an `AgentList`."
+	},
+	{
+		"id": "specification:threads/client-api:6cd3f1b4",
+		"page": "specification:threads/client-api",
+		"line": 132,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST accept every listed `id` as the `agent_id` of a create request (§6) from the same caller."
+	},
+	{
+		"id": "specification:threads/client-api:d1689dce",
+		"page": "specification:threads/client-api",
+		"line": 133,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`title` MUST be the agent's `title`, or its `name` when the agent defines no title."
+	},
+	{
+		"id": "specification:threads/client-api:1f9ebd0b",
+		"page": "specification:threads/client-api",
+		"line": 134,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`primary` MUST be `false` when the [agent definition](/0.2.0/specification/agents#22-optional) sets `primary: false`, and `true` otherwise."
+	},
+	{
+		"id": "specification:threads/client-api:d20086c5",
+		"page": "specification:threads/client-api",
+		"line": 135,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`side_a_backing` and `side_b_backing` MUST report the [backing](/0.2.0/specification/agents) of each side."
+	},
+	{
+		"id": "specification:threads/client-api:af32a454",
+		"page": "specification:threads/client-api",
+		"line": 137,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A request without `primary` MUST return the whole creatable set, and no other agent."
+	},
+	{
+		"id": "specification:threads/client-api:b64f2c5d",
+		"page": "specification:threads/client-api",
+		"line": 138,
+		"section": "5. Listing Agents",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A request that sets `primary=true` MUST return exactly the agents of the creatable set whose `primary` is `true`."
+	},
+	{
+		"id": "specification:threads/client-api:64e9475a",
+		"page": "specification:threads/client-api",
+		"line": 159,
+		"section": "6. Creating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST set the owner of the new thread from the authenticated caller. The request MUST NOT be able to name a different owner."
+	},
+	{
+		"id": "specification:threads/client-api:ab532b8e",
+		"page": "specification:threads/client-api",
+		"line": 160,
+		"section": "6. Creating a Thread",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Creating a thread MUST NOT start an execution."
+	},
+	{
+		"id": "specification:threads/client-api:e5f1d82b",
+		"page": "specification:threads/client-api",
+		"line": 161,
+		"section": "6. Creating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with a `CreateThreadResponse`."
+	},
+	{
+		"id": "specification:threads/client-api:11431545",
+		"page": "specification:threads/client-api",
+		"line": 162,
+		"section": "6. Creating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `400` when `agent_id` is absent or is not a string, when `tags` is present and is not an array of strings, or when `env` is present and is not a JSON object whose values are all strings."
+	},
+	{
+		"id": "specification:threads/client-api:ca9671fc",
+		"page": "specification:threads/client-api",
+		"line": 163,
+		"section": "6. Creating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `404` when `agent_id` is a string that is not the `id` of an agent in the caller's creatable set (§5). A filter on an agent list request does not change that set."
+	},
+	{
+		"id": "specification:threads/client-api:03bfe8e9",
+		"page": "specification:threads/client-api",
+		"line": 208,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with a `ThreadList`."
+	},
+	{
+		"id": "specification:threads/client-api:baf2d169",
+		"page": "specification:threads/client-api",
+		"line": 209,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A caller without administrative rights MUST receive only threads that the caller owns."
+	},
+	{
+		"id": "specification:threads/client-api:232cf635",
+		"page": "specification:threads/client-api",
+		"line": 210,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return threads in descending `last_activity_at` order unless the request selects another order through a runtime-defined parameter. The order of threads with equal `last_activity_at` is runtime-defined."
+	},
+	{
+		"id": "specification:threads/client-api:9ad8428e",
+		"page": "specification:threads/client-api",
+		"line": 211,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`total` MUST be the number of threads matching the request before `limit` and `offset` are applied."
+	},
+	{
+		"id": "specification:threads/client-api:3011d2e9",
+		"page": "specification:threads/client-api",
+		"line": 212,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`hasMore` MUST be `true` if and only if matching threads exist beyond the returned page."
+	},
+	{
+		"id": "specification:threads/client-api:d66968a2",
+		"page": "specification:threads/client-api",
+		"line": 213,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`last_activity_at` MUST equal `created_at` for a thread with no later activity."
+	},
+	{
+		"id": "specification:threads/client-api:6a1b58e9",
+		"page": "specification:threads/client-api",
+		"line": 215,
+		"section": "7. Listing Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`agent.title` MUST be the agent's `name` when the agent defines no title or its definition is no longer available."
+	},
+	{
+		"id": "specification:threads/client-api:76181117",
+		"page": "specification:threads/client-api",
+		"line": 247,
+		"section": "8. Reading a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with a `ThreadRead`."
+	},
+	{
+		"id": "specification:threads/client-api:e0e1a6f8",
+		"page": "specification:threads/client-api",
+		"line": 248,
+		"section": "8. Reading a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`status` MUST equal the [`ThreadStatus`](/0.2.0/specification/threads/execution-state#4-run-status) that `state.status()` resolves for the thread."
+	},
+	{
+		"id": "specification:threads/client-api:88ebcfdb",
+		"page": "specification:threads/client-api",
+		"line": 249,
+		"section": "8. Reading a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`agent` MUST be `null` when the thread's agent definition is no longer available."
+	},
+	{
+		"id": "specification:threads/client-api:28e98c0a",
+		"page": "specification:threads/client-api",
+		"line": 271,
+		"section": "9. Updating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When `tags` is present, the runtime MUST replace the thread's tags with the given array."
+	},
+	{
+		"id": "specification:threads/client-api:d2c66a1f",
+		"page": "specification:threads/client-api",
+		"line": 272,
+		"section": "9. Updating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with an `UpdateThreadResponse` that reflects the update."
+	},
+	{
+		"id": "specification:threads/client-api:d7aab1fa",
+		"page": "specification:threads/client-api",
+		"line": 273,
+		"section": "9. Updating a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `400` when `tags` is not an array of strings, or when the request names no field the runtime updates."
+	},
+	{
+		"id": "specification:threads/client-api:cbc7f792",
+		"page": "specification:threads/client-api",
+		"line": 292,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Before it deletes anything, the runtime MUST make every thread in the deletion set unavailable to new work. From that point each such thread MUST reject new messages, MUST NOT start an execution, and MUST NOT create a child thread."
+	},
+	{
+		"id": "specification:threads/client-api:1add4340",
+		"page": "specification:threads/client-api",
+		"line": 293,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A child thread created beneath a thread in the deletion set before requirement 1 takes effect MUST be part of the deletion set."
+	},
+	{
+		"id": "specification:threads/client-api:125360de",
+		"page": "specification:threads/client-api",
+		"line": 294,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST abort every execution in flight in the deletion set, and MUST discard every queued message and scheduled [effect](/0.2.0/specification/effects) of those threads."
+	},
+	{
+		"id": "specification:threads/client-api:c4bb5bc7",
+		"page": "specification:threads/client-api",
+		"line": 295,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST close every [thread stream](#16-thread-stream) connection to a thread in the deletion set with WebSocket close code `1000`."
+	},
+	{
+		"id": "specification:threads/client-api:3aea4143",
+		"page": "specification:threads/client-api",
+		"line": 296,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST delete the messages, files, and stored values of every thread in the deletion set."
+	},
+	{
+		"id": "specification:threads/client-api:abe0349f",
+		"page": "specification:threads/client-api",
+		"line": 297,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `200` with a `DeleteThreadResponse` only once requirements 1 to 5 hold. `deletedThreadIds` MUST list every thread in the deletion set, including `threadId`."
+	},
+	{
+		"id": "specification:threads/client-api:8e35c14c",
+		"page": "specification:threads/client-api",
+		"line": 298,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "After a successful request, no execution of a deleted thread may persist state or start work, and every route addressed to a deleted thread MUST return `404`. That includes a request to its stream route that is not a WebSocket upgrade."
+	},
+	{
+		"id": "specification:threads/client-api:b88f2dde",
+		"page": "specification:threads/client-api",
+		"line": 299,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When deletion fails part-way, the runtime MUST return a `5xx` status (§3.2). Every thread in the deletion set MUST remain unavailable to new work, and the addressed thread MUST remain addressable so that the request can be repeated."
+	},
+	{
+		"id": "specification:threads/client-api:fb290bf7",
+		"page": "specification:threads/client-api",
+		"line": 300,
+		"section": "10. Deleting a Thread",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A repeated request MUST complete the deletion."
+	},
+	{
+		"id": "specification:threads/client-api:6ee6fb3c",
+		"page": "specification:threads/client-api",
+		"line": 324,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with a `MessagesPage`."
+	},
+	{
+		"id": "specification:threads/client-api:99f5854d",
+		"page": "specification:threads/client-api",
+		"line": 325,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Each entry of `messages` MUST be a [message record](/0.2.0/specification/threads/messages#1-message-structure) in its decoded form: `attachments` is an array or `null`, and `silent` is a boolean."
+	},
+	{
+		"id": "specification:threads/client-api:94092bde",
+		"page": "specification:threads/client-api",
+		"line": 326,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Under `order=desc`, the runtime MUST return the selected messages in ascending `created_at` order, so the newest selected message is last."
+	},
+	{
+		"id": "specification:threads/client-api:5cd8dd4a",
+		"page": "specification:threads/client-api",
+		"line": 327,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST exclude silent messages unless `includeSilent` is `true`."
+	},
+	{
+		"id": "specification:threads/client-api:1c39a775",
+		"page": "specification:threads/client-api",
+		"line": 328,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST exclude messages whose `depth` exceeds the `depth` parameter."
+	},
+	{
+		"id": "specification:threads/client-api:8f95c019",
+		"page": "specification:threads/client-api",
+		"line": 329,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Under `order=asc`, the runtime MUST return the selected messages in ascending `created_at` order."
+	},
+	{
+		"id": "specification:threads/client-api:5d858ef9",
+		"page": "specification:threads/client-api",
+		"line": 330,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`total` MUST be the number of messages that satisfy `includeSilent` and `depth`, before `limit` and `offset` are applied."
+	},
+	{
+		"id": "specification:threads/client-api:feb89bde",
+		"page": "specification:threads/client-api",
+		"line": 331,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`hasMore` MUST be `true` if and only if matching messages exist beyond the returned page: that is, when `offset` plus the number of returned messages is less than `total`."
+	},
+	{
+		"id": "specification:threads/client-api:7c3f9961",
+		"page": "specification:threads/client-api",
+		"line": 332,
+		"section": "11. Reading Messages",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The order of messages with equal `created_at` is runtime-defined. It MUST be the same on every read."
+	},
+	{
+		"id": "specification:threads/client-api:1d85bce4",
+		"page": "specification:threads/client-api",
+		"line": 362,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `400` when `role` is absent or is not one of the three values above."
+	},
+	{
+		"id": "specification:threads/client-api:8ab33159",
+		"page": "specification:threads/client-api",
+		"line": 363,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `400` when `content` is empty or absent and `attachments` is empty or absent. Content that holds only white space is empty."
+	},
+	{
+		"id": "specification:threads/client-api:e268a214",
+		"page": "specification:threads/client-api",
+		"line": 364,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `423` when the thread is terminated."
+	},
+	{
+		"id": "specification:threads/client-api:de04092f",
+		"page": "specification:threads/client-api",
+		"line": 365,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST store each attachment in the thread's [file system](/0.2.0/specification/threads/filesystem) and reference it from the message's `attachments` as an [`AttachmentRef`](/0.2.0/specification/threads/messages#12-attachment-references). When an attachment's `data` is not valid base64, or the attachment cannot be stored, the runtime MUST NOT accept the message: it returns `400` for invalid `data` and a `5xx` status for a storage failure."
+	},
+	{
+		"id": "specification:threads/client-api:4567764e",
+		"page": "specification:threads/client-api",
+		"line": 366,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST accept the message durably and return `202` with a `SendMessageResponse` without waiting for the resulting execution."
+	},
+	{
+		"id": "specification:threads/client-api:4aa88156",
+		"page": "specification:threads/client-api",
+		"line": 367,
+		"section": "12. Sending a Message",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT return `202` for a message it did not accept durably. When acceptance fails, the runtime MUST return a `5xx` status (§3.2), and the message MUST NOT be delivered."
+	},
+	{
+		"id": "specification:threads/client-api:4c848cde",
+		"page": "specification:threads/client-api",
+		"line": 368,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST deliver the accepted message with the semantics of [`queueMessage`](/0.2.0/specification/threads/messages#4-queueing-messages)."
+	},
+	{
+		"id": "specification:threads/client-api:2eb0a98d",
+		"page": "specification:threads/client-api",
+		"line": 369,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`messageId` MUST be the `id` of the message record once it is persisted."
+	},
+	{
+		"id": "specification:threads/client-api:f6c28f2c",
+		"page": "specification:threads/client-api",
+		"line": 370,
+		"section": "12. Sending a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST publish the accepted message to the thread stream (§16) as a `message_data` frame carrying that `messageId`. Until the message is persisted, the frame's record has `status: 'pending'`."
+	},
+	{
+		"id": "specification:threads/client-api:421dad93",
+		"page": "specification:threads/client-api",
+		"line": 378,
+		"section": "13. Deleting a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST delete the message with the semantics of [`deleteMessage`](/0.2.0/specification/threads/messages#6-deleting-messages)."
+	},
+	{
+		"id": "specification:threads/client-api:b7e4c457",
+		"page": "specification:threads/client-api",
+		"line": 379,
+		"section": "13. Deleting a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with the body `{ \"success\": true }`."
+	},
+	{
+		"id": "specification:threads/client-api:fef869c6",
+		"page": "specification:threads/client-api",
+		"line": 380,
+		"section": "13. Deleting a Message",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `404` when the thread holds no message with that id."
+	},
+	{
+		"id": "specification:threads/client-api:24f2a5a5",
+		"page": "specification:threads/client-api",
+		"line": 391,
+		"section": "14. Reading a File",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For a stored file, a successful request MUST return `200` with the file's bytes as the response body."
+	},
+	{
+		"id": "specification:threads/client-api:dc2f17e8",
+		"page": "specification:threads/client-api",
+		"line": 392,
+		"section": "14. Reading a File",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The response MUST carry the file's MIME type in `Content-Type` and the header `X-Content-Type-Options: nosniff`."
+	},
+	{
+		"id": "specification:threads/client-api:ed1f93c8",
+		"page": "specification:threads/client-api",
+		"line": 393,
+		"section": "14. Reading a File",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST send `Content-Disposition: attachment` for a file whose MIME type is `text/html`, `image/svg+xml`, or `application/xhtml+xml`."
+	},
+	{
+		"id": "specification:threads/client-api:87e7bcf2",
+		"page": "specification:threads/client-api",
+		"line": 394,
+		"section": "14. Reading a File",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST return `404` when no file exists at the path."
+	},
+	{
+		"id": "specification:threads/client-api:4a694666",
+		"page": "specification:threads/client-api",
+		"line": 404,
+		"section": "15. Stopping Execution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST abort the execution in flight on the thread, if one exists. That run MUST settle as `idle` with reason `aborted_by_user`."
+	},
+	{
+		"id": "specification:threads/client-api:c147b37c",
+		"page": "specification:threads/client-api",
+		"line": 405,
+		"section": "15. Stopping Execution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The route MUST be idempotent. A request addressed to a thread with no execution in flight MUST succeed and MUST NOT change the thread: it stores no message and sends no stream frame."
+	},
+	{
+		"id": "specification:threads/client-api:bef0bff6",
+		"page": "specification:threads/client-api",
+		"line": 406,
+		"section": "15. Stopping Execution",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful request MUST return `200` with the body `{ \"status\": \"stopped\" }`."
+	},
+	{
+		"id": "specification:threads/client-api:9d152e8d",
+		"page": "specification:threads/client-api",
+		"line": 407,
+		"section": "15. Stopping Execution",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A request that aborts an execution MAY record the stop in the thread as one message. The result of a tool call that the stop aborted is not counted as that message."
+	},
+	{
+		"id": "specification:threads/client-api:89edd5c2",
+		"page": "specification:threads/client-api",
+		"line": 422,
+		"section": "16. Thread Stream",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST reject a request that is not a WebSocket upgrade with `400`."
+	},
+	{
+		"id": "specification:threads/client-api:2f26853f",
+		"page": "specification:threads/client-api",
+		"line": 423,
+		"section": "16. Thread Stream",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST accept multiple concurrent connections to one thread."
+	},
+	{
+		"id": "specification:threads/client-api:ec74a201",
+		"page": "specification:threads/client-api",
+		"line": 436,
+		"section": "16.1 Server frames",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Every frame the runtime sends MUST be a text frame containing a JSON object with a string `type`. The heartbeat reply (§16.3) is the only exception."
+	},
+	{
+		"id": "specification:threads/client-api:d5f22ead",
+		"page": "specification:threads/client-api",
+		"line": 438,
+		"section": "16.1 Server frames",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`message_data` carries a complete [message record](/0.2.0/specification/threads/messages#1-message-structure) in `data`: every member that a message read (§11) returns for that message MUST be present with the same value. While the message is still being generated, its `status` is `'pending'` and its `content` may be incomplete. `message_id` MUST equal `data.id`."
+	},
+	{
+		"id": "specification:threads/client-api:a1216d28",
+		"page": "specification:threads/client-api",
+		"line": 439,
+		"section": "16.1 Server frames",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The record in a `message_data` frame MUST have the same form as the record returned by message reads (§11): `attachments` is an array or `null`, and `silent` is a boolean. A runtime MUST NOT send a stored encoding of a field in place of that form."
+	},
+	{
+		"id": "specification:threads/client-api:84e9d49d",
+		"page": "specification:threads/client-api",
+		"line": 443,
+		"section": "16.1 Server frames",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The `depth` of a `message_data`, `message_chunk`, or `reasoning_chunk` frame MUST equal the `depth` of the message identified by `message_id`."
+	},
+	{
+		"id": "specification:threads/client-api:4cb1d1f4",
+		"page": "specification:threads/client-api",
+		"line": 447,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The first frame on every accepted connection MUST be a `thread_status` frame carrying the current run status."
+	},
+	{
+		"id": "specification:threads/client-api:6fcdbb1d",
+		"page": "specification:threads/client-api",
+		"line": 448,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST send a `thread_status` frame on every change of run status."
+	},
+	{
+		"id": "specification:threads/client-api:7e381f67",
+		"page": "specification:threads/client-api",
+		"line": 449,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST send a `message_data` frame when a message is created and when a message is updated."
+	},
+	{
+		"id": "specification:threads/client-api:8907e008",
+		"page": "specification:threads/client-api",
+		"line": 450,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST send `message_chunk` frames for one `message_id` in generation order."
+	},
+	{
+		"id": "specification:threads/client-api:e482b1ab",
+		"page": "specification:threads/client-api",
+		"line": 451,
+		"section": "16.2 Delivery",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT send a `reasoning_chunk` frame on a connection that did not opt in."
+	},
+	{
+		"id": "specification:threads/client-api:c3567c46",
+		"page": "specification:threads/client-api",
+		"line": 452,
+		"section": "16.2 Delivery",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT send a `message_data`, `message_chunk`, or `reasoning_chunk` frame whose `depth` exceeds the connection's `depth`."
+	},
+	{
+		"id": "specification:threads/client-api:f46bce0b",
+		"page": "specification:threads/client-api",
+		"line": 453,
+		"section": "16.2 Delivery",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT send a `message_data` frame for a silent message on a connection that did not set `includeSilent`."
+	},
+	{
+		"id": "specification:threads/client-api:a467d50b",
+		"page": "specification:threads/client-api",
+		"line": 454,
+		"section": "16.2 Delivery",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`thread_status` and `event` frames MUST NOT be filtered by `depth`."
+	},
+	{
+		"id": "specification:threads/client-api:4f3c02b1",
+		"page": "specification:threads/client-api",
+		"line": 456,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A client MUST treat `message_data` as a replacement for any record it holds with the same `message_id`."
+	},
+	{
+		"id": "specification:threads/client-api:51d6adb6",
+		"page": "specification:threads/client-api",
+		"line": 459,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST persist the reasoning a model returns with an assistant message in that message's `reasoning_content` and `reasoning_details` ([Messages §1.3](/0.2.0/specification/threads/messages#13-reasoning))."
+	},
+	{
+		"id": "specification:threads/client-api:619c19d7",
+		"page": "specification:threads/client-api",
+		"line": 460,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST carry `reasoning_content` and `reasoning_details` identically in message reads (§11) and in `message_data` frames, on every connection regardless of the `reasoning` opt-in."
+	},
+	{
+		"id": "specification:threads/client-api:50378f53",
+		"page": "specification:threads/client-api",
+		"line": 461,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When the provider delivers an assistant message's content incrementally, that is in more than one delta, the runtime MUST send that content as `message_chunk` frames as it arrives, to every connection whose `depth` is at least the message's `depth`."
+	},
+	{
+		"id": "specification:threads/client-api:e735b5ce",
+		"page": "specification:threads/client-api",
+		"line": 462,
+		"section": "16.2 Delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When the provider delivers reasoning incrementally, the runtime MUST send it as `reasoning_chunk` frames to every connection that opted in and whose `depth` is at least the message's `depth`."
+	},
+	{
+		"id": "specification:threads/client-api:06170ebe",
+		"page": "specification:threads/client-api",
+		"line": 466,
+		"section": "16.3 Heartbeat",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A client MAY send the text frame `stream_ping`."
+	},
+	{
+		"id": "specification:threads/client-api:c07bbddf",
+		"page": "specification:threads/client-api",
+		"line": 467,
+		"section": "16.3 Heartbeat",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST answer `stream_ping` with the text frame `stream_pong`, on the connection that sent it and on no other. Neither frame is JSON."
+	},
+	{
+		"id": "specification:threads/client-api:92083966",
+		"page": "specification:threads/client-api",
+		"line": 468,
+		"section": "16.3 Heartbeat",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A heartbeat MUST NOT start or alter an execution."
+	},
+	{
+		"id": "specification:threads/client-api:b7a6d058",
+		"page": "specification:threads/client-api",
+		"line": 477,
+		"section": "17. Conformance",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "| 1 | Expose the thread client API (§1) | SHOULD |"
+	},
+	{
+		"id": "specification:threads/client-api:f0bf1cf3",
+		"page": "specification:threads/client-api",
+		"line": 478,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 2 | Every route in §2, mounted beneath `{runtime_prefix}` | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:a294b6e9",
+		"page": "specification:threads/client-api",
+		"line": 479,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 3 | Bearer credentials, stream tickets, and thread access enforcement (§3.1, §4) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:a3b04d2b",
+		"page": "specification:threads/client-api",
+		"line": 480,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 4 | Error statuses, `5xx` for internal failures, and the `{ \"error\": { \"code\", \"message\" } }` body (§3.2) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:cd4fdfcf",
+		"page": "specification:threads/client-api",
+		"line": 481,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 5 | Agent listing (§5) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:555fec05",
+		"page": "specification:threads/client-api",
+		"line": 482,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 6 | Thread creation, listing, and reading (§6, §7, §8) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:c2f310b3",
+		"page": "specification:threads/client-api",
+		"line": 483,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 7 | Thread update and deletion (§9, §10) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:edede3a6",
+		"page": "specification:threads/client-api",
+		"line": 484,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 8 | Message reading, filtering, and deletion (§11, §13) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:1daf26ce",
+		"page": "specification:threads/client-api",
+		"line": 485,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 9 | Durable, asynchronous message sending (§12) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:9d1546ba",
+		"page": "specification:threads/client-api",
+		"line": 486,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 10 | File reading (§14) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:cc0a9b81",
+		"page": "specification:threads/client-api",
+		"line": 487,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 11 | Idempotent stop (§15) | MUST |"
+	},
+	{
+		"id": "specification:threads/client-api:593ff806",
+		"page": "specification:threads/client-api",
+		"line": 488,
+		"section": "17. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 12 | Stream frames, delivery, and heartbeat (§16) | MUST |"
+	},
+	{
+		"id": "specification:threads/code-execution:d9cd8ba5",
+		"page": "specification:threads/code-execution",
+		"line": 151,
+		"section": "3.1 Execute",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "If the selected export is not a function, `args` MUST be omitted or empty and the export value itself becomes the result."
+	},
+	{
+		"id": "specification:threads/code-execution:c7c7ea94",
+		"page": "specification:threads/code-execution",
+		"line": 210,
+		"section": "3.3 Modules",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Keys MUST be relative specifiers from the module graph root, such as `'./helpers.js'` or `'./lib/math.js'`."
+	},
+	{
+		"id": "specification:threads/code-execution:3078901f",
+		"page": "specification:threads/code-execution",
+		"line": 212,
+		"section": "3.3 Modules",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Entry and module source MAY import sibling or parent modules with `./` and `../` specifiers when those imports resolve within the supplied module graph."
+	},
+	{
+		"id": "specification:threads/code-execution:05eaa685",
+		"page": "specification:threads/code-execution",
+		"line": 410,
+		"section": "6.4 No Runtime-Imposed Deadline",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Callers SHOULD:"
+	},
+	{
+		"id": "specification:threads/code-execution:6de9e914",
+		"page": "specification:threads/code-execution",
+		"line": 551,
+		"section": "11. Security Considerations",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Bridged callables are the attack surface. Once a function crosses the boundary, the sandbox may call it repeatedly with any serializable arguments. Bridged functions MUST validate arguments against an explicit schema and SHOULD enforce their own call-rate budget when they perform expensive work."
+	},
+	{
+		"id": "specification:threads/code-execution:b2b8f858",
+		"page": "specification:threads/code-execution",
+		"line": 552,
+		"section": "11. Security Considerations",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Host-side data exposure. Bridged functions run on the host and can reach any state the host closure captures. They MUST NOT return values that were not deliberately exposed — secrets, other threads' state, and unrelated environment variables MUST NOT be reachable through a bridge unless the caller explicitly passed them."
+	},
+	{
+		"id": "specification:threads/code-execution:2bf0e39c",
+		"page": "specification:threads/code-execution",
+		"line": 553,
+		"section": "11. Security Considerations",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runaway execution. Callers evaluating untrusted code MUST enforce their own deadline via `setTimeout` + `handle.terminate()`. `terminate()` settles at the next yield point; for CPU-bound loops, the platform safety cap is the effective worst case."
+	},
+	{
+		"id": "specification:threads/code-execution:d5dbd0e2",
+		"page": "specification:threads/code-execution",
+		"line": 554,
+		"section": "11. Security Considerations",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Memory exhaustion. Callers SHOULD set `memoryLimitBytes` explicitly when evaluating untrusted code."
+	},
+	{
+		"id": "specification:threads/decisions:19102d02",
+		"page": "specification:threads/decisions",
+		"line": 26,
+		"section": "1. Thread Interface",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`decide()` MUST be available both during active execution and when `state.execution` is `null`."
+	},
+	{
+		"id": "specification:threads/decisions:1d4a469a",
+		"page": "specification:threads/decisions",
+		"line": 59,
+		"section": "2. Request Types",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| `context` | Explicit context shared by the questions. Structured values MUST retain their JSON structure. |"
+	},
+	{
+		"id": "specification:threads/decisions:648deff1",
+		"page": "specification:threads/decisions",
+		"line": 89,
+		"section": "3. Question Types",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`instructions` defines the evaluation to perform. Structured instructions, option descriptions, levels, and criteria MUST retain their JSON structure."
+	},
+	{
+		"id": "specification:threads/decisions:101d5668",
+		"page": "specification:threads/decisions",
+		"line": 98,
+		"section": "3. Question Types",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Providers MUST preserve these semantics when translating requests. A provider MUST reject inputs it cannot represent rather than silently omit or reinterpret them. Question-count and context-size limits are provider-defined."
+	},
+	{
+		"id": "specification:threads/decisions:7957b9cc",
+		"page": "specification:threads/decisions",
+		"line": 156,
+		"section": "4.1 Answer Semantics",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "`score` is the probability-weighted value of the zero-based level indices. It MAY be fractional. Its `probabilities` map associates level indices with probabilities, and `legend` associates those indices with rubric descriptions."
+	},
+	{
+		"id": "specification:threads/decisions:c9e5fbf1",
+		"page": "specification:threads/decisions",
+		"line": 160,
+		"section": "4.1 Answer Semantics",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Providers MUST preserve complete probability distributions, score legends, and available confidence values. Provider rounding information MAY be included in `metadata`. Rounded probabilities MUST NOT be silently renormalized."
+	},
+	{
+		"id": "specification:threads/decisions:13a1205f",
+		"page": "specification:threads/decisions",
+		"line": 165,
+		"section": "4.1 Answer Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Providers and runtimes MUST NOT coerce a boolean probability to a boolean or apply an application threshold. Thresholds and subsequent actions are caller-defined."
+	},
+	{
+		"id": "specification:threads/decisions:3ed91480",
+		"page": "specification:threads/decisions",
+		"line": 190,
+		"section": "5. Provider Interface",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A decision provider MUST implement `decide()` and declare `kind: 'decision'`. Conversational `generate()` and `stream()` methods are not required by this interface."
+	},
+	{
+		"id": "specification:threads/decisions:25faa539",
+		"page": "specification:threads/decisions",
+		"line": 194,
+		"section": "5. Provider Interface",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Factories receive standard `ProviderFactoryConfig`. Transport overrides and credential isolation follow the [Provider specification](/0.2.0/specification/providers). The runtime resolves thread-scoped credentials and provider connection configuration. User- or thread-scoped destination overrides MUST NOT redirect inherited credentials."
+	},
+	{
+		"id": "specification:threads/decisions:8c110a41",
+		"page": "specification:threads/decisions",
+		"line": 202,
+		"section": "6. Conversation Semantics",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Invoking `decide()` MUST NOT implicitly:"
+	},
+	{
+		"id": "specification:threads/endpoints:565fde58",
+		"page": "specification:threads/endpoints",
+		"line": 42,
+		"section": "2. File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Files without a method suffix are GET endpoints. A method suffix is the final filename segment before `.ts`; runtimes MUST support at least `.get.ts`, `.post.ts`, `.put.ts`, `.patch.ts`, and `.delete.ts`. Method suffix matching is case-insensitive."
+	},
+	{
+		"id": "specification:threads/endpoints:da04df66",
+		"page": "specification:threads/endpoints",
+		"line": 54,
+		"section": "2. File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Requests beneath the thread endpoint prefix that do not match any local or packed thread endpoint route MUST return HTTP 404."
+	},
+	{
+		"id": "specification:threads/endpoints:06a36156",
+		"page": "specification:threads/endpoints",
+		"line": 69,
+		"section": "3. Handler Signature",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The handler MUST return a `Response` object."
+	},
+	{
+		"id": "specification:threads/endpoints:261291fb",
+		"page": "specification:threads/endpoints",
+		"line": 91,
+		"section": "4. Access and Authentication",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| `authenticated` (default) | The runtime MUST authenticate the request and enforce its thread access policy before invoking the handler. Requests that fail authentication or authorization MUST be rejected without invoking the handler. |"
+	},
+	{
+		"id": "specification:threads/endpoints:51c47124",
+		"page": "specification:threads/endpoints",
+		"line": 92,
+		"section": "4. Access and Authentication",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| `public` | The runtime MUST invoke the handler regardless of the request's authentication state. The runtime MUST still attempt caller resolution: a request presenting credentials the runtime can verify is attributed to that caller; any other request is treated as anonymous rather than rejected. |"
+	},
+	{
+		"id": "specification:threads/endpoints:a89e68dd",
+		"page": "specification:threads/endpoints",
+		"line": 100,
+		"section": "4. Access and Authentication",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| `caller` | `ThreadUser \\| null` | MUST be the authenticated identity when the request presented credentials the runtime verified, and `null` otherwise. For an endpoint whose access level is `authenticated`, `caller` is always non-null. |"
+	},
+	{
+		"id": "specification:threads/endpoints:8f757f62",
+		"page": "specification:threads/endpoints",
+		"line": 101,
+		"section": "4. Access and Authentication",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| `threadAccess` | `boolean` | MUST be `true` if and only if the runtime's thread access policy grants the resolved caller access to the requested thread. MUST be `false` when `caller` is `null`. For an endpoint whose access level is `authenticated`, `threadAccess` is always `true`. |"
+	},
+	{
+		"id": "specification:threads/endpoints:a9652b83",
+		"page": "specification:threads/endpoints",
+		"line": 131,
+		"section": "6. Error Handling",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "For each condition, the runtime MUST return the status in the table."
+	},
+	{
+		"id": "specification:threads/endpoints:0e60eb84",
+		"page": "specification:threads/endpoints",
+		"line": 132,
+		"section": "6. Error Handling",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Each of these responses MUST carry the error body of the [Thread Client API](/0.2.0/specification/threads/client-api#32-bodies-and-errors): `{ \"error\": { \"code\": string, \"message\": string } }`. The body MAY carry other members. A client decides the outcome from the status."
+	},
+	{
+		"id": "specification:threads/execution-state:8254ece3",
+		"page": "specification:threads/execution-state",
+		"line": 45,
+		"section": "2.2 Live execution history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`execution.messageHistory` MUST represent live chronological persisted execution history."
+	},
+	{
+		"id": "specification:threads/execution-state:8cefb16e",
+		"page": "specification:threads/execution-state",
+		"line": 47,
+		"section": "2.2 Live execution history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A successful [`injectMessage()`](/0.2.0/specification/threads/messages#3-injecting-messages) MUST make that record observable on `execution.messageHistory` to later tools and hooks in the same execution."
+	},
+	{
+		"id": "specification:threads/execution-state:dca92c64",
+		"page": "specification:threads/execution-state",
+		"line": 48,
+		"section": "2.2 Live execution history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Silent messages MUST remain on `execution.messageHistory`."
+	},
+	{
+		"id": "specification:threads/execution-state:cf4e7ca0",
+		"page": "specification:threads/execution-state",
+		"line": 49,
+		"section": "2.2 Live execution history",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Synthetic or transformed messages produced by `filter_messages` or `prefilter_llm_history` MUST remain confined to the request context. They MUST NOT replace `execution.messageHistory`."
+	},
+	{
+		"id": "specification:threads/execution-state:75f6be1e",
+		"page": "specification:threads/execution-state",
+		"line": 107,
+		"section": "4.2 Reasons",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`reason` is the run's stop reason code. Runtimes SHOULD use these codes where they apply and MAY add others; clients MUST treat unknown codes as opaque."
+	},
+	{
+		"id": "specification:threads/execution-state:37e4432c",
+		"page": "specification:threads/execution-state",
+		"line": 118,
+		"section": "4.3 Requirements",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST set `running` when any execution of the thread starts and MUST settle it (`idle` or `failed`) when that execution ends, including when it throws."
+	},
+	{
+		"id": "specification:threads/execution-state:77ce1e15",
+		"page": "specification:threads/execution-state",
+		"line": 119,
+		"section": "4.3 Requirements",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Runtimes MUST persist the status with the thread so it survives restarts."
+	},
+	{
+		"id": "specification:threads/execution-state:286367b3",
+		"page": "specification:threads/execution-state",
+		"line": 120,
+		"section": "4.3 Requirements",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Runtimes MUST NOT leave a thread `running` once its executor is gone (eviction, deploy, crash). A lost execution settles to `failed` with reason `execution_lost`; a later recovery run sets `running` again."
+	},
+	{
+		"id": "specification:threads/execution-state:fd44935b",
+		"page": "specification:threads/execution-state",
+		"line": 121,
+		"section": "4.3 Requirements",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`since` MUST change only when `state` or `reason` changes."
+	},
+	{
+		"id": "specification:threads/execution-state:bc901e39",
+		"page": "specification:threads/execution-state",
+		"line": 126,
+		"section": "4.4 Client delivery",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Run status is push-only. Runtimes that expose the [thread stream](/0.2.0/specification/threads/client-api#16-thread-stream) MUST send a status frame immediately after accepting each stream connection (a snapshot) and again on every change:"
+	},
+	{
+		"id": "specification:threads/execution-state:0b742b09",
+		"page": "specification:threads/execution-state",
+		"line": 135,
+		"section": "4.4 Client delivery",
+		"level": "SHOULD NOT",
+		"rfc2119": true,
+		"text": "A reconnecting client resynchronizes from the snapshot; clients SHOULD NOT poll for run status. The [thread read route](/0.2.0/specification/threads/client-api#8-reading-a-thread) returns the same `status` object."
+	},
+	{
+		"id": "specification:threads/filesystem:d68feaee",
+		"page": "specification:threads/filesystem",
+		"line": 100,
+		"section": "5. Moving and Renaming",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "Source must exist. Moving a missing path throws."
+	},
+	{
+		"id": "specification:threads/filesystem:d3e6aa89",
+		"page": "specification:threads/filesystem",
+		"line": 101,
+		"section": "5. Moving and Renaming",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "Destination must be free. `moveFile` does not overwrite; if the destination path (or a subtree rooted at it) already exists, it throws. Delete or move the existing entry first."
+	},
+	{
+		"id": "specification:threads/filesystem:8d80337e",
+		"page": "specification:threads/filesystem",
+		"line": 106,
+		"section": "5. Moving and Renaming",
+		"level": "MUST NOT",
+		"rfc2119": false,
+		"text": "`renameFile` names are bare. `newName` must not contain `/`; use `moveFile` to change an entry's directory."
+	},
+	{
+		"id": "specification:threads/filesystem:a77524c1",
+		"page": "specification:threads/filesystem",
+		"line": 175,
+		"section": "9.4 Behavior",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "External Files: Returns `null` for files whose `storage` identifier references an external system (object storage, a remote URL, etc.). External files must be fetched using their storage location."
+	},
+	{
+		"id": "specification:threads/filesystem:108c7bf5",
+		"page": "specification:threads/filesystem",
+		"line": 178,
+		"section": "9.4 Behavior",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Ordering Guarantee: Chunks are always yielded in sequential order. Implementations MUST NOT yield chunks out of order."
+	},
+	{
+		"id": "specification:threads/messages:a1f8250b",
+		"page": "specification:threads/messages",
+		"line": 42,
+		"section": "1.1 Provenance Metadata Conventions",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Runtimes SHOULD set the following OPTIONAL `metadata` keys on messages whose content crossed a thread boundary, so relays and orchestrators need no ad-hoc bracket-tag prefixes:"
+	},
+	{
+		"id": "specification:threads/messages:5199f30e",
+		"page": "specification:threads/messages",
+		"line": 49,
+		"section": "1.1 Provenance Metadata Conventions",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "These are conventions, not requirements: consumers MUST tolerate their absence, and runtimes MUST NOT rely on them for routing correctness."
+	},
+	{
+		"id": "specification:threads/messages:7abccc72",
+		"page": "specification:threads/messages",
+		"line": 73,
+		"section": "1.3 Reasoning",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When a model returns reasoning with an assistant message, the runtime MUST persist it with that message: the reasoning text in `reasoning_content`, and any provider-specific reasoning data in `reasoning_details`."
+	},
+	{
+		"id": "specification:threads/messages:80b5ff9b",
+		"page": "specification:threads/messages",
+		"line": 74,
+		"section": "1.3 Reasoning",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "On a later request in the same thread, the runtime MUST supply the persisted reasoning of each assistant message that remains in the request context after [context assembly](/0.2.0/infrastructure/runtime#4-context-assembly) and request-context hooks, in a form the selected provider and model accept. The exception is a prompt that sets [`reasoning.include`](/0.2.0/specification/prompts#6-reasoning-configuration) to `false`: for that prompt's requests the runtime MUST NOT supply persisted reasoning."
+	},
+	{
+		"id": "specification:threads/messages:b9e3d243",
+		"page": "specification:threads/messages",
+		"line": 75,
+		"section": "1.3 Reasoning",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT supply the reasoning of a message that is excluded from the request context."
+	},
+	{
+		"id": "specification:threads/messages:bbc2f60d",
+		"page": "specification:threads/messages",
+		"line": 76,
+		"section": "1.3 Reasoning",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "When the selected provider or model does not accept a message's `reasoning_details`, the runtime MUST omit them from the request or convert them to a form it accepts. It MUST NOT send them unchanged. The persisted record is not altered."
+	},
+	{
+		"id": "specification:threads/messages:c0dc1ab1",
+		"page": "specification:threads/messages",
+		"line": 77,
+		"section": "1.3 Reasoning",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`reasoning_content` MUST be `null` or absent when, and only when, the model returned no reasoning text for the message. `reasoning_details` MUST be `null` or absent when, and only when, the model returned no provider-specific reasoning data for the message."
+	},
+	{
+		"id": "specification:threads/messages:22cf59fa",
+		"page": "specification:threads/messages",
+		"line": 119,
+		"section": "3.1 Persistence and lifecycle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST invoke `before_create_message` and `after_create_message` for every successful injection. See [Hooks §4](/0.2.0/specification/hooks#4-message-lifecycle-hooks)."
+	},
+	{
+		"id": "specification:threads/messages:b74ef581",
+		"page": "specification:threads/messages",
+		"line": 120,
+		"section": "3.1 Persistence and lifecycle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The returned promise MUST resolve after the message is persisted and available through thread message APIs (`getMessage`, `getMessages`)."
+	},
+	{
+		"id": "specification:threads/messages:000bf2b7",
+		"page": "specification:threads/messages",
+		"line": 121,
+		"section": "3.1 Persistence and lifecycle",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`injectMessage()` MUST NOT recursively restart request-context hooks (`filter_messages`, `prefilter_llm_history`)."
+	},
+	{
+		"id": "specification:threads/messages:79171656",
+		"page": "specification:threads/messages",
+		"line": 127,
+		"section": "3.2 Presentation (`silent`)",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Clients MUST hide silent messages from ordinary message lists unless the caller sets `includeSilent: true`."
+	},
+	{
+		"id": "specification:threads/messages:b93f89a4",
+		"page": "specification:threads/messages",
+		"line": 128,
+		"section": "3.2 Presentation (`silent`)",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Silent messages MUST remain eligible for model context."
+	},
+	{
+		"id": "specification:threads/messages:e4ba69e7",
+		"page": "specification:threads/messages",
+		"line": 129,
+		"section": "3.2 Presentation (`silent`)",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Silent messages MUST participate in the ordinary request-context hooks."
+	},
+	{
+		"id": "specification:threads/messages:da639364",
+		"page": "specification:threads/messages",
+		"line": 130,
+		"section": "3.2 Presentation (`silent`)",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`silent` MUST NOT change persistence, lifecycle hooks, or same-execution visibility."
+	},
+	{
+		"id": "specification:threads/messages:73bce32e",
+		"page": "specification:threads/messages",
+		"line": 134,
+		"section": "3.3 Same-execution visibility",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "During an active execution, a successfully injected message MUST become observable to subsequent tools and hooks in that execution."
+	},
+	{
+		"id": "specification:threads/messages:c4905fe6",
+		"page": "specification:threads/messages",
+		"line": 136,
+		"section": "3.3 Same-execution visibility",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "[`execution.messageHistory`](/0.2.0/specification/threads/execution-state#22-live-execution-history) MUST represent live chronological persisted execution history. It MUST include silent messages. Synthetic or transformed messages returned by request-context hooks MUST remain confined to the request context."
+	},
+	{
+		"id": "specification:threads/messages:6d37745b",
+		"page": "specification:threads/messages",
+		"line": 142,
+		"section": "3.4 Context snapshot assignment",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Messages persisted before the snapshot MUST be eligible for that assembly."
+	},
+	{
+		"id": "specification:threads/messages:16606350",
+		"page": "specification:threads/messages",
+		"line": 143,
+		"section": "3.4 Context snapshot assignment",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Messages injected after the snapshot begins MUST become eligible for the following context assembly."
+	},
+	{
+		"id": "specification:threads/messages:12822287",
+		"page": "specification:threads/messages",
+		"line": 190,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios."
+	},
+	{
+		"id": "specification:threads/runtime-streams:3a404735",
+		"page": "specification:threads/runtime-streams",
+		"line": 45,
+		"section": "2. Optional Capability",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "`runtimeStreams` is optional. Existing runtimes may omit it and remain conformant, so agent code must feature-detect it before opening a stream."
+	},
+	{
+		"id": "specification:threads/runtime-streams:167c7d1d",
+		"page": "specification:threads/runtime-streams",
+		"line": 48,
+		"section": "2. Optional Capability",
+		"level": "MUST NOT",
+		"rfc2119": false,
+		"text": "Capability names and metadata are opaque to this specification. Runtimes own capability authorization and may refuse any request. A runtime must not infer portable semantics from a capability name or interpret metadata in a shared layer."
+	},
+	{
+		"id": "specification:threads/runtime-streams:ad523cec",
+		"page": "specification:threads/runtime-streams",
+		"line": 117,
+		"section": "5. Conformance",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "A runtime that implements `runtimeStreams` must preserve byte ordering in both directions, support graceful writable half-close and complete abort, and settle `closed` once for every successfully opened stream. `open()` should report refusal without creating a stream, return `unavailable` when the selected execution host is absent, and return `timeout` when stream opening exceeds the requested or runtime-defined deadline."
+	},
+	{
+		"id": "specification:tools:3a5a790d",
+		"page": "specification:tools",
+		"line": 13,
+		"section": "1. Tool Categories",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Function tools that evaluate model- or user-authored JavaScript or TypeScript SHOULD do so through [`state.runCode`](/0.2.0/specification/threads/code-execution) rather than `eval` or `new Function`. The sandbox enforces isolation, memory caps, and caller-initiated termination."
+	},
+	{
+		"id": "specification:tools:dc9a10a7",
+		"page": "specification:tools",
+		"line": 38,
+		"section": "2.1 Tool Dependencies",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A function tool MAY declare `uses` as an array of names of tools, prompts, or agents it may invoke by name through `state.invokeTool()` or `state.queueTool()`. Names may be local or [qualified](/0.2.0/distribution/packaging#qualified-names)."
+	},
+	{
+		"id": "specification:tools:a403d2a5",
+		"page": "specification:tools",
+		"line": 44,
+		"section": "2.1 Tool Dependencies",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A packed tool MUST declare the targets it invokes by name. A package MUST include its required tool dependencies. When a `uses` list is supplied, the runtime MUST reject an invocation of a target outside the list. `queueTool()` throws an error for an undeclared target. `invokeTool()` returns an error result for an undeclared target. An empty list permits no targets. When `uses` is omitted, this restriction does not apply."
+	},
+	{
+		"id": "specification:tools:462ec47b",
+		"page": "specification:tools",
+		"line": 62,
+		"section": "3. Variable Declarations",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"text": "`type: 'secret'` indicates sensitive values that should be encrypted at rest."
+	},
+	{
+		"id": "specification:tools:f50277e6",
+		"page": "specification:tools",
+		"line": 92,
+		"section": "6. Attachment Semantics Across Threads",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "parent -> child attachment paths must be copied to child-local paths"
+	},
+	{
+		"id": "specification:tools:70b6bb88",
+		"page": "specification:tools",
+		"line": 93,
+		"section": "6. Attachment Semantics Across Threads",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "child -> parent attachment paths must be copied to parent-local paths"
+	},
+	{
+		"id": "specification:tools:1bd04cf2",
+		"page": "specification:tools",
+		"line": 95,
+		"section": "6. Attachment Semantics Across Threads",
+		"level": "MUST",
+		"rfc2119": false,
+		"text": "Returned attachment references must always be valid for the receiving thread filesystem."
+	},
+	{
+		"id": "specification:tools:31e58fe6",
+		"page": "specification:tools",
+		"line": 99,
+		"section": "7. Progress Reporting",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A function tool MAY declare a `progressArgument` naming an argument whose value is a short, human-readable description of what the tool call is doing — for example `fixing index.html`."
+	},
+	{
+		"id": "specification:tools:3fb4e4f0",
+		"page": "specification:tools",
+		"line": 118,
+		"section": "7. Progress Reporting",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "When set, the runtime SHOULD wait until *just this argument* has finished streaming from the model — not the whole tool call — and surface its value as `progress`. This lets a UI show what a tool is about to do before a large argument (such as a file's `content`) finishes generating."
+	},
+	{
+		"id": "specification:tools:106ba9d7",
+		"page": "specification:tools",
+		"line": 119,
+		"section": "7. Progress Reporting",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "When unset, `tool_call_started` fires as soon as the tool call appears in the model stream: its name is known, but its arguments MAY still be incomplete and `progress` is `undefined`."
+	},
+	{
+		"id": "specification:tools:11971c16",
+		"page": "specification:tools",
+		"line": 120,
+		"section": "7. Progress Reporting",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "The named argument SHOULD be declared early in the `args` schema and kept short so it completes quickly."
+	},
+	{
+		"id": "specification:tools:3bb2444c",
+		"page": "specification:tools",
+		"line": 125,
+		"section": "8. Annotations",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A function tool MAY declare `annotations`: an object of implementation-specific hints, keyed by the runtime or tool that reads them."
+	},
+	{
+		"id": "specification:tools:24622716",
+		"page": "specification:tools",
+		"line": 144,
+		"section": "8. Annotations",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`defineTool()` MUST return `annotations` unchanged on the tool definition."
+	},
+	{
+		"id": "specification:tools:e2d0db94",
+		"page": "specification:tools",
+		"line": 145,
+		"section": "8. Annotations",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A runtime MAY read keys it understands, typically to choose how it displays a tool call, and MUST ignore keys it does not."
+	},
+	{
+		"id": "specification:tools:20a428b9",
+		"page": "specification:tools",
+		"line": 146,
+		"section": "8. Annotations",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Annotations MUST NOT change argument validation, execution, the tool's results, or what is sent to the model. A tool behaves identically in a runtime that ignores them."
+	},
+	{
+		"id": "specification:tools:fcfd7e76",
+		"page": "specification:tools",
+		"line": 150,
+		"section": "9. Conformance Notes",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Implementations MUST:"
+	},
+	{
+		"id": "specification:type-registry:fe332474",
+		"page": "specification:type-registry",
+		"line": 226,
+		"section": "4.1 Build-Time Generation",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Implementations SHOULD generate type declarations at build time by:"
+	},
+	{
+		"id": "specification:type-registry:d470f923",
+		"page": "specification:type-registry",
+		"line": 234,
+		"section": "4.2 File Structure",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The generated file MUST:"
+	},
+	{
+		"id": "specification:type-registry:f4cc29da",
+		"page": "specification:type-registry",
+		"line": 283,
+		"section": "4.3 Example Generation",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Generation MUST be non-additive: a deleted definition's name MUST disappear from the regenerated unions, so stale references fail rather than lingering."
+	},
+	{
+		"id": "specification:users:23be9a3b",
+		"page": "specification:users",
+		"line": 9,
+		"section": "1. Identity",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime MUST resolve every authenticated request to a stable user id."
+	},
+	{
+		"id": "specification:users:19f42ba5",
+		"page": "specification:users",
+		"line": 10,
+		"section": "1. Identity",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime with exactly one principal MUST resolve all requests to a single constant user id."
+	},
+	{
+		"id": "specification:users:c5525cea",
+		"page": "specification:users",
+		"line": 11,
+		"section": "1. Identity",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A thread MAY have no user. For such threads, `state.user()` MUST resolve `null` and every surface in this section MUST be unavailable."
+	},
+	{
+		"id": "specification:users:83b5618c",
+		"page": "specification:users",
+		"line": 12,
+		"section": "1. Identity",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The identity record exposes only the following fields. Credential material MUST NOT appear in it."
+	},
+	{
+		"id": "specification:users:d4a6d6ce",
+		"page": "specification:users",
+		"line": 35,
+		"section": "Application roles",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Applications may adopt names such as `reports:read` or `releases:canary` and check them before protected operations. A name ending in `:*` has meaning only when application code explicitly implements that convention. Clients and user-writable values MUST NOT be accepted as the source of authoritative roles. A runtime that supplies roles MUST expose them through `UserState.identity()` and the identity returned by `ThreadState.user()`. Runtimes MUST document their authorization freshness boundary; an identity may be a snapshot within one request or execution. Applications should authorize each protected request or execution instead of persisting a previously granted decision indefinitely."
+	},
+	{
+		"id": "specification:users:e71b08da",
+		"page": "specification:users",
+		"line": 79,
+		"section": "2.1 Serialization",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime MUST serialize user endpoint executions (§3) and `UserHandle.call()` invocations (§5) per user: at most one executes at a time, and each observes the completed writes of all prior executions for that user."
+	},
+	{
+		"id": "specification:users:541d4fc4",
+		"page": "specification:users",
+		"line": 80,
+		"section": "2.1 Serialization",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Value access outside user endpoints (`UserHandle.getValue`/`setValue`, pre-existing user-value APIs) is NOT serialized. Runtimes MUST NOT extend the §2.1.1 guarantee to those surfaces."
+	},
+	{
+		"id": "specification:users:b2b9fff3",
+		"page": "specification:users",
+		"line": 86,
+		"section": "2.2 Reaching Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`thread()` MUST reject for threads not belonging to the user."
+	},
+	{
+		"id": "specification:users:e07d2584",
+		"page": "specification:users",
+		"line": 88,
+		"section": "2.2 Reaching Threads",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime MUST fail — not deadlock — a reentrant user-scope invocation (`state.user().call()`) made from code reached through `thread()` within the same user execution."
+	},
+	{
+		"id": "specification:users:b08da811",
+		"page": "specification:users",
+		"line": 101,
+		"section": "2.3 Environment",
+		"level": "MUST NOT",
+		"rfc2119": false,
+		"text": "The optional `instanceEnv(name)` capability reads exclusively from the runtime instance. It must not consider user values. It returns `undefined` when the key is not configured and rejects when the runtime cannot read its instance environment. Use it when a value establishes a trust boundary, such as a service endpoint and the credential sent to that endpoint. Consumers that require this boundary must feature-detect the method and fail closed if the capability is unavailable or the required instance value is missing."
+	},
+	{
+		"id": "specification:users:67b9c84e",
+		"page": "specification:users",
+		"line": 140,
+		"section": "3.2 File-Based Routing",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Nested directories namespace endpoints; packages SHOULD root their user endpoints in a directory named for the package so installed packages coexist by convention:"
+	},
+	{
+		"id": "specification:users:20dc0fb3",
+		"page": "specification:users",
+		"line": 146,
+		"section": "3.2 File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`me` routes MUST require the authenticated caller to be the addressed user."
+	},
+	{
+		"id": "specification:users:6a191bb7",
+		"page": "specification:users",
+		"line": 147,
+		"section": "3.2 File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime MUST serve the same endpoints beneath `users/{id}/` to callers authorized to administer that user."
+	},
+	{
+		"id": "specification:users:917c0dc1",
+		"page": "specification:users",
+		"line": 148,
+		"section": "3.2 File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST identify the caller channel to the handler via the `X-Standard-Agents-Caller` request header — `user` (the user's own HTTP request), `admin` (administrative addressing), or `thread` (a runtime-internal `UserHandle.call()`) — and MUST overwrite any inbound value on public routes so the channel cannot be forged. Endpoints enforcing runtime-only semantics (entitlements, quotas) gate mutations on the `thread` channel."
+	},
+	{
+		"id": "specification:users:ff9f0f9a",
+		"page": "specification:users",
+		"line": 149,
+		"section": "3.2 File-Based Routing",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Requests beneath the user endpoint prefix that match no route MUST return HTTP 404."
+	},
+	{
+		"id": "specification:users:939a1d44",
+		"page": "specification:users",
+		"line": 150,
+		"section": "3.2 File-Based Routing",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A `ThreadState` MUST NOT be available to user endpoint handlers."
+	},
+	{
+		"id": "specification:users:3dcd666d",
+		"page": "specification:users",
+		"line": 160,
+		"section": "4. Event Stream",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`emit(event, data)` MUST deliver the frame `{ \"event\": string, \"data\": unknown }` to every socket attached to that user's stream and every admitted, identified room connection (§7.1), in emit order per user. This room delivery is a room broadcast; pending room attachments are excluded."
+	},
+	{
+		"id": "specification:users:74401c67",
+		"page": "specification:users",
+		"line": 162,
+		"section": "4. Event Stream",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A runtime MUST accept multiple concurrent sockets per user, and MUST serve the stream beneath `users/{id}/` to callers authorized to administer that user."
+	},
+	{
+		"id": "specification:users:824881e1",
+		"page": "specification:users",
+		"line": 163,
+		"section": "4. Event Stream",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Event names are package-defined. Packages SHOULD namespace event names."
+	},
+	{
+		"id": "specification:users:b1f4ca9a",
+		"page": "specification:users",
+		"line": 179,
+		"section": "5. UserHandle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`call(endpoint, payload)` MUST invoke the named user endpoint for the thread's user under the §2.1 guarantee, and MUST NOT require the runtime to address itself over the network."
+	},
+	{
+		"id": "specification:users:06133def",
+		"page": "specification:users",
+		"line": 180,
+		"section": "5. UserHandle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`endpoint` is a path relative to the user's packaged endpoint namespace. A runtime MUST reject dot segments (`.` or `..`), including percent-encoded or backslash variants, and MUST NOT allow URL normalization to address a route outside that namespace."
+	},
+	{
+		"id": "specification:users:836ba200",
+		"page": "specification:users",
+		"line": 181,
+		"section": "5. UserHandle",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`call()` MUST reject for user-less threads."
+	},
+	{
+		"id": "specification:users:7ff60af4",
+		"page": "specification:users",
+		"line": 199,
+		"section": "6. Credential Grants",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Secret material is write-only: it MUST NOT be readable by packaged code, models, or clients. Only `metadata` and grant existence are readable."
+	},
+	{
+		"id": "specification:users:2595b7b0",
+		"page": "specification:users",
+		"line": 200,
+		"section": "6. Credential Grants",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`fetch(grant, input, init)` MUST inject the credential per the grant's `kind` and `inject` policy on the runtime side."
+	},
+	{
+		"id": "specification:users:12c9b587",
+		"page": "specification:users",
+		"line": 201,
+		"section": "6. Credential Grants",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST reject a `fetch` whose destination origin is not covered by `origins`."
+	},
+	{
+		"id": "specification:users:f3071921",
+		"page": "specification:users",
+		"line": 202,
+		"section": "6. Credential Grants",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The runtime MUST reject a `fetch` from a caller not covered by `allow`. An absent `allow` denies all callers."
+	},
+	{
+		"id": "specification:users:aaab0941",
+		"page": "specification:users",
+		"line": 203,
+		"section": "6. Credential Grants",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "The runtime MUST NOT expose injected material through errors, logs, or traces reachable by packaged code."
+	},
+	{
+		"id": "specification:users:4e89f48a",
+		"page": "specification:users",
+		"line": 204,
+		"section": "6. Credential Grants",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Deleting a grant MUST cause subsequent `fetch` calls to fail with an error distinguishable from a network failure."
+	},
+	{
+		"id": "specification:users:b1341adc",
+		"page": "specification:users",
+		"line": 209,
+		"section": "7. Lifecycle Hooks",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD support the following user-scope hooks. They execute in the user scope, receive a `UserState`, are observational, and MUST NOT block the triggering operation."
+	},
+	{
+		"id": "specification:users:55e49cd1",
+		"page": "specification:users",
+		"line": 234,
+		"section": "7.1 User Rooms and Attachment Admission",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A runtime MAY support one packaged user room per project. A room definition is exported with `defineUserRoom` from a `users/<package>/room.ts` module, which MUST NOT also be routed as an HTTP endpoint. Room frames and presence callbacks execute under the same per-user serialization guarantee as user endpoints. Application authentication policy and proof formats belong to the room. If multiple modules declare rooms, the runtime MUST refuse room upgrades and room delivery until the ambiguity is resolved; it MUST NOT select one by import order. Independent user endpoints and event streams remain available."
+	},
+	{
+		"id": "specification:users:0901c789",
+		"page": "specification:users",
+		"line": 250,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "The `me` form MUST resolve the authenticated user's identity. The administrative form MUST require authorization to administer the addressed user. Non-upgrade requests return HTTP 426. An accepted socket receives `{ \"type\": \"hub_ready\" }`; this acknowledges transport attachment, not application authentication."
+	},
+	{
+		"id": "specification:users:04328c5b",
+		"page": "specification:users",
+		"line": 255,
+		"section": "Transport and frame contract",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The URL query parameters `client_id` and optional `client_kind` are self-declared text, never credentials. Each is trimmed and truncated to 256 UTF-16 code units; empty values are absent. Explicit admission requires a nonempty `client_id` after normalization, otherwise the upgrade returns HTTP 400. Automatic mode MAY accept an unidentified hub socket for runtime coordination, but it is not a room connection: it is absent from `clients()`, receives no room broadcasts, and its frames do not invoke `onFrame`."
+	},
+	{
+		"id": "specification:users:3b5503be",
+		"page": "specification:users",
+		"line": 263,
+		"section": "Transport and frame contract",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Only text frames containing a JSON object with `type: 'room'` and a nonempty string `id` of at most 256 UTF-16 code units invoke `onFrame`. Other frames do not invoke the room. The `id` is chosen by the client to correlate replies; application replies SHOULD echo it. Other fields belong to the application protocol. The runtime does not automatically acknowledge a room frame. When no room is defined, an identified connection's valid room frame receives `{ type: 'room', id, error: 'no_room' }`. Runtimes MAY impose frame size, rate and delivery budgets, closing connections that exceed them."
+	},
+	{
+		"id": "specification:users:36a599fd",
+		"page": "specification:users",
+		"line": 272,
+		"section": "Transport and frame contract",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "Supersession sends `{ type: 'superseded' }` and closes the replaced socket with code 4001. Clients SHOULD stop automatic reconnection after this signal. Other runtime close codes are implementation-defined, except for codes explicitly requested through `roomAttachments.close`."
+	},
+	{
+		"id": "specification:users:1384461f",
+		"page": "specification:users",
+		"line": 312,
+		"section": "Transport and frame contract",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "`UserState.clients()` lists live admitted room connections, one per client id, oldest attachment first. `UserState.send(clientId, frame)` targets the admitted connection for that id and returns false if none exists. Neither method queues traffic for an absent connection. Ordinary room admission is automatic: a new connection with the same client id replaces the previous one. Automatic-mode presence MAY coalesce reconnects within a bounded grace period. A socket retired for rate, size or send failure MUST also produce a detached event after that grace period unless an admitted replacement remains."
+	},
+	{
+		"id": "specification:users:61e09341",
+		"page": "specification:users",
+		"line": 321,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Explicit admission is an optional capability exposed as `UserState.roomAttachments?: UserRoomAttachments`. A consumer requiring it MUST check that this capability and `connection.attachmentId` exist and fail closed when unavailable. This capability is available during serialized room and user endpoint executions; observational hooks do not receive it. A runtime supporting `admission: 'explicit'` MUST implement all the following requirements:"
+	},
+	{
+		"id": "specification:users:ea9e5adf",
+		"page": "specification:users",
+		"line": 328,
+		"section": "Transport and frame contract",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "A new physical attachment starts pending. Its self-declared client id MUST NOT displace an admitted connection. Pending attachments MUST NOT receive client-id-targeted traffic, room broadcasts, or runtime wake traffic, and MUST NOT appear in `clients()` or count as a reachable execution client. This does not change independently authorized user event stream access."
+	},
+	{
+		"id": "specification:users:eed69e10",
+		"page": "specification:users",
+		"line": 333,
+		"section": "Transport and frame contract",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "`onFrame` receives pending frames so an application can exchange challenges. `roomAttachments.send` addresses exactly the named live attachment, including a pending attachment. It MUST NOT fall back to another attachment or a client id, and MUST return false for detached, superseded, unknown or foreign-user attachments. The runtime delivers the supplied frame unchanged, at most once."
+	},
+	{
+		"id": "specification:users:a0427ccf",
+		"page": "specification:users",
+		"line": 338,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "After verifying its own application proof, the room calls `admit`. Admission MUST atomically promote that live attachment and supersede only the previous admitted connection for the same client id under the per-user serialization guarantee. Other pending attachments remain pending. Repeated admission of the same live admitted attachment is idempotent. A stale admission MUST return false and MUST NOT affect the current admitted connection."
+	},
+	{
+		"id": "specification:users:7c69fe1b",
+		"page": "specification:users",
+		"line": 344,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Attachment identities MUST be opaque and unique per physical connection, including connections created in the same clock tick. A reconnect MUST get a new identity. Hibernation retaining the physical socket MUST retain its identity and admission state. A restored legacy socket lacking admission state MUST start pending in explicit mode."
+	},
+	{
+		"id": "specification:users:e1a0adea",
+		"page": "specification:users",
+		"line": 349,
+		"section": "Transport and frame contract",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "Detached or superseded attachments MUST NOT be resurrected by delayed callbacks or queued frames. A queued frame whose attachment ceased to be live before execution MUST NOT invoke the room handler."
+	},
+	{
+		"id": "specification:users:d787f083",
+		"page": "specification:users",
+		"line": 357,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A room is declared when a module at a room path exports a `defineUserRoom` definition. Other modules at that path remain ordinary user endpoints. If loading a room path fails, the runtime MUST reject new room upgrades and MUST treat existing room attachments as not admitted while its admission policy is unknown. The failure MUST NOT affect user endpoints, the §4 event stream, wake delivery to stream sockets, or detach handling for any socket. A runtime SHOULD retry loading on a later call instead of caching the failure. It MUST NOT silently enable automatic admission. Existing automatic-mode consumers retain their behavior when they do not opt in."
+	},
+	{
+		"id": "specification:users:2518c157",
+		"page": "specification:users",
+		"line": 366,
+		"section": "Transport and frame contract",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`roomAttachments.close` closes exactly the named live attachment, pending or admitted, and reports its detach as in item 6 in explicit mode; automatic mode uses its normal reconnect grace period. It uses the same addressing rules as `send`, returning false for unknown, detached, superseded or foreign-user attachments without affecting another socket. The default code is 1000 and reason is empty. A supplied code MUST be 1000 or an integer in 3000–4999, and the reason MUST contain at most 123 UTF-8 bytes; invalid arguments MUST reject without retiring the live attachment. A subsequent `send`, `admit` or `close` for the retired attachment returns false."
+	},
+	{
+		"id": "specification:users:896f607d",
+		"page": "specification:users",
+		"line": 375,
+		"section": "Transport and frame contract",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "A runtime MAY bound the number of pending attachments per user or per client id, and the time an attachment may remain pending. It MUST close an attachment that exceeds a bound and report the detach per item 6. Exact bounds are implementation-defined."
+	},
+	{
+		"id": "specification:users:9cf11aaf",
+		"page": "specification:users",
+		"line": 387,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 1 | Stable user id per principal; constant id on single-principal runtimes (§1) | MUST |"
+	},
+	{
+		"id": "specification:users:20330888",
+		"page": "specification:users",
+		"line": 388,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 2 | `UserState` value surface (§2) | MUST |"
+	},
+	{
+		"id": "specification:users:4b4d5421",
+		"page": "specification:users",
+		"line": 389,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 3 | Per-user serialized execution of user endpoints and `call()` (§2.1) | MUST |"
+	},
+	{
+		"id": "specification:users:4e23b0c6",
+		"page": "specification:users",
+		"line": 390,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 4 | User endpoint routing and authorization (§3) | MUST |"
+	},
+	{
+		"id": "specification:users:989a48c0",
+		"page": "specification:users",
+		"line": 391,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 5 | Event stream semantics (§4) | MUST |"
+	},
+	{
+		"id": "specification:users:b6200822",
+		"page": "specification:users",
+		"line": 392,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 6 | `UserHandle` on `state.user()` (§5) | MUST |"
+	},
+	{
+		"id": "specification:users:1ba9cbc3",
+		"page": "specification:users",
+		"line": 393,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 7 | Grant policy enforcement (§6) when grants are supported | MUST |"
+	},
+	{
+		"id": "specification:users:16d73ec8",
+		"page": "specification:users",
+		"line": 394,
+		"section": "8. Conformance",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "| 8 | Grant support (§6) | SHOULD |"
+	},
+	{
+		"id": "specification:users:f559cf94",
+		"page": "specification:users",
+		"line": 395,
+		"section": "8. Conformance",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "| 9 | Lifecycle hooks (§7) | SHOULD |"
+	},
+	{
+		"id": "specification:users:857ed2c7",
+		"page": "specification:users",
+		"line": 396,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 10 | Administrative addressing of endpoints and stream beneath `users/{id}/` (§3.2, §4) | MUST |"
+	},
+	{
+		"id": "specification:users:828036d4",
+		"page": "specification:users",
+		"line": 397,
+		"section": "8. Conformance",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "| 11 | Attachment admission semantics (§7.1), when explicit rooms are supported | MUST |"
+	}
+]
