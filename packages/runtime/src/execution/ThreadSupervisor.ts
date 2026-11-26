@@ -27,6 +27,11 @@ export interface Delivery {
   readonly status: ThreadStatus
 }
 
+interface SendOptions extends ExecutionOptions {
+  readonly onAdmitted?: (seq: number) => void
+  readonly onWaiting?: (holder: { readonly pid: number; readonly abortedTool?: string }) => Effect.Effect<void>
+}
+
 interface Live {
   readonly run: Run
   successor?: Live
@@ -42,7 +47,7 @@ export class ThreadSupervisor extends Context.Service<
     readonly send: (
       threadId: string,
       content: string,
-      options?: ExecutionOptions,
+      options?: SendOptions,
     ) => Effect.Effect<Delivery, unknown, Registry | ThreadStore>
     readonly control: (threadId: string) => ThreadControl
     // Asks the execution that this process runs for the thread to stop at its next boundary, for the human side.
@@ -217,7 +222,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
-      const admit = (threadId: string, entry: QueueEntry, options: ExecutionOptions) =>
+      const admit = (threadId: string, entry: QueueEntry, options: SendOptions) =>
         Effect.gen(function* () {
           if ((yield* WritingHandle)?.flowId === undefined) yield* store.recover(threadId)
           let seq = 0
@@ -226,6 +231,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             (run) =>
               Effect.map(store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }), (admitted) => {
                 seq = admitted.queued.seq
+                options.onAdmitted?.(seq)
                 return admitted.claimed
               }),
             options,
@@ -325,6 +331,13 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               let local = live.get(threadId)
               let outcome: RunOutcome | undefined
               if (local !== undefined) {
+                if (options.onWaiting)
+                  yield* options.onWaiting({
+                    pid: holder.pid,
+                    ...(local.run.waitForCallbacks && local.run.activeTool
+                      ? { abortedTool: local.run.activeTool }
+                      : {}),
+                  })
                 while (local) {
                   outcome = yield* Deferred.await(local.done)
                   local = local.successor
@@ -333,6 +346,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 const holderNow = yield* store.holderOf(threadId)
                 if (holderNow !== null) {
                   elsewhere = holderNow
+                  if (options.onWaiting) yield* options.onWaiting(holderNow)
                   if (options.observe !== undefined)
                     yield* options.observe({ type: "queued", threadId, pid: holderNow.pid })
                 }

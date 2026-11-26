@@ -211,6 +211,14 @@ export class ThreadStore extends Context.Service<
     readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
     // Every message of the thread, oldest first and silent ones included, and the revision they match.
     readonly history: (threadId: string) => Effect.Effect<ThreadHistory, ThreadNotFound | SqlError>
+    readonly latestMessageSeq: (threadId: string) => Effect.Effect<number, SqlError>
+    readonly messagesAfter: (
+      threadId: string,
+      seq: number,
+    ) => Effect.Effect<
+      ReadonlyArray<{ readonly seq: number; readonly admission: number | null; readonly message: Message }>,
+      SqlError
+    >
     readonly getMessages: (
       threadId: string,
       options?: GetMessagesOptions,

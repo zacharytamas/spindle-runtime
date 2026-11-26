@@ -30,6 +30,7 @@ export interface StopRequest {
 export interface Run {
   readonly pending: Set<Promise<unknown>>
   readonly releaseWait: AbortController
+  activeTool?: string
   waitForCallbacks?: boolean
   displaced?: boolean
   resumeQueued?: boolean

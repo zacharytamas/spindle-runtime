@@ -7,6 +7,7 @@ import { CLOSING, transition } from "../execution/run-status.ts"
 import threads from "./migrations/0001_threads.ts"
 import revisions from "./migrations/0002_revision.ts"
 import claims from "./migrations/0003_claims.ts"
+import admission from "./migrations/0004_message_admission.ts"
 import {
   callsIn,
   type MessageRow,
@@ -48,7 +49,12 @@ import {
 const localHolders = new Set<string>()
 
 const migrate = Migrator.make({})({
-  loader: Migrator.fromRecord({ "0001_threads": threads, "0002_revision": revisions, "0003_claims": claims }),
+  loader: Migrator.fromRecord({
+    "0001_threads": threads,
+    "0002_revision": revisions,
+    "0003_claims": claims,
+    "0004_message_admission": admission,
+  }),
 })
 
 type RunRow = Pick<ThreadRow, "run_state" | "run_since" | "run_reason"> & {
@@ -319,7 +325,11 @@ export const layer = Layer.effect(
                   message.attachments == null ? null : yield* json("the message attachments", message.attachments),
                 metadata: yield* json("the message metadata", message.metadata ?? {}),
               })
-              const facts = { flow_id: flowId ?? null, caller_seq: options.callerSeq ?? null }
+              const facts = {
+                admission_seq: dequeue ?? null,
+                flow_id: flowId ?? null,
+                caller_seq: options.callerSeq ?? null,
+              }
               const values = { ...row, ...facts }
               let seq: number | undefined
               if (row.tool_calls !== null || facts.caller_seq !== null) {
@@ -358,6 +368,20 @@ export const layer = Layer.effect(
               (history): ThreadHistory => (Option.isSome(outer) ? { ...history, revision: null } : history),
             ),
           ),
+        ),
+
+      latestMessageSeq: (threadId) =>
+        Effect.map(
+          sql<{ latest: number }>`SELECT coalesce(max(seq), 0) AS latest FROM messages WHERE thread_id = ${threadId}`,
+          (rows) => rows[0]?.latest ?? 0,
+        ),
+
+      messagesAfter: (threadId, seq) =>
+        Effect.map(
+          sql<MessageRow & { seq: number; admission_seq: number | null }>`
+          SELECT ${sql.literal(messageColumns)}, admission_seq FROM messages
+          WHERE thread_id = ${threadId} AND seq > ${seq} ORDER BY seq`,
+          (rows) => rows.map((row) => ({ seq: row.seq, admission: row.admission_seq, message: toMessage(row) })),
         ),
 
       getMessages: (threadId, options = {}) =>

@@ -465,7 +465,9 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
       ) =>
         Effect.gen(function* () {
+          run.activeTool = call.name
           const returned = run.stop !== undefined ? notRun : yield* outcome
+          delete run.activeTool
           const skipped = returned === notRun
           const toolCall = hookCall(call, argumentsOf(call))
           const branched = skipped
