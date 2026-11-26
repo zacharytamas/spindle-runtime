@@ -42,6 +42,7 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
 export class ToolChoiceViolated extends Data.TaggedError("ToolChoiceViolated")<{ readonly message: string }> {}
 
 // Providers SHOULD attribute their errors, and the runtime MAY attribute the request boundary when they do not.
+// A native TimeoutError, which AbortSignal.timeout raises, is the timeout of Providers section 7.1.
 const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFailure => {
   const fields = isRecord(cause) || cause instanceof Error ? (cause as unknown as Record<string, unknown>) : {}
   const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
@@ -51,7 +52,7 @@ const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFail
   return new ProviderFailure({
     message:
       cause instanceof Error ? cause.message : typeof fields.message === "string" ? fields.message : String(cause),
-    code: isCode(fields.code) ? fields.code : "unknown",
+    code: isCode(fields.code) ? fields.code : fields.name === "TimeoutError" ? "timeout" : "unknown",
     origin: typeof fields.origin === "string" ? fields.origin : `provider:${provider.name}`,
     ...(statusCode === undefined ? {} : { statusCode }),
     ...(retryAfter === undefined ? {} : { retryAfter }),

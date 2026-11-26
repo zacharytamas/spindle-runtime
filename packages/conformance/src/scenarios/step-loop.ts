@@ -1524,6 +1524,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         expect(outcome).toMatchObject({ status: "failed", reason: "step_error" })
         expect(outcome.error?.message).toContain("finish")
       })
+      const native = new ScriptedProvider([
+        { reject: new DOMException("The operation timed out.", "TimeoutError") },
+        { text: "recovered" },
+      ])
+      await using(driver, { provider: native }, async (session, thread) => {
+        const outcome = await send(session, thread, "go", { retries: 1 })
+        expect(outcome).toMatchObject({ status: "idle", steps: 1 })
+        expect(outcome.modelCalls[0]?.error?.code).toBe("timeout")
+      })
     },
   },
   {

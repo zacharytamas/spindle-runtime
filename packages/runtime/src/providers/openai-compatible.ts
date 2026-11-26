@@ -147,18 +147,20 @@ const httpError = async (response: Response): Promise<ProviderError> => {
 }
 
 const transportError = (cause: unknown, timedOut: boolean): ProviderError =>
-  timedOut
-    ? new ProviderError("The request to the endpoint timed out", "timeout", undefined, undefined, {
-        cause,
-        origin: ORIGIN,
-      })
-    : new ProviderError(
-        `The request to the endpoint failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        "unknown",
-        undefined,
-        undefined,
-        { cause, origin: ORIGIN },
-      )
+  cause instanceof ProviderError
+    ? cause
+    : timedOut
+      ? new ProviderError("The request to the endpoint timed out", "timeout", undefined, undefined, {
+          cause,
+          origin: ORIGIN,
+        })
+      : new ProviderError(
+          `The request to the endpoint failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          "unknown",
+          undefined,
+          undefined,
+          { cause, origin: ORIGIN },
+        )
 
 const finishReason = (value: unknown): ProviderFinishReason => {
   switch (value) {
@@ -299,6 +301,17 @@ async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<P
   yield { type: "finish", finishReason: finishReason(finish), usage: usageOf(usage) }
 }
 
+async function* guarded(
+  chunks: AsyncIterable<ProviderStreamChunk>,
+  fail: (cause: unknown) => ProviderError,
+): AsyncGenerator<ProviderStreamChunk> {
+  try {
+    yield* chunks
+  } catch (cause) {
+    throw fail(cause)
+  }
+}
+
 const responseOf = (body: unknown): ProviderResponse => {
   const choice = isRecord(body) && Array.isArray(body.choices) && isRecord(body.choices[0]) ? body.choices[0] : {}
   const message = isRecord(choice.message) ? choice.message : {}
@@ -335,12 +348,15 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
       /\/+$/,
       "",
     )
-    const post = async (request: ProviderRequest, stream: boolean): Promise<Response> => {
+    // The timeout covers the body too, so a failure while reading it is classified like a failed send.
+    const post = async (request: ProviderRequest, stream: boolean) => {
       const headers: Record<string, string> = { ...config.defaultHeaders, "content-type": "application/json" }
       if (config.apiKey !== "") headers.authorization = `Bearer ${config.apiKey}`
       const timeout = typeof config.timeout === "number" ? AbortSignal.timeout(config.timeout) : undefined
       const signals = [request.signal, timeout].filter((signal) => signal !== undefined)
       const signal = signals.length === 0 ? undefined : AbortSignal.any(signals)
+      const fail = (cause: unknown) =>
+        transportError(cause, timeout?.aborted === true && request.signal?.aborted !== true)
       let response: Response
       try {
         response = await send(`${baseUrl}/chat/completions`, {
@@ -350,22 +366,25 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
           ...(signal === undefined ? {} : { signal }),
         })
       } catch (cause) {
-        throw transportError(cause, timeout?.aborted === true && request.signal?.aborted !== true)
+        throw fail(cause)
       }
       if (!response.ok) throw await httpError(response)
-      return response
+      return { response, fail }
     }
     return {
       name: NAME,
       specificationVersion: "1",
-      generate: async (request) => responseOf(await (await post(request, false)).json()),
+      generate: async (request) => {
+        const { response, fail } = await post(request, false)
+        return responseOf(await response.json().catch((cause: unknown) => Promise.reject(fail(cause))))
+      },
       stream: async (request) => {
-        const response = await post(request, true)
+        const { response, fail } = await post(request, true)
         if (response.body === null)
           throw new ProviderError("The endpoint sent no response body", "server_error", response.status, undefined, {
             origin: ORIGIN,
           })
-        return streamChunks(response.body)
+        return guarded(streamChunks(response.body), fail)
       },
     }
   },

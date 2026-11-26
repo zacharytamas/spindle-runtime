@@ -142,6 +142,30 @@ describe("openaiCompatible", () => {
     expect([error.code, error.isRetryable, error.origin]).toEqual(["timeout", true, "provider:openai_compatible"])
   })
 
+  it("fails a body that outlives the timeout slot after the headers arrived with a timeout ProviderError", async () => {
+    const fetch = async (_input: string | URL | Request, init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          start: (controller) => init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason)),
+        }),
+      )
+    const provider = openaiCompatible({ apiKey: "", timeout: 20, fetch })
+    const failures = [
+      await provider.generate(request).catch((cause) => cause),
+      await collect(await provider.stream(request)).catch((cause) => cause),
+    ]
+    for (const error of failures)
+      expect([error.code, error.isRetryable, error.origin]).toEqual(["timeout", true, "provider:openai_compatible"])
+    const malformed = await openaiCompatible({ apiKey: "", fetch: async () => new Response("not json") })
+      .generate(request)
+      .catch((cause) => cause)
+    expect([malformed.constructor.name, malformed.code, malformed.origin]).toEqual([
+      "ProviderError",
+      "unknown",
+      "provider:openai_compatible",
+    ])
+  })
+
   it("maps the standard request to chat completions, and a reasoning level replaces only the native effort", () => {
     const body = requestBody(request, true)
     expect(body).toMatchObject({
