@@ -596,6 +596,40 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect(
+      "deleteMessage removes an assistant message whose tool_calls array holds an entry that is not an object",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          const calls = JSON.stringify(["not an envelope", ...JSON.parse(toolCalls("call_1"))])
+          const [assistant] = yield* store.appendMessages(thread.id, [
+            { role: "assistant", content: null, tool_calls: calls },
+            { role: "tool", content: "removed", tool_call_id: "call_1" },
+            { role: "tool", content: "kept", tool_call_id: "not an envelope" },
+          ])
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(true)
+          expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["kept"])
+        }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect(
+      "deleteMessage removes the results of an assistant message when a later one holds a non-object entry",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          const [assistant] = yield* store.appendMessages(thread.id, [
+            { role: "assistant", content: null, tool_calls: toolCalls("call_1") },
+            { role: "assistant", content: null, tool_calls: JSON.stringify(["not an envelope"]) },
+            { role: "tool", content: "removed", tool_call_id: "call_1" },
+          ])
+          expect(yield* store.deleteMessage(thread.id, assistant?.id ?? "")).toBe(true)
+          const left = yield* store.getMessages(thread.id, { order: "asc" })
+          expect(left.messages.map((m) => [m.role, m.content])).toEqual([["assistant", null]])
+        }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("getMessages fails with InvalidMessagesQuery for a maxDepth that is not a non-negative integer", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore

@@ -208,7 +208,7 @@ export const layer = Layer.effect(
               yield* sql`
                 DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
                 AND parent_id IS ${parent.parent_id}
-                AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(
+                AND tool_call_id IN (SELECT CASE WHEN type = 'object' THEN json_extract(value, '$.id') END FROM json_each(
                   CASE WHEN json_valid(${parent.tool_calls}) THEN ${parent.tool_calls} ELSE '[]' END))
                 AND NOT EXISTS (
                   SELECT 1 FROM messages AS later,
@@ -216,7 +216,7 @@ export const layer = Layer.effect(
                   WHERE later.thread_id = result.thread_id AND later.role = 'assistant'
                   AND later.parent_id IS result.parent_id
                   AND later.seq > ${parent.seq} AND later.seq < result.seq
-                  AND json_extract(json_each.value, '$.id') = result.tool_call_id)`
+                  AND CASE WHEN json_each.type = 'object' THEN json_extract(json_each.value, '$.id') END = result.tool_call_id)`
             return true
           }),
         ),
