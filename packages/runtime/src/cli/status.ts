@@ -28,7 +28,7 @@ export const statusCommand = Command.make(
         const { state, since, reason } = thread.status
         yield* Console.log(`${state} ${reason ?? "none"} since ${time(since)}`)
         const holder = yield* store.holderOf(thread.id)
-        if (holder !== null) yield* Console.log(`held by process ${holder.pid}, lease until ${time(holder.expiresAt)}`)
+        if (holder !== null) yield* Console.log(`held by process ${holder.pid}`)
         yield* Console.log(`queued ${yield* store.queueLength(thread.id)}`)
         if (thread.terminated !== null) yield* Console.log(`terminated ${time(thread.terminated)}`)
       }).pipe(Effect.provide(database))

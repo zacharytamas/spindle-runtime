@@ -1,3 +1,4 @@
+import { processAlive } from "#platform"
 import type { ThreadStatus } from "@standardagents/spec"
 import { Clock, Effect, Layer, Option, Scheduler } from "effect"
 import * as Migrator from "effect/sql/Migrator"
@@ -512,49 +513,39 @@ export const layer = Layer.effect(
           }),
         ),
 
-      recover: (threadId) =>
+      recover: (threadId, force = false) =>
         Effect.gen(function* () {
-          const now = yield* nowMicros
-          const lost = sql<{ id: string }>`
-            SELECT t.id FROM threads AS t LEFT JOIN holders AS h ON h.id = t.holder_id
-            WHERE ${sql.and([
-              sql`t.run_state = 'running'`,
-              sql`(h.id IS NULL OR h.expires_at < ${now})`,
-              ...(threadId === undefined ? [] : [sql`t.id = ${threadId}`]),
-            ])}`
-          // A read first, so that a status read of a live thread takes no write lock.
-          if ((yield* lost).length === 0) return []
-          return yield* sql.withTransaction(
-            Effect.gen(function* () {
-              const recovered: Array<string> = []
-              for (const { id } of yield* lost) {
-                yield* settleWith(id, yield* Effect.orDie(selectRun(id)), { type: "lose" }, CLOSING.lost)
-                recovered.push(id)
-              }
-              return recovered
-            }),
-          )
+          const candidates = sql<{id:string; pid:number|null}>`
+            SELECT t.id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
+            WHERE t.run_state = 'running' ${threadId === undefined ? sql.literal("") : sql`AND t.id = ${threadId}`}`
+          const lost = (pid: number|null) => force || pid === null ? Effect.succeed(true) : Effect.map(processAlive(pid), alive => !alive)
+          const ids: string[] = []
+          for (const row of yield* candidates) if (yield* lost(row.pid)) ids.push(row.id)
+          if (!ids.length) return []
+          return yield* sql.withTransaction(Effect.gen(function* () {
+            const recovered = []
+            for (const row of yield* candidates) {
+              if (!ids.includes(row.id) || !(yield* lost(row.pid))) continue
+              yield* settleWith(row.id, yield* Effect.orDie(selectRun(row.id)), {type:"lose"}, CLOSING.lost)
+              recovered.push(row.id)
+            }
+            return recovered
+          }))
         }),
 
-      beat: (holder, leaseMicros) =>
-        Effect.gen(function* () {
-          const now = yield* nowMicros
-          yield* sql`
-            INSERT INTO holders ${sql.insert({ id: holder.id, pid: holder.pid, started_at: now, beat_at: now, expires_at: now + leaseMicros })}
-            ON CONFLICT (id) DO UPDATE SET beat_at = excluded.beat_at, expires_at = excluded.expires_at`
-        }),
+      registerHolder: holder => Effect.asVoid(sql`INSERT INTO holders ${sql.insert({...holder})}`),
 
       dropHolder: (holderId) => Effect.asVoid(sql`DELETE FROM holders WHERE id = ${holderId}`),
 
       holderOf: (threadId) =>
         Effect.map(
-          sql<{ id: string; pid: number; beat_at: number; expires_at: number }>`
-            SELECT h.id, h.pid, h.beat_at, h.expires_at FROM threads AS t JOIN holders AS h ON h.id = t.holder_id
+          sql<{ id: string; pid: number }>`
+            SELECT h.id, h.pid FROM threads AS t JOIN holders AS h ON h.id = t.holder_id
             WHERE t.id = ${threadId} AND t.run_state = 'running'`,
           (rows) =>
             rows[0] === undefined
               ? null
-              : { id: rows[0].id, pid: rows[0].pid, beatAt: rows[0].beat_at, expiresAt: rows[0].expires_at },
+              : rows[0],
         ),
 
       owned: (holderId) =>

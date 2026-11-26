@@ -6,13 +6,12 @@ import { gate, history, ok, project, type Scenario, type Setup, sideOf } from ".
 
 // A session looks for a terminate or a recovery from another session once in a fifth of this time. With a minute, no
 // such look happens inside a scenario, so only the check the store makes when a write commits can refuse a stale write.
-const SLOW_POLL: LoadOptions = { holderTimeoutMs: 60_000 }
 
 const using = async (
   driver: RuntimeDriver,
   setup: Setup,
   body: (session: RuntimeSession, thread: string, peer: RuntimeSession) => Promise<void>,
-  options: LoadOptions = SLOW_POLL,
+  options: LoadOptions = {},
 ) => {
   const session = await driver.load(project(setup), options)
   const peer = await session.peer()

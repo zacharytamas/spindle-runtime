@@ -11,10 +11,7 @@ export default Effect.gen(function* () {
   yield* sql`
     CREATE TABLE holders (
       id TEXT PRIMARY KEY,
-      pid INTEGER NOT NULL,
-      started_at INTEGER NOT NULL,
-      beat_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
+      pid INTEGER NOT NULL
     ) STRICT`
 
   yield* sql`ALTER TABLE threads ADD COLUMN holder_id TEXT`

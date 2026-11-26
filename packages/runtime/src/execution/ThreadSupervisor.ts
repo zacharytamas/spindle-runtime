@@ -12,11 +12,7 @@ import type { Run, ThreadControl } from "./thread-state.ts"
 import { QueueRefused } from "./tools.ts"
 import { roleOf, sidesOf } from "./turn.ts"
 
-// How long a holder's lease lasts after each renewal. A holder renews it five times in that span, so a process
-// counts as dead only when it has been silent for the whole span, whatever one model call or tool takes.
-export const HolderTimeout = Context.Reference<Duration.Duration>("spindle/HolderTimeout", {
-  defaultValue: () => Duration.seconds(15),
-})
+const CONTROL_POLL = Duration.millis(250)
 
 export class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
 
@@ -116,9 +112,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const scope = yield* Effect.scope
-      const timeout = yield* HolderTimeout
       const holder = { id: crypto.randomUUID(), pid: processId }
-      const leaseMicros = Math.round(Duration.toMillis(timeout) * 1000)
       // The threads that this process runs, and the flows it holds or is about to hold. A claim of this holder whose
       // flow is in neither has no execution behind it.
       const live = new Map<string, Live>()
@@ -245,7 +239,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Every renewal also settles the runs whose holders died, settles a claim of this holder that has no execution
       // behind it, and interrupts an execution here whose run another process settled, by terminate or as lost.
       const tick = Effect.gen(function* () {
-        yield* store.beat(holder, leaseMicros)
         yield* store.recover()
         const running = [...live]
         const owned = yield* store.owned(holder.id)
@@ -269,10 +262,10 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           Effect.ignore(store.dropHolder(holder.id)),
         ),
       )
-      yield* store.beat(holder, leaseMicros)
+      yield* store.registerHolder(holder)
       yield* Effect.forkIn(
         Effect.forever(
-          Effect.andThen(Effect.sleep(Duration.millis(Duration.toMillis(timeout) / 5)), Effect.ignoreCause(tick)),
+          Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick)),
         ),
         scope,
       )

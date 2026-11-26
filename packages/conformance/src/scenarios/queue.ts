@@ -16,13 +16,12 @@ import { attempt } from "./ownership.ts"
 import { callsOf, gate, history, holding, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
 
 // A short lease, so that a session notices within a tenth of a second that another session settled its run.
-const LEASE: LoadOptions = { holderTimeoutMs: 500 }
 
 const using = async (
   driver: RuntimeDriver,
   setup: Setup,
   body: (session: RuntimeSession, thread: string) => Promise<void>,
-  options: LoadOptions = LEASE,
+  options: LoadOptions = {},
 ) => {
   const session = await driver.load(project(setup), options)
   try {
@@ -777,7 +776,6 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       const session = await driver.load(project({ provider, tools: { queue, take } }), {
-        ...LEASE,
         instanceEnv: { QUEUE_TOKEN: token },
       })
       try {
@@ -1778,7 +1776,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
             await peer.close()
           }
         },
-        { holderTimeoutMs: 60_000 },
+        {},
       )
     },
   },

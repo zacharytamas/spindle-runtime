@@ -7,7 +7,7 @@ import { newSecrets } from "../execution/env.ts"
 import { HookTimeout } from "../execution/hooks.ts"
 import { redactor } from "../execution/redact.ts"
 import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
-import { HolderTimeout, layer as supervisorLayer, ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { createThread, sendMessage } from "../execution/trigger.ts"
 import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
@@ -118,12 +118,6 @@ export const deliveryFlags = {
     Flag.withDescription("Seconds one hook call may run before the run goes on without it. The default is 30."),
     Flag.optional,
   ),
-  holderTimeout: Flag.Finite("holder-timeout").pipe(
-    Flag.withDescription(
-      "Seconds that this process's claim on a running thread lasts without renewal. Another process counts this one as gone after that long. The default is 15.",
-    ),
-    Flag.optional,
-  ),
 }
 
 export interface DeliveryArgs {
@@ -134,7 +128,6 @@ export interface DeliveryArgs {
   readonly dumpRequests: boolean
   readonly db: string
   readonly hookTimeout: Option.Option<number>
-  readonly holderTimeout: Option.Option<number>
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
@@ -154,7 +147,6 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
       const filename = args.db === ":memory:" ? args.db : path.resolve(args.db)
       for (const [flag, value] of [
         ["--hook-timeout", args.hookTimeout],
-        ["--holder-timeout", args.holderTimeout],
       ] as const)
         if (Option.isSome(value) && !(value.value > 0)) return yield* fail(`${flag} takes a number of seconds above 0`)
       // The thread names the agent that send runs, so send reads it before it validates the definitions.
@@ -197,13 +189,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           secrets,
           observe: printer(roleOf(sides.side), args),
         }
-        const supervisor = supervisorLayer(options).pipe(
-          Layer.provide(
-            Option.isSome(args.holderTimeout)
-              ? Layer.succeed(HolderTimeout, Duration.millis(args.holderTimeout.value * 1000))
-              : Layer.empty,
-          ),
-        )
+        const supervisor = supervisorLayer(options)
         yield* Effect.gen(function* () {
           const threadId = "agent" in target ? (yield* createThread(target.agent)).id : target.thread
           // Another command can name a thread in a database file, so the id comes first, before any reply.

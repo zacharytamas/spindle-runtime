@@ -145,8 +145,6 @@ export interface Admitted {
 export interface Holder {
   readonly id: string
   readonly pid: number
-  readonly beatAt: number
-  readonly expiresAt: number
 }
 
 // settled: the run ended and released the thread. continue: the queue holds work, so the run goes on.
@@ -225,12 +223,8 @@ export class ThreadStore extends Context.Service<
     ) => Effect.Effect<Settlement, SqlError>
     // Settles each running thread whose holder's lease has expired, or only the given thread, as failed with
     // execution_lost, and returns their ids.
-    readonly recover: (threadId?: string) => Effect.Effect<ReadonlyArray<string>, SqlError>
-    // Renews the holder's lease until leaseMicros from now, and records the holder when it is new.
-    readonly beat: (
-      holder: { readonly id: string; readonly pid: number },
-      leaseMicros: number,
-    ) => Effect.Effect<void, SqlError>
+    readonly recover: (threadId?: string, force?: boolean) => Effect.Effect<ReadonlyArray<string>, SqlError>
+    readonly registerHolder: (holder: Holder) => Effect.Effect<void, SqlError>
     readonly dropHolder: (holderId: string) => Effect.Effect<void, SqlError>
     readonly holderOf: (threadId: string) => Effect.Effect<Holder | null, SqlError>
     readonly owned: (holderId: string) => Effect.Effect<ReadonlyMap<string, string>, SqlError>

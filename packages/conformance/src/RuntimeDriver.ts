@@ -30,7 +30,6 @@ export interface LoadOptions {
   readonly hookTimeoutMs?: number
   // How long the session's claim on a running thread lasts without renewal, in milliseconds. Another session counts
   // a silent holder as gone after this long.
-  readonly holderTimeoutMs?: number
 }
 
 export interface SendOptions {

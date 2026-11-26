@@ -6,14 +6,14 @@ import process from "node:process"
 import type { ThreadState } from "@standardagents/spec"
 import { Cause, Duration, Effect, Exit, Layer } from "effect"
 import { PlatformLive, SqliteLive } from "#platform"
-import { HolderTimeout, layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, stateAtRest } from "../src/execution/trigger.ts"
 import { scriptedProvider } from "../src/providers/script.ts"
 import { Registry } from "../src/registry/Registry.ts"
 import { layer } from "../src/store/sqlite.ts"
 import { ThreadStore } from "../src/store/ThreadStore.ts"
 
-const USAGE = `Usage: queue-probe <command> --dir <project> --db <file> [--holder-timeout <seconds>]
+const USAGE = `Usage: queue-probe <command> --dir <project> --db <file>
 
   create --agent <name>                          create a thread at rest and print its id
   queue-message --thread <id> --role <user|assistant> --content <text> [--silent]
@@ -160,20 +160,13 @@ if (command === "bench") {
 } else if (command === "help" || !["create", "queue-message", "queue-tool", "terminate", "status"].includes(command))
   console.log(USAGE)
 else {
-  const timeout = option("holder-timeout")
   await Effect.runPromise(
     main.pipe(
       Effect.provide(
         Layer.mergeAll(
           Registry.layer(path.resolve(required("dir"))),
           Layer.provideMerge(
-            supervisorLayer().pipe(
-              Layer.provide(
-                timeout === undefined
-                  ? Layer.empty
-                  : Layer.succeed(HolderTimeout, Duration.millis(Number(timeout) * 1000)),
-              ),
-            ),
+            supervisorLayer(),
             Layer.provide(layer, SqliteLive({ filename: path.resolve(required("db")) })),
           ),
         ).pipe(Layer.provide(PlatformLive)),

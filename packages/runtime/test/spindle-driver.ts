@@ -10,7 +10,7 @@ import type {
   StoredThread,
 } from "../../conformance/src/RuntimeDriver.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
-import { HolderTimeout, layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
 import { resolver } from "../src/registry/resolve.ts"
@@ -102,14 +102,10 @@ const openSession = (
   cleanup: () => Promise<void>,
 ): RuntimeSession => {
   const logs: Array<string> = []
-  const holder =
-    options.holderTimeoutMs === undefined
-      ? Layer.empty
-      : Layer.succeed(HolderTimeout, Duration.millis(options.holderTimeoutMs))
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       registry,
-      Layer.provideMerge(supervisorLayer().pipe(Layer.provide(holder)), store(filename)),
+      Layer.provideMerge(supervisorLayer(), store(filename)),
       ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
       Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
       options.hookTimeoutMs === undefined
@@ -174,17 +170,7 @@ const openSession = (
         }),
       ),
     inspect: (threadId) => rows.runPromise(inspectThread(threadId)),
-    // Until the runtime has a forced recovery, the only way to take a thread from a live holder is a lease that ran
-    // out. The driver ends the holder's lease and lets recovery run, which settles the thread the same way. Replace
-    // both statements with the operation behind spindle recover --force once it exists.
-    forceRecover: (threadId) =>
-      withSql((sql) =>
-        sql.unsafe("UPDATE holders SET expires_at = 0 WHERE id = (SELECT holder_id FROM threads WHERE id = ?)", [
-          threadId,
-        ]),
-      )
-        .then(() => withStore((s) => s.recover(threadId)))
-        .then(() => undefined),
+    forceRecover: threadId => withStore(s => s.recover(threadId, true)).then(() => undefined),
     queueRaw: (threadId, kind, payload) =>
       withSql((sql) =>
         sql.unsafe("INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, ?, ?, 0)", [

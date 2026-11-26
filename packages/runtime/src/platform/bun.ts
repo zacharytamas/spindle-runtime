@@ -16,3 +16,5 @@ export const SqliteLive: Platform["SqliteLive"] = (options) =>
       Effect.map(({ SqliteClient }) => SqliteClient.layer(options)),
     ),
   )
+
+export { processAlive } from "./process-alive.ts"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, FileSystem, Layer, Scheduler } from "effect"
 import { TestClock } from "effect/testing"
-import { PlatformLive, SqliteLive } from "#platform"
+import { PlatformLive, processId, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { type NewMessage, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -208,18 +208,17 @@ describe("ThreadStore claims", () => {
     }).pipe(Effect.provide(inMemory)),
   )
 
-  it.effect("recover settles a thread whose holder's lease expired as lost and keeps its queue and its history", () =>
+  it.effect("recover settles a thread whose process is gone as lost and keeps its queue and its history", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const lost = yield* store.createThread({ agentId: "assistant" })
       const live = yield* store.createThread({ agentId: "assistant" })
-      yield* store.beat({ id: "dead", pid: 1 }, 1_000_000)
-      yield* store.beat({ id: "alive", pid: 2 }, 10_000_000)
+      yield* store.registerHolder({ id: "dead", pid: 2147483647 })
+      yield* store.registerHolder({ id: "alive", pid: processId })
       yield* store.admit(lost.id, message("x"), claim("flow-lost", "dead"))
       yield* store.admit(live.id, message("y"), claim("flow-live", "alive"))
       yield* store.appendMessages(lost.id, [callsBy("assistant", "c1", "c2"), resultFor("c1")])
       yield* store.admit(lost.id, message("z"), claim("flow-ignored"))
-      expect(yield* store.recover()).toEqual([])
       yield* TestClock.adjust("2 seconds")
       expect(yield* store.recover(live.id)).toEqual([])
       expect(yield* store.recover()).toEqual([lost.id])
@@ -329,15 +328,14 @@ describe("ThreadStore claims", () => {
     }).pipe(Effect.provide(inMemory)),
   )
 
-  it.effect("beat records the holder with its process id and renews its lease", () =>
+  it.effect("records the holder with its process id until it shuts down", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.beat({ id: "h", pid: 4242 }, 5_000_000)
+      yield* store.registerHolder({ id: "h", pid: 4242 })
       yield* store.admit(thread.id, message("x"), claim("flow-a", "h"))
       yield* TestClock.adjust("1 second")
-      yield* store.beat({ id: "h", pid: 4242 }, 5_000_000)
-      expect(yield* store.holderOf(thread.id)).toEqual({ id: "h", pid: 4242, beatAt: 1_000_000, expiresAt: 6_000_000 })
+      expect(yield* store.holderOf(thread.id)).toEqual({ id: "h", pid: 4242 })
       yield* store.dropHolder("h")
       expect(yield* store.holderOf(thread.id)).toBeNull()
     }).pipe(Effect.provide(inMemory)),

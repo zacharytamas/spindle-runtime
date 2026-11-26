@@ -221,8 +221,6 @@ describe("spindle ownership across processes", () => {
           ...project,
           "--db",
           db,
-          "--holder-timeout",
-          "0.5",
         ])
         const thread = yield* threadIn(run)
         yield* until(

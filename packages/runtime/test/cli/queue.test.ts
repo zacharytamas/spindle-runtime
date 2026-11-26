@@ -137,7 +137,7 @@ describe("spindle across processes", () => {
         const status = yield* spindle(gate, ["status", thread, "--db", db])
         expect(yield* status.exit).toBe(0)
         expect(status.out[0]).toMatch(/^running none since /)
-        expect(status.out[1]).toMatch(new RegExp(`^held by process ${owner.pid}, lease until `))
+        expect(status.out[1]).toBe(`held by process ${owner.pid}`)
         yield* touch(at("release-model"))
         expect([yield* owner.exit, yield* waiter.exit]).toEqual([0, 0])
         const requests = (yield* entries(gate)).filter((name) => name.startsWith("request-"))
@@ -163,10 +163,9 @@ describe("spindle across processes", () => {
       Effect.gen(function* () {
         const { gate, db, at } = yield* setup
         yield* touch(at("hold-model"))
-        const lease = ["--holder-timeout", "0.5"]
-        const lost = yield* spindle(gate, ["run", "assistant", "-m", "first", ...project, "--db", db, ...lease])
+        const lost = yield* spindle(gate, ["run", "assistant", "-m", "first", ...project, "--db", db])
         const thread = yield* threadIn(lost)
-        const other = yield* spindle(gate, ["run", "assistant", "-m", "elsewhere", ...project, "--db", db, ...lease])
+        const other = yield* spindle(gate, ["run", "assistant", "-m", "elsewhere", ...project, "--db", db])
         const otherThread = yield* threadIn(other)
         yield* until(
           "both processes to enter the model",
@@ -235,8 +234,6 @@ describe("spindle across processes", () => {
           ...project,
           "--db",
           db,
-          "--holder-timeout",
-          "0.5",
         ])
         const thread = yield* threadIn(run)
         yield* until("the second tool to start", exists(at("tool-entered-b")))
@@ -288,8 +285,6 @@ describe("spindle across processes", () => {
           ...project,
           "--db",
           db,
-          "--holder-timeout",
-          "0.5",
         ])
         const thread = yield* threadIn(run)
         yield* until("the tool to start", exists(at("tool-entered-t")))
