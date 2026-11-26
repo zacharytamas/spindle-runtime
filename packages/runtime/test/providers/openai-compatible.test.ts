@@ -295,6 +295,7 @@ describe("openaiCompatible", () => {
   it("keeps the structured reasoning of a response and sends it back in the fields it arrived in", async () => {
     const wire = [
       { type: "reasoning.text", text: "step one", signature: "sig-1", format: "anthropic-claude-v1" },
+      { type: "reasoning.summary", id: "s1", summary: "short", signature: "sig-2" },
       { type: "reasoning.encrypted", data: "blob" },
     ]
     const fragments = [
@@ -315,7 +316,16 @@ describe("openaiCompatible", () => {
       },
       {
         choices: [
-          { delta: { content: "Done.", reasoning_details: [{ ...wire[1], index: 1 }] }, finish_reason: "stop" },
+          {
+            delta: {
+              content: "Done.",
+              reasoning_details: [
+                { ...wire[1], index: 1 },
+                { ...wire[2], index: 2 },
+              ],
+            },
+            finish_reason: "stop",
+          },
         ],
       },
     ]
@@ -326,6 +336,7 @@ describe("openaiCompatible", () => {
     const provider = openaiCompatible({ apiKey: "", fetch })
     const standard: Array<ProviderReasoningDetail> = [
       { type: "text", text: "step one", data: "sig-1", format: "anthropic-claude-v1" },
+      { type: "summary", id: "s1", text: "short", data: "sig-2" },
       { type: "encrypted", data: "blob" },
     ]
     expect(await provider.generate(request)).toMatchObject({ reasoning: "Think. ", reasoningDetails: standard })

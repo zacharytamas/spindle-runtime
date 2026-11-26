@@ -74,15 +74,21 @@ const detailOf = (value: unknown): ProviderReasoningDetail | undefined => {
   }
 }
 
+// The wire field that holds a detail's text and the one that holds its data, which detailOf reads back.
+const NATIVE_FIELDS: Readonly<
+  Record<ProviderReasoningDetail["type"], { readonly text: string; readonly data: string }>
+> = {
+  text: { text: "text", data: "signature" },
+  summary: { text: "summary", data: "signature" },
+  encrypted: { text: "text", data: "data" },
+}
+
 const nativeDetail = (detail: ProviderReasoningDetail): Json => ({
   type: `reasoning.${detail.type}`,
   ...optional("id", detail.id),
   ...optional("format", detail.format),
-  ...(detail.type === "summary"
-    ? optional("summary", detail.text)
-    : detail.type === "encrypted"
-      ? optional("data", detail.data)
-      : { ...optional("text", detail.text), ...optional("signature", detail.data) }),
+  ...optional(NATIVE_FIELDS[detail.type].text, detail.text),
+  ...optional(NATIVE_FIELDS[detail.type].data, detail.data),
 })
 
 // Messages section 1.3: earlier reasoning goes back in the fields it arrived in. The runtime passes only the

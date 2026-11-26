@@ -801,6 +801,17 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
                 reasoning_details: JSON.stringify([{ type: "encrypted", data: "stale" }]),
                 prompt: "assistant",
               },
+              ...[
+                ["same model, fields reordered", { model: "scripted-model-v1", definition: "scripted" }],
+                ["other definition", { definition: "other_model", model: "scripted-model-v1" }],
+                ["other native model", { definition: "scripted", model: "scripted-model-v0" }],
+              ].map(([content, source]) => ({
+                role: "assistant" as const,
+                content: content as string,
+                reasoning_details: JSON.stringify([{ type: "encrypted", data: `sealed ${content}` }]),
+                prompt: "assistant",
+                metadata: { reasoning_source: source },
+              })),
             ])
             await send(session, thread, "q5")
             stored = await session.messages(thread)
@@ -823,6 +834,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ["t4", null, null],
         ["from another model", "ro", null],
         ["same prompt, earlier model", null, null],
+        ["same model, fields reordered", null, [{ type: "encrypted", data: "sealed same model, fields reordered" }]],
+        ["other definition", null, null],
+        ["other native model", null, null],
       ])
       const explicit = await run({ includeChat: true, reasoning: { include: true } })
       expect(history(explicit.request)).toEqual(history(replayed.request))
@@ -835,11 +849,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         [null, null],
         ["ro", JSON.stringify([{ type: "encrypted", data: "foreign" }])],
         [null, JSON.stringify([{ type: "encrypted", data: "stale" }])],
+        ...["same model, fields reordered", "other definition", "other native model"].map((content) => [
+          null,
+          JSON.stringify([{ type: "encrypted", data: `sealed ${content}` }]),
+        ]),
         [null, null],
       ])
       const withheld = await run({ includeChat: true, reasoning: { include: false } })
       const text = JSON.stringify(withheld.request)
-      for (const marker of ['"r1"', '"d2"', '"r3"', '"d3"', '"ro"', "foreign", "stale"])
+      for (const marker of ['"r1"', '"d2"', '"r3"', '"d3"', '"ro"', "foreign", "stale", "sealed"])
         expect(text).not.toContain(marker)
       expect(withheld.stored.filter((m) => m.role === "assistant")[0]?.reasoning_content).toBe("r1")
       const excluded = await run({})

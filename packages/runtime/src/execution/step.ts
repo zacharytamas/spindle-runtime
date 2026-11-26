@@ -295,8 +295,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       yield* addDeclaredSecrets(turn, secrets)
       // A value a tool reads through env() joins the values later and is redacted, but it may be a text variable.
       const barred: Secrets = { names: secrets.names, values: new Set(secrets.values) }
-      const source = JSON.stringify(reasoningSource(turn))
-      const acceptsDetails = (message: Message) => JSON.stringify(message.metadata?.reasoning_source) === source
+      const source = reasoningSource(turn)
+      const acceptsDetails = (message: Message) => {
+        const stored = message.metadata?.reasoning_source as Partial<typeof source> | null | undefined
+        return stored?.definition === source.definition && stored?.model === source.model
+      }
       const prompt = turn.prompt.value
       const turnStart = turnStartOf(history, turn.side)
       while (true) {
