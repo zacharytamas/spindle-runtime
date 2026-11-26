@@ -1,8 +1,7 @@
-import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
+import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
-import { mapStrings } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -189,22 +188,6 @@ export const redactAttachment = (item: Record<string, unknown>, redact: (text: s
   ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),
 })
 
-// Threads section 2.3: a result loses each secret wherever its text holds one, property names included. The status,
-// the error code, and the parts of an attachment that the runtime reads back keep their values.
-export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
-  ...result,
-  ...(result.result === undefined ? {} : { result: redact(result.result) }),
-  ...(result.error === undefined ? {} : { error: redact(result.error) }),
-  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact, redact) }),
-  ...(result.attachments === undefined
-    ? {}
-    : {
-        attachments: result.attachments.map((item: unknown) =>
-          isRecord(item) ? redactAttachment(item, redact) : item,
-        ) as NonNullable<ToolResult["attachments"]>,
-      }),
-})
-
 const contentOf = (result: ToolResult) =>
   result.status === "success"
     ? (result.result ?? "")
@@ -243,8 +226,22 @@ export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): Ne
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
-      ...(result.error_data === undefined ? {} : { error_data: result.error_data }),
+      // A copy runs every getter of the error data here, inside the caller's try, so one that throws makes the
+      // result unstorable rather than failing the write that redacts it.
+      ...(result.error_data === undefined ? {} : { error_data: structuredClone(result.error_data) }),
     },
+  }
+}
+
+// The result that a stored tool message holds, in the shape a tool returns it.
+export const resultOf = (message: Message): ToolResult => {
+  const text = message.content ?? ""
+  const { error_code, error_data } = message.metadata ?? {}
+  return {
+    ...(message.tool_status === "error" ? { status: "error", error: text } : { status: "success", result: text }),
+    ...(message.attachments == null ? {} : { attachments: message.attachments }),
+    ...(typeof error_code === "string" ? { error_code } : {}),
+    ...(isRecord(error_data) ? { error_data } : {}),
   }
 }
 

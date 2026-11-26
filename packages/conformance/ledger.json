@@ -1764,7 +1764,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
+			"packages/runtime/test/conformance.test.ts > hooks > H12c hands tool_call_done the result as it is stored, after the result hooks, the create hooks, and redaction"
 		],
 		"reason": ""
 	},
@@ -1772,7 +1773,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
+			"packages/runtime/test/conformance.test.ts > hooks > H12c hands tool_call_done the result as it is stored, after the result hooks, the create hooks, and redaction"
 		],
 		"reason": ""
 	},

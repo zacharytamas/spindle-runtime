@@ -33,7 +33,7 @@ import {
   describe,
   invokeTool,
   ResultUnreadable,
-  redactResult,
+  resultOf,
   runToolCall,
   scopeFor,
   storedResult,
@@ -445,18 +445,12 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           )
           const final = yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
           const save = (result: ToolResult) =>
-            Effect.gen(function* () {
-              const { redacted, message } = yield* Effect.try({
-                try: () => ({
-                  redacted: redactResult(result, redact),
-                  message: storedResult(turn, call, result),
-                }),
-                catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
-              })
-              return { redacted, stored: yield* createMessage(write, message, "result") }
-            })
+            Effect.try({
+              try: () => storedResult(turn, call, result),
+              catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
+            }).pipe(Effect.flatMap((message) => createMessage(write, message, "result")))
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
-          const { redacted: result, stored } = yield* save(final).pipe(
+          const stored = yield* save(final).pipe(
             Effect.catchTag(["ValueNotJson", "ResultUnreadable", "MessageIdTaken"], (error) =>
               save(unstorableResult(final, error.message)),
             ),
@@ -465,7 +459,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           results.push(stored.tool_status == null ? final : { ...final, status: stored.tool_status })
           yield* record("persist-results", `${call.id} ${stored.tool_status}`)
           yield* observe({ type: "message", message: stored })
-          yield* runHooks(hooks, "tool_call_done", [toolCall], result)
+          // Hooks section 5.5: tool_call_done sees the result as the store holds it, after every hook and redaction.
+          yield* runHooks(hooks, "tool_call_done", [toolCall], resultOf(stored))
         }
         const reason = stopReason(
           {

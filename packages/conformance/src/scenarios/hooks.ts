@@ -861,6 +861,70 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H12c hands tool_call_done the result as it is stored, after the result hooks, the create hooks, and redaction",
+    requirements: ["6d96f2a3", "baf0fc02"],
+    run: async (driver) => {
+      const done: Array<unknown> = []
+      const variables = [{ name: "MARK", type: "secret" as const, required: true, description: "A secret" }]
+      const hooks = [
+        defineHook({
+          hook: "before_store_tool_result",
+          id: "store_mark",
+          execute: async (_state, _call, result) =>
+            result.status === "success"
+              ? { ...result, result: `${result.result} [store]` }
+              : { ...result, error: `${result.error} [store]` },
+        }),
+        defineHook({
+          hook: "before_create_message",
+          id: "create_mark",
+          execute: async (_state, message) =>
+            message.role === "tool" ? { ...message, content: `${message.content} [create]` } : message,
+        }),
+        defineHook({
+          hook: "tool_call_done",
+          id: "record_done",
+          execute: async (state, toolCall, result) => {
+            const stored = state.execution?.messageHistory.find((m) => m.tool_call_id === toolCall.id)
+            done.push([toolCall.id, result.status, result.result ?? result.error, stored?.content])
+          },
+        }),
+      ]
+      const tools = {
+        reveal: defineTool({
+          description: "Return the secret",
+          variables,
+          execute: async (state: ThreadState) => ok(`value ${await state.env("MARK")}`),
+        }),
+        refuse: defineTool({
+          description: "Return an error",
+          execute: async () => ({ status: "error" as const, error: "refused" }),
+        }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c1", name: "reveal", arguments: {} },
+            { id: "c2", name: "refuse", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
+        async (session, thread) => {
+          await send(session, thread, "go")
+        },
+        { MARK: "hidden-value-58" },
+      )
+      expect(done).toEqual([
+        ["c1", "success", "value [redacted] [store] [create]", "value [redacted] [store] [create]"],
+        ["c2", "error", "refused [store] [create]", "refused [store] [create]"],
+      ])
+    },
+  },
+  {
     name: "H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it",
     requirements: ["bdfd2d2d", "7bef4e87", "31e58fe6", "3fb4e4f0", "106ba9d7", "b02bac78", "f31fd3d3", "8f7b59dd"],
     run: async (driver) => {
