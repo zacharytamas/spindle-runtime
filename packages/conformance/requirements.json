@@ -8441,5 +8441,45 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "If a model does not support vision, runtimes may filter image parts at request time while preserving stored message attachments."
+	},
+	{
+		"id": "specification:tools:8f7b59dd",
+		"page": "specification:tools",
+		"line": 121,
+		"section": "7. Progress Reporting",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "If the model never emits the named argument, `tool_call_started` still fires once the tool call finishes, with `progress` undefined."
+	},
+	{
+		"id": "specification:hooks:d57ad351",
+		"page": "specification:hooks",
+		"line": 306,
+		"section": "3.4 Stored history and the request context",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "[`injectMessage()`](/0.2.0/specification/threads/messages#3-injecting-messages) still applies `before_create_message` and `after_create_message` when a request-context hook persists a message."
+	},
+	{
+		"id": "specification:threads/messages:e9cab494",
+		"page": "specification:threads/messages",
+		"line": 26,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `parent_id` | `string \\| null` | Parent message (sub-prompts) |"
+	},
+	{
+		"id": "specification:agents:4029d475",
+		"page": "specification:agents",
+		"line": 92,
+		"section": "2.2 Optional",
+		"level": "MAY",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `hooks` | `string[]` | - | Fallback hook IDs |"
 	}
 ]

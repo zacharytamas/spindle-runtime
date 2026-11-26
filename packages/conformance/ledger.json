@@ -6261,5 +6261,29 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S24 keeps stored attachment references intact and describes them in the request"
 		],
 		"reason": "S24 shows that stored references survive and reach the request as text descriptions. M3 adds attachment bytes, which owes image parts and their filtering for a model without vision."
+	},
+	"specification:tools:8f7b59dd": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:hooks:d57ad351": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:e9cab494": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:agents:4029d475": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
 	}
 }
