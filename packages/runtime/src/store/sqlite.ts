@@ -17,11 +17,16 @@ import {
   toStatus,
   toThread,
 } from "./schema.ts"
-import { MessageNotFound, ThreadNotFound, ThreadStore, ValueNotJson } from "./ThreadStore.ts"
+import { KeyNotWellFormed, MessageNotFound, ThreadNotFound, ThreadStore, ValueNotJson } from "./ThreadStore.ts"
 
 const migrate = Migrator.make({})({ loader: Migrator.fromRecord({ "0001_threads": threads }) })
 
 const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
+
+const loneSurrogate = /[\uD800-\uDFFF]/u
+
+// SQLite stores a key as UTF-8, which has no encoding for a lone surrogate, so two such keys would collide.
+const isWellFormed = (key: string) => !loneSurrogate.test(key)
 
 const first = <A, E>(rows: ReadonlyArray<A>, missing: () => E): Effect.Effect<A, E> =>
   rows[0] === undefined ? Effect.fail(missing()) : Effect.succeed(rows[0])
@@ -195,12 +200,15 @@ export const layer = Layer.effect(
         ),
 
       getValue: (threadId, key) =>
-        Effect.map(
-          sql<{ value: string }>`SELECT value FROM kv WHERE thread_id = ${threadId} AND key = ${key}`,
-          (rows) => (rows[0] === undefined ? null : JSON.parse(rows[0].value)),
-        ),
+        isWellFormed(key)
+          ? Effect.map(
+              sql<{ value: string }>`SELECT value FROM kv WHERE thread_id = ${threadId} AND key = ${key}`,
+              (rows) => (rows[0] === undefined ? null : JSON.parse(rows[0].value)),
+            )
+          : Effect.fail(new KeyNotWellFormed({ key })),
 
       setValue: (threadId, key, value) => {
+        if (!isWellFormed(key)) return Effect.fail(new KeyNotWellFormed({ key }))
         if (value === null || value === undefined)
           return Effect.asVoid(sql`DELETE FROM kv WHERE thread_id = ${threadId} AND key = ${key}`)
         const notJson = findNotJson(value)

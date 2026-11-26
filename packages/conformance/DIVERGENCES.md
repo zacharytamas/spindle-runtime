@@ -61,3 +61,9 @@ Some sections record a point that the spec text leaves open. Spindle takes the s
 - **Package.** `Message` in `@standardagents/spec` 0.45.13 declares each of those fields optional, as in `name?: string | null` and `depth?: number`.
 - **Disagreement.** The spec says a reader can rely on each field. The package lets a runtime leave it out.
 - **Spindle.** The store returns every field on every message, with `null` for an absent value, `0` for `depth`, `false` for `silent`, and `{}` for `metadata`. That record satisfies both types. `packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back` asserts the full record.
+
+## Limits that Spindle sets where the spec allows one
+
+Runtime section 14.2 lets a runtime cap key length, value size, and the number of keys, and asks that each cap be documented with the runtime. This section is that record. It is not a disagreement between the spec and the package.
+
+- **Keys must be well-formed Unicode.** A key that holds a lone UTF-16 surrogate, such as `"\ud800"`, fails `setValue` and `getValue` with `KeyNotWellFormed`. SQLite stores a key as UTF-8, and UTF-8 has no encoding for a lone surrogate. Both drivers write U+FFFD in its place, so the keys `"\ud800"` and `"\ud801"` would read and overwrite each other. `packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key` shows it.

@@ -554,6 +554,28 @@ describe("ThreadStore", () => {
         ),
     )
 
+    it.effect("a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* store.setValue(thread.id, "\ufffd", "replacement character")
+        yield* store.setValue(thread.id, "\ud83d\ude00", "emoji")
+        for (const key of ["\ud800", "\udc00", "a\ud801b"]) {
+          for (const call of [
+            store.setValue(thread.id, key, 1),
+            store.setValue(thread.id, key, null),
+            store.getValue(thread.id, key),
+          ]) {
+            const error = yield* Effect.flip(call)
+            expect(error).toMatchObject({ _tag: "KeyNotWellFormed", key })
+            expect(error.message).toContain("lone surrogate")
+          }
+        }
+        expect(yield* store.getValue(thread.id, "\ufffd")).toBe("replacement character")
+        expect(yield* store.getValue(thread.id, "\ud83d\ude00")).toBe("emoji")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("setValue fails with ThreadNotFound for an unknown thread", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
