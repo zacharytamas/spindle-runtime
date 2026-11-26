@@ -4735,7 +4735,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
+			"packages/runtime/test/conformance.test.ts > queue > Q16 ends a write that a tool's injectMessage started when terminate aborts the run, and refuses the tool's later calls"
 		],
 		"reason": ""
 	},

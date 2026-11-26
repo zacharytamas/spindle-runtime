@@ -675,4 +675,126 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       })
     },
   },
+  {
+    name: "Q15 refuses a retries value that is not a whole number before it queues or runs anything",
+    requirements: [],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([])
+      await using(driver, { provider }, async (session, thread) => {
+        for (const retries of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])
+          await expect(session.send(thread, "go", { retries })).rejects.toThrow(
+            `retries must be a whole number of 0 or more, got ${retries}`,
+          )
+        expect(await session.messages(thread)).toEqual([])
+        expect(await statusOf(session, thread)).toEqual({ state: "idle", since: 0, reason: null })
+        expect(provider.requests).toHaveLength(0)
+      })
+    },
+  },
+  {
+    name: "Q16 ends a write that a tool's injectMessage started when terminate aborts the run, and refuses the tool's later calls",
+    requirements: ["e95fd065"],
+    run: async (driver) => {
+      const inHook = gate()
+      const releaseHook = gate()
+      const toolStarted = gate()
+      let toolState: ThreadState | undefined
+      let injection: Promise<unknown> | undefined
+      const slow = defineHook({
+        hook: "before_create_message",
+        id: "slow",
+        execute: async (_state, message) => {
+          if (message.content === "from the tool") {
+            inHook.release()
+            await releaseHook.opened
+          }
+          return message
+        },
+      })
+      const inject = defineTool({
+        description: "Inject a message and wait",
+        execute: async (state: ThreadState) => {
+          toolState = state
+          injection = state.injectMessage({ role: "user", content: "from the tool" }).then(
+            () => "stored",
+            (error: Error) => `rejected: ${error.message}`,
+          )
+          toolStarted.release()
+          await new Promise(() => {})
+          return ok("never")
+        },
+      })
+      const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_inject", name: "inject", arguments: {} }] }])
+      await using(
+        driver,
+        { provider, tools: { inject }, hooks: [slow], prompt: { hooks: ["slow"] } },
+        async (session, thread) => {
+          const run = session.send(thread, "go")
+          await Promise.all([toolStarted.opened, inHook.opened])
+          await (await session.state(thread)).terminate()
+          expect(await run).toMatchObject({ status: "idle", reason: "aborted" })
+          releaseHook.release()
+          expect(await injection).toMatch(/^rejected: /)
+          await expect(toolState?.getValue("anything")).rejects.toThrow(/has ended, so Spindle refused this call/)
+          expect((await session.messages(thread)).map((m) => m.content)).not.toContain("from the tool")
+        },
+      )
+    },
+  },
+  {
+    name: "Q17 stores a queued call and a queued message that a tool wrote without its secrets, and runs the tool with them",
+    requirements: [],
+    run: async (driver) => {
+      const token = "QUEUED-SECRET-81"
+      const received: Array<string> = []
+      const take = defineTool({
+        description: "Return what it was given",
+        args: z.object({ text: z.string() }),
+        execute: async (_state, { text }) => {
+          received.push(text)
+          return ok(`took ${text}`)
+        },
+      })
+      const queue = defineTool({
+        description: "Queue a tool and a message that hold a secret",
+        variables: [{ name: "QUEUE_TOKEN", type: "secret", required: true, description: "A secret" }],
+        execute: async (state: ThreadState) => {
+          const secret = await state.env("QUEUE_TOKEN")
+          state.queueTool("take", { text: secret })
+          await state.queueMessage({ role: "user", content: `note ${secret}`, metadata: { [secret]: secret } })
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      const session = await driver.load(project({ provider, tools: { queue, take } }), {
+        ...LEASE,
+        instanceEnv: { QUEUE_TOKEN: token },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(received).toEqual([token])
+        const stored = await session.messages(thread)
+        expect(JSON.stringify(stored)).not.toContain(token)
+        expect(JSON.stringify(provider.requests)).not.toContain(token)
+        expect(
+          stored.map((m) => [m.role, m.tool_calls === null ? m.content : callsOf(m)[0]?.function.arguments]),
+        ).toEqual([
+          ["user", "go"],
+          ["assistant", "{}"],
+          ["tool", "queued"],
+          ["assistant", '{"text":"[redacted]"}'],
+          ["tool", "took [redacted]"],
+          ["user", "note [redacted]"],
+          ["assistant", "done"],
+        ])
+        expect(stored[5]?.metadata).toEqual({ "[redacted]": "[redacted]" })
+      } finally {
+        await session.close()
+      }
+    },
+  },
 ]
