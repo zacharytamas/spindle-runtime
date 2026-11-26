@@ -970,6 +970,8 @@ The background loss check can scan all threads or one named thread. It takes a w
 
 Effect Schema checks stored attachment references, queue payloads and pagination counts. The decoder retains the parsed payload so extra fields and own JSON keys survive. Thread and message projections still read NUL-bearing text from bytes and decode trusted JSON columns directly. Adding full row schemas would duplicate those projections and change malformed-column errors. The strict JSON encoder keeps the path of the first unrepresentable value and reads each property once. Queue decoding returns an absent value on malformed input. Only the owning flow can mark that entry as failed delivery.
 
+Every store operation disables scheduler yields while it holds the shared connection. The guard stays on the typed methods, including the generic transaction. One test exercises every member of each service and reads the scheduler setting as its SQL runs. Adding a method requires adding its call to that test.
+
 The standalone store probe shares the store fixtures. Its crash lanes read the child's native exit code and signal to verify and report a SIGKILL. The Effect process API exposes a platform error for that exit.
 
 ## Appendix B. Alternatives rejected
