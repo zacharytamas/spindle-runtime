@@ -43,7 +43,13 @@ export interface ModelCall {
   readonly model: string
   readonly finishReason?: string
   readonly usage?: ProviderUsage
-  readonly error?: { readonly message: string; readonly code: string }
+  readonly error?: {
+    readonly message: string
+    readonly code: string
+    readonly statusCode?: number
+    readonly origin?: string
+    readonly upstream?: string
+  }
   readonly rejected?: string
   readonly images?: number
   readonly providerTools?: number

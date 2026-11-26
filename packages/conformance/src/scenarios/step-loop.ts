@@ -1541,7 +1541,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         const provider = new ScriptedProvider([{ reject: error }, { text: "recovered" }])
         await using(driver, { provider }, async (session, thread) => {
           const outcome = await send(session, thread, "go", { retries: 1 })
-          expect(outcome.modelCalls[0]?.error).toEqual({ message: "the upstream refused", code })
+          expect(outcome.modelCalls[0]?.error).toEqual({
+            message: "the upstream refused",
+            code,
+            ...(status === undefined ? {} : { statusCode: status }),
+            origin: "provider:scripted",
+            upstream: "upstream-a",
+          })
           if (retryable) {
             expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
             expect(provider.requests).toHaveLength(2)

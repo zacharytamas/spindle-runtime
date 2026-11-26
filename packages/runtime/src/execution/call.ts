@@ -194,7 +194,14 @@ export interface ModelCall {
   readonly model: string
   finishReason?: ProviderFinishReason
   usage?: ProviderUsage
-  error?: { readonly message: string; readonly code: ProviderErrorCode }
+  // Providers section 7: origin and upstream are for logs, so each attempt keeps them, a recovered one included.
+  error?: {
+    readonly message: string
+    readonly code: ProviderErrorCode
+    readonly statusCode?: number
+    readonly origin?: string
+    readonly upstream?: string
+  }
   rejected?: string
   images?: number
   providerTools?: number
@@ -257,7 +264,14 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     const result = yield* Effect.result(streamResponse(provider, request))
     if (Result.isFailure(result)) {
       const failure = result.failure
-      log.error = { message: failure.message, code: failure.code }
+      const { message, code, statusCode, origin, upstream } = failure
+      log.error = {
+        message,
+        code,
+        ...(statusCode === undefined ? {} : { statusCode }),
+        ...(origin === undefined ? {} : { origin }),
+        ...(upstream === undefined ? {} : { upstream }),
+      }
       if (!failure.retryable || attempt > context.retries) return yield* failure
       yield* Effect.sleep(backoff(failure, attempt))
       continue
