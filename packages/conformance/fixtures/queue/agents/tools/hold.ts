@@ -11,15 +11,18 @@ export default defineTool({
   execute: async (state, { name, watch }) => {
     const dir = process.env.SPINDLE_GATE_DIR ?? "."
     const signal = state.execution?.abortSignal
+    const recordAbort = () => fs.writeFileSync(path.join(dir, `tool-aborted-${name}`), "")
+    if (watch) {
+      if (signal?.aborted) recordAbort()
+      else signal?.addEventListener("abort", recordAbort, { once: true })
+    }
     fs.appendFileSync(path.join(dir, "tool-log"), `${name}\n`)
     fs.writeFileSync(path.join(dir, `tool-entered-${name}`), "")
     while (!fs.existsSync(path.join(dir, `release-${name}`))) {
-      if (watch === true && signal?.aborted === true) {
-        fs.writeFileSync(path.join(dir, `tool-aborted-${name}`), "")
-        return { status: "error", error: `hold ${name} saw the abort` }
-      }
+      if (watch && signal?.aborted) return { status: "error", error: `hold ${name} saw the abort` }
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
+    if (watch) signal?.removeEventListener("abort", recordAbort)
     return { status: "success", result: `released ${name}, aborted ${signal?.aborted ?? false}` }
   },
 })

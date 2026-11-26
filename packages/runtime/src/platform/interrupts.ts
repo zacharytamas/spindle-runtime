@@ -13,11 +13,7 @@ export const onInterrupt = (handler: () => void): (() => void) => {
 }
 
 export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
-  // After a signal the process exits when the main fiber ends, even when a tool that an abort left behind still holds
-  // a timer.
-  let receivedSignal = false
   const onSignal = (signal: string) => {
-    receivedSignal = true
     const handler = signal === "SIGINT" ? handlers.at(-1) : undefined
     if (handler !== undefined) return handler()
     fiber.interruptUnsafe(fiber.id)
@@ -26,7 +22,8 @@ export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
     process.removeListener("SIGINT", onSignal)
     process.removeListener("SIGTERM", onSignal)
     teardown(exit, (code) => {
-      if (receivedSignal || code !== 0) process.exit(code)
+      // The main scope has closed. Flush both streams before exiting even if an abandoned tool still holds a timer.
+      process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
     })
   })
   process.on("SIGINT", onSignal)

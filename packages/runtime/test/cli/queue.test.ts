@@ -318,6 +318,28 @@ describe("spindle across processes", () => {
   )
 
   it.live(
+    "a remotely terminated run exits after reporting its outcome even when its tool ignores the abort",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const hold = JSON.stringify([{ name: "hold", arguments: { name: "stubborn" } }])
+        const run = yield* spindle(gate, ["run", "assistant", "-m", `call:${hold}`, ...project, "--db", db])
+        const thread = yield* threadIn(run)
+        yield* until("the tool to start", exists(at("tool-entered-stubborn")))
+        const terminate = yield* spawn(gate, probe, ["terminate", "--thread", thread, ...project, "--db", db])
+        expect(yield* terminate.exit).toBe(0)
+        const outcome = `spindle: idle (aborted) after 1 step, thread ${thread}`
+        yield* until(
+          "the aborted outcome",
+          Effect.sync(() => run.err.includes(outcome)),
+        )
+        expect(yield* run.exit.pipe(Effect.timeout("5 seconds"))).toBe(0)
+        expect(run.err.at(-1)).toBe(outcome)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "one Ctrl-C ends a waiting sender and leaves its message with the running process",
     () =>
       Effect.gen(function* () {
