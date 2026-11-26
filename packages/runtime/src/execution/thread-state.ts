@@ -342,14 +342,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     removeScheduledEffect: unavailableAsync("removeScheduledEffect", "M4"),
     runAgent: unavailableAsync("runAgent", "M2"),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
-    terminate: () => {
-      const refused = expired()
-      return refused === undefined
-        ? runPromise(state.control.terminate).then((time) => {
-            terminated = time
-          })
-        : Promise.reject(refused)
-    },
+    terminate: () =>
+      runPromise(state.control.terminate).then((time) => {
+        terminated = time
+      }),
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,
 

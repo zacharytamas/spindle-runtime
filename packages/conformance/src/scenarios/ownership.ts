@@ -1015,4 +1015,19 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       )
     },
   },
+  {
+    name: "O23 repeated termination from old and new handles keeps the first timestamp and history",
+    requirements: [],
+    run: async (driver) =>
+      using(driver, { provider: new ScriptedProvider([]) }, async (session, thread, peer) => {
+        const older = await peer.state(thread)
+        const first = await session.state(thread)
+        await first.terminate()
+        const before = await peer.inspect(thread)
+        for (const handle of [older, first, await session.state(thread)]) {
+          await handle.terminate()
+          expect(await peer.inspect(thread)).toEqual(before)
+        }
+      }),
+  },
 ]
