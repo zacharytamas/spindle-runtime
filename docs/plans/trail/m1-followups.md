@@ -44,7 +44,7 @@ Open, not for this round.
 After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of the round are running, and they decide which of the items above are closed.
 
 - Recovery cannot tell whether a call without a result had started, because the runtime keeps no durable record of dispatch. Every such call gets one text that is true for both cases.
-- The step is 15.7 percent slower than its parent on Node and 15.0 percent on Bun, against a limit of 20 percent. Removing the lease did not make it faster.
+- For an optimization pass after spec conformance. The step runs 13 SQL statements where M1-5 runs 11. The two extra are a read of the queue and a lookup of tool results by `caller_seq`, both at every step, and both look avoidable when the queue is empty and the step's own calls were all stored. Measured overhead per step is between 15 and 19 percent above M1-5, depending on machine load.
 - The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
 - The temporary branch `m1/int-base` is still on origin, and nothing uses it.
 
@@ -88,6 +88,7 @@ After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of t
 - GPT-6.2 Astra writes the conformance scenarios before a build, and a Claude owner implements until they pass. This starts with M1-7.
 - Every audit is gated from its first round. Stored data lost or changed, a leaked secret, a tool call without its result, a tool that runs twice, two executions of one thread, or a thread that cannot continue blocks a PR. Everything else goes on this list.
 - Claude models implement. GPT and Gemini models read and judge.
+- Performance is reported and not gated until the runtime conforms to the spec. The plan's rule that a PR fails when its per-step median is more than 20 percent above its parent's no longer blocks a PR. One guard stays, against the architectural kind of problem. The cost of a step and the number of SQL statements per step must not grow with the length of the thread. A verifier checks that at two thread lengths and reports it.
 
 ## Before the stack lands
 
