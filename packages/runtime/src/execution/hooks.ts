@@ -1,3 +1,4 @@
+import {invokeCallback, type Callback} from "./callback.ts"
 import type {
   AgentDefinition,
   HookExecutionSource,
@@ -361,7 +362,7 @@ export interface HookSet {
 // One call of one hook. Its ThreadState refuses every call once the call runs past the hook time limit. A write that
 // the loop, a tool, or a caller at rest makes has depth 0, and a hook called for a write of depth d has depth d + 1,
 // which its own writes carry.
-export interface HookCall {
+export interface HookCall extends Callback {
   readonly hook: string
   readonly position: Position
   readonly depth: number
@@ -369,6 +370,7 @@ export interface HookCall {
 }
 
 export interface HookScope {
+  readonly pending?: Set<Promise<unknown>>
   readonly set: HookSet
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
@@ -447,9 +449,9 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-const callHook = (hook: SelectedHook, args: () => ReadonlyArray<unknown>, timeout: Duration.Duration) =>
+const callHook = (hook: SelectedHook, args: () => ReadonlyArray<unknown>, timeout: Duration.Duration, call: HookCall, pending: HookScope["pending"]) =>
   Effect.tryPromise({
-    try: () => Promise.resolve(hook.execute(...args())),
+    try: () => invokeCallback(call, pending, () => hook.execute(...args())),
     catch: () => "threw an error",
   }).pipe(Effect.timeoutOption(timeout), Effect.result)
 
@@ -485,7 +487,7 @@ export const runHooks = <K extends Position>(
         { source: { ...scope.set.source } },
       ]
       const started = yield* Clock.currentTimeMillis
-      const outcome = yield* callHook(hook, args, timeout)
+      const outcome = yield* callHook(hook, args, timeout, call, scope.pending)
       // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
       call.expired =
         (outcome._tag === "Success" && outcome.success._tag === "None") ||

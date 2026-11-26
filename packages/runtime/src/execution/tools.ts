@@ -1,3 +1,4 @@
+import {invokeCallback, type Callback} from "./callback.ts"
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
@@ -14,8 +15,9 @@ export interface ToolCall {
 }
 
 export interface ToolContext {
+  readonly pending: Set<Promise<unknown>>
   readonly turn: Turn
-  readonly stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined) => ThreadState
+  readonly stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined, callback: Callback) => ThreadState
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -78,7 +80,8 @@ const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
 export const executeTool = Effect.fn("executeTool")(function* (
   tool: Loaded<FunctionTool>,
   input: unknown,
-  state: ThreadState,
+  stateFor: (callback: Callback) => ThreadState,
+  pending: Set<Promise<unknown>>,
   scope: EnvScope,
 ) {
   const name = tool.definition.qualifiedName
@@ -101,9 +104,11 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }
     args = parsed.success.data
   }
+  const callback: Callback = {}
+  const state = stateFor(callback)
   const returned = yield* Effect.result(
     Effect.tryPromise({
-      try: () => (schema === null ? tool.value.execute(state) : tool.value.execute(state, args)),
+      try: () => invokeCallback(callback, pending, () => schema === null ? tool.value.execute(state) : tool.value.execute(state, args)),
       catch: (cause) => cause,
     }),
   )
@@ -143,7 +148,7 @@ export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolCont
   return yield* executeTool(
     exposed.tool,
     call.arguments,
-    context.stateFor(exposed.tool, exposed.entry),
+    callback => context.stateFor(exposed.tool, exposed.entry, callback), context.pending,
     scopeFor(context.turn, exposed.entry),
   )
 })
@@ -206,7 +211,7 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
     return failed(yield* notAFunctionTool(name, caller.definition, "invokeTool"))
   const tool = target as Loaded<FunctionTool>
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
-  return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))
+  return yield* executeTool(tool, input, callback => context.stateFor(tool, entry, callback), context.pending, scopeFor(context.turn, entry))
 })
 
 export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({

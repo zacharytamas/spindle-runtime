@@ -1,3 +1,4 @@
+import type {Callback} from "./callback.ts"
 import type {
   AttachmentRef,
   HookToolCall,
@@ -326,7 +327,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     ) =>
       settlement === "superseded"
         ? Effect.flatMap(store.getThread(threadId), (thread) =>
-            settle(thread.status.state === "failed" ? "failed" : "idle", thread.status.reason ?? "aborted"),
+            thread.terminated === null ? settle("failed", "execution_lost") : settle("idle", "aborted"),
           )
         : settle(status, reason, extra)
 
@@ -353,6 +354,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           error: `invokeTool(${name}) needs a calling tool and its uses list`,
         })
       const hooks: HookScope = {
+        pending: run.pending,
         set: hookSet,
         stateFor: (hook, call) =>
           makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, invoke: noInvoke, call }),
@@ -370,6 +372,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
       // turn. The agent's hooks apply to it and see no execution, as they do at rest.
       const inbound: HookScope = {
+        pending: run.pending,
         set: yield* agentHooks(turn.agent),
         stateFor: (hook, call) =>
           makeThreadState({
@@ -386,13 +389,14 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       }
       const delivery = { ...write, hooks: inbound }
       const toolContext: ToolContext = {
+        pending: run.pending,
         turn,
-        stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined): ThreadState =>
+        stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined, callback: Callback): ThreadState =>
           makeThreadState({
             ...base,
             scope: scopeFor(turn, entry),
             from: tool.definition,
-            caller: tool,
+            caller: tool, callback,
             invoke: (name, args) => invokeTool(toolContext, tool, name, args).pipe(Effect.provideContext(services)),
           }),
       }
@@ -519,7 +523,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               : executeTool(
                   tool,
                   entry.args,
-                  toolContext.stateFor(tool, exposed?.entry),
+                  callback => toolContext.stateFor(tool, exposed?.entry, callback), run.pending,
                   scopeFor(turn, exposed?.entry),
                 ),
           )
@@ -705,7 +709,12 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       // for a stop, so its reason stays.
       Effect.onInterrupt(() =>
         Effect.andThen(
-          Effect.sync(() => abort.abort()),
+          Effect.promise(async () => {
+            abort.abort()
+            if (run.waitForCallbacks && run.pending.size && !run.releaseWait.signal.aborted) {
+              await Promise.race([Promise.allSettled(run.pending), new Promise<void>(resolve => run.releaseWait.signal.addEventListener("abort", () => resolve(), {once:true}))])
+            }
+          }),
           Effect.ignore(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted)),
         ),
       ),

@@ -45,7 +45,7 @@ export class ThreadSupervisor extends Context.Service<
     // Asks the execution that this process runs for the thread to stop at its next boundary, for the human side.
     readonly stop: (threadId: string) => Effect.Effect<boolean>
     // Interrupts that execution. The run settles idle, and the thread stays open.
-    readonly abort: (threadId: string) => Effect.Effect<boolean>
+    readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<boolean>
     // The outcome of the execution that this process runs for the thread, once it settles.
     readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined>
     readonly status: (threadId: string) => Effect.Effect<ThreadStatus, unknown>
@@ -146,8 +146,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                       Effect.map((status) => ({
                         threadId,
                         flowId: run.flowId,
-                        status: status.state === "failed" ? ("failed" as const) : ("idle" as const),
-                        reason: status.reason ?? "aborted",
+                        status: run.displaced || status.state === "failed" ? ("failed" as const) : ("idle" as const),
+                        reason: run.displaced ? "execution_lost" : status.reason ?? "aborted",
                         steps: run.steps,
                         trace: [],
                         modelCalls: [],
@@ -165,6 +165,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
       const newRun = (): Run => ({
+        pending: new Set(), releaseWait: new AbortController(),
         flowId: crypto.randomUUID(),
         abort: new AbortController(),
         stop: undefined,
@@ -212,7 +213,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         Effect.gen(function* () {
           yield* store.terminate(threadId)
           const local = live.get(threadId)
-          if (local?.fiber !== undefined) yield* Fiber.interrupt(local.fiber)
+          if (local?.fiber !== undefined) { local.run.releaseWait.abort(); yield* Fiber.interrupt(local.fiber) }
         })
 
       const control = (threadId: string): ThreadControl => ({
@@ -252,7 +253,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               { continueIfQueued: false, closing: CLOSING.lost },
             )
         for (const [threadId, entry] of running)
-          if (owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) yield* Fiber.interrupt(entry.fiber)
+          if (owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) {
+            entry.run.displaced = (yield* store.getThread(threadId)).terminated === null
+            entry.run.releaseWait.abort()
+            yield* Fiber.interrupt(entry.fiber)
+          }
       })
 
       // A process that shuts down aborts its executions, which settle, and gives up its lease last. Finalizers run in
@@ -327,12 +332,14 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             local.run.stop ??= { reason: "aborted_by_user" }
             return true
           }),
-        abort: (threadId) =>
+        abort: (threadId, exiting = false) =>
           Effect.gen(function* () {
             const local = live.get(threadId)
             if (local?.fiber === undefined) return false
             local.run.stop ??= { reason: "aborted_by_user" }
-            yield* Fiber.interrupt(local.fiber)
+            local.run.waitForCallbacks = !exiting
+            if (exiting) local.run.releaseWait.abort()
+            local.fiber.interruptUnsafe()
             return true
           }),
         settled: (threadId) =>

@@ -197,6 +197,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           const delivery = yield* sendMessage(threadId, args.message, options).pipe(answerInterrupts(threadId))
           const { outcome } = delivery
           if (outcome !== undefined) {
+            if (outcome.reason === "execution_lost") return yield* fail(`lost thread ${threadId}: another process recovered it by force, so this process stopped working on it`)
             yield* Console.error(
               `spindle: ${outcome.status} (${outcome.reason}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
             )
@@ -241,7 +242,7 @@ const answerInterrupts =
               ).pipe(Effect.andThen(supervisor.stop(threadId)))
             : Console.error(`spindle: aborting thread ${threadId}`).pipe(
                 Effect.andThen(Effect.sync(() => remove())),
-                Effect.andThen(supervisor.abort(threadId)),
+                Effect.andThen(supervisor.abort(threadId, true)),
               )
         Effect.runForkWith(context)(answer)
       })

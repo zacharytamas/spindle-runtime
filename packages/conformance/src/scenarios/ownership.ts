@@ -412,16 +412,20 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "O07 holds a terminated thread running until a tool that ignores the signal returns, then settles it idle",
+    name: "O07 settles a terminated thread immediately and refuses the unfinished tool’s writes",
     requirements: ["e95fd065", "0953e887"],
     run: async (driver) => {
       const entered = gate()
       const leave = gate()
+      const late = gate()
+      let refused = ""
       const stubborn = defineTool({
         description: "Wait for the test and ignore the abort",
-        execute: async () => {
+        execute: async (state: ThreadState) => {
           entered.release()
           await leave.opened
+          refused = await attempt(() => state.setValue("late", "write"))
+          late.release()
           return ok("returned after the terminate")
         },
       })
@@ -431,7 +435,11 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         await entered.opened
         expect(await (await session.state(thread)).terminate()).toBeUndefined()
         const during = await peer.inspect(thread)
+        expect(await attempt(() => peer.send(thread, "B"))).toBe("ThreadTerminated")
         leave.release()
+        await late.opened
+        expect(refused).toMatch(/^(ExecutionEnded|FlowEnded|HandleExpired)$/)
+        expect(provider.requests).toHaveLength(1)
         const outcome = await run
         const after = await peer.inspect(thread)
         expect({
@@ -439,7 +447,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           outcome: [outcome.status, outcome.reason],
           after: [after.status.state, after.status.reason, after.terminated === during.terminated, after.claim],
         }).toEqual({
-          during: ["running", null, false],
+          during: ["idle", "aborted", false],
           outcome: ["idle", "aborted"],
           after: ["idle", "aborted", true, null],
         })

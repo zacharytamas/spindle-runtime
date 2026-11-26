@@ -1,3 +1,4 @@
+import type {Callback} from "./callback.ts"
 import type {
   ExecutionState,
   Message,
@@ -25,6 +26,10 @@ export interface StopRequest {
 }
 
 export interface Run {
+  readonly pending: Set<Promise<unknown>>
+  readonly releaseWait: AbortController
+  waitForCallbacks?: boolean
+  displaced?: boolean
   readonly flowId: string
   readonly abort: AbortController
   stop: StopRequest | undefined
@@ -75,6 +80,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | ThreadStore>
+  readonly callback?: Callback
   readonly owner?: Run
   readonly execution: ExecutionRecord | undefined
   readonly scope: EnvScope
@@ -147,7 +153,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const expired = () =>
     call?.expired === true
       ? new HookExpired({ hook: call.hook, position: call.position })
-      : owner?.ended === true
+      : (state.callback ?? call)?.finished ? new HandleExpired() : owner?.ended === true
         ? new ExecutionEnded({ flowId: owner.flowId })
         : owner?.abort.signal.aborted ? new HandleExpired() : undefined
   const services = Context.add(state.services, WritingHandle, {flowId: owner?.flowId, terminated: state.thread.terminated, expired: () => expired() !== undefined})
