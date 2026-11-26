@@ -349,4 +349,68 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
       })
     },
   },
+  {
+    name: "I10 sends a call's results right after its assistant message and a message stored between them after the results",
+    requirements: [],
+    run: async (driver) => {
+      const tools = {
+        note: defineTool({
+          description: "Inject a note while the call runs",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "note" })
+            return ok("noted")
+          },
+        }),
+        noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c1", name: "note", arguments: {} },
+            { id: "c2", name: "noop", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(rows(await session.messages(thread))).toEqual([
+          ["user", "go"],
+          ["assistant", null],
+          ["user", "note"],
+          ["tool", "c1"],
+          ["tool", "c2"],
+          ["assistant", "done"],
+        ])
+        expect(history(provider.requests[1]).map(sideOf)).toEqual([
+          ["user", "go"],
+          ["assistant", null, ["c1", "c2"]],
+          ["tool", "c1"],
+          ["tool", "c2"],
+          ["user", "note"],
+        ])
+      })
+      const call = (id: string) => ({ id, type: "function", function: { name: "noop", arguments: "{}" } })
+      const seeded = new ScriptedProvider([{ text: "done" }])
+      const past = { includeChat: true, includePastTools: true }
+      await using(driver, { provider: seeded, tools, prompt: past }, async (session, thread) => {
+        await session.seed(thread, [
+          { role: "user", content: "q" },
+          { role: "assistant", content: null, tool_calls: JSON.stringify([call("p1"), call("p2")]) },
+          { role: "tool", tool_call_id: "p2", name: "noop", content: "two" },
+          { role: "user", content: "between" },
+          { role: "tool", tool_call_id: "p1", name: "noop", content: "one" },
+        ])
+        await send(session, thread, "go")
+        expect(history(seeded.requests[0]).map(sideOf)).toEqual([
+          ["user", "q"],
+          ["assistant", null, ["p1", "p2"]],
+          ["tool", "p1"],
+          ["tool", "p2"],
+          ["user", "between"],
+          ["user", "go"],
+        ])
+      })
+    },
+  },
 ]

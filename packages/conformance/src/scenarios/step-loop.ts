@@ -486,8 +486,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           expect(history(provider.requests[3]).slice(-4).map(sideOf)).toEqual([
             ["user", "u2"],
             ["assistant", null, ["call_now"]],
-            ["user", "injected quietly"],
             ["tool", "call_now"],
+            ["user", "injected quietly"],
           ])
         })
         expect(live).toEqual([
@@ -2162,9 +2162,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       expect(history(provider.requests[1]).map((m) => m.content)).toEqual([
         `hello ${marker}`,
         `calling ${marker}`,
+        "written",
         "injected [redacted]",
         "edited [redacted]",
-        "written",
       ])
     },
   },
@@ -2742,10 +2742,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       expect(history(provider.requests[1]).map(sideOf)).toEqual([
         ["user", "go"],
         ["assistant", null, ["c_inject", "c_observe", "c_check"]],
-        ["user", "note from a tool"],
         ["tool", "c_inject"],
         ["tool", "c_observe"],
         ["tool", "c_check"],
+        ["user", "note from a tool"],
       ])
       expect(provider.requests[1]?.messages.filter((m) => m.role === "system").map((m) => m.content)).toEqual([
         "You are a test assistant.",
@@ -3081,8 +3081,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ["system", "early note"],
         ["user", "go"],
         ["assistant", null, ["c1"]],
-        ["system", "late note"],
         ["tool", "c1"],
+        ["system", "late note"],
       ])
     },
   },

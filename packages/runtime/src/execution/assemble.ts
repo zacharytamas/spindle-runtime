@@ -172,6 +172,38 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
   return new Set(history.slice(0, Math.max(0, start)).map((message) => message.id))
 }
 
+// The chat completions format puts each result right after the message that holds its call, in the order of the
+// calls. A message stored between them, such as one a tool injected while its call ran, follows the last result. A
+// result belongs to the nearest earlier message that lists its call id. The stored order does not change.
+const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+  const holder = new Map<string, number>()
+  const results = new Map<number, Array<number>>()
+  const moved = new Set<number>()
+  history.forEach((message, index) => {
+    if (message.role !== "tool") {
+      for (const call of parsed[index] ?? []) holder.set(call.id, index)
+      return
+    }
+    const at = holder.get(message.tool_call_id ?? "")
+    if (at === undefined) return
+    moved.add(index)
+    const list = results.get(at)
+    if (list === undefined) results.set(at, [index])
+    else list.push(index)
+  })
+  const order: Array<number> = []
+  history.forEach((_message, index) => {
+    if (moved.has(index)) return
+    order.push(index)
+    const list = results.get(index)
+    if (list === undefined) return
+    const ids = (parsed[index] ?? []).map((call) => call.id)
+    const position = (result: number) => ids.indexOf(history[result]?.tool_call_id ?? "")
+    order.push(...list.sort((a, b) => position(a) - position(b)))
+  })
+  return order
+}
+
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
 // includeChat and includePastTools admit. A call and its result are shown or hidden together.
@@ -180,7 +212,11 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
   const messages: Array<ProviderMessage> = []
-  history.forEach((message) => {
+  const parsed = history.map((message) =>
+    message.role === "user" || message.role === "assistant" ? toolCallsOf(message) : [],
+  )
+  requestOrder(history, parsed).forEach((index) => {
+    const message = history[index] as Message
     const past = view.past.has(message.id)
     if (message.role === "tool") {
       if (shownCalls.get(message.tool_call_id ?? "") !== true) return
@@ -194,10 +230,10 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
     } else if (message.role === "system") {
       if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
     } else if (message.role === other) {
-      for (const call of toolCallsOf(message)) shownCalls.set(call.id, false)
+      for (const call of parsed[index] ?? []) shownCalls.set(call.id, false)
       if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message) })
     } else if (message.role === own) {
-      const calls = toolCallsOf(message)
+      const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
