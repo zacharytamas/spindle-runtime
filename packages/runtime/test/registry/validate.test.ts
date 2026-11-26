@@ -470,6 +470,28 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect(
+      "accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields",
+      () =>
+        Effect.gen(function* () {
+          const { definitions, issues } = yield* validateFixture("legal-inputs")
+          expect(issues).toEqual([])
+          expect(definitions.map((d) => [d.qualifiedName, d.package?.signature.packageId])).toEqual([
+            ["inherited", undefined],
+            ["scalar_options", undefined],
+            ["local_tools/lookup", "local_tools"],
+            ["standardagent-other-realm/lookup", "standardagent-other-realm"],
+            ["standardagent-other-realm/inherited", "standardagent-other-realm"],
+          ])
+          const inherited = definitions.find((d) => d.qualifiedName === "standardagent-other-realm/inherited")
+          expect(yield* inherited?.load ?? Effect.succeed(undefined)).toMatchObject({
+            name: "inherited",
+            model: "fixture-model",
+            __package: { packageId: "standardagent-other-realm" },
+          })
+        }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("skips declaration files next to definitions", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("declaration-files")

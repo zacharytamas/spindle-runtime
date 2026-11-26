@@ -67,11 +67,10 @@ const entryOf = (manifest: Record<string, unknown>): Entry => {
   )
 }
 
-const metaProblem = (meta: unknown, name: string): string | undefined => {
+// PackedMeta.packageId is the npm name or a local identifier, so it may differ from the package.json name.
+const metaProblem = (meta: unknown): string | undefined => {
   if (!isRecord(meta)) return "exports no __meta object"
   if (typeof meta.packageId !== "string" || meta.packageId === "") return "has no __meta.packageId"
-  if (meta.packageId !== name)
-    return `has __meta.packageId ${meta.packageId}, which differs from its package name ${name}`
   if (typeof meta.version !== "string") return "has no __meta.version string"
   if (!isStringArray(meta.entryAgents)) return "has no __meta.entryAgents array of agent names"
   if (typeof meta.packedAt !== "number") return "has no __meta.packedAt timestamp"
@@ -80,7 +79,8 @@ const metaProblem = (meta: unknown, name: string): string | undefined => {
 
 const withSignature = (definition: unknown, signature: PackageSignature): unknown => {
   if (Array.isArray(definition)) return Object.assign([...definition], { __package: signature })
-  if (isRecord(definition)) return { ...definition, __package: signature }
+  if (isRecord(definition))
+    return Object.assign(Object.create(Object.getPrototypeOf(definition)), definition, { __package: signature })
   return definition
 }
 
@@ -163,10 +163,6 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
         `${name} should have a name that starts with standardagent-`,
         "warning",
       )
-    if (packages.some((existing) => existing.signature.packageId === name)) {
-      issue("package_duplicate", relativeManifest, `${name} is installed more than once`)
-      return
-    }
     const target = entryOf(manifest)
     if (target._tag === "Invalid") {
       issue("package_invalid", relativeManifest, `${name} ${target.problem}`)
@@ -216,16 +212,21 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       return
     }
     const exports = loaded.success
-    const problem = metaProblem(exports.__meta, name)
+    const problem = metaProblem(exports.__meta)
     if (problem !== undefined || !isRecord(exports.__meta)) {
       issue("package_meta_invalid", file, `${name} ${problem}`)
       return
     }
     const meta = exports.__meta
+    const packageId = String(meta.packageId)
+    if (packages.some((existing) => existing.signature.packageId === packageId)) {
+      issue("package_duplicate", relativeManifest, `${packageId} is installed more than once`)
+      return
+    }
     const listed: unknown = Array.isArray(meta.entryAgents) ? [...meta.entryAgents] : undefined
     const entryAgents = isStringArray(listed) ? listed : []
     const signature: PackageSignature = {
-      packageId: name,
+      packageId,
       version: String(meta.version),
       source,
       packedAt: Number(meta.packedAt),
@@ -254,7 +255,9 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
           try: async () => {
             if (typeof loader !== "function") throw new TypeError(`${at} is not a loader function`)
             const pending: unknown = loader()
-            if (!(pending instanceof Promise)) throw new TypeError(`${at} returns a value, not a Promise`)
+            // A Promise from another realm fails instanceof Promise, so any thenable counts.
+            const then = typeof pending === "object" && pending !== null ? Reflect.get(pending, "then") : undefined
+            if (typeof then !== "function") throw new TypeError(`${at} returns a value, not a Promise`)
             return withSignature(await pending, signature)
           },
           catch: (cause) =>
@@ -270,7 +273,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
         definitions.push({
           kind,
           name: key,
-          qualifiedName: `${name}/${key}`,
+          qualifiedName: `${packageId}/${key}`,
           package: pkg,
           file,
           path: at,

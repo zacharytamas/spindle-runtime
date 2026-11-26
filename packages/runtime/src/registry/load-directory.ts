@@ -4,10 +4,14 @@ import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL, repo
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
 // Node runs a file without import or export syntax as CommonJS, and its default export is then an empty object.
-// No kind accepts an empty object, so it counts as no export on every runtime.
+// No kind accepts an empty object, so it counts as no export on every runtime. An object that inherits its fields
+// from another prototype is a definition.
 const exportsNoDefinition = (value: unknown) =>
   value === undefined ||
-  (typeof value === "object" && value !== null && !Array.isArray(value) && Reflect.ownKeys(value).length === 0)
+  (typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype &&
+    Reflect.ownKeys(value).length === 0)
 
 export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem

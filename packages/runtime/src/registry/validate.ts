@@ -392,10 +392,8 @@ export const validate = Effect.gen(function* () {
       if (model[field] !== undefined && !isStringArray(model[field]))
         at.report("model_property_invalid", field, `${field} must be an array of strings`)
     }
-    for (const field of ["capabilities", "providerOptions"]) {
-      if (model[field] !== undefined && !isRecord(model[field]))
-        at.report("model_property_invalid", field, `${field} must be an object`)
-    }
+    if (model.capabilities !== undefined && !isRecord(model.capabilities))
+      at.report("model_property_invalid", "capabilities", "capabilities must be an object")
     if (isStringArray(model.fallbacks))
       model.fallbacks.forEach((name, index) => {
         const resolution = at.resolve("model", name)
@@ -412,15 +410,17 @@ export const validate = Effect.gen(function* () {
       typeof model.provider === "function"
         ? (model.provider as { providerOptions?: unknown }).providerOptions
         : undefined
-    if (isRecord(model.providerOptions) && isRecord(schema) && typeof schema.safeParse === "function") {
+    // The provider's schema decides the type of providerOptions, which may be a scalar. Without one, it is an object.
+    if (model.providerOptions !== undefined && isRecord(schema) && typeof schema.safeParse === "function") {
       const parsed: unknown = schema.safeParse(model.providerOptions)
       if (isRecord(parsed) && parsed.success === false)
         at.report(
           "model_provider_options_invalid",
           "providerOptions",
-          `providerOptions do not match the provider's schema: ${parsed.error instanceof Error ? parsed.error.message : String(parsed.error)}`,
+          `providerOptions do not match the provider's schema: ${describeCause(parsed.error)}`,
         )
-    }
+    } else if (model.providerOptions !== undefined && !isRecord(model.providerOptions))
+      at.report("model_property_invalid", "providerOptions", "providerOptions must be an object")
   }
 
   const checkTool = (definition: Definition, tool: unknown) => {
