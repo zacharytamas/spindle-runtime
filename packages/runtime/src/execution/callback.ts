@@ -1,5 +1,6 @@
 export interface Callback {
   finished?: boolean
+  promise?: Promise<unknown>
 }
 
 export const invokeCallback = <A>(
@@ -18,6 +19,7 @@ export const invokeCallback = <A>(
       pending?.delete(result)
     })
     pending?.add(result)
+    callback.promise = result
     return result
   } catch (error) {
     callback.finished = true

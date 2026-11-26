@@ -498,6 +498,7 @@ export const runHooks = <K extends Position>(
       call.expired =
         (outcome._tag === "Success" && outcome.success._tag === "None") ||
         (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+      if (call.expired && call.promise) scope.pending?.delete(call.promise)
       let problem: string
       let late = ""
       if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {

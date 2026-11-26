@@ -978,4 +978,41 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       },
     }),
   ),
+  {
+    name: "O22 abort releases a thread after an earlier hook timed out",
+    requirements: [],
+    run: async (driver) => {
+      const entered = gate()
+      const release = gate()
+      const hang = defineHook({
+        hook: "after_create_message",
+        id: "hang",
+        execute: async (_state, message) => {
+          if (message.content === "A") await new Promise<void>(() => {})
+        },
+      })
+      const provider = new ScriptedProvider([
+        async () => {
+          entered.release()
+          await release.opened
+          return { text: "unused" }
+        },
+        { text: "reply" },
+      ])
+      await using(
+        driver,
+        { provider, hooks: [hang], agent: { hooks: ["hang"] } },
+        async (session, thread, peer) => {
+          const first = quiet(session.send(thread, "A"))
+          await entered.opened
+          expect(await session.abort(thread)).toBe(true)
+          release.release()
+          expect(await first).toMatchObject({ status: "idle", reason: "aborted_by_user" })
+          expect(await peer.inspect(thread)).toMatchObject({ claim: null })
+          expect(await session.send(thread, "B")).toMatchObject({ status: "idle" })
+        },
+        { hookTimeoutMs: 50 },
+      )
+    },
+  },
 ]
