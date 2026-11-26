@@ -110,7 +110,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
-    requirements: ["a63f8e52", "251bf5a2", "3b4fc9bc", "048a4525", "04d1538b", "22cf59fa"],
+    requirements: ["a63f8e52", "251bf5a2", "3b4fc9bc", "048a4525", "04d1538b", "4029d475"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -173,7 +173,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
-    requirements: ["35d60289", "e4ba69e7", "da639364", "dca92c64", "b93f89a4", "bd122f30", "79171656"],
+    requirements: ["35d60289", "e4ba69e7", "da639364", "dca92c64", "e44a42aa", "61c7bee3", "79171656"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -451,7 +451,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly",
-    requirements: ["e0078c2e", "b7d299a8", "000bf2b7", "8233eb0b", "73bce32e"],
+    requirements: ["e0078c2e", "b7d299a8", "000bf2b7", "8233eb0b", "d57ad351"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -479,6 +479,14 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             },
           }),
           defineHook({
+            hook: "before_create_message",
+            id: "creating",
+            execute: async (_state, message) => {
+              if (message.content === "from prefilter") events.push(["before", message.id])
+              return message
+            },
+          }),
+          defineHook({
             hook: "after_create_message",
             id: "created",
             execute: async (_state, message) => {
@@ -501,12 +509,19 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         ])
         await using(
           driver,
-          { provider, tools, hooks, humanOn, prompt: { hooks: ["count_filter", "inject_late", "created"] } },
+          {
+            provider,
+            tools,
+            hooks,
+            humanOn,
+            prompt: { hooks: ["count_filter", "inject_late", "creating", "created"] },
+          },
           async (session, thread) => {
             await send(session, thread, "go")
             expect(events).toEqual([
               ["filter", ["go"]],
               ["prefilter", ["go"]],
+              ["before", injected?.id],
               ["after", injected?.id],
               ["read", "from prefilter"],
               ["tool", ["go", "from prefilter", null]],
@@ -522,7 +537,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request",
-    requirements: ["b17aee6d", "29e645c3", "f88b47c5", "67885fd3", "aa659667", "88c209cc", "14d530a7", "babeaaef"],
+    requirements: ["b17aee6d", "29e645c3", "f88b47c5", "67885fd3", "aa659667", "88c209cc", "14d530a7", "6d37745b"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -612,10 +627,11 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly",
-    requirements: ["a237deef", "a72bbc07", "bd9fdd64", "0018442c"],
+    requirements: ["a237deef", "a72bbc07", "bd9fdd64", "d492805f", "babeaaef", "404eb18a", "dfde10dc"],
     run: async (driver) => {
       const systemOf = async (returns: Array<(system: string) => unknown>) => {
         const filters: Array<number> = []
+        const prefilters: Array<unknown> = []
         const hooks = [
           ...returns.map((give, index) =>
             defineHook({
@@ -629,7 +645,15 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             id: "count",
             execute: async (_state, messages) => {
               filters.push(messages.length)
-              return messages
+              return [...messages, { id: "synthetic", role: "user", content: "filtered", created_at: 0 }]
+            },
+          }),
+          defineHook({
+            hook: "prefilter_llm_history",
+            id: "mark",
+            execute: async (_state, messages) => {
+              prefilters.push(messages.map((m) => [m.role, m.content, Array.isArray(m.tool_calls)]))
+              return [...messages, { role: "user", content: "marked" }]
             },
           }),
         ]
@@ -644,7 +668,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             provider,
             tools: noop,
             hooks,
-            prompt: { hooks: [...returns.map((_, index) => `system_${index}`), "count"] },
+            prompt: { hooks: [...returns.map((_, index) => `system_${index}`), "count", "mark"] },
           },
           async (session, thread) => {
             await send(session, thread, "go")
@@ -652,6 +676,28 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           },
         )
         expect(filters).toEqual([1, 3])
+        expect(prefilters).toEqual([
+          [
+            ["user", "go", false],
+            ["user", "filtered", false],
+          ],
+          [
+            ["user", "go", false],
+            ["assistant", null, true],
+            ["tool", "noop", false],
+            ["user", "filtered", false],
+          ],
+        ])
+        expect(provider.requests.map((request) => history(request).slice(-2))).toEqual([
+          [
+            { role: "user", content: "filtered" },
+            { role: "user", content: "marked" },
+          ],
+          [
+            { role: "user", content: "filtered" },
+            { role: "user", content: "marked" },
+          ],
+        ])
         return systems
       }
       const rendered = { role: "system", content: "You are a test assistant." }

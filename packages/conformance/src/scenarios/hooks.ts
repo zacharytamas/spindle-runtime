@@ -694,7 +694,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it",
-    requirements: ["b02bac78", "f31fd3d3", "bdfd2d2d", "3fb4e4f0", "106ba9d7", "31e58fe6", "7bef4e87"],
+    requirements: ["b02bac78", "f31fd3d3", "bdfd2d2d", "3fb4e4f0", "106ba9d7", "31e58fe6", "7bef4e87", "8f7b59dd"],
     run: async (driver) => {
       const started: Array<[string, string, string, string | undefined]> = []
       const checks: Array<string> = []
@@ -1153,6 +1153,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     requirements: ["986689ca", "bf795e82", "4b6bc420", "04d1538b", "048a4525", "41bdae5c"],
     run: async (driver) => {
       const calls: Array<unknown> = []
+      const facts: Array<unknown> = []
       const shape = (value: unknown): unknown =>
         Array.isArray(value)
           ? "array"
@@ -1164,6 +1165,14 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         async (...args: Array<unknown>) => {
           const state = args[0] as ThreadState
           const context = args.at(-1) as HookExecutionContext
+          const execution = state.execution
+          if (name === "filter_messages" && execution !== null)
+            facts.push([
+              execution.stepCount,
+              execution.currentSide,
+              execution.abortSignal instanceof AbortSignal,
+              execution.messageHistory.length,
+            ])
           calls.push([
             name,
             typeof state.threadId,
@@ -1219,6 +1228,10 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
       })
       const names = new Set(calls.map((call) => (call as Array<unknown>)[0]))
       expect(names.size).toBe(13)
+      expect(facts).toEqual([
+        [0, "a", true, 1],
+        [1, "a", true, 4],
+      ])
       const first = (name: string) => calls.find((call) => (call as Array<unknown>)[0] === name) as Array<unknown>
       expect(first("after_thread_created")).toEqual(["after_thread_created", "string", "at rest", [], "agent"])
       expect(first("before_create_message")).toEqual([
