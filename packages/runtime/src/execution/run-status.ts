@@ -66,7 +66,7 @@ export const transition = (from: ThreadStatus, event: RunEvent, now: number): Th
 export const CLOSING = {
   lost: "Spindle lost the execution before it stored a result for this call. It does not know whether the tool ran, and it did not run the tool again.",
   failed:
-    "The execution failed before this call's result was stored, so Spindle does not know whether the tool finished or what it did. Spindle did not run the call again.",
+    "The execution failed before this call's result was stored. It does not know whether the tool ran, and it did not run the tool again.",
   aborted:
     "The execution was aborted before this call's result was stored. The tool may have acted before it stopped, and Spindle did not run the call again.",
   terminated:

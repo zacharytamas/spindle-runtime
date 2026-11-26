@@ -250,6 +250,7 @@ describe("ThreadStore claims", () => {
         ["tool", "c3", "error"],
       ])
       const closed = (yield* store.getMessages(thread.id, { order: "asc", includeSilent: true })).messages.slice(-2)
+      expect(closed[0]?.content).toContain("It does not know whether the tool ran")
       expect(closed.map((m) => [m.name, m.prompt, m.content, m.status])).toEqual([
         ["tool_c2", "assistant", CLOSING.failed, "completed"],
         ["tool_c3", "assistant", CLOSING.failed, "completed"],
