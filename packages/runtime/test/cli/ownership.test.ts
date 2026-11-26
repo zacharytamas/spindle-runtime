@@ -1,9 +1,39 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { PlatformLive } from "#platform"
-import { entries, probe, project, query, setup, spindle, threadIn, touch, until } from "./processes.ts"
+import {
+  entries,
+  exists,
+  freeze,
+  lines,
+  probe,
+  project,
+  query,
+  resume,
+  setup,
+  spindle,
+  stored,
+  threadIn,
+  touch,
+  until,
+} from "./processes.ts"
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+const call = (name: string, args: Record<string, unknown>) => `call:${JSON.stringify([{ name, arguments: args }])}`
+
+// The lines that spindle recover prints on standard output.
+const wouldRecover = (thread: string, pid: number) =>
+  `thread ${thread} is running in process ${pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`
+
+const recovered = (thread: string, pid: number) =>
+  `thread ${thread} was running in process ${pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
+
+const notRunning = (thread: string, status: string) => `thread ${thread} is not running (${status}). Nothing changed.`
+
+// The last line that a process prints on standard error when it finds that its thread was taken from it.
+const lostThread = (thread: string) =>
+  `spindle: lost thread ${thread}: another process recovered it by force, so this process stopped working on it`
 
 const status = (gate: string, db: string, thread: string, clockShiftMs?: number) =>
   Effect.gen(function* () {
@@ -13,6 +43,18 @@ const status = (gate: string, db: string, thread: string, clockShiftMs?: number)
       clockShiftMs === undefined ? {} : { clockShiftMs },
     )
     return { exit: yield* child.exit, out: child.out }
+  })
+
+// Takes the thread from a process that is alive, which is what spindle recover --force is for. Until the command
+// exists, a lease that ran out is the only way to do that, so the first statement ends the lease. It fails on a store
+// that has no lease, and that failure is ignored. The status read at the end proves that the thread was taken.
+const takeFromLiveProcess = (gate: string, db: string, thread: string) =>
+  Effect.gen(function* () {
+    yield* Effect.ignore(query(db, "UPDATE holders SET expires_at = 0"))
+    const recover = yield* spindle(gate, ["recover", thread, "--force", "--db", db])
+    yield* recover.exit
+    const after = yield* status(gate, db, thread)
+    expect(after.out[0]).toMatch(/^failed execution_lost since /)
   })
 
 describe("spindle ownership across processes", () => {
@@ -61,6 +103,106 @@ describe("spindle ownership across processes", () => {
         ])
         yield* touch(at("release-model"))
         expect([yield* run.exit, run.out]).toEqual([0, ["ack: first"]])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "spindle recover names the live holder and changes nothing without --force, and settles the thread as lost with it",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const run = yield* spindle(gate, [
+          "run",
+          "assistant",
+          "-m",
+          call("hold", { name: "a" }),
+          ...project,
+          "--db",
+          db,
+        ])
+        const thread = yield* threadIn(run)
+        yield* until("the tool to start", exists(at("tool-entered-a")))
+        const before = yield* stored(db, thread)
+        expect(before.status).toEqual(["running", null])
+        const dry = yield* spindle(gate, ["recover", thread, "--db", db])
+        expect([yield* dry.exit, dry.out]).toEqual([0, [wouldRecover(thread, run.pid)]])
+        expect(yield* stored(db, thread)).toEqual(before)
+        const forced = yield* spindle(gate, ["recover", thread, "--force", "--db", db])
+        expect([yield* forced.exit, forced.out]).toEqual([0, [recovered(thread, run.pid)]])
+        const after = yield* stored(db, thread)
+        expect([after.status, after.flow, after.messages.map((message) => message[0])]).toEqual([
+          ["failed", "execution_lost"],
+          null,
+          ["user", "assistant", "tool"],
+        ])
+        const again = yield* spindle(gate, ["recover", thread, "--force", "--db", db])
+        expect([yield* again.exit, again.out]).toEqual([0, [notRunning(thread, "failed execution_lost")]])
+        yield* touch(at("release-a"))
+        yield* run.exit
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "spindle recover changes nothing on a thread that is not running, with or without --force, and says so",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        const first = yield* spindle(gate, ["run", "assistant", "-m", "setup", ...project, "--db", db])
+        expect(yield* first.exit).toBe(0)
+        const thread = yield* threadIn(first)
+        const before = yield* stored(db, thread)
+        for (const flags of [[], ["--force"]]) {
+          const recover = yield* spindle(gate, ["recover", thread, ...flags, "--db", db])
+          expect([yield* recover.exit, recover.out]).toEqual([0, [notRunning(thread, "idle stop_on_response")]])
+        }
+        expect(yield* stored(db, thread)).toEqual(before)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "a frozen process whose thread was recovered by force writes nothing once it resumes, says that it lost the thread, and fails",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const old = yield* spindle(gate, [
+          "run",
+          "assistant",
+          "-m",
+          call("late", { name: "l" }),
+          ...project,
+          "--db",
+          db,
+        ])
+        const thread = yield* threadIn(old)
+        yield* until("the tool to start", exists(at("tool-entered-l")))
+        yield* freeze(old)
+        yield* takeFromLiveProcess(gate, db, thread)
+        const successor = yield* spindle(gate, ["send", thread, "-m", "second", ...project, "--db", db])
+        expect([yield* successor.exit, successor.out]).toEqual([0, ["ack: second"]])
+        const before = yield* stored(db, thread)
+        yield* touch(at("release-l"))
+        yield* resume(old)
+        const code = yield* old.exit
+        const outcomes = (yield* exists(at("late-l.log"))) ? yield* lines(at("late-l.log")) : []
+        const refused = (write: string) => expect.stringMatching(new RegExp(`^${write} refused [A-Z][A-Za-z]+$`))
+        expect({
+          outcomes,
+          stored: yield* stored(db, thread),
+          failed: code !== 0,
+          lastLine: old.err.at(-1),
+          reportedAnOutcome: old.err.filter((line) => /^spindle: (idle|failed) \(/.test(line)),
+        }).toEqual({
+          outcomes: ["setValue", "queueMessage", "injectMessage", "updateMessage", "deleteMessage", "terminate"].map(
+            refused,
+          ),
+          stored: before,
+          failed: true,
+          lastLine: lostThread(thread),
+          reportedAnOutcome: [],
+        })
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )
