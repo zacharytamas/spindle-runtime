@@ -1559,4 +1559,44 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       }
     },
   },
+  {
+    name: "Q33 sets an unreadable queue entry aside with its sequence and payload, and delivers the entries behind it once",
+    requirements: ["f2cb78f1"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([acknowledge, acknowledge])
+      await using(
+        driver,
+        { provider },
+        async (session, thread) => {
+          await session.queueRaw(thread, "message", "{")
+          await session.queueRaw(thread, "tool", "null")
+          const damaged = (await session.inspect(thread)).queue
+          expect(damaged.map((entry) => [entry.kind, entry.payload, entry.failed])).toEqual([
+            ["message", "{", false],
+            ["tool", "null", false],
+          ])
+          const outcomes: Array<unknown> = []
+          for (const text of ["one", "two"]) {
+            const outcome = await session.send(thread, text)
+            outcomes.push([outcome.status, outcome.reason])
+          }
+          expect({
+            outcomes,
+            asked: provider.requests.map((request) => history(request).at(-1)?.content),
+            stored: shape(await session.messages(thread)).map((row) => row[1]),
+            queue: (await session.inspect(thread)).queue,
+          }).toEqual({
+            outcomes: [
+              ["idle", "stop_on_response"],
+              ["idle", "stop_on_response"],
+            ],
+            asked: ["one", "two"],
+            stored: ["one", "ack: one", "two", "ack: two"],
+            queue: damaged.map((entry) => ({ ...entry, failed: true })),
+          })
+        },
+        {},
+      )
+    },
+  },
 ]
