@@ -11,6 +11,17 @@ function text(value: Text | null) {
   return value instanceof Uint8Array ? utf8.decode(value) : value
 }
 
+// With the u flag a surrogate range matches only a surrogate that is not half of a pair.
+const loneSurrogates = /[\uD800-\uDFFF]/gu
+
+// UTF-8 has no encoding for a lone surrogate, and both drivers store U+FFFD in its place. Making the
+// replacement here means the record a write returns equals the record a later read returns.
+export function stored(value: string): string
+export function stored(value: string | null): string | null
+export function stored(value: string | null) {
+  return value === null ? null : value.replace(loneSurrogates, "\ufffd")
+}
+
 // node:sqlite cuts a TEXT value at its first NUL when it reads it, so such a value is read as its bytes.
 const textColumn = (name: string) =>
   `CASE WHEN instr(CAST(${name} AS BLOB), x'00') > 0 THEN CAST(${name} AS BLOB) ELSE ${name} END AS ${name}`
@@ -141,16 +152,16 @@ export const messageRow = (
   thread_id: threadId,
   id,
   role: message.role,
-  content: message.content ?? null,
-  name: message.name ?? null,
-  tool_calls: message.tool_calls ?? null,
-  tool_call_id: message.tool_call_id ?? null,
+  content: stored(message.content ?? null),
+  name: stored(message.name ?? null),
+  tool_calls: stored(message.tool_calls ?? null),
+  tool_call_id: stored(message.tool_call_id ?? null),
   tool_status: message.tool_status ?? null,
   status: message.status ?? null,
   attachments: json.attachments,
-  reasoning_content: message.reasoning_content ?? null,
-  reasoning_details: message.reasoning_details ?? null,
-  prompt: message.prompt ?? null,
+  reasoning_content: stored(message.reasoning_content ?? null),
+  reasoning_details: stored(message.reasoning_details ?? null),
+  prompt: stored(message.prompt ?? null),
   created_at: createdAt,
   parent_id: message.parent_id ?? null,
   depth: message.depth ?? 0,

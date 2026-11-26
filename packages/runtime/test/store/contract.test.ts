@@ -561,6 +561,51 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("a write returns the record a later read returns when the text holds a lone surrogate", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [written] = yield* store.appendMessages(thread.id, [
+          { role: "tool", content: "a\ud800b", name: "n\udc00", tool_call_id: "i\ud800" },
+        ])
+        expect(written?.content).toBe("a\ufffdb")
+        expect(yield* store.getMessage(thread.id, written?.id ?? "")).toEqual(written)
+        const updated = yield* store.updateMessage(thread.id, written?.id ?? "", { content: "\ud800" })
+        expect(updated.content).toBe("\ufffd")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("deleteMessage removes an assistant message whose tool_calls is not JSON", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [broken] = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: null, tool_calls: "not json" },
+          { role: "tool", content: "kept", tool_call_id: "call_0" },
+        ])
+        expect(yield* store.deleteMessage(thread.id, broken?.id ?? "")).toBe(true)
+        expect((yield* store.getMessages(thread.id)).messages.map((m) => m.content)).toEqual(["kept"])
+        const [valid] = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: null, tool_calls: toolCalls("call_1") },
+          { role: "assistant", content: null, tool_calls: "not json" },
+          { role: "tool", content: "removed", tool_call_id: "call_1" },
+        ])
+        expect(yield* store.deleteMessage(thread.id, valid?.id ?? "")).toBe(true)
+        const contents = (yield* store.getMessages(thread.id)).messages.map((m) => m.content)
+        expect(contents).not.toContain("removed")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("getMessages fails with InvalidMessagesQuery for a maxDepth that is not a non-negative integer", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        for (const maxDepth of [-1, 1.5, Number.NaN])
+          expect((yield* Effect.flip(store.getMessages(thread.id, { maxDepth })))._tag).toBe("InvalidMessagesQuery")
+        expect((yield* store.getMessages(thread.id, { maxDepth: 0 })).total).toBe(0)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("getMessages fails with InvalidMessagesQuery for a limit or offset beyond a safe integer", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore

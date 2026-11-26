@@ -72,7 +72,7 @@ export class ValueNotJson extends Data.TaggedError("ValueNotJson")<{
 }
 
 export class InvalidMessagesQuery extends Data.TaggedError("InvalidMessagesQuery")<{
-  readonly option: "limit" | "offset"
+  readonly option: "limit" | "offset" | "maxDepth"
   readonly value: number
 }> {
   override get message() {

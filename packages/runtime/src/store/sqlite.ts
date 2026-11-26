@@ -9,6 +9,7 @@ import {
   type QueueRow,
   queuePayload,
   runReasonColumn,
+  stored,
   type ThreadRow,
   threadColumns,
   toJson,
@@ -72,7 +73,7 @@ export const layer = Layer.effect(
             if (thread.parentId != null) yield* requireThread(thread.parentId)
             const row = {
               id: crypto.randomUUID(),
-              agent_id: thread.agentId,
+              agent_id: stored(thread.agentId),
               parent_id: thread.parentId ?? null,
               arguments: yield* json("the thread arguments", thread.arguments ?? {}),
               created_at: yield* nowMicros,
@@ -105,7 +106,7 @@ export const layer = Layer.effect(
 
       setStatus: (threadId, status) =>
         Effect.gen(function* () {
-          const reason = status.state === "running" ? null : status.reason
+          const reason = status.state === "running" ? null : stored(status.reason)
           const now = yield* nowMicros
           // SQLite evaluates every SET expression against the row as it was before the update.
           const rows = yield* sql<Pick<ThreadRow, "run_state" | "run_since" | "run_reason">>`
@@ -143,6 +144,8 @@ export const layer = Layer.effect(
           if (limit !== undefined && !isCount(limit))
             return yield* new InvalidMessagesQuery({ option: "limit", value: limit })
           if (!isCount(offset)) return yield* new InvalidMessagesQuery({ option: "offset", value: offset })
+          if (maxDepth !== undefined && !isCount(maxDepth))
+            return yield* new InvalidMessagesQuery({ option: "maxDepth", value: maxDepth })
           const where = sql.and([
             sql`thread_id = ${threadId}`,
             ...(includeSilent ? [] : [sql`silent = 0`]),
@@ -173,7 +176,7 @@ export const layer = Layer.effect(
               () => new MessageNotFound({ threadId, messageId }),
             )
             const changes = {
-              ...(updates.content === undefined ? {} : { content: updates.content }),
+              ...(updates.content === undefined ? {} : { content: stored(updates.content) }),
               ...(updates.metadata === undefined
                 ? {}
                 : {
@@ -205,9 +208,11 @@ export const layer = Layer.effect(
               yield* sql`
                 DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
                 AND parent_id IS ${parent.parent_id}
-                AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(${parent.tool_calls}))
+                AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(
+                  CASE WHEN json_valid(${parent.tool_calls}) THEN ${parent.tool_calls} ELSE '[]' END))
                 AND NOT EXISTS (
-                  SELECT 1 FROM messages AS later, json_each(later.tool_calls)
+                  SELECT 1 FROM messages AS later,
+                    json_each(CASE WHEN json_valid(later.tool_calls) THEN later.tool_calls ELSE '[]' END)
                   WHERE later.thread_id = result.thread_id AND later.role = 'assistant'
                   AND later.parent_id IS result.parent_id
                   AND later.seq > ${parent.seq} AND later.seq < result.seq
