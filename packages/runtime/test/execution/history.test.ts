@@ -9,6 +9,7 @@ import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
+import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -38,8 +39,14 @@ const countingStore = (reads: { count: number }) =>
 const runOnce = (setup: Setup, reads: { count: number }) =>
   Effect.gen(function* () {
     const thread = yield* createThread("assistant")
-    return yield* sendMessage(thread.id, "go")
-  }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), countingStore(reads))))
+    const { outcome } = yield* sendMessage(thread.id, "go")
+    if (outcome === undefined) return yield* Effect.die("the run had no outcome")
+    return outcome
+  }).pipe(
+    Effect.provide(
+      Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), countingStore(reads))),
+    ),
+  )
 
 const keepHandle = (keep: (state: ThreadState) => void) =>
   defineHook({
@@ -297,7 +304,9 @@ describe("the history an execution keeps", () => {
         const thread = yield* createThread("assistant")
         yield* sendMessage(thread.id, "go", { observe })
         return (yield* (yield* ThreadStore).history(thread.id)).messages
-      }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), inMemory())))
+      }).pipe(
+        Effect.provide(Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), inMemory()))),
+      )
       expect(seen).toEqual([[["go"], ["go"]]])
       expect(contents(stored)).toEqual(["go", "gap", "done"])
     }),

@@ -1,7 +1,14 @@
 import { ConfigProvider, Duration, Effect, FileSystem, Layer, Logger, ManagedRuntime, Path } from "effect"
 import { PlatformLive, SqliteLive } from "#platform"
-import type { Project, RunOutcome, RuntimeDriver } from "../../conformance/src/RuntimeDriver.ts"
+import type {
+  LoadOptions,
+  Project,
+  RunOutcome,
+  RuntimeDriver,
+  RuntimeSession,
+} from "../../conformance/src/RuntimeDriver.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
+import { HolderTimeout, layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
 import { resolver } from "../src/registry/resolve.ts"
@@ -42,6 +49,75 @@ export const registryOf = (project: Project) => {
 
 const store = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
 
+// One session is one process: its own connection, its own claims, and its own lease.
+const openSession = (
+  registry: ReturnType<typeof registryOf>,
+  filename: string,
+  options: LoadOptions,
+  cleanup: () => Promise<void>,
+): RuntimeSession => {
+  const logs: Array<string> = []
+  const holder =
+    options.holderTimeoutMs === undefined
+      ? Layer.empty
+      : Layer.succeed(HolderTimeout, Duration.millis(options.holderTimeoutMs))
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      registry,
+      Layer.provideMerge(supervisorLayer().pipe(Layer.provide(holder)), store(filename)),
+      ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
+      Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
+      options.hookTimeoutMs === undefined
+        ? Layer.empty
+        : Layer.succeed(HookTimeout, Duration.millis(options.hookTimeoutMs)),
+    ),
+  )
+  const reader = ManagedRuntime.make(store(filename))
+  const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
+    reader.runPromise(
+      Effect.gen(function* () {
+        return yield* use(yield* ThreadStore)
+      }),
+    )
+  return {
+    createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
+    state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
+    logs: () => [...logs],
+    send: (threadId, content, sendOptions = {}) =>
+      runtime
+        .runPromise(
+          sendMessage(threadId, content, sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
+        )
+        .then(
+          (delivery): RunOutcome =>
+            delivery.outcome ?? {
+              status: delivery.status.state === "failed" ? "failed" : "idle",
+              reason: delivery.status.reason ?? "",
+              steps: 0,
+              modelCalls: [],
+            },
+        ),
+    settled: (threadId) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          return yield* supervisor.settled(threadId)
+        }),
+      ),
+    peer: async () => openSession(registry, filename, options, async () => {}),
+    messages: (threadId) =>
+      withStore((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })).then(
+        (result) => result.messages,
+      ),
+    seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
+    close: async () => {
+      await runtime.dispose()
+      await reader.dispose()
+      await cleanup()
+    },
+  }
+}
+
 export const spindleDriver: RuntimeDriver = {
   name: "spindle",
   load: async (project, options = {}) => {
@@ -58,48 +134,13 @@ export const spindleDriver: RuntimeDriver = {
         return { dir, filename: path.join(dir, "spindle.db") }
       }).pipe(Effect.provide(PlatformLive)),
     )
-    const logs: Array<string> = []
-    const runtime = ManagedRuntime.make(
-      Layer.mergeAll(
-        registry,
-        store(filename),
-        ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
-        Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
-        options.hookTimeoutMs === undefined
-          ? Layer.empty
-          : Layer.succeed(HookTimeout, Duration.millis(options.hookTimeoutMs)),
+    return openSession(registry, filename, options, () =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.remove(dir, { recursive: true })
+        }).pipe(Effect.provide(PlatformLive)),
       ),
     )
-    const reader = ManagedRuntime.make(store(filename))
-    const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
-      reader.runPromise(
-        Effect.gen(function* () {
-          return yield* use(yield* ThreadStore)
-        }),
-      )
-    return {
-      createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
-      state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
-      logs: () => [...logs],
-      send: (threadId, content, sendOptions = {}) =>
-        runtime.runPromise(
-          sendMessage(threadId, content, sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
-        ) as Promise<RunOutcome>,
-      messages: (threadId) =>
-        withStore((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })).then(
-          (result) => result.messages,
-        ),
-      seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
-      close: async () => {
-        await runtime.dispose()
-        await reader.dispose()
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            const fs = yield* FileSystem.FileSystem
-            yield* fs.remove(dir, { recursive: true })
-          }).pipe(Effect.provide(PlatformLive)),
-        )
-      },
-    }
   },
 }

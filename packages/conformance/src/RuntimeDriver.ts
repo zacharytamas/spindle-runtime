@@ -27,6 +27,9 @@ export interface LoadOptions {
   readonly instanceEnv?: Readonly<Record<string, string>>
   // How long one hook call may run, in milliseconds. Hooks section 1.2 asks for a limit and names none.
   readonly hookTimeoutMs?: number
+  // How long the session's claim on a running thread lasts without renewal, in milliseconds. Another session counts
+  // a silent holder as gone after this long.
+  readonly holderTimeoutMs?: number
 }
 
 export interface SendOptions {
@@ -103,8 +106,14 @@ export interface RuntimeSession {
   readonly state: (threadId: string) => Promise<ThreadState>
   // The lines the runtime logged, such as a hook that failed.
   readonly logs: () => ReadonlyArray<string>
-  // Delivers a message from the human side and resolves when the run it starts settles.
+  // Delivers a message from the human side and resolves when the run that takes it settles. When another session runs
+  // the thread, the outcome is the run status once that session lets the thread rest, with no steps.
   readonly send: (threadId: string, content: string, options?: SendOptions) => Promise<RunOutcome>
+  // Resolves with the outcome of the run that this session executes for the thread once it settles, or with
+  // undefined at once when this session executes none, as after a queueMessage that another session took.
+  readonly settled: (threadId: string) => Promise<RunOutcome | undefined>
+  // Opens another session on the same database with its own claims, as a second process would.
+  readonly peer: () => Promise<RuntimeSession>
   // Reads every message of a thread, oldest first and silent ones included, on a connection the run does not use.
   readonly messages: (threadId: string) => Promise<ReadonlyArray<Message>>
   // Writes messages on a connection the run does not use, as another process would, before or during a run.

@@ -1,5 +1,6 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Result } from "effect"
+import type { Definition } from "../registry/Registry.ts"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
@@ -147,8 +148,51 @@ export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolCont
   )
 })
 
-// Tools section 2.1: a supplied uses list limits the targets a tool may invoke by name, and invokeTool returns
-// an error result for a target outside it.
+// Tools section 2.1: a supplied uses list limits the targets a tool may invoke or queue by name. An empty list
+// permits none, and an omitted list permits any.
+const outsideUses = Effect.fnUntraced(function* (
+  caller: Loaded<FunctionTool>,
+  name: string,
+  target: Loaded<unknown> | undefined,
+) {
+  const uses = caller.value.uses
+  if (uses === undefined || uses === null) return undefined
+  for (const entry of uses)
+    if (
+      entry === name ||
+      (target !== undefined && (yield* lookup("tool", entry, caller.definition))?.definition === target.definition)
+    )
+      return undefined
+  return `Tool ${caller.definition.qualifiedName} does not list ${name} in uses`
+})
+
+const notAFunctionTool = Effect.fnUntraced(function* (name: string, from: Definition | undefined, method: string) {
+  const other =
+    (yield* lookup("prompt", name, from)) !== undefined || (yield* lookup("agent", name, from)) !== undefined
+  return other
+    ? `${name} is a prompt or an agent. In this version of Spindle, ${method} reaches function tools only.`
+    : `No tool named ${name} is defined`
+})
+
+export class QueueRefused extends Data.TaggedError("QueueRefused")<{ readonly message: string }> {}
+
+// Tools section 2.1: queueTool throws for a target outside a supplied uses list. It also throws for a name that
+// resolves to no function tool, so that nothing is queued that could never run. The result is the target's qualified
+// name, which finds the same definition when the queue is drained.
+export const queueTarget = Effect.fn("queueTarget")(function* (
+  caller: Loaded<FunctionTool> | undefined,
+  from: Definition | undefined,
+  name: string,
+) {
+  const target = yield* lookup<unknown>("tool", name, from)
+  const outside = caller === undefined ? undefined : yield* outsideUses(caller, name, target)
+  if (outside !== undefined) return yield* new QueueRefused({ message: outside })
+  if (target === undefined || !isFunctionTool(target.value))
+    return yield* new QueueRefused({ message: yield* notAFunctionTool(name, from, "queueTool") })
+  return target.definition.qualifiedName
+})
+
+// Tools section 2.1: invokeTool returns an error result for a target outside a supplied uses list.
 export const invokeTool = Effect.fn("invokeTool")(function* (
   context: ToolContext,
   caller: Loaded<FunctionTool>,
@@ -156,27 +200,10 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   input: unknown,
 ) {
   const target = yield* lookup<unknown>("tool", name, caller.definition)
-  const uses = caller.value.uses
-  if (uses !== undefined && uses !== null) {
-    let allowed = false
-    for (const entry of uses)
-      if (
-        entry === name ||
-        (target !== undefined && (yield* lookup("tool", entry, caller.definition))?.definition === target.definition)
-      )
-        allowed = true
-    if (!allowed) return failed(`Tool ${caller.definition.qualifiedName} does not list ${name} in uses`)
-  }
-  if (target === undefined || !isFunctionTool(target.value)) {
-    const other =
-      (yield* lookup("prompt", name, caller.definition)) !== undefined ||
-      (yield* lookup("agent", name, caller.definition)) !== undefined
-    return failed(
-      other
-        ? `${name} is a prompt or an agent. In this version of Spindle, invokeTool reaches function tools only.`
-        : `No tool named ${name} is defined`,
-    )
-  }
+  const outside = yield* outsideUses(caller, name, target)
+  if (outside !== undefined) return failed(outside)
+  if (target === undefined || !isFunctionTool(target.value))
+    return failed(yield* notAFunctionTool(name, caller.definition, "invokeTool"))
   const tool = target as Loaded<FunctionTool>
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
   return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))

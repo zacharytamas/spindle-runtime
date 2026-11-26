@@ -1,16 +1,18 @@
 import type {
+  AttachmentRef,
   HookToolCall,
   LLMProviderInterface,
   Message,
   PromptToolConfig,
   ProviderRequest,
+  QueueMessageInput,
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
-import type { Registry } from "../registry/Registry.ts"
-import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
+import { Registry } from "../registry/Registry.ts"
+import { type NewMessage, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -26,13 +28,16 @@ import {
 import { callModel, type ModelCall, type ModelResponse, type StreamedCalls } from "./call.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { makeHistory } from "./history.ts"
-import { countHooks, type HookScope, has, runHooks, turnHooks } from "./hooks.ts"
+import { agentHooks, countHooks, type HookScope, has, runHooks, turnHooks } from "./hooks.ts"
 import { createMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
+import { CLOSING } from "./run-status.ts"
 import { stopReason } from "./stop-rules.ts"
-import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
+import { type ExecutionRecord, makeThreadState, type Run, type ThreadControl } from "./thread-state.ts"
 import {
   describe,
+  executeTool,
+  failed,
   invokeTool,
   ResultUnreadable,
   resultOf,
@@ -44,7 +49,7 @@ import {
   unstorableResult,
 } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
-import { type FunctionTool, type Loaded, prepareTurn, roleOf, type Turn } from "./turn.ts"
+import { type FunctionTool, isFunctionTool, type Loaded, prepareTurn, roleOf, type Turn } from "./turn.ts"
 
 export type ExecutionEvent =
   | { readonly type: "trace"; readonly entry: TraceEntry }
@@ -223,13 +228,27 @@ const describeCause = (cause: Cause.Cause<unknown>): string => {
   return error instanceof Error ? error.message : String(error)
 }
 
-export const runExecution = (threadId: string, options: ExecutionOptions = {}) =>
+// Messages section 4: a queued message is stored with its own perspective and payload. Admission let only attachment
+// references through.
+const draftOf = (input: QueueMessageInput): NewMessage => ({
+  role: input.role,
+  content: input.content,
+  status: "completed",
+  ...(input.silent === undefined ? {} : { silent: input.silent }),
+  ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+  ...((input.attachments ?? []).length === 0 ? {} : { attachments: input.attachments as Array<AttachmentRef> }),
+})
+
+const NOT_RUN = "Spindle did not run this call, because the execution was stopped before the call started."
+
+export const runExecution = (threadId: string, run: Run, control: ThreadControl, options: ExecutionOptions = {}) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore
+    const registry = yield* Registry
     const services = yield* Effect.context<Registry | ThreadStore>()
     const retries = options.retries ?? DEFAULT_RETRIES
     const stepCap = options.stepCap ?? DEFAULT_STEP_CAP
-    const flowId = crypto.randomUUID()
+    const flowId = run.flowId
     const trace: Array<TraceEntry> = []
     const modelCalls: Array<ModelCall> = []
     const pending: Array<Fiber.Fiber<void>> = []
@@ -250,7 +269,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         return null
       }
     }
-    const abort = new AbortController()
+    const abort = run.abort
     let step = 0
     let steps = 0
 
@@ -259,6 +278,15 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       trace.push(entry)
       return observe({ type: "trace", entry })
     }
+
+    // Execution State section 4.3: every run settles. A run that ended its turn goes on while the queue holds work.
+    // Once the run settles, every ThreadState of the execution refuses its calls.
+    const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
+      Effect.tap(store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing }), (settlement) =>
+        Effect.sync(() => {
+          if (settlement !== "continue") run.ended = true
+        }),
+      )
 
     const settle = (
       status: RunOutcome["status"],
@@ -287,12 +315,24 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         } satisfies RunOutcome
       })
 
+    // A run that another process settled, as lost, or that terminate settled reports the status the store holds.
+    const ended = (
+      settlement: Settlement,
+      status: RunOutcome["status"],
+      reason: string,
+      extra: { readonly error?: RunError; readonly stopTool?: StopToolOutcome } = {},
+    ) =>
+      settlement === "superseded"
+        ? Effect.flatMap(store.getThread(threadId), (thread) =>
+            settle(thread.status.state === "failed" ? "failed" : "idle", thread.status.reason ?? "aborted"),
+          )
+        : settle(status, reason, extra)
+
     const loop = Effect.gen(function* () {
       const thread = yield* store.getThread(threadId)
       const turn = yield* prepareTurn(thread.agentId)
       const hookSet = yield* turnHooks(turn)
       const history = makeHistory(threadId)
-      const atStart = yield* history.read
       const execution: ExecutionRecord = {
         flowId,
         side: turn.side,
@@ -302,6 +342,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         abort,
         promptPath: [turn.prompt.definition.qualifiedName],
         history,
+        run,
       }
       const context: Record<string, unknown> = {}
       const noInvoke = (name: string) =>
@@ -321,8 +362,26 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         context,
         secrets,
         hooks,
+        control,
       }
-      const write = { threadId, hooks, secrets, call: undefined, history }
+      const write = { threadId, hooks, secrets, call: undefined, history, flowId }
+      // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
+      // turn. The agent's hooks apply to it and see no execution, as they do at rest.
+      const inbound: HookScope = {
+        set: yield* agentHooks(turn.agent),
+        stateFor: (hook, call) =>
+          makeThreadState({
+            ...base,
+            execution: undefined,
+            context: {},
+            scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined },
+            from: hook.definition,
+            invoke: noInvoke,
+            hooks: inbound,
+            call,
+          }),
+      }
+      const delivery = { ...write, hooks: inbound }
       const toolContext: ToolContext = {
         turn,
         stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined): ThreadState =>
@@ -330,6 +389,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             ...base,
             scope: scopeFor(turn, entry),
             from: tool.definition,
+            caller: tool,
             invoke: (name, args) => invokeTool(toolContext, tool, name, args).pipe(Effect.provideContext(services)),
           }),
       }
@@ -351,9 +411,9 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         return stored?.definition === source.definition && stored?.model === source.model
       }
       const prompt = turn.prompt.value
-      const view = {
+      let view = {
         side: turn.side,
-        past: pastOf(atStart, turn.side),
+        past: new Set<string>(),
         includeChat: prompt.includeChat === true,
         includePastTools: prompt.includePastTools === true,
         includeReasoning: prompt.reasoning?.include !== false,
@@ -378,9 +438,141 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
                 ),
             }
           : undefined
+      // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the stored
+      // message, then tool_call_done with what was stored.
+      const runCall = (call: ToolCall, outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>) =>
+        Effect.gen(function* () {
+          const returned = yield* outcome
+          const toolCall = hookCall(call, argumentsOf(call))
+          const branched = yield* runHooks(
+            hooks,
+            returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
+            [toolCall],
+            returned,
+          )
+          const final = yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
+          const save = (result: ToolResult) =>
+            Effect.try({
+              try: () => storedResult(turn, call, result),
+              catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
+            }).pipe(Effect.flatMap((message) => createMessage(write, message, "result")))
+          // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
+          const stored = yield* save(final).pipe(
+            Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
+              save(unstorableResult(final, error.message)),
+            ),
+          )
+          yield* record("persist-results", `${call.id} ${stored.tool_status}`)
+          yield* observe({ type: "message", message: stored })
+          // Hooks section 5.5: tool_call_done sees the result as the store holds it, after every hook and redaction.
+          yield* runHooks(hooks, "tool_call_done", [toolCall], resultOf(stored))
+          // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
+          return stored.tool_status == null ? final : { ...final, status: stored.tool_status }
+        })
+      // Threads section 3.1: a queued tool runs without a model response that asks for it. Spindle stores it as a
+      // call of the prompt side with its result after it, so the next request shows both, and marks the call queued.
+      const runQueuedTool = (entry: Queued & { readonly kind: "tool" }) =>
+        Effect.gen(function* () {
+          const definition = registry.definitions.find(
+            (candidate) => candidate.kind === "tool" && candidate.qualifiedName === entry.toolName,
+          )
+          const value = definition === undefined ? undefined : registry.loaded.get(definition)
+          const tool =
+            definition !== undefined && isFunctionTool(value)
+              ? ({ definition, value } as Loaded<FunctionTool>)
+              : undefined
+          const exposed = [...turn.tools.values()].find((candidate) => candidate.tool.definition === definition)
+          const name = exposed?.name ?? definition?.name ?? entry.toolName
+          const argumentsText = JSON.stringify(entry.args)
+          const call: ToolCall = {
+            id: `queued-${crypto.randomUUID()}`,
+            name,
+            arguments: { ...entry.args },
+            argumentsText,
+            problem: tool === undefined ? `The queued tool ${entry.toolName} is no longer defined` : undefined,
+          }
+          const message = yield* createMessage(
+            write,
+            {
+              role: roleOf(turn.side),
+              content: null,
+              tool_calls: JSON.stringify([
+                { id: call.id, type: "function", function: { name, arguments: argumentsText } },
+              ]),
+              prompt: turn.prompt.definition.qualifiedName,
+              status: "completed",
+              metadata: { queued: true },
+            },
+            "queued",
+            entry.seq,
+          )
+          yield* record("drain", `tool ${name} ${call.id}`)
+          yield* observe({ type: "message", message })
+          yield* runHooks(hooks, "tool_call_started", [hookCall(call, argumentsText)], undefined)
+          yield* runCall(
+            call,
+            tool === undefined
+              ? Effect.succeed(failed(call.problem ?? ""))
+              : executeTool(
+                  tool,
+                  entry.args,
+                  toolContext.stateFor(tool, exposed?.entry),
+                  scopeFor(turn, exposed?.entry),
+                ),
+          )
+        })
+      // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
+      // leaves the queue in the transaction that stores what it delivers. The result says whether the prompt side got
+      // something to act on: a queued tool, or a message from the other side's perspective.
+      const drain = Effect.gen(function* () {
+        let prompted = false
+        let count = 0
+        while (run.stop === undefined) {
+          const entry = yield* store.nextQueued(threadId)
+          if (entry === undefined) break
+          count += 1
+          if (entry.kind === "tool") {
+            yield* runQueuedTool(entry)
+            prompted = true
+            continue
+          }
+          const message = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
+          yield* record("drain", `message ${message.id}`)
+          yield* observe({ type: "message", message })
+          if (message.role !== roleOf(turn.side)) prompted = true
+        }
+        if (count === 0) yield* record("drain", "none")
+        return prompted
+      })
+      // Execution State section 3: a stop takes effect at the boundary between two operations. The run settles idle,
+      // and the work still queued waits for the next trigger.
+      const stopHere = Effect.suspend(() => {
+        const reason = run.stop?.reason ?? "aborted"
+        return record("stop", reason).pipe(
+          Effect.andThen(release("idle", reason, false, CLOSING.aborted)),
+          Effect.flatMap((settlement) => ended(settlement, "idle", reason)),
+        )
+      })
+      let turnStart = true
+      let turnSteps = 0
       while (true) {
         step += 1
-        yield* record("drain", "no queue before M1-6")
+        if (run.stop !== undefined) return yield* stopHere
+        const prompted = yield* drain
+        if (run.stop !== undefined) return yield* stopHere
+        if (turnStart) {
+          // Runtime section 3: with nothing for the prompt side to act on, the turn is the human's.
+          if (!prompted) {
+            yield* record("stop", "awaiting_human")
+            const settlement = yield* release("idle", "awaiting_human", true, CLOSING.aborted)
+            if (settlement === "continue") continue
+            return yield* ended(settlement, "idle", "awaiting_human")
+          }
+          // The turn starts at the other side's latest message, and everything before it is past history.
+          view = { ...view, past: pastOf(yield* history.read, turn.side) }
+          turnStart = false
+          turnSteps = 0
+        }
         // Runtime section 4 orders the seven steps of an assembly.
         const rendered = yield* renderSystemPrompt(turn, secrets)
         yield* record("assemble", "interpolate the system prompt")
@@ -404,6 +596,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
         yield* checkSystemMessages(messages, secrets)
         yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
+        if (run.stop !== undefined) return yield* stopHere
         yield* checkSystemPrompt(turn, system, secrets)
         const request = buildRequest(turn, system, messages, abort.signal)
         yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
@@ -422,6 +615,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           request,
         )
         steps += 1
+        run.steps = steps
+        turnSteps += 1
         execution.stepCount += 1
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
@@ -435,41 +630,18 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         }
         const results: Array<ToolResult> = []
         for (const call of calls) {
-          yield* record("tools", `${call.name} ${call.id}`)
-          const returned = yield* runToolCall(toolContext, call)
-          // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the
-          // stored message, then tool_call_done with what was stored.
-          const toolCall = hookCall(call, argumentsOf(call))
-          const branched = yield* runHooks(
-            hooks,
-            returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
-            [toolCall],
-            returned,
-          )
-          const final = yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
-          const save = (result: ToolResult) =>
-            Effect.try({
-              try: () => storedResult(turn, call, result),
-              catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
-            }).pipe(Effect.flatMap((message) => createMessage(write, message, "result")))
-          // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
-          const stored = yield* save(final).pipe(
-            Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
-              save(unstorableResult(final, error.message)),
-            ),
-          )
-          // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
-          results.push(stored.tool_status == null ? final : { ...final, status: stored.tool_status })
-          yield* record("persist-results", `${call.id} ${stored.tool_status}`)
-          yield* observe({ type: "message", message: stored })
-          // Hooks section 5.5: tool_call_done sees the result as the store holds it, after every hook and redaction.
-          yield* runHooks(hooks, "tool_call_done", [toolCall], resultOf(stored))
+          // A call after a stop request never runs. It still gets a result, so that the next request is valid.
+          const skipped = run.stop !== undefined
+          yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
+          results.push(yield* runCall(call, skipped ? Effect.succeed(failed(NOT_RUN)) : runToolCall(toolContext, call)))
         }
+        if (run.stop !== undefined) return yield* stopHere
+        // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
         const reason = stopReason(
           {
             text: response.content,
             calls,
-            sideSteps: turn.side === "a" ? execution.sideAStepCount : execution.sideBStepCount,
+            sideSteps: turnSteps,
             totalSteps: execution.stepCount,
           },
           turn.config,
@@ -478,23 +650,34 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         yield* record("stop", reason ?? "continue")
         if (reason !== undefined) {
           const stopTool = reason === "stop_tool" ? stopToolOutcome(turn, calls, results, redact) : undefined
-          return yield* settle("idle", reason, stopTool === undefined ? {} : { stopTool })
+          // The runtime cap ends the execution even while the queue holds work, so that queued work cannot keep one
+          // execution going without end.
+          const settlement = yield* release("idle", reason, reason !== "max_total_steps", CLOSING.aborted)
+          if (settlement === "continue") {
+            turnStart = true
+            continue
+          }
+          return yield* ended(settlement, "idle", reason, stopTool === undefined ? {} : { stopTool })
         }
       }
     })
+
+    const fail = (reason: string, extra: { readonly error: RunError }) =>
+      Effect.flatMap(release("failed", reason, false, CLOSING.failed), (settlement) =>
+        ended(settlement, "failed", reason, extra),
+      )
 
     return yield* loop.pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
         const found = Cause.findError(cause)
-        if (found._tag === "Failure")
-          return settle("failed", "fatal_error", { error: { message: describeCause(cause) } })
+        if (found._tag === "Failure") return fail("fatal_error", { error: { message: describeCause(cause) } })
         const error = found.success
         switch (error._tag) {
           case "SetupError":
-            return settle("failed", "fatal_error", { error: { message: error.message } })
+            return fail("fatal_error", { error: { message: error.message } })
           case "ProviderFailure":
-            return settle("failed", "step_error", {
+            return fail("step_error", {
               error: {
                 message: error.message,
                 code: error.code,
@@ -504,10 +687,29 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
                 ...(error.upstream === undefined ? {} : { upstream: error.upstream }),
               },
             })
+          // Another process settled the run, as lost, or terminate did. The run writes nothing more and aborts what
+          // it started.
+          case "FlowEnded":
+            return Effect.andThen(
+              Effect.sync(() => abort.abort()),
+              ended("superseded", "idle", "aborted"),
+            )
           default:
-            return settle("failed", "step_error", { error: { message: error.message } })
+            return fail("step_error", { error: { message: error.message } })
         }
       }),
-      Effect.onInterrupt(() => Effect.sync(() => abort.abort())),
+      // An interrupt is an abort: the signal fires and the run settles idle. The first Ctrl-C of spindle run asked
+      // for a stop, so its reason stays.
+      Effect.onInterrupt(() =>
+        Effect.andThen(
+          Effect.sync(() => abort.abort()),
+          Effect.ignore(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted)),
+        ),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          run.ended = true
+        }),
+      ),
     )
   })
