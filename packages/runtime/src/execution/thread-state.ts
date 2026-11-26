@@ -67,8 +67,8 @@ const executionState = (record: ExecutionRecord, readHistory: () => Array<Messag
   promptPath: [...record.promptPath],
 })
 
-// The one place where Spindle turns an Effect into a Promise. Tools are Promise-based user code, and every
-// ThreadState method they call runs here against the services of the execution.
+// The one place where Spindle runs an Effect for user code. Tools and hooks are Promise-based, and every ThreadState
+// method they call runs here against the services of the execution.
 export const makeThreadState = (state: StateContext): ThreadState => {
   const { call } = state
   const expired = () =>

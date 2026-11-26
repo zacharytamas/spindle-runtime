@@ -226,11 +226,11 @@ const acceptMessages = (returned: unknown) => {
 // MessageUpdates holds content and metadata. A key the hook adds or changes beyond those has nowhere to go, so the
 // return is refused rather than stored in part. A key the caller passed and the hook kept is the caller's.
 const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
-  returned = plain(returned)
-  if (!isRecord(returned)) return INVALID
-  const metadata = metadataOf(returned.metadata)
+  const value = plain(returned)
+  if (!isRecord(value)) return INVALID
+  const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
-  const patch = { ...returned, ...(metadata === undefined ? {} : { metadata }) }
+  const patch = { ...value, ...(metadata === undefined ? {} : { metadata }) }
   for (const [key, value] of Object.entries(patch)) {
     if (key === "content" && (value === undefined || typeof value === "string")) continue
     if (key === "metadata") continue
