@@ -11,6 +11,7 @@ import {
   query,
   resume,
   setup,
+  spawn,
   spindle,
   stored,
   threadIn,
@@ -203,6 +204,81 @@ describe("spindle ownership across processes", () => {
           lastLine: lostThread(thread),
           reportedAnOutcome: [],
         })
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "a process killed in the middle of a drain leaves each queued entry once, in the queue or in the history",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        yield* touch(at("hold-model"))
+        const run = yield* spindle(gate, [
+          "run",
+          "assistant",
+          "-m",
+          "first",
+          ...project,
+          "--db",
+          db,
+          "--holder-timeout",
+          "0.5",
+        ])
+        const thread = yield* threadIn(run)
+        yield* until(
+          "the process to enter the model",
+          Effect.map(entries(gate), (names) => names.some((name) => name.startsWith("model-entered-"))),
+        )
+        const queue = (args: ReadonlyArray<string>) =>
+          Effect.gen(function* () {
+            const child = yield* spawn(gate, probe, [...args, "--thread", thread, ...project, "--db", db])
+            expect(yield* child.exit).toBe(0)
+          })
+        yield* queue(["queue-message", "--role", "user", "--content", "M1"])
+        yield* queue(["queue-tool", "--tool", "hold", "--args", JSON.stringify({ name: "k" })])
+        yield* queue(["queue-message", "--role", "user", "--content", "M2"])
+        yield* touch(at("release-model"))
+        yield* until("the queued tool to start", exists(at("tool-entered-k")))
+        yield* run.signal("SIGKILL")
+        yield* run.exit
+        const cut = yield* stored(db, thread)
+        expect([cut.messages, cut.queue.map((entry) => entry[0])]).toEqual([
+          [
+            ["user", "first"],
+            ["assistant", "ack: first"],
+            ["user", "M1"],
+            ["assistant", null],
+          ],
+          ["message"],
+        ])
+        expect(String(cut.queue[0]?.[1])).toContain("M2")
+        const read = (child: { readonly out: ReadonlyArray<string> }) => child.out[0] ?? ""
+        yield* until(
+          "an observer to settle the run as lost",
+          Effect.gen(function* () {
+            const child = yield* spindle(gate, ["status", thread, "--db", db])
+            yield* child.exit
+            return read(child).startsWith("failed execution_lost")
+          }),
+        )
+        const after = yield* spindle(gate, ["send", thread, "-m", "after", ...project, "--db", db])
+        expect([yield* after.exit, after.out]).toEqual([0, ["ack: M2 | after"]])
+        const end = yield* stored(db, thread)
+        expect([end.messages, end.queue]).toEqual([
+          [
+            ["user", "first"],
+            ["assistant", "ack: first"],
+            ["user", "M1"],
+            ["assistant", null],
+            ["tool", "error"],
+            ["user", "M2"],
+            ["user", "after"],
+            ["assistant", "ack: M2 | after"],
+          ],
+          [],
+        ])
+        expect(yield* lines(at("tool-log"))).toEqual(["k"])
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )
