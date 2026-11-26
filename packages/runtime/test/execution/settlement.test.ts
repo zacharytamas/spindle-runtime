@@ -133,11 +133,7 @@ for (const mode of ["abort", "terminate", "abort after provider failure"] as con
         }
         const { outcome, status } = yield* Fiber.join(sent)
         expect(status.reason).toBe("stop_on_response")
-        expect(outcome).toMatchObject(
-          mode === "terminate"
-            ? { status: "idle", reason: "stop_on_response", trace: [], modelCalls: [] }
-            : { status: "failed", reason: "execution_lost", trace: [], modelCalls: [] },
-        )
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", trace: [], modelCalls: [] })
       }).pipe(
         Effect.ensuring(Effect.sync(release.release)),
         Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), stores))),

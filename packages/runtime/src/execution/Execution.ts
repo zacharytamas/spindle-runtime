@@ -2,7 +2,6 @@ import { Cause, Deferred, Effect, Exit, type Fiber, Latch, Scheduler, type Scope
 import type { SqlError } from "effect/sql/SqlError"
 import { FlowEnded, type ThreadNotFound } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
-import { ThreadStore } from "../store/ThreadStore.ts"
 import { ProviderFailure } from "./call.ts"
 import { CLOSING } from "./run-status.ts"
 import type { prepareSteps, RunOutcome } from "./step.ts"
@@ -188,20 +187,8 @@ export class Execution {
         ? brief(result)
         : yield* details.pipe(
             Effect.catchCauseIf(Cause.hasInterruptsOnly, () => {
-              // The base reports the disposition at interrupt time if the claim was released before metadata returned.
               this.#abort.abort()
-              return ThreadStore.use((threads) =>
-                Effect.map(threads.getThread(threadId), (thread) =>
-                  brief(
-                    thread.terminated === null
-                      ? settledAs.superseded
-                      : {
-                          status: thread.status.state === "failed" ? "failed" : "idle",
-                          reason: thread.status.reason ?? "aborted",
-                        },
-                  ),
-                ),
-              )
+              return Effect.succeed(brief(result))
             }),
           )
       if (restart) this.#successor = yield* resume
