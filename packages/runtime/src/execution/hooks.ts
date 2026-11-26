@@ -182,19 +182,34 @@ const isContentPart = (value: unknown) => {
   }
 }
 
-const isParts = (value: unknown) => Array.isArray(value) && value.every(isContentPart)
+// Array.prototype.every skips a hole in an array, and the request conversion reads a hole as undefined.
+const isListOf = (value: unknown, test: (item: unknown) => boolean) =>
+  Array.isArray(value) && Array.from(value).every(test)
+
+const isParts = (value: unknown) => isListOf(value, isContentPart)
 
 const isCall = (value: unknown) =>
   isRecord(value) &&
   isString(value.id) &&
   isRecord(value.function) &&
   isString(value.function.name) &&
-  (isRecord(value.function.arguments) || (isString(value.function.arguments) && parses(value.function.arguments))) &&
-  optional(value.extra_content, isRecord)
+  ((isRecord(value.function.arguments) && isString(toJson(value.function.arguments))) ||
+    (isString(value.function.arguments) && parses(value.function.arguments))) &&
+  optional(value.extra_content, (extra) => isRecord(extra) && isString(toJson(extra)))
+
+const DETAIL_TYPES: ReadonlyArray<unknown> = ["text", "summary", "encrypted"]
+
+// The ProviderReasoningDetail type of the package, the shape every provider reads a detail in.
+const isReasoningDetail = (value: unknown) =>
+  isRecord(value) &&
+  DETAIL_TYPES.includes(value.type) &&
+  optional(value.id, isString) &&
+  optional(value.text, isString) &&
+  optional(value.data, isString) &&
+  optional(value.format, isString)
 
 // Hooks section 3.3 makes the returned array the provider request history, so each message must be one that a
 // provider message type of the package holds as it is. Only a user or a tool message may hold content parts.
-// Reasoning details keep the shape a provider stored them in, which may differ from the package's.
 const isLLMMessage = (value: unknown) => {
   if (!isRecord(value)) return false
   switch (value.role) {
@@ -205,9 +220,9 @@ const isLLMMessage = (value: unknown) => {
     case "assistant":
       return (
         optional(value.content, (content) => content === null || isString(content)) &&
-        optional(value.tool_calls, (calls) => Array.isArray(calls) && calls.every(isCall)) &&
+        optional(value.tool_calls, (calls) => isListOf(calls, isCall)) &&
         optional(value.reasoning_content, isString) &&
-        optional(value.reasoning_details, (details) => Array.isArray(details) && details.every(isRecord))
+        optional(value.reasoning_details, (details) => isListOf(details, isReasoningDetail))
       )
     case "tool":
       return (
@@ -297,7 +312,7 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
     where: "after the history becomes provider messages, before the request",
     accept: (returned) => {
       const value: unknown = structuredClone(returned)
-      return Array.isArray(value) && value.every(isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
+      return isListOf(value, isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
     },
     expects: "an array of messages that provider messages can hold",
     failure: "keep",

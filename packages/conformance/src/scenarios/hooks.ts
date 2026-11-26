@@ -520,7 +520,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             role: model,
             content: "a1",
             reasoning_content: "thought one",
-            reasoning_details: JSON.stringify([{ type: "reasoning.text", text: "detail one" }]),
+            reasoning_details: JSON.stringify([{ type: "text", text: "detail one" }]),
             metadata: { reasoning_source: source },
           },
           { role: human, content: "q2" },
@@ -528,7 +528,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             role: model,
             content: "a2",
             reasoning_content: "thought two",
-            reasoning_details: JSON.stringify([{ type: "reasoning.text", text: "detail two" }]),
+            reasoning_details: JSON.stringify([{ type: "text", text: "detail two" }]),
             metadata: { reasoning_source: source },
           },
         ]
@@ -589,7 +589,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         role: "assistant",
         content: `a${n}`,
         reasoning: `thought ${word}`,
-        reasoningDetails: [{ type: "reasoning.text", text: `detail ${word}` }],
+        reasoningDetails: [{ type: "text", text: `detail ${word}` }],
       })
       const assistants = (request: Awaited<ReturnType<typeof requestOf>>) =>
         history(request).filter((m) => m.role === "assistant")

@@ -1,4 +1,4 @@
-import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type LLMMessage, type Message, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
 import { callsOf, history, holding, ok, type Scenario, send, sideOf, using } from "./step-loop.ts"
@@ -261,6 +261,56 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
           { CANARY },
         )
         expect(provider.requests).toEqual([])
+      }
+    },
+  },
+  {
+    name: "I7 counts a prefilter_llm_history return with a hole or a reasoning detail of no provider shape as a failed hook",
+    requirements: [],
+    run: async (driver) => {
+      const returns: Array<(messages: Array<LLMMessage>) => Array<LLMMessage>> = [
+        (messages) => {
+          const holed = [...messages]
+          holed.length += 1
+          return holed
+        },
+        (messages) => {
+          const parts: Array<unknown> = [{ type: "text", text: "a" }]
+          parts.length += 1
+          return [...messages, { role: "user", content: parts } as LLMMessage]
+        },
+        (messages) => [...messages, { role: "assistant", content: "ok", reasoning_details: [{ type: "bogus" }] }],
+        (messages) => [
+          ...messages,
+          { role: "assistant", content: "ok", reasoning_details: [{ type: "reasoning.text", text: "native" }] },
+        ],
+        (messages) => [
+          ...messages,
+          { role: "assistant", content: "ok", reasoning_details: [{ type: "text", text: 1 }] },
+        ],
+        (messages) => [
+          ...messages,
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "x1", type: "function", function: { name: "noop", arguments: { n: 1n } } }],
+          } as LLMMessage,
+        ],
+      ]
+      for (const give of returns) {
+        const hooks = [
+          defineHook({
+            hook: "prefilter_llm_history",
+            id: "odd_prefilter",
+            execute: async (_s, messages) => give(messages),
+          }),
+        ]
+        const provider = new ScriptedProvider([{ text: "done" }])
+        await using(driver, { provider, hooks, prompt: { hooks: ["odd_prefilter"] } }, async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+          expect(history(provider.requests[0]).map(sideOf)).toEqual([["user", "go"]])
+          expect(session.logs().join("\n")).toContain("Hook odd_prefilter (prefilter_llm_history")
+        })
       }
     },
   },
