@@ -51,7 +51,10 @@ export class Execution {
   readonly #pending = new Map<Promise<unknown>, string>()
   readonly #released = Latch.makeUnsafe()
   readonly #done = Deferred.makeUnsafe<RunOutcome, SqlError | ThreadNotFound>()
-  readonly settlement = { await: Deferred.await(this.#done), isDone: () => Deferred.isDoneUnsafe(this.#done) }
+  readonly settlement = Object.freeze({
+    await: Deferred.await(this.#done),
+    isDone: () => Deferred.isDoneUnsafe(this.#done),
+  })
   #phase: "running" | "stopping" | "holding" | "dropping" | "ended" = "running"
   #stop: Side | "user" | undefined
   #steps = 0
@@ -144,7 +147,7 @@ export class Execution {
             ? Effect.succeed(proposed.why)
             : store.settle(
                 threadId,
-                this,
+                { flowId: this.flowId },
                 { state: end.status, reason: end.reason },
                 {
                   continueIfQueued: !!end.continueIfQueued,
@@ -165,14 +168,13 @@ export class Execution {
         if (settlement === "continue") continue
         const restart = interrupted && settlement === "settled" && holding
         const result = settlement === "settled" ? end : settledAs[settlement]
-        return { result, report, interrupted, restart }
+        const details = report(result)
+        return { result, details: Exit.isSuccess(exit) ? Effect.interruptible(details) : details, interrupted, restart }
       }
     })
     // Mask the driver before its first turn. Only the work between settlement boundaries is interruptible.
     const publish = Effect.gen({ self: this }, function* () {
-      const settled = yield* Effect.exit(finish)
-      if (Exit.isFailure(settled)) return yield* Effect.failCause(settled.cause)
-      const { result, report, interrupted, restart } = settled.value
+      const { result, details, interrupted, restart } = yield* finish
       const brief = ({ status, reason }: End): RunOutcome => ({
         threadId,
         flowId: this.flowId,
@@ -184,7 +186,7 @@ export class Execution {
       })
       const outcome = interrupted
         ? brief(result)
-        : yield* Effect.interruptible(report(result)).pipe(
+        : yield* details.pipe(
             Effect.catchCauseIf(Cause.hasInterruptsOnly, () => {
               // The base reports the disposition at interrupt time if the claim was released before metadata returned.
               this.#abort.abort()

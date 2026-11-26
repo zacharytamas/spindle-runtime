@@ -70,7 +70,7 @@ it.effect("refuses a stop while the aborted tool still holds the thread", () => 
   )
 })
 
-for (const mode of ["abort", "terminate"] as const)
+for (const mode of ["abort", "terminate", "abort after provider failure"] as const)
   it.effect(`preserves the sender's outcome on ${mode} while committed metadata is pending`, () =>
     Effect.gen(function* () {
       const committed = yield* Deferred.make<boolean>()
@@ -78,13 +78,21 @@ for (const mode of ["abort", "terminate"] as const)
       const release = gate()
       const registry = registryOf(
         project({
-          provider: new ScriptedProvider([{ text: "reply" }], {
-            getResponseMetadata: async () => {
-              entered.release()
-              await release.opened
-              return {}
+          provider: new ScriptedProvider(
+            mode === "abort after provider failure"
+              ? [
+                  { toolCalls: [{ id: "call", name: "missing", arguments: {} }] },
+                  { reject: { code: "invalid_request", message: "rejected" } },
+                ]
+              : [{ text: "reply" }],
+            {
+              getResponseMetadata: async () => {
+                entered.release()
+                await release.opened
+                return {}
+              },
             },
-          }),
+          ),
         }),
       )
       const stores = Layer.effect(
@@ -111,6 +119,15 @@ for (const mode of ["abort", "terminate"] as const)
         expect(yield* Deferred.await(committed), "the scheduler is guarded through the return from commit").toBe(true)
         if (mode === "terminate") yield* supervisor.control(id).terminate({ kind: "external" })
         else yield* supervisor.abort(id)
+        if (mode === "abort after provider failure") {
+          release.release()
+          const { outcome, status } = yield* Fiber.join(sent)
+          expect(status.reason).toBe("step_error")
+          expect(outcome).toMatchObject({ status: "failed", reason: "step_error", error: { message: "rejected" } })
+          expect(outcome?.modelCalls).toHaveLength(2)
+          expect(outcome?.trace.length).toBeGreaterThan(0)
+          return
+        }
         const { outcome, status } = yield* Fiber.join(sent)
         expect(status.reason).toBe("stop_on_response")
         expect(outcome).toMatchObject(
