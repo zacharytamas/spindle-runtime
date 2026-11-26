@@ -54,6 +54,45 @@ const abort = (session: Session) =>
 
 describe("spindle chat and Ctrl-C", () => {
   it.live(
+    "two consecutive aborted tools release both queued turns",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const { session, thread } = yield* holding(gate, db, at, { name: "first" })
+        yield* abort(session)
+        yield* session.type(`${call("hold", { name: "second" })}\n`)
+        yield* printed("the first wait", session.err, note.behindTool("hold"))
+        yield* touch(at("release-first"))
+        yield* until("the second tool to start", exists(at("tool-entered-second")))
+        yield* session.signal("SIGINT")
+        yield* until(
+          "the second stop",
+          Effect.sync(() => linesOf(session.err()).filter((line) => line === note.stopping).length === 2),
+        )
+        yield* session.signal("SIGINT")
+        yield* prompt(session, 3)
+        yield* session.type("third\n")
+        yield* until(
+          "the second wait",
+          Effect.sync(() => linesOf(session.err()).filter((line) => line === note.behindTool("hold")).length === 2),
+        )
+        yield* touch(at("release-second"))
+        yield* prompt(session, 4)
+        yield* session.end
+        expect(yield* session.exit).toBe(0)
+        expect(linesOf(session.out()).filter((line) => line === "ack: third")).toHaveLength(1)
+        expect(linesOf(session.err()).filter((line) => line === note.status("idle", "aborted_by_user"))).toHaveLength(2)
+        expect(yield* toolRows(db, thread)).toEqual([
+          ["error", CLOSING.aborted],
+          ["error", CLOSING.aborted],
+        ])
+        expect(yield* lines(at("tool-log"))).toEqual(["first", "second"])
+        expect(yield* queuedIn(db, thread)).toEqual([])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "an aborted hook is named while it holds the thread",
     () =>
       Effect.gen(function* () {

@@ -1,11 +1,25 @@
-import type { Message } from "@standardagents/spec"
-import { Cause, Console, Effect, Exit, Fiber, FileSystem, Layer, Logger, Option, Path, Queue, Semaphore } from "effect"
+import type { Message, ThreadStatus } from "@standardagents/spec"
+import {
+  Cause,
+  Console,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Logger,
+  Option,
+  Path,
+  Queue,
+  Semaphore,
+} from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { onInterrupt, openChatTerminal } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
 import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
-import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
+import { type ExecutionEvent, learnSecrets, type RunOutcome } from "../execution/step.ts"
 import { type Delivery, layer as supervisorLayer, ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { createThread } from "../execution/trigger.ts"
@@ -41,13 +55,12 @@ const messageLines = (message: Message, modelRole: Message["role"], own: boolean
   return message.role === "user" || message.role === "assistant" ? [`[elsewhere] ${content}`] : []
 }
 
-const report = (delivery: Delivery) =>
+const report = (result: RunOutcome | ThreadStatus) =>
   Effect.gen(function* () {
-    const { outcome, status } = delivery
-    const state = outcome?.status ?? status.state
-    const reason = outcome?.reason ?? status.reason ?? "none"
-    if (state === "failed" && outcome?.error) {
-      const { origin, message } = outcome.error
+    const state = "state" in result ? result.state : result.status
+    const reason = result.reason ?? "none"
+    if (state === "failed" && "error" in result && result.error) {
+      const { origin, message } = result.error
       yield* note(`${origin?.startsWith("provider:") ? "provider error" : "error"}: ${message}`)
     }
     if (reason !== "stop_on_response") yield* note(`${state} (${reason})`)
@@ -153,16 +166,16 @@ const converse = (chat: Conversation) =>
       }),
     )
     yield* flush
-    let previous: Turn | undefined
+    let previous: Deferred.Deferred<RunOutcome, unknown> | undefined
     let waiting = false
     let atPrompt = true
     const finishPrevious = Effect.gen(function* () {
       if (!previous) return
       const turn = previous
       previous = undefined
-      const delivery = yield* Fiber.join(turn)
+      const outcome = yield* Deferred.await(turn)
       yield* flush
-      yield* report(delivery)
+      yield* report(outcome)
     })
     const observe = (event: ExecutionEvent) =>
       Effect.gen(function* () {
@@ -224,7 +237,7 @@ const converse = (chat: Conversation) =>
             if (Exit.isSuccess(event.exit)) {
               yield* finishPrevious
               yield* flush
-              yield* report(event.exit.value)
+              yield* report(event.exit.value.outcome ?? event.exit.value.status)
               return "continue" as const
             }
             const error = Cause.squash(event.exit.cause)
@@ -244,8 +257,8 @@ const converse = (chat: Conversation) =>
           if (stopping) {
             atPrompt = true
             yield* note("aborting the run")
-            yield* supervisor.abort(chat.id)
-            previous = turn
+            previous = yield* supervisor.abortExecution(chat.id)
+            yield* Fiber.interrupt(turn)
             return "continue" as const
           }
           stopping = true
@@ -264,7 +277,7 @@ const converse = (chat: Conversation) =>
       if (!terminal.isTerminal) yield* write(`${read.line}\n`)
       if (read.line.trim() === "") continue
       atPrompt = false
-      if (previous?.pollUnsafe()) yield* finishPrevious
+      if (previous && Deferred.isDoneUnsafe(previous)) yield* finishPrevious
       yield* flush
       waiting = false
       let admitted = false

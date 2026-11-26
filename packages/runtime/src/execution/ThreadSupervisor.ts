@@ -54,6 +54,8 @@ export class ThreadSupervisor extends Context.Service<
     readonly stop: (threadId: string) => Effect.Effect<boolean>
     // Interrupts that execution. The run settles idle, and the thread stays open.
     readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<boolean>
+    // The settlement belongs to the execution interrupted here, even if a queued line starts its successor.
+    readonly abortExecution: (threadId: string) => Effect.Effect<Deferred.Deferred<RunOutcome, unknown> | undefined>
     // The outcome of the execution that this process runs for the thread, once it settles.
     readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, unknown>
     readonly status: (threadId: string) => Effect.Effect<ThreadStatus, unknown>
@@ -308,6 +310,17 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       yield* store.registerHolder(holder)
       yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
 
+      const abortExecution = (threadId: string, exiting = false) =>
+        Effect.sync(() => {
+          const local = live.get(threadId)
+          if (local?.fiber === undefined) return undefined
+          local.run.stop ??= { reason: "aborted_by_user" }
+          local.run.waitForCallbacks = !exiting
+          if (exiting) local.run.releaseWait.abort()
+          local.fiber.interruptUnsafe()
+          return local.done
+        })
+
       return ThreadSupervisor.of({
         holderId: holder.id,
         // A sender waits for the run that takes its message. When the run it waited behind stopped or failed and left
@@ -379,16 +392,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             local.run.stop ??= { reason: "aborted_by_user" }
             return true
           }),
-        abort: (threadId, exiting = false) =>
-          Effect.sync(() => {
-            const local = live.get(threadId)
-            if (local?.fiber === undefined) return false
-            local.run.stop ??= { reason: "aborted_by_user" }
-            local.run.waitForCallbacks = !exiting
-            if (exiting) local.run.releaseWait.abort()
-            local.fiber.interruptUnsafe()
-            return true
-          }),
+        abortExecution,
+        abort: (threadId, exiting) =>
+          Effect.map(abortExecution(threadId, exiting), (settlement) => settlement !== undefined),
         settled: (threadId) =>
           Effect.suspend(() => {
             const local = live.get(threadId)
