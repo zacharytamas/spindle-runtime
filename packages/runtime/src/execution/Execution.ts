@@ -84,6 +84,7 @@ export class Execution {
   }
   track(promise: Promise<unknown>, operation: string) {
     this.#pending.set(promise, operation)
+    if (this.#phase === "holding") this.#released.closeUnsafe()
   }
   forget(promise: Promise<unknown>) {
     this.#pending.delete(promise)

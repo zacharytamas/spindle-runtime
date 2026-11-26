@@ -2,7 +2,7 @@ import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult 
 import { Data, Effect, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { NewMessage } from "../store/model.ts"
-import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
+import { Callback, type PendingCallbacks } from "./callback.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
@@ -110,13 +110,13 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }
     args = parsed.success.data
   }
-  const callback: Callback = {}
+  const callback = new Callback()
   const state = stateFor(callback)
   if (state.execution?.stopped) return undefined
   const returned = yield* Effect.result(
     Effect.tryPromise({
       try: () =>
-        invokeCallback(callback, pending, `tool ${name}`, () =>
+        callback.invoke(pending, `tool ${name}`, () =>
           schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
         ),
       catch: describe,

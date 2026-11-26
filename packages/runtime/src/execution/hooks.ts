@@ -10,7 +10,7 @@ import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
-import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
+import { Callback, type PendingCallbacks } from "./callback.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -354,7 +354,6 @@ export interface HookCall extends Callback {
   readonly hook: string
   readonly position: Position
   readonly depth: number
-  expired: boolean
 }
 
 export interface HookScope {
@@ -445,7 +444,7 @@ const callHook = (
   pending: HookScope["pending"],
 ) =>
   Effect.tryPromise({
-    try: () => invokeCallback(call, pending, `hook ${hook.id}`, () => hook.execute(...args())),
+    try: () => call.invoke(pending, `hook ${hook.id}`, () => hook.execute(...args())),
     catch: () => "threw an error",
   }).pipe(Effect.timeoutOption(timeout), Effect.result)
 
@@ -473,7 +472,7 @@ export const runHooks = <K extends Position>(
     const check = options.check ?? (() => Effect.undefined)
     let current = value
     for (const hook of hooks) {
-      const call: HookCall = { hook: hook.id, position, depth: (options.depth ?? 0) + 1, expired: false }
+      const call = Object.assign(new Callback(), { hook: hook.id, position, depth: (options.depth ?? 0) + 1 })
       const args = () => [
         scope.stateFor(hook, call),
         ...lead.map((arg) => structuredClone(arg)),
@@ -483,10 +482,11 @@ export const runHooks = <K extends Position>(
       const started = yield* Clock.currentTimeMillis
       const outcome = yield* callHook(hook, args, timeout, call, scope.pending)
       // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
-      call.expired =
+      if (
         (outcome._tag === "Success" && outcome.success._tag === "None") ||
         (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
-      if (call.expired && call.promise) scope.pending?.forget(call.promise)
+      )
+        call.expire(scope.pending)
       let problem: string
       let late = ""
       if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {

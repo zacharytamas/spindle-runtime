@@ -95,38 +95,36 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (model: Loaded
 // Returns the effect that yields the provider for one request. A missing required value fails here, before any
 // request. An extension that declares createFetch is built again for each request, with that request's transport.
 export const providerFor = Effect.fn("providerFor")(
-  (model: Loaded<ModelDefinition>, state: ThreadState, secrets: Secrets) =>
-    Effect.flatMap(resolveConfig(model, secrets), ({ config, missing }) => {
-      const factory = model.value.provider as ProviderFactoryWithOptions
-      const definition = factory.providerDefinition
-      const name = model.definition.qualifiedName
-      if (missing.length > 0)
-        return Effect.fail(
-          new SetupError({
-            message: `The provider of model ${name} needs ${missing.join(", ")}, which ${missing.length === 1 ? "has" : "have"} no value`,
-          }),
-        )
-      return Effect.flatMap(FetchHttpClient.Fetch, (transport) => {
-        const resolved: ProviderFactoryConfig = {
-          ...config,
-          apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
-        }
-        const build = Effect.try({
-          try: () => {
-            const fetch =
-              definition?.createFetch === undefined
-                ? transport
-                : definition.createFetch({ providerName: definition.name, config: resolved, state })
-            const instance: unknown = factory({ ...resolved, fetch }, { state })
-            if (!isProvider(instance)) throw new Error("it did not return an object with generate and stream methods")
-            return instance
-          },
-          catch: (cause) =>
-            new SetupError({
-              message: `The provider factory of model ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-            }),
-        })
-        return definition?.createFetch === undefined ? Effect.map(build, Effect.succeed) : Effect.succeed(build)
+  function* (model: Loaded<ModelDefinition>, state: ThreadState, secrets: Secrets) {
+    const factory = model.value.provider as ProviderFactoryWithOptions
+    const definition = factory.providerDefinition
+    const { config, missing } = yield* resolveConfig(model, secrets)
+    const name = model.definition.qualifiedName
+    if (missing.length > 0)
+      return yield* new SetupError({
+        message: `The provider of model ${name} needs ${missing.join(", ")}, which ${missing.length === 1 ? "has" : "have"} no value`,
       })
-    }),
+    const transport = yield* FetchHttpClient.Fetch
+    const resolved: ProviderFactoryConfig = {
+      ...config,
+      apiKey: typeof config.apiKey === "string" ? config.apiKey : "",
+    }
+    const build = Effect.try({
+      try: () => {
+        const fetch =
+          definition?.createFetch === undefined
+            ? transport
+            : definition.createFetch({ providerName: definition.name, config: resolved, state })
+        const instance: unknown = factory({ ...resolved, fetch }, { state })
+        if (!isProvider(instance)) throw new Error("it did not return an object with generate and stream methods")
+        return instance
+      },
+      catch: (cause) =>
+        new SetupError({
+          message: `The provider factory of model ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        }),
+    })
+    return { perRequest: definition?.createFetch !== undefined, build }
+  },
+  Effect.flatMap(({ perRequest, build }) => (perRequest ? Effect.succeed(build) : Effect.map(build, Effect.succeed))),
 )
