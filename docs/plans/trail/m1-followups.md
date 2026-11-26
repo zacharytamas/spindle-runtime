@@ -81,7 +81,8 @@ Open, not for this round.
 
 ## Before the stack lands
 
-- The review bot left threads on PR 4, PR 5, PR 6, PR 7, and PR 8. The commits address them, and nobody has replied to them or resolved them.
+- Codex and Copilot left threads on every PR. An earlier version of this line said the commits address them. That was not checked, and Copilot has since raised four of PR 4's points again on its current head. One agent is checking every thread against the code. Valid ones are fixed in the PR they belong to as the stack is rebased. Nobody replies to a thread or resolves one until the operator says so.
+- The stack has six merge commits and is rebased to linear history, one PR at a time from the bottom, before the operator's review. The old tips get archive tags first, because the plan and this trail cite their commit hashes.
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
 
