@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-main-empty-directory",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./lib",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

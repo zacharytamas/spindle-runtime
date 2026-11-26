@@ -1,0 +1,14 @@
+{
+  "name": "standardagent-array-target",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": [
+    "./main.js"
+  ],
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

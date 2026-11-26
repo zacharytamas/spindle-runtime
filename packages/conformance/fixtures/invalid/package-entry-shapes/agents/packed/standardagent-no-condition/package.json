@@ -1,0 +1,17 @@
+{
+  "name": "standardagent-no-condition",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    ".": {
+      "browser": "./main.js"
+    }
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

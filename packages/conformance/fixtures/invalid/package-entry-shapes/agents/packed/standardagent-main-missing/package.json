@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-main-missing",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./gone.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

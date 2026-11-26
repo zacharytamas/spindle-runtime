@@ -1,0 +1,15 @@
+{
+  "name": "standardagent-null-condition",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "import": null,
+    "default": "./main.js"
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

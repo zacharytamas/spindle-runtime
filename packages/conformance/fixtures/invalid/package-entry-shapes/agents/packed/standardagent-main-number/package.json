@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-main-number",
+  "version": "1.0.0",
+  "type": "module",
+  "main": 7,
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "standardagent-null-root",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": null,
+    "./main": "./main.js"
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

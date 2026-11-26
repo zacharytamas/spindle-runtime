@@ -1,0 +1,15 @@
+{
+  "name": "standardagent-exports-conditions",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "import": "./main.js",
+    "default": "./unused.js"
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

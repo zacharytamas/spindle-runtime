@@ -1,0 +1,19 @@
+{
+  "name": "standardagent-exports-nested",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "browser": "./unused.js"
+      },
+      "default": "./main.js"
+    }
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

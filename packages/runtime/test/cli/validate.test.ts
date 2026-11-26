@@ -118,6 +118,24 @@ describe("spindle validate", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("loads each package entry shape when the runtime itself imports it", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const main = yield* path.fromFileUrl(new URL("../../src/cli/main.ts", import.meta.url))
+      const root = yield* copyFixture("package-entries")
+      const output = yield* spawner.string(
+        ChildProcess.make(platformName, ["--conditions=spindle-source", main, "validate", "--json", "--list", root]),
+      )
+      const { definitions, issues } = JSON.parse(output)
+      expect(issues).toEqual([])
+      expect(definitions.map((d: { qualifiedName: string }) => d.qualifiedName)).toContain(
+        "standardagent-main-directory/main_directory",
+      )
+      expect(definitions).toHaveLength(7)
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.effect("lists every definition by kind, qualified name, package, and name with --list", () =>
     Effect.gen(function* () {
       const { exit, lines } = yield* run("--list", "@namespace-isolation")

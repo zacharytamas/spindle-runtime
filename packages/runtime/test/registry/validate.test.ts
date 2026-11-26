@@ -539,6 +539,66 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect("loads the root entry that Node and Bun import for each exports and main shape", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("package-entries")
+        expect(issues).toEqual([])
+        expect(definitions.map((d) => d.qualifiedName)).toEqual([
+          "standardagent-exports-conditions/exports_conditions",
+          "standardagent-exports-dot-string/exports_dot_string",
+          "standardagent-exports-nested/exports_nested",
+          "standardagent-exports-order/exports_order",
+          "standardagent-exports-over-main/exports_over_main",
+          "standardagent-exports-string/exports_string",
+          "standardagent-main-directory/main_directory",
+        ])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("loads a package whose main is an absolute path inside the package", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-registry-" })
+        const dir = path.join(root, "agents", "packed", "standardagent-exports-string")
+        yield* fs.copy(path.join(yield* fixture("package-entries"), "agents"), path.join(root, "agents"))
+        const manifest = path.join(dir, "package.json")
+        const fields = JSON.parse(yield* fs.readFileString(manifest))
+        delete fields.exports
+        yield* fs.writeFileString(manifest, JSON.stringify({ ...fields, main: path.join(dir, "main.js") }))
+        const { definitions, issues } = yield* validateRoot(root)
+        expect(issues).toEqual([])
+        expect(definitions.map((d) => d.qualifiedName)).toContain("standardagent-exports-string/exports_string")
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+
+    it.effect("rejects a package entry that Node or Bun would not import, names the package, and imports nothing", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("invalid/package-entry-shapes")
+        const shapes = [
+          "array-target",
+          "bare-target",
+          "directory-export",
+          "main-empty-directory",
+          "main-missing",
+          "main-number",
+          "mixed-keys",
+          "no-condition",
+          "no-root",
+          "null-condition",
+          "null-root",
+        ]
+        expect(located(issues)).toEqual(
+          shapes.map((shape) => error("package_invalid", `agents/packed/standardagent-${shape}/package.json`)),
+        )
+        expect(issues.map((issue) => issue.message.split(" ")[0])).toEqual(
+          shapes.map((shape) => `standardagent-${shape}`),
+        )
+        expect(definitions).toEqual([])
+        expect(Reflect.get(globalThis, "spindleImportedRejectedEntry")).toBeUndefined()
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("finds a package entry under the node export condition", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("export-conditions")

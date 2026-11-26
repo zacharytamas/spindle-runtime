@@ -24,21 +24,47 @@ const isStringArray = (value: unknown): value is Array<string> =>
 // Node and Bun both match these conditions, so a package resolves to the same entry on either runtime.
 const CONDITIONS = ["import", "node", "default"]
 
-const entryOf = (manifest: Record<string, unknown>): string | undefined => {
-  const pick = (target: unknown): string | undefined => {
-    if (typeof target === "string") return target
-    if (Array.isArray(target)) return target.map(pick).find((found) => found !== undefined)
-    if (!isRecord(target)) return undefined
-    for (const [condition, value] of Object.entries(target)) {
-      const found = CONDITIONS.includes(condition) ? pick(value) : undefined
-      if (found !== undefined) return found
-    }
-    return undefined
+type Entry =
+  | { readonly _tag: "Main"; readonly target: string }
+  | { readonly _tag: "Export"; readonly target: string }
+  | { readonly _tag: "Invalid"; readonly problem: string }
+
+const invalid = (problem: string): Entry => ({ _tag: "Invalid", problem })
+
+// A matched condition whose value is null disables the entry, as it does for Node and Bun, so the search stops there.
+const exportTarget = (value: unknown): Entry | undefined => {
+  if (value === null) return invalid("disables its root export with null")
+  if (typeof value === "string")
+    return value.startsWith("./")
+      ? { _tag: "Export", target: value }
+      : invalid(`exports the root target ${value}, which does not start with ./`)
+  if (!isRecord(value) || Object.keys(value).some((key) => key.startsWith(".")))
+    return invalid("has a root export that is not a path, null, or an object of conditions")
+  for (const [condition, target] of Object.entries(value)) {
+    if (!CONDITIONS.includes(condition)) continue
+    const found = exportTarget(target)
+    if (found !== undefined) return found
   }
-  const exports = manifest.exports
-  if (exports === undefined) return typeof manifest.main === "string" ? manifest.main : "index.js"
-  const subpaths = isRecord(exports) && Object.keys(exports).some((key) => key.startsWith("."))
-  return pick(subpaths ? exports["."] : exports)
+  return undefined
+}
+
+const entryOf = (manifest: Record<string, unknown>): Entry => {
+  const { exports, main } = manifest
+  if (exports === undefined) {
+    if (main === undefined) return { _tag: "Main", target: "index.js" }
+    return typeof main === "string" && main !== ""
+      ? { _tag: "Main", target: main }
+      : invalid("has a main that is not a path")
+  }
+  const keys = isRecord(exports) ? Object.keys(exports) : []
+  const subpaths = keys.filter((key) => key.startsWith("."))
+  if (subpaths.length > 0 && subpaths.length < keys.length)
+    return invalid("mixes subpath keys and condition keys in exports")
+  if (subpaths.length > 0 && !subpaths.includes(".")) return invalid("has exports with no root entry")
+  return (
+    exportTarget(subpaths.length > 0 ? Reflect.get(exports as object, ".") : exports) ??
+    invalid(`exports no root entry under the conditions ${CONDITIONS.join(", ")}`)
+  )
 }
 
 const metaProblem = (meta: unknown, name: string): string | undefined => {
@@ -142,19 +168,37 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       return
     }
     const target = entryOf(manifest)
-    if (target === undefined) {
+    if (target._tag === "Invalid") {
+      issue("package_invalid", relativeManifest, `${name} ${target.problem}`)
+      return
+    }
+    const named = path.resolve(dir, target.target)
+    const kind = yield* fs.stat(named).pipe(
+      Effect.map((info) => info.type),
+      Effect.orElseSucceed(() => "Missing" as const),
+    )
+    // Node does not import a directory and Bun does, so Spindle picks the index.js of a main directory itself.
+    const entry = kind === "Directory" && target._tag === "Main" ? path.join(named, "index.js") : named
+    const unusable =
+      kind === "Missing"
+        ? "which does not exist"
+        : kind === "Directory" && target._tag === "Export"
+          ? "which is a directory. An export target must name a file."
+          : undefined
+    if (unusable !== undefined) {
+      issue("package_invalid", relativeManifest, `${name} names the entry ${target.target}, ${unusable}`)
+      return
+    }
+    const file = path.relative(root, entry)
+    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry), fs.stat(entry)]).pipe(Effect.result)
+    if (Result.isFailure(located) || located.success[2].type !== "File") {
       issue(
         "package_invalid",
         relativeManifest,
-        `${name} exports no root entry under the conditions ${CONDITIONS.join(", ")}`,
+        kind === "Directory"
+          ? `${name} names the main directory ${target.target}, which holds no index.js file`
+          : `${name} names the entry ${target.target}, which is not a file`,
       )
-      return
-    }
-    const entry = path.join(dir, target)
-    const file = path.relative(root, entry)
-    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry)]).pipe(Effect.result)
-    if (Result.isFailure(located)) {
-      issue("package_invalid", relativeManifest, `${name} names the entry ${target}, which does not exist`)
       return
     }
     const [home, resolved] = located.success
@@ -162,7 +206,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       issue(
         "package_invalid",
         relativeManifest,
-        `${name} names the entry ${target}, which resolves to ${resolved}, outside the package directory ${home}. Spindle imports only files inside a package.`,
+        `${name} names the entry ${target.target}, which resolves to ${resolved}, outside the package directory ${home}. Spindle imports only files inside a package.`,
       )
       return
     }

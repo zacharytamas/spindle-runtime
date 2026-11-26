@@ -1,0 +1,13 @@
+{
+  "name": "standardagent-exports-over-main",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./unused.js",
+  "exports": "./main.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}
