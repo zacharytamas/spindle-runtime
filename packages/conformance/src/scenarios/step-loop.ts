@@ -1836,6 +1836,31 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
         instance,
       )
+      const tiny = {
+        status: defineTool({
+          description: "Returns a one-character secret in its data",
+          variables: [{ name: "ONE_CHAR", type: "secret", required: true, description: "A one-character token" }],
+          execute: async (state: ThreadState) => {
+            const token = await state.env("ONE_CHAR")
+            return { status: "error" as const, error: "rejected", error_data: { [`key ${token}`]: "kept" } }
+          },
+        }),
+      }
+      const statusCheck = new ScriptedProvider([{ toolCalls: [{ name: "status", arguments: {} }] }, { text: "done" }])
+      await using(
+        driver,
+        { provider: statusCheck, tools: tiny },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          expect([result?.tool_status, result?.content, result?.metadata]).toEqual([
+            "error",
+            "r[redacted]j[redacted]ct[redacted]d",
+            { error_data: { "k[redacted]y [redacted]": "k[redacted]pt" } },
+          ])
+        },
+        { ONE_CHAR: "e" },
+      )
       const echoing = new ScriptedProvider([
         {
           text: "the token is Q7z",

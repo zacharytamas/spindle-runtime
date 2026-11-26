@@ -38,21 +38,22 @@ const loadScript = (file: string) =>
 
 const printer =
   (modelRole: Message["role"], options: { readonly trace: boolean; readonly dumpRequests: boolean }) =>
-  (event: ExecutionEvent): Effect.Effect<void> => {
-    if (event.type === "trace") return options.trace ? Console.log(formatTraceEntry(event.entry)) : Effect.void
+  (event: ExecutionEvent, redact: (text: string) => string = (text) => text): Effect.Effect<void> => {
+    const print = (line: string) => Console.log(redact(line))
+    if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
       const { signal: _, ...request } = event.request
-      return Console.log(JSON.stringify(request, null, 2))
+      return print(JSON.stringify(request, null, 2))
     }
     const message = event.message
     if (message.role === "tool")
-      return Console.log(`[tool result] ${message.name} ${message.tool_status}: ${message.content ?? ""}`)
+      return print(`[tool result] ${message.name} ${message.tool_status}: ${message.content ?? ""}`)
     if (message.role !== modelRole) return Effect.void
     return Effect.gen(function* () {
-      if (message.content !== null && message.content !== "") yield* Console.log(message.content)
+      if (message.content !== null && message.content !== "") yield* print(message.content)
       for (const call of toolCallsOf(message))
-        yield* Console.log(`[tool call] ${call.name} ${JSON.stringify(call.arguments)}`)
+        yield* print(`[tool call] ${call.name} ${JSON.stringify(call.arguments)}`)
     })
   }
 

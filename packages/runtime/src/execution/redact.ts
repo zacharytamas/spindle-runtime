@@ -18,8 +18,8 @@ const isPlain = (value: object) => {
   return Array.isArray(value) || prototype === null || Object.getPrototypeOf(prototype) === null
 }
 
-// Anything but plain data, a cycle included, is kept as it is, so that the store still rejects what JSON cannot
-// represent.
+// For a payload that user code or a provider controls, so keys are redacted too. Anything but plain data, a cycle
+// included, is kept as it is, so that the store still rejects what JSON cannot represent.
 export const redactDeep = <A>(redact: (text: string) => string, value: A): A => {
   const walk = (item: unknown, ancestors: Set<object>): unknown => {
     if (typeof item === "string") return redact(item)
@@ -27,7 +27,7 @@ export const redactDeep = <A>(redact: (text: string) => string, value: A): A => 
     ancestors.add(item)
     const copy = Array.isArray(item)
       ? item.map((member) => walk(member, ancestors))
-      : Object.fromEntries(Object.entries(item).map(([key, member]) => [key, walk(member, ancestors)]))
+      : Object.fromEntries(Object.entries(item).map(([key, member]) => [redact(key), walk(member, ancestors)]))
     ancestors.delete(item)
     return copy
   }

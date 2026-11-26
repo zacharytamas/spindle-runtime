@@ -29,7 +29,8 @@ export interface ExecutionOptions {
   readonly retries?: number
   readonly stepCap?: number
   readonly provider?: LLMProviderInterface
-  readonly observe?: (event: ExecutionEvent) => Effect.Effect<void>
+  // redact removes the secret values the execution knows from text, such as a line an observer prints.
+  readonly observe?: (event: ExecutionEvent, redact?: (text: string) => string) => Effect.Effect<void>
 }
 
 export interface RunError {
@@ -73,14 +74,13 @@ const parseJson = (text: string | undefined): unknown => {
 
 const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...` : text)
 
-// A call is run only when the provider named it and finished its arguments as one JSON object. Messages section 1
-// stores arguments as JSON text of an object, so arguments that are not one are kept as the text of invalid_json.
+// A call is run only when the provider named it and finished its arguments as one JSON object.
 const toolCallsOf = (response: ModelResponse): Array<ToolCall> =>
   [...response.calls.values()].map((call) => ({
     id: call.id,
     name: call.name,
     arguments: call.arguments,
-    argumentsText: JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText }),
+    argumentsText: call.argumentsText,
     problem:
       call.name === ""
         ? `The provider sent call ${call.id} without the name of a tool`
@@ -97,7 +97,8 @@ const reasoningSource = (turn: Turn) => ({
 })
 
 // The text, reasoning text, and call arguments that the model returned are stored with secrets redacted. The
-// opaque reasoning details are stored as returned, because a provider may sign them.
+// opaque reasoning details are stored as returned, because a provider may sign them. Messages section 1 stores
+// arguments as the JSON text of an object, so arguments that are not one are kept as the text of invalid_json.
 const responseMessage = (
   turn: Turn,
   response: ModelResponse,
@@ -119,7 +120,14 @@ const responseMessage = (
             calls.map((call) => ({
               id: call.id,
               type: "function",
-              function: { name: call.name, arguments: redact(call.argumentsText) },
+              function: {
+                name: call.name,
+                arguments: JSON.stringify(
+                  call.arguments === undefined
+                    ? { invalid_json: redact(call.argumentsText) }
+                    : redactDeep(redact, call.arguments),
+                ),
+              },
             })),
           ),
     reasoning_content: response.reasoning === null ? null : redact(response.reasoning),
@@ -183,7 +191,20 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const secrets = new Set<string>()
     const redact = redactor(secrets)
     const observe = (event: ExecutionEvent) =>
-      options.observe === undefined ? Effect.void : options.observe(redactDeep(redact, event))
+      options.observe === undefined ? Effect.void : options.observe(event, redact)
+    // Only the text a tool, a provider, or a model wrote is redacted, never a field that the runtime reads back.
+    const redactError = <E extends { readonly message: string; readonly upstream?: string }>(error: E): E => ({
+      ...error,
+      message: redact(error.message),
+      ...(error.upstream === undefined ? {} : { upstream: redact(error.upstream) }),
+    })
+    const redactResult = (result: ToolResult): ToolResult => ({
+      ...result,
+      ...(result.result === undefined ? {} : { result: redact(result.result) }),
+      ...(result.error === undefined ? {} : { error: redact(result.error) }),
+      ...(result.error_code === undefined ? {} : { error_code: redact(result.error_code) }),
+      ...(result.error_data === undefined ? {} : { error_data: redactDeep(redact, result.error_data) }),
+    })
     const abort = new AbortController()
     let step = 0
     let steps = 0
@@ -201,8 +222,24 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     ) =>
       Effect.gen(function* () {
         yield* Effect.forEach(pending, Fiber.join, { discard: true })
-        const outcome = { threadId, flowId, status, reason, steps, ...extra, trace, modelCalls } satisfies RunOutcome
-        return redactDeep(redact, outcome)
+        const calls = modelCalls.map((call) => ({
+          ...call,
+          ...(call.error === undefined ? {} : { error: redactError(call.error) }),
+          ...(call.metadataError === undefined ? {} : { metadataError: redact(call.metadataError) }),
+          ...(call.metadata == null ? {} : { metadata: redactDeep(redact, call.metadata) }),
+        }))
+        const { error, ...rest } = extra
+        return {
+          threadId,
+          flowId,
+          status,
+          reason,
+          steps,
+          ...rest,
+          ...(error === undefined ? {} : { error: redactError(error) }),
+          trace,
+          modelCalls: calls,
+        } satisfies RunOutcome
       })
 
     const loop = Effect.gen(function* () {
@@ -302,7 +339,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const results: Array<ToolResult> = []
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
-          let result = redactDeep(redact, yield* runToolCall(toolContext, call))
+          let result = redactResult(yield* runToolCall(toolContext, call))
           // Runtime section 5.2: data that JSON cannot represent fails this one call, not the step.
           const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)]).pipe(
             Effect.catchTag("ValueNotJson", (error) => {
