@@ -88,7 +88,10 @@ const metaProblem = (meta: unknown): string | undefined => {
 const withSignature = (definition: unknown, signature: PackageSignature): unknown => {
   if (Array.isArray(definition)) return Object.assign([...definition], { __package: signature })
   if (isRecord(definition))
-    return Object.assign(Object.create(Object.getPrototypeOf(definition)), definition, { __package: signature })
+    return Object.create(Object.getPrototypeOf(definition), {
+      ...Object.getOwnPropertyDescriptors(definition),
+      __package: { value: signature, writable: true, enumerable: true, configurable: true },
+    })
   return definition
 }
 

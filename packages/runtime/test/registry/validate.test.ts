@@ -675,6 +675,50 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect("keeps the non-enumerable fields of a packed definition when it attaches the package signature", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-registry-" })
+        const dir = path.join(root, "agents", "packed", "standardagent-hidden-fields")
+        yield* fs.makeDirectory(dir, { recursive: true })
+        yield* fs.writeFileString(
+          path.join(dir, "package.json"),
+          JSON.stringify({
+            name: "standardagent-hidden-fields",
+            type: "module",
+            keywords: ["standardagent"],
+            standardagent: {},
+          }),
+        )
+        yield* fs.writeFileString(
+          path.join(dir, "index.js"),
+          [
+            "const provider = () => {}",
+            "export const agents = {}",
+            "export const handlers = {}",
+            "export const tools = {}",
+            "export const hooks = {}",
+            "export const prompts = {",
+            '  ask: async () => ({ name: "ask", toolDescription: "Asks", model: "fast", prompt: "Answer." }),',
+            "}",
+            "export const models = {",
+            "  speedy: async () =>",
+            '    Object.defineProperties({}, { name: { value: "fast" }, provider: { value: provider }, model: { value: "m" } }),',
+            "}",
+            'export const __meta = { packageId: "standardagent-hidden-fields", version: "1.0.0", entryAgents: [], packedAt: 0 }',
+          ].join("\n"),
+        )
+        const { definitions, issues } = yield* validateRoot(root)
+        expect(located(issues)).toEqual([
+          warning("definition_name_mismatch", "agents/packed/standardagent-hidden-fields/index.js:models.speedy.name"),
+        ])
+        expect(definitions.filter((d) => d.kind === "model").map((d) => d.qualifiedName)).toEqual([
+          "standardagent-hidden-fields/fast",
+        ])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+
     it.effect("attaches a package signature to each packed definition of every kind at load time", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("packed-every-kind")
