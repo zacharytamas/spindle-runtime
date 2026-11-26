@@ -17,7 +17,7 @@ import { resolveEnv } from "./env.ts"
 import { redactDeep, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
-import { invokeTool, runToolCall, scopeFor, storedResult, type ToolCall, type ToolContext } from "./tools.ts"
+import { failed, invokeTool, runToolCall, scopeFor, storedResult, type ToolCall, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
 import { type FunctionTool, type Loaded, lookup, prepareTurn, roleOf, type Turn } from "./turn.ts"
 
@@ -295,9 +295,15 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const results: Array<ToolResult> = []
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
-          const result = redactDeep(redact, yield* runToolCall(toolContext, call))
+          let result = redactDeep(redact, yield* runToolCall(toolContext, call))
+          // Runtime section 5.2: data that JSON cannot represent fails this one call, not the step.
+          const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)]).pipe(
+            Effect.catchTag("ValueNotJson", (error) => {
+              result = failed(`Tool ${call.name} returned data that cannot be stored: ${error.message}`)
+              return store.appendMessages(threadId, [storedResult(turn, call, result)])
+            }),
+          )
           results.push(result)
-          const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)])
           if (stored !== undefined) {
             history.push(stored)
             yield* record("persist-results", `${call.id} ${stored.tool_status}`)

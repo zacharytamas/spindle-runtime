@@ -1071,6 +1071,48 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S14b stores a tool error for a result whose data cannot be stored and still runs the next call",
+    requirements: ["732b2d4b"],
+    run: async (driver) => {
+      const tools = {
+        tangled: defineTool({
+          description: "Returns circular diagnostic data",
+          execute: async () => {
+            const data: Record<string, unknown> = {}
+            data.self = data
+            return { status: "error" as const, error: "tangled", error_data: data }
+          },
+        }),
+        fine: defineTool({ description: "Returns at once", execute: async () => ok("fine") }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "t1", name: "tangled", arguments: {} },
+            { id: "f1", name: "fine", arguments: {} },
+          ],
+        },
+        { text: "recovered" },
+      ])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        const outcome = await send(session, thread, "go")
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+        const results = (await session.messages(thread)).filter((m) => m.role === "tool")
+        expect(results.map((m) => [m.tool_call_id, m.name, m.tool_status])).toEqual([
+          ["t1", "tangled", "error"],
+          ["f1", "fine", "success"],
+        ])
+        expect(results[0]?.content).toMatch(/^Tool tangled returned data that cannot be stored: .*circular reference/)
+      })
+      expect(history(provider.requests[1]).map(sideOf)).toEqual([
+        ["user", "go"],
+        ["assistant", null, ["t1", "f1"]],
+        ["tool", "t1"],
+        ["tool", "f1"],
+      ])
+    },
+  },
+  {
     name: "S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
     requirements: ["50d12acc", "1d6d311a", "39260b1a"],
     run: async (driver) => {
