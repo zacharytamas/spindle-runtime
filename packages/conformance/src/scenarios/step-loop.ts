@@ -1,5 +1,4 @@
 import {
-  type AgentDefinition,
   defineAgent,
   defineHook,
   defineModel,
@@ -11,7 +10,6 @@ import {
   type PromptDefinition,
   ProviderError,
   type ProviderFactoryWithOptions,
-  type ProviderMessage,
   type ProviderStreamChunk,
   providerEnv,
   type ResponseSummary,
@@ -19,155 +17,30 @@ import {
 } from "@standardagents/spec"
 import { expect } from "vitest"
 import { z } from "zod"
-import type { Project, RunOutcome, RuntimeDriver, RuntimeSession, SendOptions } from "../RuntimeDriver.ts"
-import { type RecordedRequest, ScriptedProvider, type ScriptStep } from "../ScriptedProvider.ts"
-
-export interface Scenario {
-  readonly name: string
-  // The requirement ids, without the page prefix, that the scenario proves. The ledger holds the full ids.
-  readonly requirements: ReadonlyArray<string>
-  readonly run: (driver: RuntimeDriver) => Promise<void>
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: tools differ in their argument types.
-type Tools = Record<string, any>
-
-export interface Setup {
-  readonly provider: ScriptedProvider
-  readonly prompt?: Partial<PromptDefinition>
-  readonly prompts?: ReadonlyArray<PromptDefinition>
-  readonly side?: Partial<AgentDefinition["sideA"]>
-  readonly agent?: Partial<AgentDefinition>
-  readonly agents?: ReadonlyArray<AgentDefinition>
-  readonly humanOn?: "a" | "b"
-  readonly model?: Partial<ModelDefinition>
-  readonly models?: ReadonlyArray<ModelDefinition>
-  readonly tools?: Tools
-  readonly hooks?: Project["hooks"]
-}
-
-export const project = (setup: Setup): Project => {
-  const side = { prompt: "assistant", ...setup.side } as AgentDefinition["sideA"]
-  const human = { human: true } as const
-  return {
-    models: [
-      defineModel({ name: "scripted", provider: setup.provider.factory, model: "scripted-model-v1", ...setup.model }),
-      ...(setup.models ?? []),
-    ],
-    prompts: [
-      definePrompt({
-        name: "assistant",
-        toolDescription: "Answers questions",
-        model: "scripted",
-        prompt: "You are a test assistant.",
-        tools: Object.keys(setup.tools ?? {}),
-        ...setup.prompt,
-      } as PromptDefinition),
-      ...(setup.prompts ?? []),
-    ],
-    agents: [
-      defineAgent({
-        name: "assistant",
-        ...(setup.humanOn === "a" ? { sideA: human, sideB: side } : { sideA: side, sideB: human }),
-        ...setup.agent,
-      } as AgentDefinition),
-      ...(setup.agents ?? []),
-    ],
-    tools: setup.tools ?? {},
-    ...(setup.hooks === undefined ? {} : { hooks: setup.hooks }),
-  }
-}
-
-export const open = async (driver: RuntimeDriver, setup: Setup, instanceEnv?: Record<string, string>) => {
-  const session = await driver.load(project(setup), instanceEnv === undefined ? {} : { instanceEnv })
-  const thread = await session.createThread("assistant")
-  return { session, thread }
-}
-
-export const using = async (
-  driver: RuntimeDriver,
-  setup: Setup,
-  body: (session: RuntimeSession, thread: string) => Promise<void>,
-  instanceEnv?: Record<string, string>,
-) => {
-  const { session, thread } = await open(driver, setup, instanceEnv)
-  try {
-    await body(session, thread)
-  } finally {
-    await session.close()
-  }
-}
-
-export const gate = () => {
-  let release: () => void = () => {}
-  const opened = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  return { release, opened }
-}
-
-export const ok = (result: string) => ({ status: "success" as const, result })
-
-export const callsOf = (message: Message | undefined) =>
-  JSON.parse(message?.tool_calls ?? "[]") as Array<{
-    id: string
-    type: string
-    function: { name: string; arguments: string }
-  }>
-
-// Every key and string inside a value, and inside each string that holds JSON, so that a search finds a value under
-// any field and inside a JSON column, decoded.
-const stringsIn = (value: unknown): Array<string> => {
-  if (typeof value === "string") {
-    try {
-      const parsed: unknown = JSON.parse(value)
-      return [value, ...(typeof parsed === "object" && parsed !== null ? stringsIn(parsed) : [])]
-    } catch {
-      return [value]
-    }
-  }
-  if (typeof value !== "object" || value === null) return []
-  return Object.entries(value).flatMap(([key, member]) => [key, ...stringsIn(member)])
-}
-
-export const holding = (value: unknown, secret: string) => stringsIn(value).filter((text) => text.includes(secret))
-
-const shape = (messages: ReadonlyArray<Message>) =>
-  messages.map((message) => [message.role, message.role === "tool" ? message.tool_call_id : message.content])
-
-export const history = (request: RecordedRequest | undefined) =>
-  (request?.messages ?? []).filter((message) => message.role !== "system")
-
-export const sideOf = (message: ProviderMessage) =>
-  message.role === "assistant"
-    ? ["assistant", message.content ?? null, (message.toolCalls ?? []).map((call) => call.id)]
-    : message.role === "tool"
-      ? ["tool", message.toolCallId]
-      : [message.role, message.content]
-
-const counter = () => {
-  let count = 0
-  return {
-    get count() {
-      return count
-    },
-    tick: <A>(value: A) => {
-      count += 1
-      return value
-    },
-  }
-}
-
-export const send = (
-  session: RuntimeSession,
-  thread: string,
-  text: string,
-  options?: SendOptions,
-): Promise<RunOutcome> => session.send(thread, text, options)
+import type { RunOutcome, RuntimeDriver } from "../RuntimeDriver.ts"
+import { ScriptedProvider, type ScriptStep } from "../ScriptedProvider.ts"
+import {
+  callsOf,
+  counter,
+  firstToolResult,
+  gate,
+  history,
+  holding,
+  ok,
+  project,
+  rolesFor,
+  runTurn,
+  type Scenario,
+  type Setup,
+  shape,
+  sideOf,
+  stubTool,
+  toolResults,
+  using,
+} from "./harness.ts"
 
 const orientation = async (driver: RuntimeDriver, humanOn: "a" | "b") => {
-  const humanRole = humanOn === "b" ? "user" : "assistant"
-  const modelRole = humanOn === "b" ? "assistant" : "user"
+  const { human: humanRole, model: modelRole } = rolesFor(humanOn)
   const provider = new ScriptedProvider([
     { toolCalls: [{ id: "call_own", name: "lookup", arguments: { q: "x" } }] },
     { text: "one" },
@@ -200,8 +73,8 @@ const orientation = async (driver: RuntimeDriver, humanOn: "a" | "b") => {
           tool_status: "success",
         },
       ])
-      expect(await send(session, thread, "first")).toMatchObject({ status: "idle", reason: "stop_on_response" })
-      expect(await send(session, thread, "second")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+      expect(await session.send(thread, "first")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+      expect(await session.send(thread, "second")).toMatchObject({ status: "idle", reason: "stop_on_response" })
       const stored = await session.messages(thread)
       expect(stored.map((message) => [message.role, message.content, message.prompt])).toEqual([
         [humanRole, "earlier", null],
@@ -283,7 +156,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }),
       }
       await using(driver, { provider, tools }, async (session, thread) => {
-        const running = send(session, thread, "Remember blue")
+        const running = session.send(thread, "Remember blue")
         await firstStarted.opened
         const atFirstTool = await session.messages(thread)
         expect(shape(atFirstTool)).toEqual([
@@ -366,8 +239,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       })
       const leaf = definePrompt({ name: "leaf", toolDescription: "Leaf", model: "other", prompt: "  leaf\n" })
       const tools = {
-        root_tool: defineTool({ description: "Root", execute: async () => ok("root") }),
-        other_tool: defineTool({ description: "Other", execute: async () => ok("other") }),
+        root_tool: stubTool("Root", "root"),
+        other_tool: stubTool("Other", "other"),
       }
       const render = async (
         agentEnv: Record<string, string> | undefined,
@@ -392,7 +265,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         )
         try {
           const thread = await session.createThread("assistant")
-          const outcome = await send(session, thread, "hi")
+          const outcome = await session.send(thread, "hi")
           return { outcome, request: provider.requests[0], other: otherProvider.requests.length }
         } finally {
           await session.close()
@@ -479,9 +352,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }
         const flags = includeChat === undefined ? {} : { includeChat, includePastTools }
         await using(driver, { provider, tools, prompt: flags }, async (session, thread) => {
-          await send(session, thread, "u1")
+          await session.send(thread, "u1")
           await session.seed(thread, [{ role: "user", content: "quiet note", silent: true }])
-          expect(await send(session, thread, "u2")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          expect(await session.send(thread, "u2")).toMatchObject({ status: "idle", reason: "stop_on_response" })
           views[`${includeChat}/${includePastTools}`] = history(provider.requests[2]).map(sideOf)
           expect(history(provider.requests[3]).slice(-4).map(sideOf)).toEqual([
             ["user", "u2"],
@@ -541,8 +414,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             return ok(q)
           },
         }),
-        search: defineTool({ description: "Search the docs", execute: async () => ok("searched") }),
-        hidden_tool: defineTool({ description: "Not offered", execute: async () => ok("hidden") }),
+        search: stubTool("Search the docs", "searched"),
+        hidden_tool: stubTool("Not offered", "hidden"),
       }
       for (const parallelToolCalls of [true, false, undefined]) {
         events.length = 0
@@ -560,7 +433,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
         } as Partial<PromptDefinition>
         await using(driver, { provider, tools, prompt }, async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const request = provider.requests[0]
           expect(request?.model).toBe("scripted-model-v1")
           expect(request?.tools?.map((tool) => tool.function.name)).toEqual(["lookup", "search"])
@@ -580,10 +453,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           if (parallelToolCalls === undefined) expect(request).not.toHaveProperty("parallelToolCalls")
           else expect(request?.parallelToolCalls).toBe(parallelToolCalls)
           expect(events).toEqual(["first:start", "first:end", "second:start", "second:end"])
-          expect((await session.messages(thread)).filter((m) => m.role === "tool").map((m) => m.tool_call_id)).toEqual([
-            "c1",
-            "c2",
-          ])
+          expect(toolResults(await session.messages(thread)).map((m) => m.tool_call_id)).toEqual(["c1", "c2"])
         })
       }
     },
@@ -593,22 +463,18 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     requirements: ["d7549987", "ec3b4b7f", "a0076042", "bf553948"],
     run: async (driver) => {
       const provider = new ScriptedProvider([{ text: "ok" }, { text: "ok" }])
-      await using(
+      await runTurn(
         driver,
         {
           provider,
           prompt: { providerOptions: { b: 2, shared: "prompt" } } as Partial<PromptDefinition>,
           model: { providerOptions: { a: 1, shared: "model", nested: { keep: true } } },
         },
-        async (session, thread) => {
-          await send(session, thread, "hi")
-        },
+        "hi",
       )
       expect(provider.requests[0]?.providerOptions).toEqual({ a: 1, shared: "prompt", nested: { keep: true }, b: 2 })
       const plain = new ScriptedProvider([{ text: "ok" }])
-      await using(driver, { provider: plain }, async (session, thread) => {
-        await send(session, thread, "hi")
-      })
+      await runTurn(driver, { provider: plain }, "hi")
       expect(plain.requests[0]).not.toHaveProperty("providerOptions")
     },
   },
@@ -619,9 +485,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       const levels = { 0: "none", 33: "low", 66: "medium", 100: "high" }
       const requestFor = async (prompt: Partial<PromptDefinition>, model: Partial<ModelDefinition>) => {
         const provider = new ScriptedProvider([{ text: "ok" }])
-        await using(driver, { provider, prompt, model }, async (session, thread) => {
-          await send(session, thread, "hi")
-        })
+        await runTurn(driver, { provider, prompt, model }, "hi")
         return provider.requests[0]
       }
       const full = await requestFor(
@@ -646,29 +510,28 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       const tools = { act: defineTool({ description: "Act", execute: async () => runs.tick(ok("acted")) }) }
       const call = { toolCalls: [{ name: "act", arguments: {} }] }
       const auto = new ScriptedProvider([call, { text: "done" }])
-      await using(driver, { provider: auto, tools, prompt: { toolChoice: "auto" } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+      expect(await runTurn(driver, { provider: auto, tools, prompt: { toolChoice: "auto" } }, "go")).toMatchObject({
+        status: "idle",
+        steps: 2,
       })
       expect(auto.requests[0]?.toolChoice).toBe("auto")
       expect(runs.count).toBe(1)
       const unset = new ScriptedProvider([{ text: "done" }])
-      await using(driver, { provider: unset, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
-      })
+      expect(await runTurn(driver, { provider: unset, tools }, "go")).toMatchObject({ status: "idle", steps: 1 })
       expect(unset.requests[0]).not.toHaveProperty("toolChoice")
       const required = new ScriptedProvider([call])
-      await using(
-        driver,
-        { provider: required, tools, prompt: { toolChoice: "required" }, side: { maxSteps: 1 } },
-        async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "max_side_steps" })
-        },
-      )
+      expect(
+        await runTurn(
+          driver,
+          { provider: required, tools, prompt: { toolChoice: "required" }, side: { maxSteps: 1 } },
+          "go",
+        ),
+      ).toMatchObject({ status: "idle", reason: "max_side_steps" })
       expect(required.requests[0]?.toolChoice).toBe("required")
       expect(runs.count).toBe(2)
       const none = new ScriptedProvider([call, { text: "no tools used" }])
       await using(driver, { provider: none, tools, prompt: { toolChoice: "none" } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({
+        expect(await session.send(thread, "go")).toMatchObject({
           status: "idle",
           reason: "stop_on_response",
           steps: 1,
@@ -684,7 +547,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       expect(runs.count).toBe(2)
       const stubborn = new ScriptedProvider([call, call])
       await using(driver, { provider: stubborn, tools, prompt: { toolChoice: "none" } }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 1 })
+        const outcome = await session.send(thread, "go", { retries: 1 })
         expect(outcome).toMatchObject({ status: "failed", reason: "step_error" })
         expect(outcome.error?.message).toContain("none")
         expect(shape(await session.messages(thread))).toEqual([["user", "go"]])
@@ -706,7 +569,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, prompt: { toolChoice: "required" }, side: { maxSteps: 1 } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(outcome).toMatchObject({ status: "idle", reason: "max_side_steps", steps: 1 })
           expect(outcome.modelCalls.map((call) => call.rejected === undefined)).toEqual([false, true])
           expect((await session.messages(thread)).map((message) => message.role)).toEqual(["user", "assistant", "tool"])
@@ -719,7 +582,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: stubborn, tools, prompt: { toolChoice: "required" } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go", { retries: 1 })
+          const outcome = await session.send(thread, "go", { retries: 1 })
           expect(outcome).toMatchObject({ status: "failed", reason: "step_error", steps: 0 })
           expect(shape(await session.messages(thread))).toEqual([["user", "go"]])
         },
@@ -762,7 +625,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       ]
       const provider = new ScriptedProvider([{ chunks }, { text: "done" }])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const [, assistant, first, second, final] = await session.messages(thread)
         expect(assistant).toMatchObject({
           role: "assistant",
@@ -810,7 +673,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             models: [defineModel({ name: "other_model", provider: other.factory, model: "other-model-v1" })],
           },
           async (session, thread) => {
-            for (const text of ["q1", "q2", "q3", "q4"]) await send(session, thread, text)
+            for (const text of ["q1", "q2", "q3", "q4"]) await session.send(thread, text)
             await session.seed(thread, [
               {
                 role: "assistant",
@@ -837,7 +700,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
                 metadata: { reasoning_source: source },
               })),
             ])
-            await send(session, thread, "q5")
+            await session.send(thread, "q5")
             stored = await session.messages(thread)
           },
         )
@@ -923,9 +786,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           },
         },
       )
-      const tools = { note: defineTool({ description: "Note", execute: async () => ok("noted") }) }
+      const tools = { note: stubTool("Note", "noted") }
       await using(driver, { provider, tools }, async (session, thread) => {
-        const running = send(session, thread, "go")
+        const running = session.send(thread, "go")
         await secondRequest.opened
         expect(pendingAtSecondRequest).toBe(true)
         const early = await Promise.race([
@@ -975,7 +838,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             return ok(JSON.stringify(args))
           },
         }),
-        ping: defineTool({ description: "Ping", execute: async () => ok("pong") }),
+        ping: stubTool("Ping", "pong"),
         bookings: defineTool({
           description: "Count bookings",
           execute: async (state: ThreadState) => ok(String((await state.getValue("bookings")) ?? 0)),
@@ -996,8 +859,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "book")).toMatchObject({ status: "idle", reason: "stop_on_response" })
-        const results = (await session.messages(thread)).filter((message) => message.role === "tool")
+        expect(await session.send(thread, "book")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+        const results = toolResults(await session.messages(thread))
         expect(results.map((m) => [m.tool_call_id, m.tool_status])).toEqual([
           ["valid", "success"],
           ["wrong_type", "error"],
@@ -1048,13 +911,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
         const stored = await session.messages(thread)
         expect(callsOf(stored[1]).map((call) => [call.id, JSON.parse(call.function.arguments)])).toEqual([
           ["broken", { invalid_json: '{"q": "unterminated' }],
           ["fine", { q: "ok" }],
         ])
-        const results = stored.filter((message) => message.role === "tool")
+        const results = toolResults(stored)
         expect(results.map((m) => [m.tool_call_id, m.name, m.tool_status])).toEqual([
           ["broken", "lookup", "error"],
           ["fine", "lookup", "success"],
@@ -1091,7 +954,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             throw { reason: 42 }
           },
         }),
-        fine: defineTool({ description: "Works", execute: async () => ok("fine") }),
+        fine: stubTool("Works", "fine"),
       }
       const provider = new ScriptedProvider([
         {
@@ -1104,12 +967,12 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "recovered" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({
+        expect(await session.send(thread, "go")).toMatchObject({
           status: "idle",
           reason: "stop_on_response",
           steps: 2,
         })
-        const results = (await session.messages(thread)).filter((message) => message.role === "tool")
+        const results = toolResults(await session.messages(thread))
         expect(results.map((m) => [m.name, m.tool_call_id, m.tool_status, m.status])).toEqual([
           ["soft", "call_soft", "error", "completed"],
           ["boom", "call_boom", "error", "completed"],
@@ -1202,7 +1065,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             throw { reason: "quota", retry: false }
           },
         }),
-        fine: defineTool({ description: "Returns at once", execute: async () => ok("fine") }),
+        fine: stubTool("Returns at once", "fine"),
       }
       const names = ["tangled", "hollow", "guarded", "reference", "prickly", "thrower", "fine"]
       const provider = new ScriptedProvider([
@@ -1210,9 +1073,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "recovered" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        const outcome = await send(session, thread, "go")
+        const outcome = await session.send(thread, "go")
         expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
-        const results = (await session.messages(thread)).filter((m) => m.role === "tool")
+        const results = toolResults(await session.messages(thread))
         expect(
           results.map((m) => [m.tool_call_id, m.name, m.tool_status, m.content, m.attachments, m.metadata]),
         ).toEqual([
@@ -1333,10 +1196,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        await send(session, thread, "go")
-        const results = Object.fromEntries(
-          (await session.messages(thread)).filter((m) => m.role === "tool").map((m) => [m.tool_call_id, m]),
-        )
+        await session.send(thread, "go")
+        const results = Object.fromEntries(toolResults(await session.messages(thread)).map((m) => [m.tool_call_id, m]))
         const row = (id: string) => [
           results[id]?.tool_status,
           results[id]?.content,
@@ -1377,7 +1238,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       const hidden = counter()
       const asState = (state: unknown) => state as ThreadState
       const tools = {
-        visible: defineTool({ description: "Offered", execute: async () => ok("visible ran") }),
+        visible: stubTool("Offered", "visible ran"),
         hidden: defineTool({ description: "Not offered", execute: async () => hidden.tick(ok("hidden ran")) }),
         limited: defineTool({
           description: "Uses only visible",
@@ -1415,11 +1276,11 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, prompt: { tools: ["visible", "limited", "closed", "open"] } },
         async (session, thread) => {
-          const running = send(session, thread, "go")
+          const running = session.send(thread, "go")
           const outcome = await running
           expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 3 })
           const results = Object.fromEntries(
-            (await session.messages(thread)).filter((m) => m.role === "tool").map((m) => [m.tool_call_id, m]),
+            toolResults(await session.messages(thread)).map((m) => [m.tool_call_id, m]),
           )
           expect([results.c_hidden?.name, results.c_hidden?.tool_status]).toEqual(["hidden", "error"])
           expect(results.c_hidden?.content).toContain("does not offer")
@@ -1444,13 +1305,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     name: "S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false",
     requirements: ["13b3351a", "47ded442", "7aa29e92"],
     run: async (driver) => {
-      const tools = { act: defineTool({ description: "Act", execute: async () => ok("acted") }) }
+      const tools = { act: stubTool("Act", "acted") }
       const mixed = new ScriptedProvider([
         { text: "Working on it", toolCalls: [{ id: "c1", name: "act", arguments: {} }] },
         { text: "Finished" },
       ])
       await using(driver, { provider: mixed, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({
+        expect(await session.send(thread, "go")).toMatchObject({
           status: "idle",
           reason: "stop_on_response",
           steps: 2,
@@ -1463,18 +1324,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ])
       })
       const text = new ScriptedProvider([{ text: "Hello" }, { text: "never asked" }])
-      await using(driver, { provider: text, tools }, async (session, thread) => {
-        expect(await send(session, thread, "hi")).toMatchObject({ reason: "stop_on_response", steps: 1 })
+      expect(await runTurn(driver, { provider: text, tools }, "hi")).toMatchObject({
+        reason: "stop_on_response",
+        steps: 1,
       })
       expect(text.requests).toHaveLength(1)
       const chatty = new ScriptedProvider([{ text: "one" }, { text: "two" }, { text: "three" }])
-      await using(
-        driver,
-        { provider: chatty, tools, side: { stopOnResponse: false, maxSteps: 2 } },
-        async (session, thread) => {
-          expect(await send(session, thread, "hi")).toMatchObject({ reason: "max_side_steps", steps: 2 })
-        },
-      )
+      expect(
+        await runTurn(driver, { provider: chatty, tools, side: { stopOnResponse: false, maxSteps: 2 } }, "hi"),
+      ).toMatchObject({ reason: "max_side_steps", steps: 2 })
       expect(chatty.requests).toHaveLength(2)
     },
   },
@@ -1488,7 +1346,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           args: z.object({ summary: z.string() }),
           execute: async (_state, { summary }) => ok(JSON.stringify({ summary: `${summary}, reported`, extra: 1 })),
         }),
-        note: defineTool({ description: "Note", execute: async () => ok("noted") }),
+        note: stubTool("Note", "noted"),
       }
       const first = new ScriptedProvider([
         {
@@ -1503,7 +1361,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: first, tools, side: { stopTool: "finish", stopToolResponseProperty: "summary" } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(outcome).toMatchObject({
             status: "idle",
             reason: "stop_tool",
@@ -1522,11 +1380,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ name: "finish", arguments: { summary: "second" } }] },
         { text: "never asked" },
       ])
-      await using(driver, { provider: later, tools, side: { stopTool: "finish" } }, async (session, thread) => {
-        const outcome = await send(session, thread, "go")
-        expect(outcome).toMatchObject({ reason: "stop_tool", steps: 2 })
-        expect(outcome.stopTool?.value).toBe(JSON.stringify({ summary: "second, reported", extra: 1 }))
-      })
+      const outcome = await runTurn(driver, { provider: later, tools, side: { stopTool: "finish" } }, "go")
+      expect(outcome).toMatchObject({ reason: "stop_tool", steps: 2 })
+      expect(outcome.stopTool?.value).toBe(JSON.stringify({ summary: "second, reported", extra: 1 }))
       expect(later.requests).toHaveLength(2)
     },
   },
@@ -1549,10 +1405,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           driver,
           { provider, tools, side: { stopTool: "finish", stopToolResponseProperty: "summary" } },
           async (session, thread) => {
-            outcome = await send(session, thread, "go")
-            stored = (await session.messages(thread)).find((m) => m.role === "tool")
+            outcome = await session.send(thread, "go")
+            stored = firstToolResult(await session.messages(thread))
           },
-          { MARK: "sum" },
+          { instanceEnv: { MARK: "sum" } },
         )
         return { value: outcome?.stopTool?.value, content: stored?.content }
       }
@@ -1578,8 +1434,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, side: { stopTool: "finish", stopToolResponseProperty: "summary" } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
-          const stored = (await session.messages(thread)).find((message) => message.role === "tool")
+          const outcome = await session.send(thread, "go")
+          const stored = firstToolResult(await session.messages(thread))
           expect(stored?.tool_status).toBe("error")
           expect(outcome.stopTool).toMatchObject({ status: stored?.tool_status, value: "done" })
         },
@@ -1618,12 +1474,12 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, side: { stopOnResponse: false, maxSteps: 3 } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({
+          expect(await session.send(thread, "go")).toMatchObject({
             status: "idle",
             reason: "max_side_steps",
             steps: 3,
           })
-          expect((await session.messages(thread)).filter((m) => m.role === "tool")).toHaveLength(6)
+          expect(toolResults(await session.messages(thread))).toHaveLength(6)
         },
       )
       expect(provider.requests).toHaveLength(3)
@@ -1641,8 +1497,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: reversed, tools, humanOn: "a", side: { stopOnResponse: false, maxSteps: 1 } },
         async (session, thread) => {
-          expect(await send(session, thread, "first")).toMatchObject({ reason: "max_side_steps", steps: 1 })
-          expect(await send(session, thread, "second")).toMatchObject({ reason: "max_side_steps", steps: 1 })
+          expect(await session.send(thread, "first")).toMatchObject({ reason: "max_side_steps", steps: 1 })
+          expect(await session.send(thread, "second")).toMatchObject({ reason: "max_side_steps", steps: 1 })
         },
       )
       expect(reversed.requests).toHaveLength(2)
@@ -1659,21 +1515,24 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     requirements: ["d80e4c71", "7b5d1f06", "44e51927", "8d9a5b12", "35afe886"],
     run: async (driver) => {
       const tools = {
-        finish: defineTool({ description: "Finish", execute: async () => ok("finished") }),
-        other: defineTool({ description: "Other", execute: async () => ok("other") }),
+        finish: stubTool("Finish", "finished"),
+        other: stubTool("Other", "other"),
       }
       const side = { stopTool: "finish", maxSteps: 1 }
       const toolStop = new ScriptedProvider([{ text: "wrapping up", toolCalls: [{ name: "finish", arguments: {} }] }])
-      await using(driver, { provider: toolStop, tools, side }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ reason: "stop_tool", steps: 1 })
+      expect(await runTurn(driver, { provider: toolStop, tools, side }, "go")).toMatchObject({
+        reason: "stop_tool",
+        steps: 1,
       })
       const responseStop = new ScriptedProvider([{ text: "just text" }])
-      await using(driver, { provider: responseStop, tools, side }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ reason: "stop_on_response", steps: 1 })
+      expect(await runTurn(driver, { provider: responseStop, tools, side }, "go")).toMatchObject({
+        reason: "stop_on_response",
+        steps: 1,
       })
       const limit = new ScriptedProvider([{ text: "", toolCalls: [{ name: "other", arguments: {} }] }])
-      await using(driver, { provider: limit, tools, side }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ reason: "max_side_steps", steps: 1 })
+      expect(await runTurn(driver, { provider: limit, tools, side }, "go")).toMatchObject({
+        reason: "max_side_steps",
+        steps: 1,
       })
     },
   },
@@ -1689,7 +1548,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "real" },
       ])
       await using(driver, { provider }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 4 })
+        const outcome = await session.send(thread, "go", { retries: 4 })
         expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
         expect(outcome.modelCalls.map((call) => call.rejected !== undefined)).toEqual([true, true, true, true, false])
         expect(shape(await session.messages(thread))).toEqual([
@@ -1700,7 +1559,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       expect(provider.requests).toHaveLength(5)
       const silent = new ScriptedProvider([{ text: null }, { text: "" }, { reasoning: "still nothing" }])
       await using(driver, { provider: silent }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 2 })
+        const outcome = await session.send(thread, "go", { retries: 2 })
         expect(outcome).toMatchObject({ status: "failed", reason: "step_error", steps: 0 })
         expect(outcome.error?.message).toBe(
           "The model returned nothing, with no text and no tool call, after 3 requests",
@@ -1728,7 +1587,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         })
         const provider = new ScriptedProvider([{ reject: error }, { text: "recovered" }])
         await using(driver, { provider }, async (session, thread) => {
-          const outcome = await send(session, thread, "go", { retries: 1 })
+          const outcome = await session.send(thread, "go", { retries: 1 })
           expect(outcome.modelCalls[0]?.error).toEqual({
             message: "the upstream refused",
             code,
@@ -1761,7 +1620,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "recovered" },
       ])
       await using(driver, { provider: midStream }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 2 })
+        const outcome = await session.send(thread, "go", { retries: 2 })
         expect(outcome).toMatchObject({ status: "idle", steps: 1 })
         expect(outcome.modelCalls.map((call) => call.error?.code)).toEqual(["server_error", "rate_limit", undefined])
         expect(shape(await session.messages(thread))).toEqual([
@@ -1777,7 +1636,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       ]
       const cut = new ScriptedProvider([{ chunks: callChunks }, { chunks: callChunks }, { text: "after the cut" }])
       await using(driver, { provider: cut, tools: { probe } }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 2 })
+        const outcome = await session.send(thread, "go", { retries: 2 })
         expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
         expect(outcome.modelCalls.map((call) => call.error?.code)).toEqual(["server_error", "server_error", undefined])
         expect(shape(await session.messages(thread))).toEqual([
@@ -1787,20 +1646,16 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       })
       expect(ran.count).toBe(0)
       const cutOff = new ScriptedProvider([{ chunks: partial }])
-      await using(driver, { provider: cutOff }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 0 })
-        expect(outcome).toMatchObject({ status: "failed", reason: "step_error" })
-        expect(outcome.error).toMatchObject({ code: "server_error", message: expect.stringContaining("finish") })
-      })
+      const cutOffOutcome = await runTurn(driver, { provider: cutOff }, "go", { retries: 0 })
+      expect(cutOffOutcome).toMatchObject({ status: "failed", reason: "step_error" })
+      expect(cutOffOutcome.error).toMatchObject({ code: "server_error", message: expect.stringContaining("finish") })
       const native = new ScriptedProvider([
         { reject: new DOMException("The operation timed out.", "TimeoutError") },
         { text: "recovered" },
       ])
-      await using(driver, { provider: native }, async (session, thread) => {
-        const outcome = await send(session, thread, "go", { retries: 1 })
-        expect(outcome).toMatchObject({ status: "idle", steps: 1 })
-        expect(outcome.modelCalls[0]?.error?.code).toBe("timeout")
-      })
+      const nativeOutcome = await runTurn(driver, { provider: native }, "go", { retries: 1 })
+      expect(nativeOutcome).toMatchObject({ status: "idle", steps: 1 })
+      expect(nativeOutcome.modelCalls[0]?.error?.code).toBe("timeout")
     },
   },
   {
@@ -1823,7 +1678,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }
         let stored: Array<unknown> = []
         await using(driver, { provider, tools }, async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           stored = (await session.messages(thread)).map((m) => [m.role, m.content, m.tool_status, m.tool_calls])
         })
         return { requests: JSON.stringify(provider.requests), stored }
@@ -1867,7 +1722,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { provider, prompt: { includeChat: true, recentImageThreshold: 1 } },
         async (session, thread) => {
           await session.seed(thread, [{ role: "user", content: "see attached", attachments: [chart, notes] }])
-          await send(session, thread, "what is in it?")
+          await session.send(thread, "what is in it?")
           expect((await session.messages(thread))[0]?.attachments).toEqual([chart, notes])
         },
       )
@@ -1901,7 +1756,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           execute: async () => ok("unused"),
         }),
       }
-      const cases: Array<[PromptDefinition["variables"], Tools]> = [
+      const cases: Array<[PromptDefinition["variables"], NonNullable<Setup["tools"]>]> = [
         [[{ name: "API_TOKEN", type: "secret", required: true, description: "Token" }], {}],
         [undefined, {}],
         [[{ name: "API_TOKEN", type: "text", required: true, description: "Token" }], declaresSecret],
@@ -1912,13 +1767,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           driver,
           { provider, tools, prompt: interpolating(variables) },
           async (session, thread) => {
-            const outcome = await send(session, thread, "go")
+            const outcome = await session.send(thread, "go")
             expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error" })
             expect(outcome.error?.message).toContain("API_TOKEN")
             expect(outcome.error?.message).toContain("Prompt assistant ")
             expect(outcome.error?.message).not.toContain(marker)
           },
-          instance,
+          { instanceEnv: instance },
         )
         expect(provider.requests).toHaveLength(0)
       }
@@ -1959,15 +1814,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const stored = await session.messages(thread)
-          expect(stored.filter((m) => m.role === "tool").map((m) => [m.tool_status, m.content])).toEqual([
+          expect(toolResults(stored).map((m) => [m.tool_status, m.content])).toEqual([
             ["success", "authorized"],
             ["error", expect.stringContaining("MISSING_TOKEN")],
           ])
           expect(holding(stored, marker)).toEqual([])
         },
-        instance,
+        { instanceEnv: instance },
       )
       expect(provider.requests[0]?.messages[0]).toEqual({ role: "system", content: "Label: shown" })
       expect(holding(provider.requests, marker)).toEqual([])
@@ -2045,7 +1900,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           driver,
           setup,
           async (session, thread) => {
-            const outcome = await send(session, thread, "go")
+            const outcome = await session.send(thread, "go")
             expect([label, outcome.status, outcome.reason, outcome.error?.message]).toEqual([
               label,
               "failed",
@@ -2054,7 +1909,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             ])
             expect(outcome.error?.message).not.toContain(marker)
           },
-          { API_TOKEN: marker, SERVICE_KEY: marker },
+          { instanceEnv: { API_TOKEN: marker, SERVICE_KEY: marker } },
         )
         expect([label, setup.provider.requests.length]).toEqual([label, 0])
       }
@@ -2079,14 +1934,14 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect([outcome.status, outcome.reason]).toEqual(["failed", "fatal_error"])
           expect(outcome.error?.message).toMatch(
             /^Prompt assistant interpolates variable DISPLAY, whose value comes from/,
           )
           expect(holding(outcome, instance.DISPLAY)).toEqual([])
         },
-        instance,
+        { instanceEnv: instance },
       )
       expect(display.requests).toHaveLength(0)
       const region = new ScriptedProvider([{ text: "never" }])
@@ -2104,12 +1959,12 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           prompt: { prompt: `Serve ${instance.REGION} only.` },
         },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(outcome.error?.message).toMatch(
             /^The system prompt that prompt assistant renders holds a secret value/,
           )
         },
-        instance,
+        { instanceEnv: instance },
       )
       expect(region.requests).toHaveLength(0)
       const zone = new ScriptedProvider([{ toolCalls: [{ name: "zone", arguments: {} }] }, { text: "never" }])
@@ -2126,13 +1981,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           prompt: { prompt: `Serve ${instance.ZONE} only.` },
         },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect([outcome.reason, outcome.steps]).toEqual(["fatal_error", 1])
           expect(outcome.error?.message).toMatch(
             /^The system prompt that prompt assistant renders holds a secret value/,
           )
         },
-        instance,
+        { instanceEnv: instance },
       )
       expect(zone.requests).toHaveLength(1)
     },
@@ -2166,7 +2021,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools },
         async (session, thread) => {
-          await send(session, thread, `hello ${marker}`)
+          await session.send(thread, `hello ${marker}`)
           const stored = await session.messages(thread)
           expect(stored.map((m) => [m.role, m.content])).toEqual([
             ["user", `hello ${marker}`],
@@ -2182,7 +2037,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             { by: "[redacted]" },
           ])
         },
-        { MARK: marker },
+        { instanceEnv: { MARK: marker } },
       )
       expect(written.map((m) => m.content)).toEqual(["injected [redacted]", "edited [redacted]"])
       expect(history(provider.requests[1]).map((m) => m.content)).toEqual([
@@ -2230,8 +2085,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools },
         async (session, thread) => {
-          await send(session, thread, "go")
-          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          await session.send(thread, "go")
+          const result = firstToolResult(await session.messages(thread))
           expect([result?.content, result?.metadata, result?.attachments]).toEqual([
             'sample\n\n{"[redacted]":"[redacted]"}',
             { error_data: { label: '{"[redacted]":7}', list: ['["[redacted]"]'], "[redacted]": 1 } },
@@ -2249,7 +2104,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           ])
           expect(holding(await session.messages(thread), marker)).toEqual([])
         },
-        { MARK: marker },
+        { instanceEnv: { MARK: marker } },
       )
       expect(holding(provider.requests, marker)).toEqual([])
     },
@@ -2274,14 +2129,14 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools },
         async (session, thread) => {
-          await send(session, thread, "go")
-          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          await session.send(thread, "go")
+          const result = firstToolResult(await session.messages(thread))
           expect([result?.tool_status, result?.content]).toEqual([
             "error",
             "ok\n\n[redacted] dropped the new file a.txt, because this version cannot store a new file. The thread file system arrives in M3.",
           ])
         },
-        { MARK: "Spindle" },
+        { instanceEnv: { MARK: "Spindle" } },
       )
       expect(holding(provider.requests, "Spindle")).toEqual([])
     },
@@ -2334,7 +2189,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { variables, hooks: ["inject_keyed", "edit_keyed"] } },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const stored = await session.messages(thread)
           expect(stored.map((m) => [m.role, m.content, m.metadata])).toEqual([
             ["user", "go", {}],
@@ -2348,7 +2203,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           ])
           expect(holding(stored, mark)).toEqual([])
         },
-        { MARK: mark },
+        { instanceEnv: { MARK: mark } },
       )
       expect(holding(provider.requests, mark)).toEqual([])
     },
@@ -2396,10 +2251,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(outcome.error?.message).toBe("upstream echoed [redacted] and [redacted]")
           const stored = await session.messages(thread)
-          const result = stored.find((m) => m.role === "tool")
+          const result = firstToolResult(stored)
           expect([result?.content, result?.metadata]).toEqual([
             "short [redacted]",
             { error_code: "denied", error_data: { quoted: "[redacted]", nested: ["[redacted]"], count: 7 } },
@@ -2407,7 +2262,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           for (const secret of Object.values(instance))
             expect(holding([stored, provider.requests, outcome], secret)).toEqual([])
         },
-        instance,
+        { instanceEnv: instance },
       )
       const tiny = {
         status: defineTool({
@@ -2424,15 +2279,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: statusCheck, tools: tiny, prompt: { prompt: "Act now." } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
-          const result = (await session.messages(thread)).find((m) => m.role === "tool")
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          const result = firstToolResult(await session.messages(thread))
           expect([result?.tool_status, result?.content, result?.metadata]).toEqual([
             "error",
             "r[redacted]j[redacted]ct[redacted]d",
             { error_data: { "k[redacted]y [redacted]": "k[redacted]pt" } },
           ])
         },
-        { ONE_CHAR: "e" },
+        { instanceEnv: { ONE_CHAR: "e" } },
       )
     },
   },
@@ -2464,7 +2319,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: echoing, tools },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const model = (await session.messages(thread)).find((m) => m.role === "assistant")
           expect([model?.content, model?.reasoning_content, callsOf(model)]).toEqual([
             "the sum is 4",
@@ -2472,7 +2327,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             [{ id: "e1", type: "function", function: { name: "check", arguments: '{"label":"sum of parts"}' } }],
           ])
         },
-        { SHORT_TOKEN: "sum" },
+        { instanceEnv: { SHORT_TOKEN: "sum" } },
       )
       expect(received).toEqual({ label: "sum of parts" })
       expect(history(echoing.requests[1]).find((m) => m.role === "assistant")).toEqual({
@@ -2522,10 +2377,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([])
-      await using(driver, { provider, model: { provider: extension } }, async (session, thread) => {
-        const outcome = await send(session, thread, "go")
-        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
-      })
+      const outcome = await runTurn(driver, { provider, model: { provider: extension } }, "go")
+      expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
       expect(log).toEqual(["build 1", "send 1", "build 2", "send 2"])
     },
   },
@@ -2556,7 +2409,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        const outcome = await send(session, thread, "search")
+        const outcome = await session.send(thread, "search")
         expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
         expect(outcome.modelCalls[0]).toMatchObject({ images: 2, providerTools: 2 })
         expect(shape(await session.messages(thread))).toEqual([
@@ -2611,7 +2464,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
         const sentAt = Date.now() * 1000
-        await send(session, thread, "go")
+        await session.send(thread, "go")
         const { createdAt, ...identity } = seen[0] ?? {}
         expect(identity).toEqual({
           threadId: thread,
@@ -2628,7 +2481,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         expect(seen[1]?.shared).toBe("from first")
         expect(seen[2]?.shared).toBe("from first")
         expect(seen[1]?.flowId).toBe(seen[2]?.flowId)
-        expect(await send(session, thread, "again")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+        expect(await session.send(thread, "again")).toMatchObject({ status: "idle", reason: "stop_on_response" })
         expect(seen[3]?.shared).toBeUndefined()
         expect(seen[3]?.flowId).not.toBe(seen[2]?.flowId)
         expect(seen[3]?.created).toBe(createdAt)
@@ -2678,9 +2531,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         models: [defineModel({ name: "second_model", provider: other.factory, model: "second-model-v1" })],
         agents: [defineAgent({ name: "second_agent", sideA: { prompt: "second" }, sideB: { human: true } })],
       }
-      await using(driver, { provider, tools, ...extra }, async (session, thread) => {
-        await send(session, thread, "go")
-      })
+      await runTurn(driver, { provider, tools, ...extra }, "go")
       expect(report).toEqual({
         model: "scripted-model-v1",
         prompt: "assistant",
@@ -2746,7 +2597,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         expect((await session.messages(thread)).map((message) => message.role)).toEqual([
           "user",
           "assistant",
@@ -2809,8 +2660,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
         await session.seed(thread, [{ role: "user", content: "quiet", silent: true }])
-        await send(session, thread, "first")
-        await send(session, thread, "second")
+        await session.send(thread, "first")
+        await session.send(thread, "second")
       })
       const flows = seen.map((entry) => (entry as Array<unknown>)[0])
       expect(typeof flows[0]).toBe("string")
@@ -2894,10 +2745,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           otherLevel = (await session.messages(thread)).find((m) => m.tool_call_id === "c_other")?.content
         },
-        { REGION: "instance-region", SOURCE: "instance" },
+        { instanceEnv: { REGION: "instance-region", SOURCE: "instance" } },
       )
       expect(report).toMatchObject({
         region: "agent-region",
@@ -2941,9 +2792,15 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
         },
-        { ALL_THREE: "from instance", PROMPT_AND_INSTANCE: "from instance", ONLY_INSTANCE: "from instance" },
+        {
+          instanceEnv: {
+            ALL_THREE: "from instance",
+            PROMPT_AND_INSTANCE: "from instance",
+            ONLY_INSTANCE: "from instance",
+          },
+        },
       )
       expect(resolved).toEqual(["from agent", "from prompt", "from instance"])
     },
@@ -2988,7 +2845,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           { role: "user", content: "quiet", silent: true },
           { role: "assistant", content: "nested", depth: 1 },
         ])
-        await send(session, thread, "go")
+        await session.send(thread, "go")
       })
       expect(seen).toEqual({
         newest: [null, "go"],
@@ -3007,7 +2864,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     requirements: ["96307380"],
     run: async (driver) => {
       const tools = {
-        note: defineTool({ description: "Returns a note", execute: async () => ok("noted") }),
+        note: stubTool("Returns a note", "noted"),
         eraser: defineTool({
           description: "Deletes the model turn that called note",
           execute: async (state: ThreadState) => {
@@ -3023,7 +2880,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, humanOn: "a" }, async (session, thread) => {
-        await send(session, thread, "go")
+        await session.send(thread, "go")
         const stored = await session.messages(thread)
         expect(stored.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : callsOf(m).map((c) => c.id)])).toEqual([
           ["assistant", []],
@@ -3061,20 +2918,17 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_elsewhere", name: "recall", arguments: {} }] },
         { text: "nothing" },
       ])
-      const session = await driver.load(project({ provider, tools }))
-      try {
-        const thread = await session.createThread("assistant")
-        await send(session, thread, "remember teal")
-        await send(session, thread, "what color?")
+
+      await using(driver, { provider, tools }, async (session, thread) => {
+        await session.send(thread, "remember teal")
+        await session.send(thread, "what color?")
         const other = await session.createThread("assistant")
-        await send(session, other, "what color?")
+        await session.send(other, "what color?")
         const result = async (id: string, threadId: string) =>
           (await session.messages(threadId)).find((m) => m.tool_call_id === id)?.content
         expect(await result("c_later", thread)).toBe(JSON.stringify({ color: "teal" }))
         expect(await result("c_elsewhere", other)).toBe("null")
-      } finally {
-        await session.close()
-      }
+      })
     },
   },
   {
@@ -3096,7 +2950,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       ])
       await using(driver, { provider, tools, prompt: { includeChat: true } }, async (session, thread) => {
         await session.seed(thread, [{ role: "system", content: "early note" }])
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
       })
       expect(provider.requests).toHaveLength(2)
       expect((provider.requests[0]?.messages ?? []).slice(1).map(sideOf)).toEqual([

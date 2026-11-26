@@ -3,31 +3,34 @@ import {
   defineHook,
   defineTool,
   type ExecutionState,
-  type Message,
   type ThreadState,
   type ToolResult,
 } from "@standardagents/spec"
 import { expect } from "vitest"
 import { z } from "zod"
-import type { LoadOptions, RuntimeDriver, RuntimeSession } from "../RuntimeDriver.ts"
+import type { RuntimeSession } from "../RuntimeDriver.ts"
 import { type RecordedRequest, ScriptedProvider } from "../ScriptedProvider.ts"
-import { rolesFor, SIDES } from "./messages.ts"
-import { attempt } from "./ownership.ts"
-import { callsOf, gate, history, holding, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
-
-const using = async (
-  driver: RuntimeDriver,
-  setup: Setup,
-  body: (session: RuntimeSession, thread: string) => Promise<void>,
-  options: LoadOptions = {},
-) => {
-  const session = await driver.load(project(setup), options)
-  try {
-    await body(session, await session.createThread("assistant"))
-  } finally {
-    await session.close()
-  }
-}
+import {
+  attempt,
+  callsOf,
+  firstToolResult,
+  gate,
+  history,
+  holding,
+  ok,
+  quiet,
+  rolesFor,
+  runTurn,
+  type Scenario,
+  SIDES,
+  shape,
+  sideOf,
+  statusOf,
+  stubTool,
+  toolResults,
+  using,
+  waitForAdmission,
+} from "./harness.ts"
 
 const echo = defineTool({
   description: "Return the text it is given",
@@ -35,7 +38,7 @@ const echo = defineTool({
   execute: async (_state, { text }) => ok(text),
 })
 
-const noop = defineTool({ description: "Do nothing", execute: async () => ok("noop") })
+const noop = stubTool("Do nothing", "noop")
 
 const stopOnStart = defineHook({
   hook: "tool_call_started",
@@ -54,9 +57,6 @@ const acknowledge = (request: RecordedRequest) => {
   return { text: `ack: ${trailing.join(" | ")}` }
 }
 
-const shape = (messages: ReadonlyArray<Message>) =>
-  messages.map((message) => [message.role, message.role === "tool" ? message.tool_call_id : message.content])
-
 const ref: AttachmentRef = {
   id: "file-1",
   type: "file",
@@ -64,14 +64,6 @@ const ref: AttachmentRef = {
   name: "a.txt",
   mimeType: "text/plain",
   size: 4,
-}
-
-const statusOf = async (session: RuntimeSession, thread: string) => (await session.state(thread)).status()
-
-// A send that a failed expectation leaves behind is rejected when its session closes. Nothing awaits it then.
-const quiet = <A>(promise: Promise<A>): Promise<A> => {
-  promise.catch(() => undefined)
-  return promise
 }
 
 export const queueScenarios: ReadonlyArray<Scenario> = [
@@ -455,7 +447,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
             invoked: { status: "error", error: "Tool other does not list echo in uses" },
           },
         })
-        const results = (await session.messages(thread)).filter((m) => m.role === "tool").map((m) => m.content)
+        const results = toolResults(await session.messages(thread)).map((m) => m.content)
         expect(results.filter((text) => text?.startsWith("queued by"))).toEqual([
           "queued by omitted",
           "queued by listed",
@@ -778,29 +770,31 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
         { text: "done" },
       ])
-      const session = await driver.load(project({ provider, tools: { queue, take } }), {
-        instanceEnv: { QUEUE_TOKEN: token },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        expect(received).toEqual([])
-        const stored = await session.messages(thread)
-        expect(JSON.stringify(stored)).not.toContain(token)
-        expect(JSON.stringify(provider.requests)).not.toContain(token)
-        expect(
-          stored.map((m) => [m.role, m.tool_calls === null ? m.content : callsOf(m)[0]?.function.arguments]),
-        ).toEqual([
-          ["user", "go"],
-          ["assistant", "{}"],
-          ["tool", "queued"],
-          ["user", "note [redacted]"],
-          ["assistant", "done"],
-        ])
-        expect(stored[3]?.metadata).toEqual({ "[redacted]": "[redacted]" })
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue, take } },
+        async (session, thread) => {
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(received).toEqual([])
+          const stored = await session.messages(thread)
+          expect(JSON.stringify(stored)).not.toContain(token)
+          expect(JSON.stringify(provider.requests)).not.toContain(token)
+          expect(
+            stored.map((m) => [m.role, m.tool_calls === null ? m.content : callsOf(m)[0]?.function.arguments]),
+          ).toEqual([
+            ["user", "go"],
+            ["assistant", "{}"],
+            ["tool", "queued"],
+            ["user", "note [redacted]"],
+            ["assistant", "done"],
+          ])
+          expect(stored[3]?.metadata).toEqual({ "[redacted]": "[redacted]" })
+        },
+        {
+          instanceEnv: { QUEUE_TOKEN: token },
+        },
+      )
     },
   },
   {
@@ -848,7 +842,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
             const outcome = await session.settled(thread)
             const stored = await session.messages(thread)
             const call = callsOf(stored.find((message) => message.metadata?.queued === true))[0]
-            const results = stored.filter((message) => message.role === "tool")
+            const results = toolResults(stored)
             seen[hook.id] = {
               entries,
               outcome: [outcome?.status, outcome?.reason],
@@ -976,7 +970,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
           { provider, tools: { worker }, hooks: [stopOnStart, hook], prompt: { hooks: [stopOnStart.id, hook.id] } },
           async (session, thread) => {
             const outcome = await session.send(thread, "go")
-            const results = (await session.messages(thread)).filter((message) => message.role === "tool")
+            const results = toolResults(await session.messages(thread))
             seen[hook.id] = {
               entries,
               outcome: [outcome.status, outcome.reason],
@@ -1022,7 +1016,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { provider, tools: { failing }, hooks: [recover], prompt: { hooks: ["recover"] } },
         async (session, thread) => {
           expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-          const result = (await session.messages(thread)).find((message) => message.role === "tool")
+          const result = firstToolResult(await session.messages(thread))
           expect([entries, result?.tool_call_id, result?.tool_status, result?.content]).toEqual([
             1,
             "c_failing",
@@ -1335,19 +1329,18 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
           }
         },
       })
-      const take = defineTool({ description: "Return success", execute: async () => ok("ran") })
-      const session = await driver.load(
-        project({ provider: new ScriptedProvider([]), hooks: [hook], agent: { hooks: ["admit"] }, tools: { take } }),
+      const take = stubTool("Return success", "ran")
+
+      await using(
+        driver,
+        { provider: new ScriptedProvider([]), hooks: [hook], agent: { hooks: ["admit"] }, tools: { take } },
+        async (session, thread) => {
+          expect(refusal).toMatchObject({ _tag: "SecretInArguments" })
+          expect((await session.inspect(thread)).queue).toEqual([])
+          expect(await session.messages(thread)).toEqual([])
+        },
         { instanceEnv: { UNDECLARED: "example-instance-value" } },
       )
-      try {
-        const thread = await session.createThread("assistant")
-        expect(refusal).toMatchObject({ _tag: "SecretInArguments" })
-        expect((await session.inspect(thread)).queue).toEqual([])
-        expect(await session.messages(thread)).toEqual([])
-      } finally {
-        await session.close()
-      }
     },
   },
   {
@@ -1393,25 +1386,27 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
         { text: "done" },
       ])
-      const session = await driver.load(project({ provider, tools: { queue, take } }), {
-        instanceEnv: { QUEUE_TOKEN: token },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        const run = quiet(session.send(thread, "go"))
-        await tried.opened
-        const whileHeld = (await session.inspect(thread)).queue
-        leave.release()
-        expect(await run).toMatchObject({ status: "idle", steps: 2 })
-        expect({
-          tags: refusals.map((refusal) => refusal.tag),
-          queued: whileHeld.map((entry) => entry.kind),
-          received,
-        }).toEqual({ tags: Array.from({ length: 4 }, () => "SecretInArguments"), queued: [], received: [] })
-        expect(holding(refusals, token)).toEqual([])
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue, take } },
+        async (session, thread) => {
+          const run = quiet(session.send(thread, "go"))
+          await tried.opened
+          const whileHeld = (await session.inspect(thread)).queue
+          leave.release()
+          expect(await run).toMatchObject({ status: "idle", steps: 2 })
+          expect({
+            tags: refusals.map((refusal) => refusal.tag),
+            queued: whileHeld.map((entry) => entry.kind),
+            received,
+          }).toEqual({ tags: Array.from({ length: 4 }, () => "SecretInArguments"), queued: [], received: [] })
+          expect(holding(refusals, token)).toEqual([])
+        },
+        {
+          instanceEnv: { QUEUE_TOKEN: token },
+        },
+      )
     },
   },
   {
@@ -1440,32 +1435,34 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
         { text: "done" },
       ])
-      const session = await driver.load(project({ provider, tools: { queue } }), {
-        instanceEnv: { QUEUE_TOKEN: token },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        const run = quiet(session.send(thread, "go"))
-        await queuedIt.opened
-        const whileHeld = (await session.inspect(thread)).queue
-        leave.release()
-        expect(await run).toMatchObject({ status: "idle", steps: 2 })
-        expect(whileHeld).toHaveLength(1)
-        expect(
-          holding(
-            whileHeld.map((entry) => JSON.parse(entry.payload) as unknown),
-            token,
-          ),
-        ).toEqual([])
-        const stored = await session.messages(thread)
-        expect(stored.find((message) => message.content === "see the file")?.attachments).toEqual([
-          { ...ref, name: "[redacted].txt", description: "about [redacted]" },
-        ])
-        expect(holding(stored, token)).toEqual([])
-        expect(holding(provider.requests, token)).toEqual([])
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue } },
+        async (session, thread) => {
+          const run = quiet(session.send(thread, "go"))
+          await queuedIt.opened
+          const whileHeld = (await session.inspect(thread)).queue
+          leave.release()
+          expect(await run).toMatchObject({ status: "idle", steps: 2 })
+          expect(whileHeld).toHaveLength(1)
+          expect(
+            holding(
+              whileHeld.map((entry) => JSON.parse(entry.payload) as unknown),
+              token,
+            ),
+          ).toEqual([])
+          const stored = await session.messages(thread)
+          expect(stored.find((message) => message.content === "see the file")?.attachments).toEqual([
+            { ...ref, name: "[redacted].txt", description: "about [redacted]" },
+          ])
+          expect(holding(stored, token)).toEqual([])
+          expect(holding(provider.requests, token)).toEqual([])
+        },
+        {
+          instanceEnv: { QUEUE_TOKEN: token },
+        },
+      )
     },
   },
   {
@@ -1493,31 +1490,33 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       // The values equal the prefix of a queued call's id, the name of the queued tool, and a field name of a stored call.
-      const session = await driver.load(project({ provider, tools: { queue, worker } }), {
-        instanceEnv: { ID_PREFIX: "queued-", TOOL_NAME: "worker", FIELD_NAME: "arguments" },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        const stored = await session.messages(thread)
-        const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
-        const results = stored.filter((message) => message.role === "tool" && message.tool_call_id !== "c_queue")
-        expect({
-          call: { ...call, id: call?.id.includes("[redacted]") === false },
-          results: results.map((m) => [m.tool_call_id === call?.id, m.name, m.tool_status]),
-          ran,
-        }).toEqual({
-          call: { id: true, type: "function", function: { name: "worker", arguments: "{}" } },
-          results: [[true, "worker", "success"]],
-          ran: ["worker"],
-        })
-        expect(history(provider.requests[1]).map(sideOf).slice(-2)).toEqual([
-          ["assistant", null, [call?.id]],
-          ["tool", call?.id],
-        ])
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue, worker } },
+        async (session, thread) => {
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
+          const results = stored.filter((message) => message.role === "tool" && message.tool_call_id !== "c_queue")
+          expect({
+            call: { ...call, id: call?.id.includes("[redacted]") === false },
+            results: results.map((m) => [m.tool_call_id === call?.id, m.name, m.tool_status]),
+            ran,
+          }).toEqual({
+            call: { id: true, type: "function", function: { name: "worker", arguments: "{}" } },
+            results: [[true, "worker", "success"]],
+            ran: ["worker"],
+          })
+          expect(history(provider.requests[1]).map(sideOf).slice(-2)).toEqual([
+            ["assistant", null, [call?.id]],
+            ["tool", call?.id],
+          ])
+        },
+        {
+          instanceEnv: { ID_PREFIX: "queued-", TOOL_NAME: "worker", FIELD_NAME: "arguments" },
+        },
+      )
     },
   },
   {
@@ -1548,24 +1547,26 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
         { text: "done" },
       ])
-      const session = await driver.load(project({ provider, tools: { queue, take } }), {
-        instanceEnv: { LATE_TOKEN: token },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        const stored = await session.messages(thread)
-        const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
-        const decoded = JSON.parse(call?.function.arguments ?? "null") as unknown
-        expect(received).toHaveLength(1)
-        expect({ inArguments: holding(decoded, token), inRequests: holding(provider.requests, token) }).toEqual({
-          inArguments: [],
-          inRequests: [],
-        })
-        expect(holding(stored, token)).toEqual([])
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue, take } },
+        async (session, thread) => {
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
+          const decoded = JSON.parse(call?.function.arguments ?? "null") as unknown
+          expect(received).toHaveLength(1)
+          expect({ inArguments: holding(decoded, token), inRequests: holding(provider.requests, token) }).toEqual({
+            inArguments: [],
+            inRequests: [],
+          })
+          expect(holding(stored, token)).toEqual([])
+        },
+        {
+          instanceEnv: { LATE_TOKEN: token },
+        },
+      )
     },
   },
   {
@@ -1594,17 +1595,19 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
         { text: "done" },
       ])
-      const session = await driver.load(project({ provider, tools: { queue, take } }), {
-        instanceEnv: { QUEUE_TOKEN: "QUEUED-SECRET-32" },
-      })
-      try {
-        const thread = await session.createThread("assistant")
-        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        expect(received).toEqual(["plain text"])
-        expect((await session.messages(thread)).map((m) => m.content)).toContain("took plain text")
-      } finally {
-        await session.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: { queue, take } },
+        async (session, thread) => {
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(received).toEqual(["plain text"])
+          expect((await session.messages(thread)).map((m) => m.content)).toContain("took plain text")
+        },
+        {
+          instanceEnv: { QUEUE_TOKEN: "QUEUED-SECRET-32" },
+        },
+      )
     },
   },
   {
@@ -1708,8 +1711,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
           const behindHere = attempt(() => session.send(thread, "waited here"))
           const behindElsewhere = attempt(() => waiter.send(thread, "waited elsewhere"))
           // Both sends are durable once their entries are in the queue. The poll only waits for those two writes.
-          for (let tries = 0; tries < 500 && (await other.inspect(thread)).queue.length < 2; tries++)
-            await new Promise((resolve) => setTimeout(resolve, 10))
+          await waitForAdmission(async () => (await other.inspect(thread)).queue.length >= 2)
           await (await other.state(thread)).terminate()
           expect(await run).toMatchObject({ status: "idle", reason: "aborted" })
           expect({ behindHere: await behindHere, behindElsewhere: await behindElsewhere }).toEqual({
@@ -1799,10 +1801,11 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_caller", name: "caller", arguments: {} }] },
         { text: "done" },
       ])
-      await using(driver, { provider, tools: { caller, target } }, async (session, thread) => {
-        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        expect(ran).toEqual(["target"])
+      expect(await runTurn(driver, { provider, tools: { caller, target } }, "go")).toMatchObject({
+        status: "idle",
+        steps: 2,
       })
+      expect(ran).toEqual(["target"])
     },
   },
   {
@@ -1850,7 +1853,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
               leave.release()
             }
             await run
-            const results = (await peer.messages(thread)).filter((message) => message.role === "tool")
+            const results = toolResults(await peer.messages(thread))
             expect(results.map((m) => [m.tool_call_id, m.tool_status])).toEqual([
               ["c_hold", "error"],
               ["c_later", "error"],
@@ -1899,8 +1902,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
           if (first === "message") await state.queueMessage({ role: "user", content: "A" })
           else state.queueTool("echo", { text: "queued" })
           const waiting = quiet(session.send(thread, "B"))
-          for (let tries = 0; tries < 500 && (await session.inspect(thread)).queue.length < 2; tries++)
-            await new Promise((resolve) => setTimeout(resolve, 10))
+          await waitForAdmission(async () => (await session.inspect(thread)).queue.length >= 2)
           ;(execution as ExecutionState | null)?.stop()
           release.release()
           expect(await run).toMatchObject({ status: "idle", reason: "aborted" })

@@ -12,13 +12,25 @@ import {
 import { expect } from "vitest"
 import { z } from "zod"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { rolesFor, SIDES } from "./messages.ts"
-import { history, holding, ok, project, type Scenario, type Setup, send, sideOf, using } from "./step-loop.ts"
+import {
+  history,
+  holding,
+  ok,
+  rolesFor,
+  runTurn,
+  type Scenario,
+  type Setup,
+  SIDES,
+  sideOf,
+  stubTool,
+  toolResults,
+  using,
+} from "./harness.ts"
 
-const noop = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+const noop = { noop: stubTool("Does nothing", "noop") }
 
 const toolRows = (messages: ReadonlyArray<Message>) =>
-  messages.filter((m) => m.role === "tool").map((m) => [m.tool_call_id, m.tool_status, m.content])
+  toolResults(messages).map((m) => [m.tool_call_id, m.tool_status, m.content])
 
 const ref = (id: string): AttachmentRef => ({
   id,
@@ -98,7 +110,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         await using(driver, { provider, hooks, humanOn, ...named }, async (session, thread) => {
           created.push(...events)
           events.length = 0
-          await send(session, thread, "go")
+          await session.send(thread, "go")
         })
         return { created, sent: [...events], request: provider.requests[0] }
       }
@@ -228,7 +240,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           { provider, tools, hooks, humanOn, agent: { hooks: hookIds(hooks) } },
           async (session, thread) => {
             await session.seed(thread, [{ role: human, content: "old", silent: true, metadata: { orig: "x" } }])
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             const state = await session.state(thread)
             const quiet = (await session.messages(thread))[0]
             await state.updateMessage(quiet?.id ?? "", { content: "edited at rest", metadata: { by: "rest" } })
@@ -338,7 +350,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { hooks: ["ident", "stamp_update"] } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const stored = await session.messages(thread)
           expect(stored.map((m) => m.content)).toEqual(["go", null, "kept key", "json metadata", "probed", "reply"])
           expect(stored.filter((m) => m.id === "chosen_id").map((m) => m.content)).toEqual(["kept key"])
@@ -393,7 +405,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           await session.seed(thread, [{ role: "user", content: "first" }])
           const [first] = await session.messages(thread)
           taken = first?.id ?? ""
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const stored = await session.messages(thread)
           expect(stored[0]).toEqual(first)
           const written = stored.slice(1)
@@ -476,7 +488,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({
+        expect(await session.send(thread, "go")).toMatchObject({
           status: "idle",
           reason: "stop_on_response",
           steps: 2,
@@ -549,7 +561,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           },
           async (session, thread) => {
             await session.seed(thread, seed(humanOn))
-            await send(session, thread, "q3")
+            await session.send(thread, "q3")
           },
         )
         return provider.requests[0]
@@ -627,7 +639,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ]
         let logs = ""
         await using(driver, { provider, hooks, prompt: { hooks: ["final_array"] } }, async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           logs = session.logs().join("\n")
         })
         return { history: history(provider.requests[0]), logs }
@@ -773,7 +785,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ])
         let stored: ReadonlyArray<Message> = []
         await using(driver, { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } }, async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           stored = await session.messages(thread)
         })
         return { events, received, stored, request: provider.requests[1] }
@@ -837,7 +849,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks: [hook], prompt: { hooks: ["change_text"] } },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const result = (await session.messages(thread)).find((message) => message.tool_call_id === "c1")
           expect(result?.content).toContain("original")
           expect(called).toBe(false)
@@ -904,9 +916,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         },
         { text: "done" },
       ])
-      await using(driver, { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        await send(session, thread, "go")
-      })
+      await runTurn(driver, { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } }, "go")
       expect(events).toEqual([
         ["success", "c1", ["fine"]],
         ["store", "c1", false],
@@ -971,9 +981,9 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
         },
-        { MARK: "hidden-value-58" },
+        { instanceEnv: { MARK: "hidden-value-58" } },
       )
       expect(done).toEqual([
         ["c1", "success", "value [redacted] [store] [create]", "value [redacted] [store] [create]"],
@@ -1023,7 +1033,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools: noop, hooks, prompt: { hooks: hookIds(hooks) } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 1 })
           expect(toolRows(await session.messages(thread))).toEqual([])
         },
       )
@@ -1088,9 +1098,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { type: "finish", finishReason: "tool_calls", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } },
       ]
       const provider = new ScriptedProvider([{ chunks }, { text: "done" }])
-      await using(driver, { provider, tools, hooks, prompt: { hooks: ["watch"] } }, async (session, thread) => {
-        await send(session, thread, "go")
-      })
+      await runTurn(driver, { provider, tools, hooks, prompt: { hooks: ["watch"] } }, "go")
       expect(checks).toEqual([
         "p1 started before its arguments: true",
         "w1 not started inside its progress argument: true",
@@ -1162,7 +1170,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
       ])
       let stored: ReadonlyArray<Message> = []
       await using(driver, { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        await send(session, thread, "go")
+        await session.send(thread, "go")
         stored = await session.messages(thread)
       })
       expect(seen).toEqual([
@@ -1170,7 +1178,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ["c_broken", "recovered", [ref("from_failure")]],
         ["c_make", "rewritten made", [fresh]],
       ])
-      const rows = stored.filter((m) => m.role === "tool")
+      const rows = toolResults(stored)
       expect(rows.map((m) => [m.tool_call_id, m.content, m.attachments])).toEqual([
         ["c_files", "rewritten two files", [ref("replacement")]],
         ["c_broken", "recovered", [ref("from_failure")]],
@@ -1213,32 +1221,34 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
         { text: "done" },
       ])
-      const loaded = await driver.load(project({ provider, tools: noop, hooks, prompt: { hooks: hookIds(hooks) } }), {
-        hookTimeoutMs: 150,
-      })
-      try {
-        const thread = await loaded.createThread("assistant")
-        const started = Date.now()
-        const outcome = await send(loaded, thread, "go")
-        const elapsed = Date.now() - started
-        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
-        expect(elapsed).toBeLessThan(5000)
-        expect(provider.requests).toHaveLength(2)
-        expect(history(provider.requests[0]).map(sideOf)).toEqual([["user", "go"]])
-        const stored = await loaded.messages(thread)
-        expect(toolRows(stored)).toEqual([["c1", "success", "noop"]])
-        expect(later).toEqual(["assistant", "tool", "assistant"])
-        const logs = loaded.logs().join("\n")
-        expect(logs).toContain("Hook stuck_filter (filter_messages")
-        expect(logs).toContain("Hook stuck_done (tool_call_done")
-        expect(logs).toContain("Its ThreadState refuses every later call")
-        expect(logs).toContain("Hook leaky (after_tool_call_success")
-        expect(logs).not.toContain("SENTINEL_7731")
-        expect(logs).not.toContain("noop")
-        expect(JSON.stringify(outcome)).not.toContain("SENTINEL_7731")
-      } finally {
-        await loaded.close()
-      }
+
+      await using(
+        driver,
+        { provider, tools: noop, hooks, prompt: { hooks: hookIds(hooks) } },
+        async (loaded, thread) => {
+          const started = Date.now()
+          const outcome = await loaded.send(thread, "go")
+          const elapsed = Date.now() - started
+          expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+          expect(elapsed).toBeLessThan(5000)
+          expect(provider.requests).toHaveLength(2)
+          expect(history(provider.requests[0]).map(sideOf)).toEqual([["user", "go"]])
+          const stored = await loaded.messages(thread)
+          expect(toolRows(stored)).toEqual([["c1", "success", "noop"]])
+          expect(later).toEqual(["assistant", "tool", "assistant"])
+          const logs = loaded.logs().join("\n")
+          expect(logs).toContain("Hook stuck_filter (filter_messages")
+          expect(logs).toContain("Hook stuck_done (tool_call_done")
+          expect(logs).toContain("Its ThreadState refuses every later call")
+          expect(logs).toContain("Hook leaky (after_tool_call_success")
+          expect(logs).not.toContain("SENTINEL_7731")
+          expect(logs).not.toContain("noop")
+          expect(JSON.stringify(outcome)).not.toContain("SENTINEL_7731")
+        },
+        {
+          hookTimeoutMs: 150,
+        },
+      )
     },
   },
   {
@@ -1281,36 +1291,35 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         }),
       ]
       const provider = new ScriptedProvider([{ text: "done" }, { text: "again" }])
-      const loaded = await driver.load(
-        project({ provider, hooks, prompt: { hooks: hookIds(hooks), includeChat: true } }),
+
+      await using(
+        driver,
+        { provider, hooks, prompt: { hooks: hookIds(hooks), includeChat: true } },
+        async (loaded, thread) => {
+          expect(await loaded.send(thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+          expect(await lateCall).toMatch(/^HookExpired: Hook slow_writer \(filter_messages\) ran past its time limit/)
+          await loaded.send(thread, "next")
+          expect(provider.requests.map((request) => request.messages[0]?.content)).toEqual([
+            "You are a test assistant.",
+            "You are a test assistant.",
+          ])
+          expect(provider.requests.map((request) => history(request).map(sideOf))).toEqual([
+            [["user", "go"]],
+            [
+              ["user", "go"],
+              ["assistant", "done", []],
+              ["user", "next"],
+            ],
+          ])
+          expect((await loaded.messages(thread)).map((m) => m.content)).toEqual(["go", "done", "next", "again"])
+          const logs = loaded.logs().join("\n")
+          expect(logs).toContain("Hook busy (after_system_message")
+          expect(logs).toContain("Hook slow_writer (filter_messages")
+        },
         {
           hookTimeoutMs: 150,
         },
       )
-      try {
-        const thread = await loaded.createThread("assistant")
-        expect(await send(loaded, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
-        expect(await lateCall).toMatch(/^HookExpired: Hook slow_writer \(filter_messages\) ran past its time limit/)
-        await send(loaded, thread, "next")
-        expect(provider.requests.map((request) => request.messages[0]?.content)).toEqual([
-          "You are a test assistant.",
-          "You are a test assistant.",
-        ])
-        expect(provider.requests.map((request) => history(request).map(sideOf))).toEqual([
-          [["user", "go"]],
-          [
-            ["user", "go"],
-            ["assistant", "done", []],
-            ["user", "next"],
-          ],
-        ])
-        expect((await loaded.messages(thread)).map((m) => m.content)).toEqual(["go", "done", "next", "again"])
-        const logs = loaded.logs().join("\n")
-        expect(logs).toContain("Hook busy (after_system_message")
-        expect(logs).toContain("Hook slow_writer (filter_messages")
-      } finally {
-        await loaded.close()
-      }
     },
   },
   {
@@ -1346,7 +1355,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, prompt: { hooks: ["recurse"] } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const nested = (await session.messages(thread)).flatMap((m) =>
           m.content?.startsWith("nested") ? [m.content] : [],
         )
@@ -1394,7 +1403,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, agent: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         expect(ran).toEqual(["count"])
         const stored = await session.messages(thread)
         expect(stored.map((m) => [m.role, m.content])).toEqual([
@@ -1432,7 +1441,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           { text: "done" },
         ])
         await using(driver, { provider, tools, humanOn }, async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const stored = await session.messages(thread)
           expect(returned.map((m) => [m.role, m.content, m.silent, m.metadata])).toEqual([
             ["user", "from B", false, { n: 1 }],
@@ -1509,7 +1518,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, agent: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        await send(session, thread, "go")
+        await session.send(thread, "go")
         expect(await (await session.state(thread)).getValue("created")).toBe(4)
       })
       expect(seen).toEqual([
@@ -1582,7 +1591,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { variables, hooks: hookIds(hooks) } },
         async (session, thread) => {
-          await send(session, thread, `hello ${marker}`)
+          await session.send(thread, `hello ${marker}`)
           const stored = await session.messages(thread)
           expect(stored.map((m) => [m.role, m.content])).toEqual([
             ["user", `hello ${marker}`],
@@ -1594,7 +1603,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           expect(stored[1]?.metadata).toEqual({ m: "[redacted]" })
           expect(stored[2]?.metadata).toEqual({ by: "[redacted]" })
         },
-        { MARK: marker },
+        { instanceEnv: { MARK: marker } },
       )
       const leak = defineHook({
         hook: "after_system_message",
@@ -1606,12 +1615,12 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider: never, hooks: [leak], prompt: { variables, hooks: ["leak_system"] } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error" })
           expect(outcome.error?.message).toMatch(/holds a secret value/)
           expect(JSON.stringify(outcome)).not.toContain(marker)
         },
-        { MARK: marker },
+        { instanceEnv: { MARK: marker } },
       )
       expect(never.requests).toHaveLength(0)
     },
@@ -1659,7 +1668,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
         async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           const stored = await session.messages(thread)
           expect(stored.map((m) => m.content)).toEqual([
             "go",
@@ -1670,7 +1679,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             "done",
           ])
         },
-        instance,
+        { instanceEnv: instance },
       )
       for (const secret of Object.values(instance)) expect(holding(provider.requests, secret)).toEqual([])
     },
@@ -1720,7 +1729,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle" })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle" })
           const rows = await session.messages(thread)
           expect(rows.at(-1)?.content).toBe("done")
           expect(rows.at(-1)?.id).not.toContain(instance.REQUIRED)
@@ -1729,7 +1738,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           for (const value of Object.values(instance))
             expect([refusal, ...session.logs()].join("\n")).not.toContain(value)
         },
-        instance,
+        { instanceEnv: instance },
       )
     },
   },
@@ -1751,7 +1760,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools: noop, hooks: [hook], prompt: { prompt: marker, hooks: [hook.id] } },
         async (session, thread) => {
-          const outcome = await send(session, thread, "go")
+          const outcome = await session.send(thread, "go")
           expect(provider.requests).toHaveLength(0)
           expect(outcome).toMatchObject({
             status: "failed",
@@ -1762,7 +1771,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             },
           })
         },
-        { LATE: marker },
+        { instanceEnv: { LATE: marker } },
       )
     },
   },
@@ -1782,7 +1791,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           driver,
           { provider, tools: noop, hooks: [hook], prompt: { hooks: [hook.id] } },
           async (session, thread) => {
-            outcome = await send(session, thread, "go")
+            outcome = await session.send(thread, "go")
             stored = await session.messages(thread)
             logs = session.logs().join("\n")
           },
@@ -1903,7 +1912,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools: { ...noop, ...tools }, hooks, prompt: { hooks: ["reidentify"] } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const stored = await session.messages(thread)
           expect(stored.map((m) => [m.role, m.tool_call_id, m.content])).toEqual([
             ["user", null, "go"],
@@ -2000,9 +2009,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         },
         { text: "done" },
       ])
-      await using(driver, { provider, tools, hooks, agent: { hooks: hookIds(hooks) } }, async (session, thread) => {
-        await send(session, thread, "go")
-      })
+      await runTurn(driver, { provider, tools, hooks, agent: { hooks: hookIds(hooks) } }, "go")
       const names = new Set(calls.map((call) => (call as Array<unknown>)[0]))
       expect(names.size).toBe(13)
       expect(facts).toEqual([

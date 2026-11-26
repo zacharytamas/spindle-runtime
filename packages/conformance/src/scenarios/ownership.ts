@@ -1,44 +1,24 @@
 import { defineHook, defineTool, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
-import type { LoadOptions, RuntimeDriver, RuntimeSession } from "../RuntimeDriver.ts"
+import type { RuntimeSession } from "../RuntimeDriver.ts"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { gate, history, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
+import {
+  attempt,
+  firstToolResult,
+  gate,
+  history,
+  ok,
+  quiet,
+  type Scenario,
+  sideOf,
+  statusOf,
+  stubTool,
+  toolResults,
+  usingPeer,
+  waitForAdmission,
+} from "./harness.ts"
 
-const using = async (
-  driver: RuntimeDriver,
-  setup: Setup,
-  body: (session: RuntimeSession, thread: string, peer: RuntimeSession) => Promise<void>,
-  options: LoadOptions = {},
-) => {
-  const session = await driver.load(project(setup), options)
-  const peer = await session.peer()
-  try {
-    await body(session, await session.createThread("assistant"), peer)
-  } finally {
-    await peer.close()
-    await session.close()
-  }
-}
-
-// What a call on a ThreadState did: "done", or the tag of the typed error it failed with.
-export const attempt = async (call: () => unknown): Promise<string> => {
-  try {
-    await call()
-    return "done"
-  } catch (error) {
-    return typeof error === "object" && error !== null && "_tag" in error
-      ? String(error._tag)
-      : `untyped: ${error instanceof Error ? error.message : String(error)}`
-  }
-}
-
-// A send that a failed expectation leaves behind is rejected when its session closes. Nothing awaits it then.
-const quiet = <A>(promise: Promise<A>): Promise<A> => {
-  promise.catch(() => undefined)
-  return promise
-}
-
-const noop = defineTool({ description: "Do nothing", execute: async () => ok("noop") })
+const noop = stubTool("Do nothing", "noop")
 
 const contents = async (session: RuntimeSession, thread: string) =>
   (await session.messages(thread)).map((message) => (message.role === "tool" ? message.tool_status : message.content))
@@ -117,7 +97,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           return { text: "the successor's reply" }
         },
       ])
-      await using(driver, { provider, tools: { stale, noop } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { stale, noop } }, async (session, thread, peer) => {
         const old = quiet(session.send(thread, "A")).catch(() => undefined)
         await entered.opened
         await peer.forceRecover(thread)
@@ -178,7 +158,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { text: "the reply" },
         { text: "after the queue" },
       ])
-      await using(
+      await usingPeer(
         driver,
         { provider, tools: { writer, noop }, hooks: [hook], prompt: { hooks: ["writer_hook"] } },
         async (session, thread) => {
@@ -228,7 +208,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ text: "the reply" }])
-      await using(
+      await usingPeer(
         driver,
         { provider, hooks: [hook], prompt: { hooks: ["stale_hook"] } },
         async (session, thread, peer) => {
@@ -288,7 +268,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_editor", name: "editor", arguments: {} }] }])
-      await using(
+      await usingPeer(
         driver,
         { provider, tools: { editor }, hooks: [pause], prompt: { hooks: ["pause"] } },
         async (session, thread, peer) => {
@@ -325,7 +305,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           return { text: "the real reply" }
         },
       ])
-      await using(
+      await usingPeer(
         driver,
         { provider },
         async (session, thread, peer) => {
@@ -378,20 +358,19 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           return { text: "the reply to B" }
         },
       ])
-      await using(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
         const first = quiet(session.send(thread, "A")).catch(() => undefined)
         await entered.opened
         expect(await session.abort(thread)).toBe(true)
         await aborted.opened
-        const whileToolRuns = (await (await peer.state(thread)).status()).state
+        const whileToolRuns = (await statusOf(peer, thread)).state
         const second = quiet(session.send(thread, "B"))
         // The send is durable once its entry is in the queue or in the history. The poll only waits for that write.
-        for (let tries = 0; tries < 500; tries++) {
+        await waitForAdmission(async () => {
           const stored = await peer.inspect(thread)
-          if (stored.queue.length > 0 || stored.messages.some((message) => message.content === "B")) break
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-        const beforeReturn = (await (await peer.state(thread)).status()).state
+          return stored.queue.length > 0 || stored.messages.some((message) => message.content === "B")
+        })
+        const beforeReturn = (await statusOf(peer, thread)).state
         leave.release()
         const outcome = await second
         await first
@@ -427,7 +406,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_stubborn", name: "stubborn", arguments: {} }] }])
-      await using(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { stubborn } }, async (session, thread, peer) => {
         const run = quiet(session.send(thread, "A"))
         await entered.opened
         expect(await (await session.state(thread)).terminate()).toBeUndefined()
@@ -503,7 +482,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           return { text: "done" }
         },
       ])
-      await using(
+      await usingPeer(
         driver,
         {
           provider,
@@ -567,7 +546,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_slow", name: "slow", arguments: {} }] },
         { text: "done" },
       ])
-      await using(
+      await usingPeer(
         driver,
         { provider, tools: { slow }, hooks: [hook], prompt: { hooks: ["slow_hook"] } },
         async (session, thread) => {
@@ -594,7 +573,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ text: "done" }])
-      await using(driver, { provider, hooks: [keep], agent: { hooks: ["keep"] } }, async (session, thread) => {
+      await usingPeer(driver, { provider, hooks: [keep], agent: { hooks: ["keep"] } }, async (session, thread) => {
         expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
         expect(executionSeen).toBeNull()
         const kept = handle as ThreadState
@@ -641,7 +620,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ text: "done" }])
-      await using(
+      await usingPeer(
         driver,
         { provider, hooks: [submit, pause], prompt: { hooks: ["submit", "pause"] } },
         async (session, thread, peer) => {
@@ -687,7 +666,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ text: "done" }])
-      await using(
+      await usingPeer(
         driver,
         { provider, hooks: [submit, pause], agent: { hooks: ["submit", "pause"] } },
         async (session, thread, peer) => {
@@ -719,7 +698,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_look", name: "look", arguments: {} }] },
         { text: "done" },
       ])
-      await using(driver, { provider, tools: { look } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { look } }, async (session, thread, peer) => {
         await session.seed(thread, [{ role: "user", content: "seeded" }])
         expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const rows = (await peer.inspect(thread)).messages
@@ -756,7 +735,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
       })
       const provider = new ScriptedProvider([{ toolCalls: [{ id: "y", name: "hold", arguments: {} }] }])
-      await using(
+      await usingPeer(
         driver,
         { provider, tools: { hold }, hooks: [hide], prompt: { hooks: ["hide"] } },
         async (session, thread, peer) => {
@@ -787,11 +766,11 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     requirements: ["41278e5e"],
     run: async (driver) => {
       const id = "a\u0000b"
-      const once = defineTool({ description: "Run once", execute: async () => ok("once") })
+      const once = stubTool("Run once", "once")
       const provider = new ScriptedProvider([{ toolCalls: [{ id, name: "once", arguments: {} }] }, { text: "done" }])
-      await using(driver, { provider, tools: { once } }, async (session, thread) => {
+      await usingPeer(driver, { provider, tools: { once } }, async (session, thread) => {
         expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        const results = (await session.messages(thread)).filter((message) => message.role === "tool")
+        const results = toolResults(await session.messages(thread))
         expect(results.map((m) => [m.tool_call_id, m.tool_status, m.content])).toEqual([[id, "success", "once"]])
         expect(history(provider.requests[1]).map(sideOf)).toEqual([
           ["user", "go"],
@@ -807,11 +786,11 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     run: async (driver) => {
       const entered = gate()
       const leave = gate()
-      const first = defineTool({ description: "Answer the first call", execute: async () => ok("first answer") })
+      const first = stubTool("Answer the first call", "first answer")
       const second = defineTool({
         description: "Delete the first call's result, then wait",
         execute: async (state: ThreadState) => {
-          const earlier = (await state.getMessages({ order: "asc" })).messages.find((m) => m.role === "tool")
+          const earlier = firstToolResult((await state.getMessages({ order: "asc" })).messages)
           await state.deleteMessage(earlier?.id ?? "")
           entered.release()
           await leave.opened
@@ -823,7 +802,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "dup", name: "second", arguments: {} }] },
         { text: "after the recovery" },
       ])
-      await using(
+      await usingPeer(
         driver,
         { provider, tools: { first, second }, prompt: { includeChat: true, includePastTools: true } },
         async (session, thread, peer) => {
@@ -837,9 +816,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           await run
           const rows = (await peer.inspect(thread)).messages
           const callers = rows.filter((row) => row.role === "assistant")
-          expect(rows.filter((row) => row.role === "tool").map((row) => row.callerSeq)).toEqual(
-            callers.map((row) => row.seq),
-          )
+          expect(toolResults(rows).map((row) => row.callerSeq)).toEqual(callers.map((row) => row.seq))
           expect(await peer.send(thread, "again")).toMatchObject({ status: "idle", reason: "stop_on_response" })
           expect(history(provider.requests[2]).map(sideOf)).toEqual([
             ["user", "go"],
@@ -875,7 +852,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_hold", name: "hold", arguments: {} }] },
         { text: "done" },
       ])
-      await using(driver, { provider, tools: { hold } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { hold } }, async (session, thread, peer) => {
         const run = quiet(session.send(thread, "go"))
         await entered.opened
         let fromPeer = ""
@@ -903,7 +880,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c_noop", name: "noop", arguments: {} }] },
         { text: "done" },
       ])
-      await using(driver, { provider, tools: { noop } }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider, tools: { noop } }, async (session, thread, peer) => {
         expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const caller = (await session.messages(thread)).find((message) => message.tool_calls !== null)
         expect(await attempt(async () => (await peer.state(thread)).deleteMessage(caller?.id ?? ""))).toBe("done")
@@ -916,7 +893,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     requirements: ["dc7d7df0", "9090af10"],
     run: async (driver) => {
       const provider = new ScriptedProvider([{ text: "first reply" }])
-      await using(driver, { provider }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider }, async (session, thread, peer) => {
         expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
         const older = await session.state(thread)
         await older.setValue("kept", "before")
@@ -942,7 +919,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     requirements: [],
     run: async (driver) => {
       const provider = new ScriptedProvider([{ text: "first reply" }])
-      await using(driver, { provider }, async (session, thread, peer) => {
+      await usingPeer(driver, { provider }, async (session, thread, peer) => {
         expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
         await (await session.state(thread)).setValue("kept", "before")
         await (await session.state(thread)).terminate()
@@ -964,7 +941,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       requirements: [],
       run: async (driver) => {
         const provider = new ScriptedProvider([{ text: "reply" }, { text: "second reply" }])
-        await using(driver, { provider }, async (session, thread, peer) => {
+        await usingPeer(driver, { provider }, async (session, thread, peer) => {
           const state = await session.state(thread)
           const first = method === "send" ? quiet(session.send(thread, "A")) : undefined
           if (!first) await state.queueMessage({ role: "user", content: "A" })
@@ -999,7 +976,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
         },
         { text: "reply" },
       ])
-      await using(
+      await usingPeer(
         driver,
         { provider, hooks: [hang], agent: { hooks: ["hang"] } },
         async (session, thread, peer) => {
@@ -1019,7 +996,7 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
     name: "O23 repeated termination from old and new handles keeps the first timestamp and history",
     requirements: [],
     run: async (driver) =>
-      using(driver, { provider: new ScriptedProvider([]) }, async (session, thread, peer) => {
+      usingPeer(driver, { provider: new ScriptedProvider([]) }, async (session, thread, peer) => {
         const older = await peer.state(thread)
         const first = await session.state(thread)
         await first.terminate()

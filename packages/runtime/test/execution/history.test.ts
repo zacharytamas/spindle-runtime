@@ -3,7 +3,7 @@ import { defineHook, defineTool, type Message, type ThreadState } from "@standar
 import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { ok, project, type Setup } from "../../../conformance/src/scenarios/step-loop.ts"
+import { ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"

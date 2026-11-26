@@ -9,17 +9,11 @@ import {
 } from "@standardagents/spec"
 import { expect } from "vitest"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { history, ok, type Scenario, send, sideOf, using } from "./step-loop.ts"
-
-export const SIDES = ["b", "a"] as const
-
-// The human's stored role and the model side's stored role. Messages section 4: user is side B, assistant is side A.
-export const rolesFor = (humanOn: "a" | "b") =>
-  humanOn === "b" ? ({ human: "user", model: "assistant" } as const) : ({ human: "assistant", model: "user" } as const)
+import { history, ok, rolesFor, runTurn, type Scenario, SIDES, sideOf, stubTool, using } from "./harness.ts"
 
 const contents = (messages: ReadonlyArray<{ readonly content?: unknown }>) => messages.map((m) => m.content)
 
-const noop = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+const noop = { noop: stubTool("Does nothing", "noop") }
 
 const system = { role: "system", content: "You are a test assistant." }
 
@@ -101,7 +95,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           driver,
           { provider, tools, hooks, humanOn, prompt: { hooks: ["stamp", "record", "look", "after_tool"] } },
           async (session, thread) => {
-            expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+            expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
             const stored = await session.messages(thread)
             const { message, read, last } = seen[0] as Record<string, Message>
             expect(message?.metadata).toEqual({ source: "tool", stamped: message?.id })
@@ -182,7 +176,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
               ["agent_update", "idle edit", agent, true],
             ])
             calls.length = 0
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             expect(history(provider.requests[0]).map(sideOf)).toEqual([
               ["user", "idle edit"],
               ["user", "go"],
@@ -279,7 +273,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             prompt: { hooks: ["count_before", "count_after", "pass_filter", "pass_prefilter"] },
           },
           async (session, thread) => {
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             const stored = await session.messages(thread)
             expect(stored.filter((m) => m.content?.endsWith("note")).map((m) => [m.content, m.silent])).toEqual([
               ["loud note", false],
@@ -369,7 +363,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
               { role: human, content: "u2" },
               { role: model, content: "m2", metadata: { note: { secret: "keep-me" } } },
             ])
-            await send(session, thread, "u3")
+            await session.send(thread, "u3")
             const stored = await session.messages(thread)
             expect(history(provider.requests[0]).map(sideOf)).toEqual([
               ["user", "summary of u1 and m1"],
@@ -457,7 +451,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             prompt: { hooks: ["inject_once", "peek", "lifecycle_before", "lifecycle_after"] },
           },
           async (session, thread) => {
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             const id = injected?.id
             expect(events).toEqual([
               ["filter", ["go"]],
@@ -501,15 +495,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
           { text: "done" },
         ])
-        await using(
-          driver,
-          { provider, tools: noop, hooks, humanOn, prompt: { hooks: ["inject_then_fail"] } },
-          async (session, thread) => {
-            await send(session, thread, "go")
-            expect(contents(history(provider.requests[0]))).toEqual(["go"])
-            expect(contents(history(provider.requests[1]))).toContain("from a failing filter")
-          },
-        )
+        await runTurn(driver, { provider, tools: noop, hooks, humanOn, prompt: { hooks: ["inject_then_fail"] } }, "go")
+        expect(contents(history(provider.requests[0]))).toEqual(["go"])
+        expect(contents(history(provider.requests[1]))).toContain("from a failing filter")
       }
     },
   },
@@ -571,7 +559,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           { toolCalls: [{ id: "c1", name: "observe", arguments: {} }] },
           { text: "done" },
         ])
-        await using(
+        await runTurn(
           driver,
           {
             provider,
@@ -580,23 +568,21 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             humanOn,
             prompt: { hooks: ["count_filter", "inject_late", "creating", "created"] },
           },
-          async (session, thread) => {
-            await send(session, thread, "go")
-            expect(events).toEqual([
-              ["filter", ["go"]],
-              ["prefilter", ["go"]],
-              ["before", injected?.id],
-              ["after", injected?.id],
-              ["read", "from prefilter"],
-              ["tool", ["go", "from prefilter", null]],
-              ["filter", ["go", "from prefilter", null, "observed"]],
-              ["prefilter", ["go", "from prefilter", null, "observed"]],
-            ])
-            expect(provider.requests[0]?.messages).toEqual([system, { role: "user", content: "go" }])
-            expect(provider.requests[1]?.messages.filter((m) => m.role === "system")).toEqual([system])
-            expect(contents(history(provider.requests[1]))).toContain("from prefilter")
-          },
+          "go",
         )
+        expect(events).toEqual([
+          ["filter", ["go"]],
+          ["prefilter", ["go"]],
+          ["before", injected?.id],
+          ["after", injected?.id],
+          ["read", "from prefilter"],
+          ["tool", ["go", "from prefilter", null]],
+          ["filter", ["go", "from prefilter", null, "observed"]],
+          ["prefilter", ["go", "from prefilter", null, "observed"]],
+        ])
+        expect(provider.requests[0]?.messages).toEqual([system, { role: "user", content: "go" }])
+        expect(provider.requests[1]?.messages.filter((m) => m.role === "system")).toEqual([system])
+        expect(contents(history(provider.requests[1]))).toContain("from prefilter")
       }
     },
   },
@@ -668,7 +654,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           },
         ])
         await using(driver, { provider, hooks, humanOn, prompt, prompts: [rules] }, async (session, thread) => {
-          await send(session, thread, "go")
+          await session.send(thread, "go")
           expect(persisted).toEqual([injected])
           expect((await session.messages(thread)).find((m) => m.id === injected?.id)).toEqual(injected)
           expect(order).toEqual(["after_system_message", "filter_messages", "prefilter_llm_history", "dispatch"])
@@ -743,7 +729,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           },
           async (session, thread) => {
             elsewhere = await session.state(thread)
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             expect(seen).toEqual([
               ["system hook", ["go", "before the snapshot"]],
               ["filter", ["go", "before the snapshot"]],
@@ -803,7 +789,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           { provider, tools, hooks, humanOn, prompt: { hooks: ["write_elsewhere", "look"] } },
           async (session, thread) => {
             writeElsewhere = (content) => session.seed(thread, [{ role: human, content }])
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             expect(seen).toEqual([
               ["filter", ["go", "before the snapshot"]],
               ["tool", ["go", "before the snapshot", null, "during the tool"]],
@@ -871,7 +857,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           },
           async (session, thread) => {
             elsewhere = await session.state(thread)
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             expect(seen).toEqual([
               ["filter", ["go"]],
               ["tool", ["go", null]],
@@ -943,7 +929,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
               { role: human, content: "deleted during the tool" },
               { role: human, content: "deleted before the snapshot" },
             ])
-            await send(session, thread, "go")
+            await session.send(thread, "go")
             expect(seen).toEqual([
               ["filter", ["deleted during the tool", "deleted before the snapshot", "go"]],
               ["tool", ["deleted before the snapshot", "go", null]],
@@ -993,7 +979,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           { text: "done" },
         ])
         let systems: Array<unknown> = []
-        await using(
+        await runTurn(
           driver,
           {
             provider,
@@ -1001,11 +987,9 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             hooks,
             prompt: { hooks: [...returns.map((_, index) => `system_${index}`), "count", "mark"] },
           },
-          async (session, thread) => {
-            await send(session, thread, "go")
-            systems = provider.requests.map((request) => request.messages[0])
-          },
+          "go",
         )
+        systems = provider.requests.map((request) => request.messages[0])
         expect(filters).toEqual([1, 3])
         expect(prefilters).toEqual([
           [
