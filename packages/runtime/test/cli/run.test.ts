@@ -343,7 +343,7 @@ describe("spindle run", () => {
       const fetch = async (_input: string | URL | Request, _init?: RequestInit) => new Response(answers.shift() ?? "")
       const { exit, err } = yield* run(["assistant", "-m", "save", "--db", db], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       const messages = yield* storedMessages(db, err)
       expect(messages.map((m) => [m.role, m.content, m.tool_calls])).toEqual([
@@ -369,7 +369,7 @@ describe("spindle run", () => {
       }
       const { exit, out, err } = yield* run(["assistant", "-m", "hi", "--trace"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(sends).toBe(2)
       expect(out.filter((line) => line.startsWith("step 1 call "))).toEqual([
@@ -407,7 +407,7 @@ describe("spindle run", () => {
       }
       const { exit } = yield* run(["assistant", "-m", "save"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(bodies[1]?.messages[2]).toMatchObject({
         role: "assistant",
@@ -428,7 +428,7 @@ describe("spindle run", () => {
       const { exit, out, err } = yield* run(["assistant", "-m", "hi"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
         SPINDLE_TEST_API_KEY: key,
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isFailure(exit)).toBe(true)
       expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Rejected Bearer [redacted] and [redacted]")
       expect([...out, ...err].join("\n")).not.toContain(key)
