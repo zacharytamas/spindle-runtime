@@ -122,7 +122,6 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
         "package_keyword_missing",
         relativeManifest,
         `${name} must list "standardagent" in its package.json keywords`,
-        "warning",
       )
     if (!(name.startsWith("@") ? name.slice(name.indexOf("/") + 1) : name).startsWith("standardagent-"))
       issue(
