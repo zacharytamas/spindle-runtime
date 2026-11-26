@@ -35,9 +35,18 @@ importers:
 
   packages/conformance:
     dependencies:
+      '@standardagents/spec':
+        specifier: 0.45.13
+        version: 0.45.13
       effect:
         specifier: 4.1.5
         version: 4.1.5
+      spindle-runtime:
+        specifier: workspace:*
+        version: link:../runtime
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/runtime:
     dependencies:
