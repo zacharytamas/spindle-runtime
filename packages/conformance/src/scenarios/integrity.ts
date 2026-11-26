@@ -219,4 +219,49 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
       )
     },
   },
+  {
+    name: "I6 fails the run before the model call when a request hook adds a system message that holds a secret",
+    requirements: [],
+    run: async (driver) => {
+      for (const position of ["filter_messages", "prefilter_llm_history"] as const) {
+        const hooks = [
+          position === "filter_messages"
+            ? defineHook({
+                hook: "filter_messages",
+                id: "add_system",
+                execute: async (state, messages) => [
+                  ...messages,
+                  {
+                    id: "synthetic",
+                    role: "system",
+                    content: `key ${await state.instanceEnv?.("CANARY")}`,
+                    created_at: 0,
+                  },
+                ],
+              })
+            : defineHook({
+                hook: "prefilter_llm_history",
+                id: "add_system",
+                execute: async (state, messages) => [
+                  ...messages,
+                  { role: "system", content: `key ${await state.instanceEnv?.("CANARY")}` },
+                ],
+              }),
+        ]
+        const provider = new ScriptedProvider([{ text: "done" }])
+        await using(
+          driver,
+          { provider, hooks, prompt: { hooks: ["add_system"] } },
+          async (session, thread) => {
+            const outcome = await send(session, thread, "go")
+            expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error", steps: 0 })
+            expect(outcome.error?.message).toContain("holds a secret value")
+            expect(holding(outcome, CANARY)).toEqual([])
+          },
+          { CANARY },
+        )
+        expect(provider.requests).toEqual([])
+      }
+    },
+  },
 ]

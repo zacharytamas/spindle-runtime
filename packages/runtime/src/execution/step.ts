@@ -13,6 +13,7 @@ import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
+  checkSystemMessages,
   checkSystemPrompt,
   fromLLMMessage,
   pastOf,
@@ -400,6 +401,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
         // put back.
         const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
+        yield* checkSystemMessages(messages, secrets)
         yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
         const request = buildRequest(turn, system, messages, abort.signal)
         yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)

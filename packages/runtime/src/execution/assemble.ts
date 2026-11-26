@@ -88,11 +88,24 @@ export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (tur
   return yield* render(root, [root.definition])
 })
 
+const holdsSecret = (text: string, secrets: Secrets) =>
+  [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
+
 // Runs on the finished system prompt, after after_system_message, so that a hook cannot put a secret into it either.
 export const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
-  [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
+  holdsSecret(text, secrets)
     ? new SetupError({
         message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
+      })
+    : Effect.void
+
+// Runs after the last request hook, so that a system message that filter_messages or prefilter_llm_history adds is
+// held to the rule of the system prompt.
+export const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
+  messages.some((message) => message.role === "system" && holdsSecret(message.content, secrets))
+    ? new SetupError({
+        message:
+          "A system message in the request to the model holds a secret value. A system message never holds a secret.",
       })
     : Effect.void
 
