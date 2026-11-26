@@ -1,8 +1,6 @@
-import { type Cause, Effect, Fiber, FileSystem, Path, Queue, type Scope, Stream } from "effect"
-import { ChildProcess } from "effect/process"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { type Cause, Effect, FileSystem, Path, Queue, Stream } from "effect"
 import { platformName } from "#platform"
-import { main, query, until } from "./processes.ts"
+import { type Child, main, query, startCommand, until } from "./processes.ts"
 
 // The chat tests run the real command in a child process, type into its standard input, and read what it prints.
 // A test orders events with the gate files of the queue fixture and with the lines the command has printed so far.
@@ -16,60 +14,39 @@ export const fixture = (name: string) => `${fixtures}/${name}`
 // The packages that a fixture's definitions import. A test that copies a fixture links them beside the copy.
 export const conformanceModules = source("../../../conformance/node_modules")
 
-export interface Session {
-  // The process id of the command. With the terminal view it is the id of the helper that owns the terminal.
-  readonly pid: number
+export interface Session extends Pick<Child, "pid" | "exit" | "signal"> {
   // Everything printed so far, as text. A prompt has no newline, so a test reads the text and not a list of lines.
   readonly out: () => string
   readonly err: () => string
   readonly type: (text: string) => Effect.Effect<void>
   // Closes standard input, which is the end of input for a command that reads a pipe.
   readonly end: Effect.Effect<void>
-  // A process that a signal killed has no exit code, so exit reads -1 for it.
-  readonly exit: Effect.Effect<number, unknown>
-  readonly signal: (signal: "SIGINT" | "SIGKILL" | "SIGTERM" | "SIGHUP") => Effect.Effect<void, never, Scope.Scope>
 }
-
-const collect = (stream: Stream.Stream<Uint8Array, unknown>, into: { text: string }) =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runForEach((chunk) =>
-      Effect.sync(() => {
-        into.text += chunk
-      }),
-    ),
-  )
 
 export const launch = (gate: string, words: ReadonlyArray<string>, env: Record<string, string> = {}) =>
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner
     const keys = yield* Queue.unbounded<Uint8Array, Cause.Done>()
-    const [name = "", ...args] = words
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(name, args, {
-        env: { SPINDLE_GATE_DIR: gate, NODE_NO_WARNINGS: "1", ...env },
-        extendEnv: true,
+    const output = { out: "", err: "" }
+    const child = yield* startCommand(
+      gate,
+      words,
+      (channel, text) =>
+        Stream.runForEach(text, (chunk) =>
+          Effect.sync(() => {
+            output[channel] += chunk
+          }),
+        ),
+      {
+        env,
         stdin: { stream: Stream.fromQueue(keys), endOnDone: true },
-      }),
-    )
-    const out = { text: "" }
-    const err = { text: "" }
-    const reading = yield* Effect.forkScoped(
-      Effect.all([collect(handle.stdout, out), collect(handle.stderr, err)], { concurrency: 2 }),
+      },
     )
     return {
-      pid: Number(handle.pid),
-      out: () => out.text,
-      err: () => err.text,
+      ...child,
+      out: () => output.out,
+      err: () => output.err,
       type: (text) => Effect.asVoid(Queue.offer(keys, new TextEncoder().encode(text))),
       end: Effect.asVoid(Queue.end(keys)),
-      exit: handle.exitCode.pipe(
-        Effect.map(Number),
-        Effect.orElseSucceed(() => -1),
-        Effect.tap(() => Fiber.join(reading)),
-      ),
-      // kill waits until the process exits, so it runs on its own fiber.
-      signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
     } satisfies Session
   })
 
@@ -100,8 +77,7 @@ export const shell = (gate: string, script: string, args: ReadonlyArray<string>,
 
 const segments = (text: string) => text.split("\n")
 
-// The complete lines printed so far. A prompt that waits for input is not one of them.
-export const linesOf = (text: string) => segments(text).slice(0, -1)
+export { linesOf, printed } from "./processes.ts"
 
 const promptsIn = (text: string) => segments(text).filter((line) => line.startsWith("> ")).length
 
@@ -110,12 +86,6 @@ export const prompt = (session: Session, n: number) =>
   until(
     `prompt ${n}`,
     Effect.sync(() => promptsIn(session.out()) === n && segments(session.out()).at(-1) === "> "),
-  )
-
-export const printed = (what: string, text: () => string, line: string | RegExp) =>
-  until(
-    `the line ${what}`,
-    Effect.sync(() => linesOf(text()).some((found) => (typeof line === "string" ? found === line : line.test(found)))),
   )
 
 const THREAD = /^spindle: thread ([0-9a-f-]{36})$/m
