@@ -1,0 +1,25 @@
+// Waits until release-<name> exists in SPINDLE_GATE_DIR. It writes tool-entered-<name> when it starts, and appends
+// its name to tool-log, so that a test sees how often it ran. With watch, it also ends when the execution aborts.
+import fs from "node:fs"
+import path from "node:path"
+import { defineTool } from "@standardagents/spec"
+import { z } from "zod"
+
+export default defineTool({
+  description: "Wait until the test releases the named gate",
+  args: z.object({ name: z.string(), watch: z.boolean().optional() }),
+  execute: async (state, { name, watch }) => {
+    const dir = process.env.SPINDLE_GATE_DIR ?? "."
+    const signal = state.execution?.abortSignal
+    fs.appendFileSync(path.join(dir, "tool-log"), `${name}\n`)
+    fs.writeFileSync(path.join(dir, `tool-entered-${name}`), "")
+    while (!fs.existsSync(path.join(dir, `release-${name}`))) {
+      if (watch === true && signal?.aborted === true) {
+        fs.writeFileSync(path.join(dir, `tool-aborted-${name}`), "")
+        return { status: "error", error: `hold ${name} saw the abort` }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    return { status: "success", result: `released ${name}, aborted ${signal?.aborted ?? false}` }
+  },
+})
