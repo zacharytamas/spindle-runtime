@@ -119,6 +119,8 @@ Seven code quality reviews found that no PR of the stack meets the operator's ba
 6. One shared module for the commands, one channel for a waiting line, and the chat as one fiber that drains one queue of events.
 7. The registry validator lifted out of its generator, `Schema` at the boundaries where it removes code, and Effect's `Schedule`, `Stream`, and event-stream parser in the model call.
 
+8. Fallow, added last, by the operator's decision of 2026-11-26. It gets a pinned development dependency, the configuration in `docs/plans/trail/reviews/fallow.md`, and one CI job outside the runtime matrix that runs its audit of a PR. The findings it has then are cleared in that PR, so that it starts from a clean baseline. Until then its findings go to the structure PR that owns the code: the two circular imports between `Registry.ts` and its two loaders go to PR 7, and the list of exports that nothing uses goes to each PR for its own files.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
 After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
