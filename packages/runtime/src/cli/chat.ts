@@ -314,28 +314,38 @@ export const chatCommand = Command.make(
           const provider = Option.isSome(args.script) ? yield* readScript(path.resolve(args.script.value)) : undefined
           const database = yield* openDatabase(filename)
           const supervisor = supervisorLayer({ secrets, ...(provider ? { provider } : {}) })
-          yield* Effect.gen(function* () {
-            const thread = yield* openThread(args.agent, filename, args.thread, secrets)
-            const ending = yield* converse({
-              ...thread,
-              role: roleOf(side),
-              clean,
-              trace: args.trace,
-              dumpRequests: args.dumpRequests,
-            }).pipe(Effect.scoped)
-            if (ending === "terminated") return yield* new RunFailed({ message: ending })
-            if (filename !== ":memory:") {
-              if (!(yield* fs.exists(filename))) return yield* fail(`the database ${db} is gone`)
-              const stored = yield* ThreadStore.use((store) => store.getThread(thread.id))
-              if (stored.terminated === null) {
-                const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(args.dir.value)}` : ""
-                yield* note(
-                  `resume with spindle chat ${shellWord(args.agent)} --thread ${shellWord(thread.id)} --db ${shellWord(db)}${dir}`,
-                )
+          // A second Ctrl-C or a SIGTERM that lands after the conversation ends must not cut off the exit lines.
+          yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              const thread = yield* restore(openThread(args.agent, filename, args.thread, secrets))
+              const conversation = yield* Effect.exit(
+                restore(
+                  converse({
+                    ...thread,
+                    role: roleOf(side),
+                    clean,
+                    trace: args.trace,
+                    dumpRequests: args.dumpRequests,
+                  }).pipe(Effect.scoped),
+                ),
+              )
+              // A conversation that a signal or an error ended still says how to resume the thread.
+              const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
+              if (ending === "terminated") return yield* new RunFailed({ message: ending })
+              if (filename !== ":memory:") {
+                if (!(yield* fs.exists(filename))) return yield* fail(`the database ${db} is gone`)
+                const stored = yield* ThreadStore.use((store) => store.getThread(thread.id))
+                if (stored.terminated === null) {
+                  const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(args.dir.value)}` : ""
+                  yield* note(
+                    `resume with spindle chat ${shellWord(args.agent)} --thread ${shellWord(thread.id)} --db ${shellWord(db)}${dir}`,
+                  )
+                }
               }
-            }
-            if (ending === "closed") return yield* new RunFailed({ message: ending })
-          }).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
+              if (Exit.isFailure(conversation)) return yield* Effect.failCause(conversation.cause)
+              if (ending === "closed") return yield* new RunFailed({ message: ending })
+            }),
+          ).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
         }).pipe(Effect.provide(Registry.layer(root)))
       }).pipe(
         Effect.catchCause((cause) => {

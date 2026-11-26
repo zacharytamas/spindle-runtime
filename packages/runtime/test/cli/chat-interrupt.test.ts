@@ -54,6 +54,24 @@ const abort = (session: Session) =>
 
 describe("spindle chat and Ctrl-C", () => {
   it.live(
+    "termination signals print the resume line at the second prompt",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+          const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
+          yield* session.type("one\n")
+          yield* prompt(session, 2)
+          const thread = yield* threadOf(session)
+          yield* session.signal(signal)
+          expect(yield* session.exit).toBe(130)
+          expect(linesOf(session.err()).at(-1)).toBe(note.resume("assistant", thread, db, queue))
+        }
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "Ctrl-C at the prompt ends the line, prints the resume line, and exits 0 (lane 5, O14, F05)",
     () =>
       Effect.gen(function* () {

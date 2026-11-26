@@ -27,7 +27,7 @@ export interface Session {
   readonly end: Effect.Effect<void>
   // A process that a signal killed has no exit code, so exit reads -1 for it.
   readonly exit: Effect.Effect<number, unknown>
-  readonly signal: (signal: "SIGINT" | "SIGKILL") => Effect.Effect<void, never, Scope.Scope>
+  readonly signal: (signal: "SIGINT" | "SIGKILL" | "SIGTERM" | "SIGHUP") => Effect.Effect<void, never, Scope.Scope>
 }
 
 const collect = (stream: Stream.Stream<Uint8Array, unknown>, into: { text: string }) =>
