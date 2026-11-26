@@ -2,7 +2,7 @@ import type { Message } from "@standardagents/spec"
 import { Chunk, Effect } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { MessageStore } from "../store/MessageStore.ts"
-import type { Inserted, ThreadHistory, ThreadNotFound } from "../store/model.ts"
+import type { HistoryRow, ThreadHistory, ThreadNotFound } from "../store/model.ts"
 
 // A stored message's metadata and attachments come from JSON.parse, so they hold only plain objects, arrays, and
 // primitives. On Bun, structuredClone of a history took longer than reading it from the store, and this copy takes
@@ -24,11 +24,11 @@ export interface History {
   // The copy itself, which no tool or hook may get without copying it. No later write changes an array it returned, so
   // a snapshot holds what the thread held when it was taken.
   readonly read: Effect.Effect<ThreadHistory, ThreadNotFound | SqlError, MessageStore>
-  readonly inserted: (inserted: Inserted) => void
+  readonly inserted: (inserted: HistoryRow & { readonly revision: number | null }) => void
 }
 
 export const makeHistory = (threadId: string): History => {
-  let copy: { rows: Chunk.Chunk<ThreadHistory["rows"][number]>; revision: number } | undefined
+  let copy: { rows: Chunk.Chunk<HistoryRow>; revision: number } | undefined
   return {
     read: Effect.gen(function* () {
       const store = yield* MessageStore

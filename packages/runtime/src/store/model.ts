@@ -53,16 +53,16 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
 
 export type IdentifiedMessage = NewMessage & Pick<Message, "id" | "created_at">
 
-// The revision is null when the insert ran inside a caller's transaction, which may still roll it back.
-export interface Inserted extends MessagePosition {
+export interface HistoryRow {
   readonly message: Message
-  readonly revision: number | null
+  readonly seq: number
+  readonly callerSeq: number | null
 }
 
 // The revision is null when the read ran inside a caller's transaction, which may still roll back what it read.
 export interface ThreadHistory {
   readonly revision: number | null
-  readonly rows: ReadonlyArray<MessagePosition & { readonly message: Message }>
+  readonly rows: ReadonlyArray<HistoryRow>
 }
 
 export class MessageIdTaken extends Data.TaggedError("MessageIdTaken")<{ readonly messageId: string }> {
@@ -158,8 +158,4 @@ export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{
   override get message() {
     return `Message ${this.messageId} has open tool calls. Wait for the run to settle before deleting it.`
   }
-}
-export interface MessagePosition {
-  readonly seq: number
-  readonly callerSeq: number | null
 }

@@ -67,8 +67,9 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
             flow_id: flowId,
             caller_seq: callerSeq ?? null,
           }
-          const values = { ...row, ...facts }
-          const [inserted] = yield* sql<{ seq: number }>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`
+          const [inserted] = yield* sql<{
+            seq: number
+          }>`INSERT INTO messages ${sql.insert({ ...row, ...facts })} RETURNING seq`
           if (!inserted) return yield* Effect.die("Message insert returned no sequence")
           // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
           return {

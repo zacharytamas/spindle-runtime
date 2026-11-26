@@ -3,10 +3,8 @@ import { authorize, type Database, json, nowMicros, requireThread, unyielding } 
 import { KeyNotWellFormed, type NewThread, type WriteOrigin } from "./model.ts"
 import { stored, type ThreadRow, threadColumns, toThread } from "./schema.ts"
 
+// A lone surrogate has no UTF-8 encoding and would collide with a different SQLite key.
 const loneSurrogate = /[\uD800-\uDFFF]/u
-
-// SQLite stores a key as UTF-8, which has no encoding for a lone surrogate, so two such keys would collide.
-const isWellFormed = (key: string) => !loneSurrogate.test(key)
 
 export const makeThreadStore = ({ sql, threadRows, selectRun }: Database) => {
   return {
@@ -35,7 +33,7 @@ export const makeThreadStore = ({ sql, threadRows, selectRun }: Database) => {
     }, unyielding),
 
     getValue: Effect.fn("ThreadStore.getValue")(function* (threadId: string, key: string) {
-      if (!isWellFormed(key)) return yield* new KeyNotWellFormed({ key })
+      if (loneSurrogate.test(key)) return yield* new KeyNotWellFormed({ key })
       const [row] = yield* sql<{ value: string }>`SELECT value FROM kv WHERE thread_id = ${threadId} AND key = ${key}`
       return row === undefined ? null : (JSON.parse(row.value) as unknown)
     }, unyielding),
@@ -46,7 +44,7 @@ export const makeThreadStore = ({ sql, threadRows, selectRun }: Database) => {
       value: unknown,
       origin: WriteOrigin,
     ) {
-      if (!isWellFormed(key)) return yield* new KeyNotWellFormed({ key })
+      if (loneSurrogate.test(key)) return yield* new KeyNotWellFormed({ key })
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           const text = value == null ? null : yield* json(`the value of key ${JSON.stringify(key)}`, value)

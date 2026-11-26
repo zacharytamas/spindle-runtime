@@ -279,8 +279,9 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     ),
 
     holderOf: Effect.fn("RunStore.holderOf")(function* (threadId: string) {
-      const [row] = yield* heldRows("id", sql`id = ${threadId} AND ${running}`)
-      return row?.pid == null || row.holder_id === null ? null : { id: row.holder_id, pid: row.pid }
+      const [holder] = yield* sql<Holder>`SELECT h.id, h.pid FROM threads t JOIN holders h ON h.id = t.holder_id
+        WHERE t.id = ${threadId} AND ${running}`
+      return holder ?? null
     }, unyielding),
 
     owned: Effect.fn("RunStore.owned")(
