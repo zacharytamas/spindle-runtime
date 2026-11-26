@@ -2,7 +2,7 @@ import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardag
 import { Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
-import { type Holder, type QueueEntry, ThreadStore } from "../store/ThreadStore.ts"
+import { WritingHandle, type Holder, type QueueEntry, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
@@ -131,6 +131,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           // An execution yields to other fibers only where it waits, for a model, a tool, or a hook, so its store calls
           // need no guard of their own. The outcome is recorded in a finalizer, which an interrupt cannot cut short.
           const execution = runExecution(threadId, run, control(threadId), { ...defaults, ...options }).pipe(
+            Effect.provideService(WritingHandle, undefined),
             Effect.provideService(Scheduler.PreventSchedulerYield, true),
             Effect.onExit((exit) =>
               Effect.gen(function* () {

@@ -9,7 +9,7 @@ import type {
 import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
-import { ThreadStore } from "../store/ThreadStore.ts"
+import { ThreadStore, WritingHandle, HandleExpired } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
@@ -75,6 +75,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | ThreadStore>
+  readonly owner?: Run
   readonly execution: ExecutionRecord | undefined
   readonly scope: EnvScope
   readonly from: Definition | undefined
@@ -142,14 +143,15 @@ const executionState = (record: ExecutionRecord, readHistory: () => Array<Messag
 // method they call runs here against the services of the execution.
 export const makeThreadState = (state: StateContext): ThreadState => {
   const { call } = state
-  const owner = state.execution?.run
+  const owner = state.owner ?? state.execution?.run
   const expired = () =>
     call?.expired === true
       ? new HookExpired({ hook: call.hook, position: call.position })
       : owner?.ended === true
         ? new ExecutionEnded({ flowId: owner.flowId })
-        : undefined
-  const runPromise = Effect.runPromiseWith(state.services)
+        : owner?.abort.signal.aborted ? new HandleExpired() : undefined
+  const services = Context.add(state.services, WritingHandle, {flowId: owner?.flowId, terminated: state.thread.terminated, expired: () => expired() !== undefined})
+  const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.
   const signal = owner === undefined ? undefined : { signal: owner.abort.signal }
   const run = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): Promise<A> => {
@@ -160,7 +162,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const runSync = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): A => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    const exit = Effect.runSyncExitWith(state.services)(effect)
+    const exit = Effect.runSyncExitWith(services)(effect)
     if (Exit.isSuccess(exit)) return exit.value
     throw Cause.squash(exit.cause)
   }
@@ -190,7 +192,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     secrets: state.secrets,
     call,
     history: state.execution?.history,
-    ...(state.execution === undefined ? {} : { flowId: state.execution.flowId }),
+    ...(owner === undefined ? {} : { flowId: owner.flowId }),
   }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)

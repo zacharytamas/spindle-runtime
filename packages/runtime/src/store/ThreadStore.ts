@@ -151,6 +151,18 @@ export interface Holder {
 // superseded: the flow no longer holds the thread, and nothing was written.
 export type Settlement = "settled" | "continue" | "superseded"
 
+export class HandleExpired extends Data.TaggedError("HandleExpired")<{}> {}
+
+export interface HandleOwner {
+  readonly flowId: string | undefined
+  readonly terminated: number | null
+  readonly expired: () => boolean
+}
+
+export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle/WritingHandle", { defaultValue: () => undefined })
+
+export type WriteRefused = FlowEnded | ThreadTerminated | HandleExpired
+
 export interface InsertOptions {
   // The execution that writes. The insert fails with FlowEnded when that flow no longer holds the thread.
   readonly flowId?: string
@@ -163,7 +175,7 @@ export class ThreadStore extends Context.Service<
   {
     readonly createThread: (thread: NewThread) => Effect.Effect<Thread, ThreadNotFound | ValueNotJson | SqlError>
     readonly getThread: (threadId: string) => Effect.Effect<Thread, ThreadNotFound | SqlError>
-    readonly terminate: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
+    readonly terminate: (threadId: string) => Effect.Effect<number, ThreadNotFound | WriteRefused | SqlError>
     readonly setStatus: (threadId: string, status: RunStatus) => Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
 
     readonly appendMessages: (
@@ -175,7 +187,7 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       message: IdentifiedMessage,
       options?: InsertOptions,
-    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | FlowEnded | QueueEntryGone | SqlError>
+    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | WriteRefused | QueueEntryGone | SqlError>
     // Every insert, update, and delete of one of the thread's messages raises its revision by one, whoever writes.
     readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
     // Every message of the thread, oldest first and silent ones included, and the revision they match.
@@ -191,8 +203,8 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       messageId: string,
       updates: MessageUpdates,
-    ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | SqlError>
-    readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, SqlError>
+    ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | WriteRefused | SqlError>
+    readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, WriteRefused | SqlError>
 
     readonly enqueue: (
       threadId: string,
@@ -206,7 +218,7 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       entry: QueueEntry,
       claim: Claim,
-    ) => Effect.Effect<Admitted, ThreadNotFound | ThreadTerminated | ValueNotJson | SqlError>
+    ) => Effect.Effect<Admitted, ThreadNotFound | WriteRefused | ValueNotJson | SqlError>
     // Claims a thread that holds queued work and that no execution holds, for work that waits behind a run that
     // stopped or failed. Returns whether the caller now runs it.
     readonly claim: (threadId: string, claim: Claim) => Effect.Effect<boolean, SqlError>
@@ -234,7 +246,7 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       key: string,
       value: unknown,
-    ) => Effect.Effect<void, KeyNotWellFormed | ValueNotJson | ThreadNotFound | SqlError>
+    ) => Effect.Effect<void, WriteRefused | KeyNotWellFormed | ValueNotJson | ThreadNotFound | SqlError>
 
     readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>
   }

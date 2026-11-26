@@ -374,6 +374,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         stateFor: (hook, call) =>
           makeThreadState({
             ...base,
+            owner: run,
             execution: undefined,
             context: {},
             scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined },
