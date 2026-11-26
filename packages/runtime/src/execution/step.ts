@@ -425,7 +425,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
           outcome: Effect.Effect<ToolResult | undefined, never, Registry | Stores>,
         ) =>
           Effect.gen(function* () {
-            const result = run.stopped() ? undefined : yield* outcome
+            const result = run.stopAtBoundary() ? undefined : yield* outcome
             const skipped = result === undefined
             const returned = result ?? notRun
             const toolCall = hookCall(call, argumentsOf(call))
@@ -516,7 +516,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
           let first: string | undefined
           let prompted = false
           let count = 0
-          while (!run.stopped()) {
+          while (!run.stopAtBoundary()) {
             const entry = yield* runStore.nextQueued(threadId, { flowId })
             if (entry === undefined) break
             count += 1
@@ -537,19 +537,18 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
         })
         // Execution State section 3: a stop takes effect at the boundary between two operations. The run settles idle,
         // and the work still queued waits for the next trigger.
-        const stopHere = Effect.suspend(() => {
-          const reason = run.stopReason
-          return Effect.as(record("stop", reason), { status: "idle", reason } satisfies End)
-        })
+        const recordStop = (end: End) => Effect.as(record("stop", end.reason), end)
         let turnStart = true
         let turnSteps = 0
         return {
           advance: Effect.gen(function* () {
             while (true) {
               step += 1
-              if (run.stopped()) return yield* stopHere
+              const beforeDrain = run.stopAtBoundary()
+              if (beforeDrain) return yield* recordStop(beforeDrain)
               const { prompted, first, count } = yield* drain
-              if (run.stopped()) return yield* stopHere
+              const afterDrain = run.stopAtBoundary()
+              if (afterDrain) return yield* recordStop(afterDrain)
               if (turnStart) {
                 // Runtime section 3: with nothing for the prompt side to act on, the turn is the human's.
                 if (!prompted) {
@@ -604,7 +603,8 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
               yield* checkSystemMessages(messages, secrets)
               yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
-              if (run.stopped()) return yield* stopHere
+              const beforeRequest = run.stopAtBoundary()
+              if (beforeRequest) return yield* recordStop(beforeRequest)
               yield* checkSystemPrompt(turn, system, secrets)
               const request = buildRequest(turn, system, messages, run.signal)
               yield* record(
@@ -616,7 +616,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
                 {
                   step,
                   provider,
-                  stopped: run.stopped,
+                  stopped: () => run.stopAtBoundary() !== undefined,
                   retries,
                   toolChoice: prompt.toolChoice,
                   calls: modelCalls,
@@ -626,7 +626,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
                 },
                 request,
               )
-              if (response === undefined) return yield* stopHere
+              if (response === undefined) return yield* recordStop(run.abortEnd)
               run.recordStep()
               turnSteps += 1
               const calls = toolCallsOf(response)
@@ -644,11 +644,12 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               const results: Array<ToolResult> = []
               for (const call of calls) {
                 // A call after a stop request never runs. It still gets a result, so that the next request is valid.
-                const skipped = run.stopped()
+                const skipped = run.stopAtBoundary()
                 yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
                 results.push(yield* runCall(seq, call, runToolCall(toolContext, call)))
               }
-              if (run.stopped()) return yield* stopHere
+              const afterTools = run.stopAtBoundary()
+              if (afterTools) return yield* recordStop(afterTools)
               // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
               const reason = stopReason(
                 {

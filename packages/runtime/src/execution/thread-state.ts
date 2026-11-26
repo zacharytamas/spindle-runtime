@@ -126,7 +126,7 @@ const executionState = (
       return record.side === "b" ? record.run.steps : 0
     },
     get stopped() {
-      return record.run.stopped()
+      return record.run.stopAtBoundary() !== undefined
     },
     get messageHistory() {
       return readHistory()
@@ -146,7 +146,9 @@ const executionState = (
   Object.defineProperty(state, "stoppedBy", {
     enumerable: true,
     get: () => {
-      return record.run.stopped() ? (record.run.stoppedBy ?? (record.side === "a" ? "b" : "a")) : undefined
+      return record.run.stopAtBoundary() !== undefined
+        ? (record.run.stoppedBy ?? (record.side === "a" ? "b" : "a"))
+        : undefined
     },
   })
   return state

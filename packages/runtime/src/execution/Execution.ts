@@ -73,12 +73,14 @@ export class Execution {
   get ended() {
     return this.#phase === "ended"
   }
-  stopped = () => this.#stop !== undefined
+  stopAtBoundary() {
+    return this.#stop === undefined ? undefined : this.abortEnd
+  }
   get stoppedBy() {
     return this.#stop === "user" ? undefined : this.#stop
   }
-  get stopReason() {
-    return this.#stop === "user" ? "aborted_by_user" : "aborted"
+  get abortEnd() {
+    return { status: "idle", reason: this.#stop === "user" ? "aborted_by_user" : "aborted" } as const
   }
   requestStop(by: Side | "user" = "user") {
     if (this.#phase !== "running") return false
@@ -139,7 +141,7 @@ export class Execution {
         const proposed: End | FlowEnded = Exit.isSuccess(exit)
           ? exit.value
           : interrupted
-            ? { status: "idle", reason: this.stopReason }
+            ? this.abortEnd
             : failure(exit.cause)
         const end: End = proposed instanceof FlowEnded ? settledAs[proposed.why] : proposed
         if (proposed instanceof FlowEnded) this.#abort.abort()
