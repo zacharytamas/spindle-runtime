@@ -288,14 +288,17 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       const thread = yield* store.getThread(threadId)
       const turn = yield* prepareTurn(thread.agentId)
       const hookSet = yield* turnHooks(turn)
-      const history = [...(yield* store.getMessages(threadId, { order: "asc", includeSilent: true })).messages]
+      const readHistory = Effect.map(
+        store.getMessages(threadId, { order: "asc", includeSilent: true }),
+        (result) => result.messages,
+      )
+      const atStart = yield* readHistory
       const execution: ExecutionRecord = {
         flowId,
         side: turn.side,
         stepCount: 0,
         sideAStepCount: 0,
         sideBStepCount: 0,
-        history,
         abort,
         promptPath: [turn.prompt.definition.qualifiedName],
       }
@@ -316,7 +319,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         secrets,
         hooks,
       }
-      const write = { threadId, hooks, secrets, history }
+      const write = { threadId, hooks, secrets }
       const toolContext: ToolContext = {
         turn,
         stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined): ThreadState =>
@@ -347,7 +350,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       const prompt = turn.prompt.value
       const view = {
         side: turn.side,
-        past: pastOf(history, turn.side),
+        past: pastOf(atStart, turn.side),
         includeChat: prompt.includeChat === true,
         includePastTools: prompt.includePastTools === true,
         includeReasoning: prompt.reasoning?.include !== false,
@@ -381,10 +384,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const system = yield* runHooks(hooks, "after_system_message", [], rendered)
         yield* checkSystemPrompt(turn, system, secrets)
         yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
-        // The snapshot is the persisted history at the moment filter_messages starts. A message written later
-        // belongs to the next assembly.
-        yield* record("assemble", `snapshot, ${history.length} messages`)
-        const filtered = yield* runHooks(hooks, "filter_messages", [], history.slice())
+        // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
+        // wrote it. A message written later belongs to the next assembly.
+        const snapshot = yield* readHistory
+        yield* record("assemble", `snapshot, ${snapshot.length} messages`)
+        const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
         const transformed = toProviderMessages(filtered, view)
         yield* record("assemble", `transform, ${transformed.length} provider messages`)

@@ -10,8 +10,6 @@ export interface WriteContext {
   readonly threadId: string
   readonly hooks: HookScope
   readonly secrets: Secrets
-  // The live history of the execution that writes, when an execution writes.
-  readonly history: Array<Message> | undefined
 }
 
 const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
@@ -122,7 +120,6 @@ export const createMessage = Effect.fn("createMessage")(function* (
               : Effect.fail(error),
           ),
         )
-  write.history?.push(stored)
   yield* runHooks(write.hooks, "after_create_message", [], stored)
   return stored
 })
@@ -145,8 +142,6 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
   const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates)
-  const index = write.history?.findIndex((candidate) => candidate.id === messageId) ?? -1
-  if (write.history !== undefined && index !== -1) write.history[index] = message
   yield* runHooks(write.hooks, "after_update_message", [], message)
   return message
 })

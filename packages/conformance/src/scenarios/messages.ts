@@ -626,6 +626,80 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored",
+    requirements: ["88c209cc", "41fe7364", "8cefb16e", "c4905fe6"],
+    run: async (driver) => {
+      for (const humanOn of SIDES) {
+        const { human } = rolesFor(humanOn)
+        let elsewhere: ThreadState | undefined
+        const seen: Array<unknown> = []
+        const hooks = [
+          defineHook({
+            hook: "after_thread_created",
+            id: "keep_handle",
+            execute: async (state) => {
+              elsewhere = state
+            },
+          }),
+          defineHook({
+            hook: "after_system_message",
+            id: "write_elsewhere",
+            execute: async (state) => {
+              if (seen.length === 0) await elsewhere?.injectMessage({ role: human, content: "before the snapshot" })
+              seen.push(["system hook", contents(state.execution?.messageHistory ?? [])])
+              return null
+            },
+          }),
+          defineHook({
+            hook: "filter_messages",
+            id: "look",
+            execute: async (_state, messages) => {
+              seen.push(["filter", contents(messages)])
+              return messages
+            },
+          }),
+        ]
+        const tools = {
+          observe: defineTool({
+            description: "Write through the other handle, then read the live history",
+            execute: async (state: ThreadState) => {
+              await elsewhere?.injectMessage({ role: human, content: "during the tool" })
+              seen.push(["tool", contents(state.execution?.messageHistory ?? [])])
+              return ok("observed")
+            },
+          }),
+        }
+        const provider = new ScriptedProvider([
+          { toolCalls: [{ id: "c1", name: "observe", arguments: {} }] },
+          { text: "done" },
+        ])
+        await using(
+          driver,
+          {
+            provider,
+            tools,
+            hooks,
+            humanOn,
+            agent: { hooks: ["keep_handle"] },
+            prompt: { hooks: ["write_elsewhere", "look"] },
+          },
+          async (session, thread) => {
+            await send(session, thread, "go")
+            expect(seen).toEqual([
+              ["system hook", ["go", "before the snapshot"]],
+              ["filter", ["go", "before the snapshot"]],
+              ["tool", ["go", "before the snapshot", null, "during the tool"]],
+              ["system hook", ["go", "before the snapshot", null, "during the tool", "observed"]],
+              ["filter", ["go", "before the snapshot", null, "during the tool", "observed"]],
+            ])
+            expect(contents(history(provider.requests[0]))).toEqual(["go", "before the snapshot"])
+            expect(contents(history(provider.requests[1]))).toContain("during the tool")
+          },
+        )
+      }
+    },
+  },
+  {
     name: "M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly",
     requirements: ["0018442c", "babeaaef", "bd9fdd64", "a237deef", "a72bbc07", "dfde10dc", "d492805f", "404eb18a"],
     run: async (driver) => {
