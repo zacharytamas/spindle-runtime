@@ -5001,7 +5001,7 @@
 	},
 	"specification:threads/messages:b8f7cd7e": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
@@ -6534,6 +6534,120 @@
 			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
 			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result"
 		],
+		"reason": ""
+	},
+	"infrastructure:runtime:f2cb78f1": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:runtime:0bf4f9af": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:runtime:66bd1ce0": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:runtime:109134a1": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:7a032a6c": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:ff3ed10f": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:b9a39da8": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:d0569ee5": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:b7c8285e": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:304b015d": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:7e4cfd7a": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:f0250a42": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:ff27b66e": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:a1ac0a36": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:d0a36934": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:54d362c5": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:9090af10": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:b83b63ca": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:9a66b438": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
 		"reason": ""
 	}
 }
