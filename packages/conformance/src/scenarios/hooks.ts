@@ -566,6 +566,11 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             },
           }),
           defineHook({
+            hook: "prefilter_llm_history",
+            id: "pass_through",
+            execute: async (_state, messages) => messages,
+          }),
+          defineHook({
             hook: "tool_call_done",
             id: "log_done",
             execute: async (_state, toolCall, result) => {
