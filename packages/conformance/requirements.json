@@ -7323,16 +7323,6 @@
 		"text": "`maxSteps`, `stopOnResponse`, `stopTool`, and session bindings are not legal on handler sides"
 	},
 	{
-		"id": "specification:tools:e1586d05",
-		"page": "specification:tools",
-		"line": 38,
-		"section": "2.1 Tool Dependencies",
-		"level": "MAY",
-		"rfc2119": false,
-		"curated": true,
-		"text": "Names may be local or [qualified](/0.2.0/distribution/packaging#qualified-names)."
-	},
-	{
 		"id": "specification:tools:43351aae",
 		"page": "specification:tools",
 		"line": 83,

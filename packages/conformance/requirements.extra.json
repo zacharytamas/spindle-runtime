@@ -807,12 +807,6 @@
   },
   {
     "page": "specification:tools",
-    "section": "2.1 Tool Dependencies",
-    "level": "MAY",
-    "text": "Names may be local or [qualified](/0.2.0/distribution/packaging#qualified-names)."
-  },
-  {
-    "page": "specification:tools",
     "section": "5. Subagent Composition",
     "level": "MUST",
     "text": "Subagent relationships are **not tool configuration**; a prompt `tools` entry attempting to configure one is a definition-time error."
