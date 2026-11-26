@@ -624,9 +624,11 @@ $ bun --bun run test            # after
 
 The M1-2 owner ran each command below on 2026-11-25 on macOS, from the repository root, with Node 22.22.3, Node 22.19.0, and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-2/evidence/` on that machine.
 
-**The project directory.** `spindle validate [dir]` takes the project directory, which holds `agents/` and may hold `node_modules/`. The default is the current directory. A directory without `agents/` gets the issue `agents_directory_missing`.
+**The project directory.** `spindle validate [dir]` takes the project directory, which holds `agents/` and may hold `node_modules/`. The default is the current directory. A directory without `agents/` gets the issue `agents_directory_missing`, and its message names the directory.
 
 **Loading `.ts` files.** Node 22.19.0 and 22.22.3 import a definition file with a dynamic `import()` and print no warning. An `enum` fails with the code `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, and `spindle validate` turns that code into a sentence that names the cause and the fix. Bun transpiles the `enum` and loads the file. Node also refuses to strip types under `node_modules` and reports `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so a packed package must ship JavaScript. Vitest transforms TypeScript itself, so the enum case has a unit test of the message only. The fixture `packages/conformance/fixtures/typescript-enum` sits outside `invalid/` because it is valid on Bun.
+
+**Files without import or export syntax.** Node runs such a `.ts` file as CommonJS when no `package.json` above it sets `"type": "module"`, and gives it an empty object as its default export. Bun gives it no default export. No kind accepts an empty object, so the loader treats one as no export, and both runtimes report `definition_export_missing` for an empty file, a comment-only file, and a file that defines a value without exporting it. A file that writes `export default {}` gets the same issue. Vitest transforms imports itself, so `packages/runtime/test/cli/validate.test.ts` runs `main.ts` under the current runtime on a copy of `invalid/empty-files` in a temporary directory.
 
 ```text
 $ node packages/runtime/dist/cli/main.js validate packages/conformance/fixtures/typescript-enum
@@ -637,7 +639,9 @@ $ bun packages/runtime/dist/cli/main.js validate packages/conformance/fixtures/t
 exit 0
 ```
 
-**File names and `name` fields.** The spec says only that effect names are file-based. Spindle uses the file name, or the export key in a package, as the name of every definition. A `name` or hook `id` that differs gets `definition_name_mismatch`. `packages/conformance/DIVERGENCES.md` records this choice and five others.
+**Identifiers.** The registry finds an agent, a prompt, or a model by its `name` and a hook by its `id`, because Prompts section 8 and Models section 3.2 say that references use those fields. It finds a tool, a handler, or an effect by its file name, or by its export key in a package. An identifier that differs from the file name or export key gets the warning `definition_name_mismatch`. Two definitions of one kind that declare one identifier in a namespace get `definition_name_duplicate`. `packages/conformance/DIVERGENCES.md` records this rule and five other choices. The first round used the file name for every kind, and the spec audit showed that it rejected a legal hook.
+
+**One pass.** Every failure to read, parse, or import a file becomes one issue that names the file, and validation goes on. That covers a `package.json` that is not JSON, a kind directory that is a file, a definition that throws inside a check, and each line of the error that `defineAgent` throws. The `Registry` layer's error type is `never`.
 
 **Output.** Each issue line is `<code> <severity> <file>[:<field path>] <message>`. The issues are sorted by file, field path, and code. Two summary lines follow, the count of each kind and the count of errors and warnings. `--json` prints a list of objects with `code`, `severity`, `message`, `file`, and `path`. `--list` prints a table with the columns `KIND`, `QUALIFIED NAME`, `PACKAGE`, `NAME`, and `VISIBILITY`. The command exits 1 when any issue is an error, and 0 when every issue is a warning.
 
@@ -649,9 +653,9 @@ exit 0
 - `Context.Service<Self, Shape>()("key")` declares the `Registry` service. `Effect.cached` makes each lazy loader run once.
 - `Console.Console` is a `Context.Reference`, so a test replaces it with `Effect.provideService` and reads the printed lines.
 
-**Package fixtures.** Git ignores every `node_modules/` directory, so no committed fixture can hold one. The fixtures that use a package link it from `agents/packed/` with a relative symlink, and lane 7 "installs" `packed-a` and `packed-b` that way. The unit test for `node_modules` discovery copies `packed-a` into a temporary directory. A package's `__meta.packageId` must equal its `package.json` name.
+**Package fixtures.** Git ignores every `node_modules/` directory, so no committed fixture can hold one. The fixtures that use a package link it from `agents/packed/` with a relative symlink, and lane 7 "installs" `packed-a` and `packed-b` that way. The unit test for `node_modules` discovery copies `packed-a` into a temporary directory. A package's `__meta.packageId` must equal its `package.json` name. A package's entry must resolve, after `realPath`, inside the resolved package directory, or Spindle reports `package_invalid` and imports nothing. A package must export every registry except `effects` and `threadEndpoints`, and every loader must return a Promise. Biome cannot lint a `package.json` that is not JSON, so the tests write that file into a temporary copy of `invalid/broken-manifest`.
 
-**The ledger.** 81 entries are `covered` and 4 are `partial`. The partial entries are Agents section 6 (two entries, M3 composes), Handlers section 2 (M4 owns effect schedules), and Tools section 2.1 (M2 owns invocations outside `uses`). Five Packaging entries are `not-testable`, because they constrain package authors. The M1 entries on these pages that describe runtime behavior, such as tool choice, input schemas, hook timing, and tool annotations, stay `planned` for M1-4 and M1-5. 26 curated statements were added, which brings the count line to `606 RFC 2119 statements, 61 lowercase must or should statements, 136 curated statements with no keyword, 24 pages`.
+**The ledger.** 71 entries are `covered` and 13 are `partial`. The partial entries are Agents section 6 (two entries, M3 composes), Handlers section 2 (two entries, M4 owns effect schedules), Tools section 2.1 (M1-6 and M2 own invocations outside `uses`), Packaging parent hooks (M3 activates them on composition), Prompts section 2.4 recursive expansion (M1-4 renders), the handler `execute` contract and the `defineHandler` brand (M1-6), typed hook `execute` (M1-5), and the provider factory and `defineModel` contracts (M1-4). The first round marked 81 entries `covered`, and the spec audit showed that the named tests did not prove nine of them. Five Packaging entries are `not-testable`, because they constrain package authors. The M1 entries on these pages that describe runtime behavior, such as tool choice, input schemas, hook timing, and tool annotations, stay `planned` for M1-4 and M1-5. 25 curated statements were added, which brings the count line to `606 RFC 2119 statements, 61 lowercase must or should statements, 135 curated statements with no keyword, 24 pages`. The first round added 26, and one repeated the last sentence of `specification:tools:dc9a10a7`.
 
 **Where M1-2 differs from this plan.**
 
@@ -661,6 +665,7 @@ exit 0
 - The plan does not list the Effects page for M1-2. Its definition rules, `defineEffect` default exports and unique file-based names, are load-time checks, so three Effects entries moved from M4 to M1.
 - The file boundary names `src/registry`, `src/cli`, and `fixtures`. M1-2 also adds `test/registry`, `test/cli`, and edits `requirements.extra.json`, `requirements.json`, `ledger.json`, and `DIVERGENCES.md`, as the owner brief allows.
 - `packages/conformance/fixtures/generate-large.mjs <dir>` writes the 200-definition fixture for the perf lane. One unmeasured run took 0.37 seconds on Node and 0.13 seconds on Bun. The perf lane owns the real medians.
+- The plan describes the registry as a map to lazy loaders. A name in a `name` or `id` field is known only after the file loads, so the `Registry` layer loads every definition once when it builds and keeps the values. Each `Definition` still has its cached `load` effect.
 
 ## Appendix B. Alternatives rejected
 
