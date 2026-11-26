@@ -204,6 +204,17 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       ...(result.error === undefined ? {} : { error: redact(result.error) }),
       ...(result.error_code === undefined ? {} : { error_code: redact(result.error_code) }),
       ...(result.error_data === undefined ? {} : { error_data: redactDeep(redact, result.error_data) }),
+      ...(result.attachments === undefined
+        ? {}
+        : {
+            attachments: result.attachments.map((attachment) => ({
+              ...attachment,
+              ...(typeof attachment.name === "string" ? { name: redact(attachment.name) } : {}),
+              ...("description" in attachment && typeof attachment.description === "string"
+                ? { description: redact(attachment.description) }
+                : {}),
+            })),
+          }),
     })
     const abort = new AbortController()
     let step = 0

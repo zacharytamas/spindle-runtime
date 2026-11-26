@@ -1813,9 +1813,24 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             error_data: { quoted: await state.env("QUOTED_TOKEN"), nested: ["Q7z"] },
           }),
         }),
+        attach: defineTool({
+          description: "Returns a new file named after its token",
+          variables: [{ name: "SHORT_TOKEN", type: "secret", required: true, description: "A short token" }],
+          execute: async (state: ThreadState) => ({
+            status: "success",
+            attachments: [
+              { name: `report ${await state.env("SHORT_TOKEN")}.txt`, mimeType: "text/plain", data: "YQ==" },
+            ],
+          }),
+        }),
       }
       const provider = new ScriptedProvider([
-        { toolCalls: [{ name: "reveal", arguments: {} }] },
+        {
+          toolCalls: [
+            { name: "reveal", arguments: {} },
+            { name: "attach", arguments: {} },
+          ],
+        },
         { reject: new ProviderError('upstream echoed Q7z and a"b\\c', "invalid_request") },
       ])
       await using(
