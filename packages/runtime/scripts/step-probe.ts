@@ -19,7 +19,8 @@ const USAGE = `Usage: step-probe <command>
   interleaved    --rounds <n>, run the probe on Node and on Bun in alternating order and print medians
 
 Both commands take --fixture <name> and --agent <name>. The defaults are step-loop and bench. The hooks fixture
-has bench_hooks, which adds a no-op hook at each of the thirteen hook positions.
+has bench_hooks, which adds a no-op hook at each of the thirteen hook positions. --seed <n> stores n earlier
+messages in the thread before the run, and --steps <n> stops the run after n steps instead of 200.
 
 Run pnpm build first, because #platform resolves to dist outside Vitest.`
 
@@ -30,6 +31,8 @@ const option = (name: string, fallback: string) => {
 }
 const fixture = option("--fixture", "step-loop")
 const agent = option("--agent", "bench")
+const seed = Number(option("--seed", "0"))
+const cap = Number(option("--steps", "200"))
 const project = path.join(import.meta.dirname, "../../conformance/fixtures", fixture)
 
 const median = (values: ReadonlyArray<number>) => {
@@ -48,8 +51,13 @@ const run = async () => {
         const provider = scriptedProvider(yield* decodeScript(text))
         const store = yield* ThreadStore
         const thread = yield* createThread(agent)
+        const earlier = Array.from({ length: seed }, (_, index) => ({
+          role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+          content: `Earlier message ${index}. ${"A sentence of ordinary length that pads the message. ".repeat(3)}`,
+        }))
+        yield* store.appendMessages(thread.id, earlier)
         const started = performance.now()
-        const outcome = yield* sendMessage(thread.id, "go", { provider })
+        const outcome = yield* sendMessage(thread.id, "go", { provider, stepCap: cap })
         const elapsed = performance.now() - started
         const { total } = yield* store.getMessages(thread.id, { includeSilent: true, limit: 0 })
         return { outcome, elapsed, rows: total }
@@ -63,13 +71,14 @@ const run = async () => {
     )
     const ok =
       result.outcome.status === "idle" &&
-      result.outcome.reason === "max_side_steps" &&
-      result.outcome.steps === 200 &&
-      result.rows === 401
+      result.outcome.reason === (cap < 200 ? "max_total_steps" : "max_side_steps") &&
+      result.outcome.steps === cap &&
+      result.rows === seed + 1 + 2 * cap
     console.log(
       JSON.stringify({
         runtime: platformName,
         agent,
+        seed,
         ok,
         reason: result.outcome.reason,
         steps: result.outcome.steps,
@@ -91,7 +100,8 @@ const interleaved = () => {
   let failures = 0
   for (let round = 1; round <= rounds; round++)
     for (const runtime of round % 2 === 1 ? (["node", "bun"] as const) : (["bun", "node"] as const)) {
-      const child = spawnSync(runtime, [import.meta.filename, "run", "--fixture", fixture, "--agent", agent], {
+      const probe = ["run", "--fixture", fixture, "--agent", agent, "--seed", String(seed), "--steps", String(cap)]
+      const child = spawnSync(runtime, [import.meta.filename, ...probe], {
         encoding: "utf8",
       })
       const line = child.stdout.trim().split("\n").at(-1) ?? ""
