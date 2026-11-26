@@ -41,7 +41,7 @@ const json = (field: string, value: unknown): Effect.Effect<string, ValueNotJson
     return typeof text === "string" ? Effect.succeed(text) : Effect.fail(new ValueNotJson({ field, ...text }))
   })
 
-const isCount = (value: number) => Number.isInteger(value) && value >= 0
+const isCount = (value: number) => Number.isSafeInteger(value) && value >= 0
 
 const first = <A, E>(rows: ReadonlyArray<A>, missing: () => E): Effect.Effect<A, E> =>
   rows[0] === undefined ? Effect.fail(missing()) : Effect.succeed(rows[0])
@@ -177,10 +177,12 @@ export const layer = Layer.effect(
               ...(updates.metadata === undefined
                 ? {}
                 : {
-                    metadata: yield* json("the message metadata", {
-                      ...JSON.parse(current.metadata),
-                      ...updates.metadata,
-                    }),
+                    metadata: yield* json(
+                      "the message metadata",
+                      yield* json("the message metadata", updates.metadata).pipe(
+                        Effect.map((patch) => ({ ...JSON.parse(current.metadata), ...JSON.parse(patch) })),
+                      ),
+                    ),
                   }),
             }
             if (Object.keys(changes).length > 0) yield* sql`UPDATE messages SET ${sql.update(changes)} WHERE ${where}`
@@ -192,19 +194,22 @@ export const layer = Layer.effect(
       deleteMessage: (threadId, messageId) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            const deleted = yield* sql<Pick<MessageRow, "role" | "tool_calls"> & { seq: number }>`
-              DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId} RETURNING seq, role, tool_calls`
+            const deleted = yield* sql<Pick<MessageRow, "role" | "tool_calls" | "parent_id"> & { seq: number }>`
+              DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId}
+              RETURNING seq, role, tool_calls, parent_id`
             const parent = deleted[0]
             if (parent === undefined) return false
-            // A provider may reuse a call id in a later turn, so a result belongs to the nearest
-            // earlier assistant message that lists its id.
+            // A provider may reuse a call id in a later turn or under another parent message, so a result
+            // belongs to the nearest earlier assistant message with the same parent that lists its id.
             if (parent.role === "assistant" && parent.tool_calls !== null)
               yield* sql`
                 DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
+                AND parent_id IS ${parent.parent_id}
                 AND tool_call_id IN (SELECT json_extract(value, '$.id') FROM json_each(${parent.tool_calls}))
                 AND NOT EXISTS (
                   SELECT 1 FROM messages AS later, json_each(later.tool_calls)
                   WHERE later.thread_id = result.thread_id AND later.role = 'assistant'
+                  AND later.parent_id IS result.parent_id
                   AND later.seq > ${parent.seq} AND later.seq < result.seq
                   AND json_extract(json_each.value, '$.id') = result.tool_call_id)`
             return true

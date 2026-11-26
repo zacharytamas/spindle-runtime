@@ -3,7 +3,8 @@ import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
 
-const utf8 = new TextDecoder()
+// The default decoder drops a leading U+FEFF as a byte-order mark, and that character is part of the text.
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true })
 function text(value: Text): string
 function text(value: Text | null): string | null
 function text(value: Text | null) {
@@ -233,8 +234,11 @@ export const toJson = (value: unknown): string | NotJson => {
             )
           text = `[${items.join(",")}]`
         } else {
-          const tag = Object.prototype.toString.call(value).slice(8, -1)
-          if (tag !== "Object") throw new Found(path, `a ${tag}`)
+          // A plain object has no prototype or one that has none itself, in whichever realm made it.
+          // Anything else, such as a Date or a class instance, can serialize to a value that differs from its members.
+          const prototype = read(path, () => Object.getPrototypeOf(value))
+          if (prototype !== null && read(path, () => Object.getPrototypeOf(prototype)) !== null)
+            throw new Found(path, `a ${prototype.constructor?.name ?? "non-plain"} object`)
           const members: Array<string> = []
           for (const [key, member] of read(path, () => Object.entries(value)))
             if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)

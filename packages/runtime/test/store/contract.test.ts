@@ -534,6 +534,57 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("deleteMessage keeps the result of an assistant message under another parent that reuses the id", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [outer, inner] = yield* store.appendMessages(thread.id, [user("outer"), user("inner")])
+        const under = (parent: typeof outer) => ({ parent_id: parent?.id ?? null })
+        const [, second] = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: null, tool_calls: toolCalls("shared"), ...under(outer) },
+          { role: "assistant", content: null, tool_calls: toolCalls("shared"), ...under(inner) },
+          { role: "tool", content: "outer result", tool_call_id: "shared", ...under(outer) },
+          { role: "tool", content: "inner result", tool_call_id: "shared", ...under(inner) },
+        ])
+        expect(yield* store.deleteMessage(thread.id, second?.id ?? "")).toBe(true)
+        const left = yield* store.getMessages(thread.id, { order: "asc" })
+        expect(left.messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["outer result"])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("a leading U+FEFF survives next to a NUL character", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [written] = yield* store.appendMessages(thread.id, [user("\uFEFFa\u0000b")])
+        expect((yield* store.getMessage(thread.id, written?.id ?? ""))?.content).toBe("\uFEFFa\u0000b")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("getMessages fails with InvalidMessagesQuery for a limit or offset beyond a safe integer", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        expect((yield* Effect.flip(store.getMessages(thread.id, { limit: 1e20 })))._tag).toBe("InvalidMessagesQuery")
+        expect((yield* Effect.flip(store.getMessages(thread.id, { offset: 1e20 })))._tag).toBe("InvalidMessagesQuery")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("updateMessage fails with ValueNotJson when a metadata getter throws", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [written] = yield* store.appendMessages(thread.id, [user("hello")])
+        const metadata = {
+          get broken(): never {
+            throw new Error("getter")
+          },
+        }
+        const error = yield* Effect.flip(store.updateMessage(thread.id, written?.id ?? "", { metadata }))
+        expect(error._tag).toBe("ValueNotJson")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("deleteMessage removes only the record itself when it is not an assistant message", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
@@ -688,11 +739,40 @@ describe("ThreadStore", () => {
         }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("setValue accepts a plain object that carries a Symbol.toStringTag", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* store.setValue(thread.id, "tagged", { a: 1, [Symbol.toStringTag]: "Sample" })
+        expect(yield* store.getValue(thread.id, "tagged")).toEqual({ a: 1 })
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("setValue rejects an object whose prototype could serialize it differently from its members", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        class Money {
+          amount = 5
+          toJSON() {
+            return "five"
+          }
+        }
+        const inherited = Object.create({ toJSON: () => "ok" }, { a: { value: 1, enumerable: true } })
+        for (const value of [new Money(), inherited, new Date(0), new Map()]) {
+          const error = yield* Effect.flip(store.setValue(thread.id, "odd", value))
+          expect(error._tag).toBe("ValueNotJson")
+        }
+        expect(yield* store.getValue(thread.id, "odd")).toBe(null)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("setValue accepts a plain object whose prototype is not this realm's Object.prototype", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        const foreign = Object.assign(Object.create(Object.create(Object.prototype)), { x: 1, nested: [{ y: "z" }] })
+        // Another realm's Object.prototype is a root object that is not this realm's, which a fresh root stands in for.
+        const foreign = Object.assign(Object.create(Object.create(null)), { x: 1, nested: [{ y: "z" }] })
         const bare = Object.assign(Object.create(null), { x: 2 })
         yield* store.setValue(thread.id, "foreign", foreign)
         yield* store.setValue(thread.id, "bare", bare)
