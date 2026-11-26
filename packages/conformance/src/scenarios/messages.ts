@@ -25,7 +25,7 @@ const noop = { noop: defineTool({ description: "Does nothing", execute: async ()
 export const messageScenarios: ReadonlyArray<Scenario> = [
   {
     name: "M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
-    requirements: ["4fcc1f95", "22cf59fa", "b74ef581", "73bce32e", "8cefb16e", "8254ece3", "41d77a88"],
+    requirements: ["41d77a88", "8254ece3", "8cefb16e", "22cf59fa", "b74ef581", "73bce32e", "4fcc1f95"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const before: Array<Message> = []
@@ -110,7 +110,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
-    requirements: ["a63f8e52", "251bf5a2", "3b4fc9bc", "048a4525", "04d1538b", "4029d475"],
+    requirements: ["22cf59fa", "a63f8e52", "251bf5a2", "3b4fc9bc", "04d1538b", "048a4525", "4029d475"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -173,7 +173,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
-    requirements: ["35d60289", "e4ba69e7", "da639364", "dca92c64", "e44a42aa", "61c7bee3", "79171656"],
+    requirements: ["e44a42aa", "dca92c64", "79171656", "e4ba69e7", "da639364", "35d60289", "61c7bee3"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -280,7 +280,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows",
-    requirements: ["77a09885", "d2ff2793", "2eca3c1a", "5cf7c4b6", "a0834ffa", "cf4e7ca0", "c4905fe6", "07cc7193"],
+    requirements: ["d2ff2793", "2eca3c1a", "5cf7c4b6", "a0834ffa", "cf4e7ca0", "c4905fe6", "77a09885", "07cc7193"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human, model } = rolesFor(humanOn)
@@ -368,7 +368,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only",
-    requirements: ["1ba43990", "62ac4caa", "61b94fc9", "6d8b1d0c", "8a28a42b", "16606350", "41fe7364", "0018442c"],
+    requirements: ["0018442c", "41fe7364", "62ac4caa", "61b94fc9", "6d8b1d0c", "8a28a42b", "16606350", "1ba43990"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -451,7 +451,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly",
-    requirements: ["e0078c2e", "b7d299a8", "000bf2b7", "8233eb0b", "d57ad351"],
+    requirements: ["8233eb0b", "b7d299a8", "000bf2b7", "73bce32e", "e0078c2e", "d57ad351"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -537,7 +537,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request",
-    requirements: ["b17aee6d", "29e645c3", "f88b47c5", "67885fd3", "aa659667", "88c209cc", "14d530a7", "6d37745b"],
+    requirements: ["67885fd3", "aa659667", "88c209cc", "14d530a7", "29e645c3", "f88b47c5", "6d37745b", "b17aee6d"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human } = rolesFor(humanOn)
@@ -627,7 +627,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly",
-    requirements: ["a237deef", "a72bbc07", "bd9fdd64", "d492805f", "babeaaef", "404eb18a", "dfde10dc"],
+    requirements: ["0018442c", "babeaaef", "bd9fdd64", "a237deef", "a72bbc07", "dfde10dc", "d492805f", "404eb18a"],
     run: async (driver) => {
       const systemOf = async (returns: Array<(system: string) => unknown>) => {
         const filters: Array<number> = []

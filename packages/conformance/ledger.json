@@ -382,7 +382,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts",
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
 		],
 		"reason": ""
 	},
@@ -411,70 +412,83 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:67885fd3": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request",
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
 		],
-		"reason": "Each assembly interpolates the system prompt first. M1-5 adds the hook steps that follow it."
+		"reason": ""
 	},
 	"infrastructure:runtime:aa659667": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:88c209cc": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
 		],
-		"reason": "S35 shows only what happens between steps: each assembly reads persisted history once, and a message injected during tools enters the next assembly. M1-5 starts filter_messages on that snapshot and owes the rest."
+		"reason": ""
 	},
 	"infrastructure:runtime:0018442c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only",
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:14d530a7": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
 		],
-		"reason": "The snapshot becomes provider messages. M1-5 transforms the result of filter_messages instead."
+		"reason": ""
 	},
 	"infrastructure:runtime:babeaaef": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:bd9fdd64": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts",
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
 		],
-		"reason": "The request is dispatched after assembly. M1-5 adds prefilter_llm_history before it."
+		"reason": ""
 	},
 	"infrastructure:runtime:41fe7364": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
 		],
-		"reason": "S35 shows only what happens between steps: a message persisted before an assembly is in it and one injected during tools is in the next. M1-5 starts filter_messages at the snapshot and owes the moment the statement names."
+		"reason": ""
 	},
 	"infrastructure:runtime:8233eb0b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
 		],
-		"reason": "S35 shows that a message injected during tools stays out of the request already sent and enters the next one. It injects only after the model returned, so it cannot show which steps an injection between the snapshot and the call would restart. M1-5 adds filter_messages and the hooks around it, which owe that case."
+		"reason": ""
 	},
 	"infrastructure:runtime:83735bf6": {
 		"status": "covered",
@@ -491,7 +505,8 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running",
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
-			"packages/runtime/test/conformance.test.ts > step loop > S14b stores a tool error that keeps the tool's text for a result that cannot be stored, and runs the next call"
+			"packages/runtime/test/conformance.test.ts > step loop > S14b stores a tool error that keeps the tool's text for a result that cannot be stored, and runs the next call",
+			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result"
 		],
 		"reason": ""
 	},
@@ -956,9 +971,10 @@
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
-			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
+			"packages/runtime/test/conformance.test.ts > hooks > H20 lets hooks and tools read each other's key-value writes in one thread"
 		],
-		"reason": "Tools read every value an earlier tool or execution wrote. M1-5 owes the same store behind hooks, and M4 owes it behind endpoints."
+		"reason": "Tools and hooks read every value an earlier tool, hook, or execution wrote. M4 owes the same store behind endpoints."
 	},
 	"infrastructure:runtime:534e316a": {
 		"status": "covered",
@@ -1405,12 +1421,13 @@
 		"reason": "M1-2 rejects a hook whose id is missing or not snake_case and two hooks that declare one id. defineHook returns a plain object with hook, id, and execute, so the registry cannot tell whether defineHook made it."
 	},
 	"specification:hooks:986689ca": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
 		],
-		"reason": "M1-2 rejects a hook without an execute function. M1-5 owes calling execute with the arguments and the result of each hook type."
+		"reason": ""
 	},
 	"specification:hooks:de7e582d": {
 		"status": "covered",
@@ -1438,28 +1455,31 @@
 		"reason": ""
 	},
 	"specification:hooks:95b662e4": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement constrains how a hook author writes a hook. A runtime cannot observe whether a hook is idempotent."
 	},
 	"specification:hooks:cb48415f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H15 goes on without a hook that does not settle in time and logs only its id, never its error text",
+			"packages/runtime/test/cli/run.test.ts > spindle run > goes on after --hook-timeout and prints the hook's id on standard error without the message"
+		],
 		"reason": ""
 	},
 	"specification:hooks:c9953055": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement constrains hook authors. Spindle enforces the time limit that it refers to, which H15 shows for cb48415f."
 	},
 	"specification:hooks:48c6c25e": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement binds hook authors, and a runtime cannot see what a hook logs. Spindle's own line for a failed hook holds only the hook's id and position, never its arguments or error text, which H15 shows."
 	},
 	"specification:hooks:e1f01e0b": {
 		"status": "planned",
@@ -1474,189 +1494,252 @@
 		"reason": ""
 	},
 	"specification:hooks:29e645c3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
+		],
 		"reason": ""
 	},
 	"specification:hooks:a237deef": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:a72bbc07": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:f88b47c5": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
+		],
 		"reason": ""
 	},
 	"specification:hooks:62ac4caa": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
+		],
 		"reason": ""
 	},
 	"specification:hooks:e44a42aa": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
+		],
 		"reason": ""
 	},
 	"specification:hooks:d2ff2793": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:hooks:2eca3c1a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:hooks:61b94fc9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
+		],
 		"reason": ""
 	},
 	"specification:hooks:dfde10dc": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:5cf7c4b6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:hooks:a0834ffa": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:hooks:b7d299a8": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:00bf29ce": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement binds the author of a hook that modifies message content. A runtime cannot tell whether a hook validates its input."
 	},
 	"specification:hooks:d492805f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:404eb18a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7b replaces the system message with any returned string, keeps it on null or undefined, and filters once per assembly"
+		],
 		"reason": ""
 	},
 	"specification:hooks:6d8b1d0c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
+		],
 		"reason": ""
 	},
 	"specification:hooks:8a28a42b": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
+		],
 		"reason": ""
 	},
 	"specification:hooks:e73207b8": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:41d77a88": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run",
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
+		],
 		"reason": ""
 	},
 	"specification:hooks:765e84ae": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn"
+		],
 		"reason": ""
 	},
 	"specification:hooks:b89bae84": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:9d7eaeac": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn"
+		],
 		"reason": ""
 	},
 	"specification:hooks:d44aaea6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:91bb4c62": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:e1b53f31": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn"
+		],
 		"reason": ""
 	},
 	"specification:hooks:c6b52c77": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:d7e8a202": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn"
+		],
 		"reason": ""
 	},
 	"specification:hooks:bdfd2d2d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:7bef4e87": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:295f041d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:cf1fb96d": {
@@ -1666,21 +1749,25 @@
 		"reason": ""
 	},
 	"specification:hooks:e7ff07c0": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement binds the author of a hook that calls an external service. Spindle goes on when such a hook throws, which H16 shows for 3d8dede1."
 	},
 	"specification:hooks:6d96f2a3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:baf0fc02": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:eaca9825": {
@@ -1690,10 +1777,12 @@
 		"reason": ""
 	},
 	"specification:hooks:8e371f2b": {
-		"status": "planned",
-		"milestone": "M3",
-		"tests": [],
-		"reason": ""
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H14 lets the result hooks keep, replace, or add attachment references and stores the references they return"
+		],
+		"reason": "H14 shows the result hooks keeping, replacing, and adding attachment references, and the stored message keeps the references the hooks return. A new ToolAttachment reaches the hooks, and M3 owes storing it in the thread file system. This version drops it with a note."
 	},
 	"specification:models:28c62dc0": {
 		"status": "covered",
@@ -1967,9 +2056,11 @@
 		"reason": "Spindle accepts the property. Until M3 adds attachment bytes no image reaches the model as image content, so the threshold changes nothing yet."
 	},
 	"specification:prompts:216a047a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
+		],
 		"reason": ""
 	},
 	"specification:prompts:d263e879": {
@@ -1979,7 +2070,8 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
 			"packages/runtime/test/conformance.test.ts > step loop > S26d fails before any request when a secret variable or a secret value reaches the finished system prompt",
 			"packages/runtime/test/conformance.test.ts > step loop > S26e treats every instance value as secret, so a text variable from the instance never reaches the system prompt",
-			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable"
+			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable",
+			"packages/runtime/test/conformance.test.ts > hooks > H22 redacts the text a hook writes into the thread and fails a run whose system prompt a hook gives a secret"
 		],
 		"reason": "A system prompt interpolates only declared text variables whose value a definition supplies. The run fails before a request when a declaration or the provider config marks an interpolated name secret, when an interpolated value comes from the instance environment, or when the finished prompt holds a secret value the execution knows by then. An instance value that nothing declares is checked only after a tool reads it. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
 	},
@@ -2384,7 +2476,8 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S26h redacts a stored result after Spindle adds its own note, so a secret that is a word of the note is removed",
 			"packages/runtime/test/cli/run.test.ts > spindle run > learns the secret set before it prints a setup error about the database or the script",
 			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database",
-			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included"
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included",
+			"packages/runtime/test/conformance.test.ts > hooks > H22 redacts the text a hook writes into the thread and fails a run whose system prompt a hook gives a secret"
 		],
 		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle redacts the string values of each stored tool result, the content and metadata of each message a tool injects or edits, every line spindle run prints, and run errors, and it stores the model's response as returned. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2."
 	},
@@ -3522,30 +3615,35 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row"
 		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:8cefb16e": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row"
 		],
-		"reason": "Later tools observe the injected record on messageHistory. M1-5 adds hooks."
+		"reason": ""
 	},
 	"specification:threads/execution-state:dca92c64": {
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
 		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:cf4e7ca0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:1a0354bc": {
@@ -3671,7 +3769,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
-			"packages/runtime/test/cli/run.test.ts > spindle run > sends the reasoning text and details of an earlier response back through openaiCompatible"
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the reasoning text and details of an earlier response back through openaiCompatible",
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
 		],
 		"reason": ""
 	},
@@ -3679,7 +3778,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
 		],
 		"reason": ""
 	},
@@ -3704,9 +3804,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:22cf59fa": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:b74ef581": {
@@ -3715,14 +3818,18 @@
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
-			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
+			"packages/runtime/test/conformance.test.ts > hooks > H18 stores an injected user, assistant, or system message as given and presents it by perspective"
 		],
 		"reason": ""
 	},
 	"specification:threads/messages:000bf2b7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:79171656": {
@@ -3730,9 +3837,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
-			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage",
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
 		],
-		"reason": "ThreadState.getMessages hides silent messages unless includeSilent is true. M6 owes the client API."
+		"reason": "ThreadState.getMessages and the store hide silent messages unless includeSilent is true, and M3 shows it for injected messages. M6 owes the ordinary lists of the client API."
 	},
 	"specification:threads/messages:b93f89a4": {
 		"status": "covered",
@@ -3743,92 +3851,114 @@
 		"reason": ""
 	},
 	"specification:threads/messages:e4ba69e7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:da639364": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > a silent message persists across a restart like a visible one"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > a silent message persists across a restart like a visible one",
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
 		],
-		"reason": "The store persists and returns a silent message like a visible one. M1-5 owes the same lifecycle hooks and same-execution visibility."
+		"reason": ""
 	},
 	"specification:threads/messages:73bce32e": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
 		],
-		"reason": "A later tool observes the injected message. M1-5 adds hooks."
+		"reason": ""
 	},
 	"specification:threads/messages:c4905fe6": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
 		],
-		"reason": "The live history is chronological, persisted, and includes silent messages. M1-5 confines the messages that request-context hooks transform to the request."
+		"reason": ""
 	},
 	"specification:threads/messages:6d37745b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
 		],
-		"reason": "S35 shows a message persisted before an assembly in that assembly. It cannot show the moment of the snapshot, because filter_messages, which marks it, arrives in M1-5. M1-5 owes that boundary."
+		"reason": ""
 	},
 	"specification:threads/messages:16606350": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
 		],
-		"reason": "S35 shows a message injected during tools in the next assembly. It injects only after the model returned, so it cannot show an injection after the snapshot starts and before the call. M1-5 adds filter_messages and owes that case."
+		"reason": ""
 	},
 	"specification:threads/messages:4fcc1f95": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:a63f8e52": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:35d60289": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:77a09885": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:1ba43990": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M5 runs the create hooks for a message filter_messages injects and leaves it for the next assembly only"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:e0078c2e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:b17aee6d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request"
+		],
 		"reason": ""
 	},
 	"specification:threads/runtime-streams:3a404735": {
@@ -3898,28 +4028,34 @@
 		"reason": ""
 	},
 	"specification:tools:31e58fe6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:tools:3fb4e4f0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:tools:106ba9d7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:tools:11971c16": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement tells a tool author where to declare the progress argument. A runtime reads the argument wherever it appears."
 	},
 	"specification:tools:3bb2444c": {
 		"status": "covered",
@@ -4566,21 +4702,30 @@
 		"reason": ""
 	},
 	"specification:hooks:3d8dede1": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn",
+			"packages/runtime/test/conformance.test.ts > hooks > H15 goes on without a hook that does not settle in time and logs only its id, never its error text",
+			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result"
+		],
 		"reason": ""
 	},
 	"specification:hooks:4b6bc420": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
+		],
 		"reason": ""
 	},
 	"specification:hooks:41bdae5c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
+		],
 		"reason": ""
 	},
 	"specification:hooks:118d0ec4": {
@@ -4590,10 +4735,12 @@
 		"reason": ""
 	},
 	"specification:hooks:6fc64bc7": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
+		],
+		"reason": "H8 shows that only the active prompt's list, or the agent's list when the prompt lists none, selects hooks, and that a defined hook no list names never runs. M3 owes the hooks that a child relationship adds to the parent composition."
 	},
 	"specification:hooks:9633e5d2": {
 		"status": "planned",
@@ -4602,15 +4749,19 @@
 		"reason": ""
 	},
 	"specification:hooks:dce1c8bc": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
+		],
 		"reason": ""
 	},
 	"specification:hooks:17286533": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
+		],
 		"reason": ""
 	},
 	"specification:hooks:b7d23996": {
@@ -4620,75 +4771,101 @@
 		"reason": ""
 	},
 	"specification:hooks:f66e7c81": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
+		],
 		"reason": ""
 	},
 	"specification:hooks:f7da5f56": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
+			"packages/runtime/test/cli/run.test.ts > spindle run > runs a hook from an installed package only for the agent whose list names it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:251bf5a2": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:bf795e82": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last"
+		],
 		"reason": ""
 	},
 	"specification:hooks:a6fba031": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:b02bac78": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:f31fd3d3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:a91f50b9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:0fc819f0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12b calls the success hook only after a tool succeeds and the failure hook only after one fails"
+		],
 		"reason": ""
 	},
 	"specification:hooks:20b781d9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:565d6e35": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:hooks:ca83d472": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:a232e5b2": {
@@ -4768,15 +4945,19 @@
 		"reason": ""
 	},
 	"specification:threads/messages:8fe975d3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H18 stores an injected user, assistant, or system message as given and presents it by perspective"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:487717df": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H18 stores an injected user, assistant, or system message as given and presents it by perspective"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:b8f7cd7e": {
@@ -5082,15 +5263,21 @@
 		"reason": ""
 	},
 	"specification:hooks:3b4fc9bc": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
 		"reason": ""
 	},
 	"specification:hooks:5fc8a060": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H12b calls the success hook only after a tool succeeds and the failure hook only after one fails",
+			"packages/runtime/test/conformance.test.ts > hooks > H14 lets the result hooks keep, replace, or add attachment references and stores the references they return"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:968989f2": {
@@ -5427,9 +5614,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
-			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
+			"packages/runtime/test/conformance.test.ts > hooks > H20 lets hooks and tools read each other's key-value writes in one thread"
 		],
-		"reason": "Tools see each value in every later execution. M1-5 owes hooks and M4 owes endpoints."
+		"reason": "Tools and hooks see each value in every later execution and tool call. M4 owes endpoints."
 	},
 	"specification:threads:3a998922": {
 		"status": "covered",
@@ -5487,7 +5675,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
 		],
 		"reason": ""
 	},
@@ -5496,7 +5685,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
 		],
 		"reason": ""
 	},
@@ -5739,12 +5929,13 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:07cc7193": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
+			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows"
 		],
-		"reason": "includeChat and includePastTools filter the history. M1-5 adds filter_messages."
+		"reason": ""
 	},
 	"infrastructure:runtime:482d644d": {
 		"status": "covered",
@@ -5758,9 +5949,10 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A",
+			"packages/runtime/test/conformance.test.ts > hooks > H18 stores an injected user, assistant, or system message as given and presents it by perspective"
 		],
-		"reason": "S02b shows the perspective for storage and rendering with the human on either side. Queueing arrives in M1-6 and injection hooks in M1-5, and each owes its part."
+		"reason": "S02b shows the perspective for storage and rendering, and H18 shows it for injected messages, with the human on either side. M1-6 owes queueing."
 	},
 	"specification:agents:44e51927": {
 		"status": "covered",
@@ -5885,7 +6077,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/conformance.test.ts > hooks > H11 replays the reasoning of each assistant message that survives the request hooks and of no other"
 		],
 		"reason": ""
 	},
@@ -5962,31 +6155,38 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
 		],
-		"reason": "A silent message reaches model context. M1-5 adds the request-context hooks it also reaches."
+		"reason": "S04 and M3 show a silent message in model context, in the history snapshot, and in the request-context hooks. M6 owes the ordinary UI lists that hide it."
 	},
 	"specification:threads/messages:1d6d311a": {
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns"
+			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
 		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:04d1538b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
 		],
-		"reason": "Tools receive execution state. M1-5 adds hooks."
+		"reason": ""
 	},
 	"specification:threads/execution-state:048a4525": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
-		"reason": "Endpoints arrive with M4."
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
+		"reason": ""
 	},
 	"specification:threads/execution-state:8a66bc04": {
 		"status": "covered",
@@ -6263,27 +6463,35 @@
 		"reason": "S24 shows that stored references survive and reach the request as text descriptions. M3 adds attachment bytes, which owes image parts and their filtering for a model without vision."
 	},
 	"specification:tools:8f7b59dd": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > hooks > H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it"
+		],
 		"reason": ""
 	},
 	"specification:hooks:d57ad351": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:e9cab494": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+		],
+		"reason": "The store keeps parent_id on every message and returns null when nothing sets it. M2 owes the sub-prompt messages that name a parent."
 	},
 	"specification:agents:4029d475": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+		],
 		"reason": ""
 	}
 }

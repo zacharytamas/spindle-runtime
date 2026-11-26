@@ -33,7 +33,7 @@ const hookIds = (hooks: Setup["hooks"]) => (hooks ?? []).map((hook) => hook.id)
 export const hookScenarios: ReadonlyArray<Scenario> = [
   {
     name: "H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else",
-    requirements: ["dce1c8bc", "17286533", "f66e7c81", "f7da5f56", "bf795e82", "3b4fc9bc", "6fc64bc7", "216a047a"],
+    requirements: ["216a047a", "6fc64bc7", "dce1c8bc", "17286533", "f66e7c81", "f7da5f56", "bf795e82", "3b4fc9bc"],
     run: async (driver) => {
       const events: Array<unknown> = []
       const hooks = [
@@ -129,7 +129,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run",
-    requirements: ["e73207b8", "41d77a88", "b89bae84", "d44aaea6", "91bb4c62", "c6b52c77", "a6fba031", "f6fb47da"],
+    requirements: ["f6fb47da", "e73207b8", "41d77a88", "b89bae84", "d44aaea6", "91bb4c62", "c6b52c77", "a6fba031"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const { human, model } = rolesFor(humanOn)
@@ -424,7 +424,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H11 replays the reasoning of each assistant message that survives the request hooks and of no other",
-    requirements: ["80b5ff9b", "b9e3d243"],
+    requirements: ["80b5ff9b", "b9e3d243", "6e1d2f01"],
     run: async (driver) => {
       const source = { definition: "scripted", model: "scripted-model-v1" }
       const seed = (humanOn: "a" | "b") => {
@@ -505,7 +505,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H12 runs started and done once per call, the success or the failure branch by outcome, and before-store on both",
-    requirements: ["7bef4e87", "295f041d", "a91f50b9", "20b781d9", "565d6e35", "ca83d472", "6d96f2a3", "baf0fc02"],
+    requirements: ["7bef4e87", "295f041d", "6d96f2a3", "baf0fc02", "a91f50b9", "20b781d9", "565d6e35", "ca83d472"],
     run: async (driver) => {
       const run = async (replace: boolean) => {
         const events: Array<unknown> = []
@@ -694,7 +694,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it",
-    requirements: ["b02bac78", "f31fd3d3", "bdfd2d2d", "3fb4e4f0", "106ba9d7", "31e58fe6", "7bef4e87", "8f7b59dd"],
+    requirements: ["bdfd2d2d", "7bef4e87", "31e58fe6", "3fb4e4f0", "106ba9d7", "b02bac78", "f31fd3d3", "8f7b59dd"],
     run: async (driver) => {
       const started: Array<[string, string, string, string | undefined]> = []
       const checks: Array<string> = []
@@ -902,7 +902,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H16 finishes a turn whose observing hooks and result transformer throw and stores the original result",
-    requirements: ["3d8dede1", "41bdae5c", "732b2d4b"],
+    requirements: ["732b2d4b", "3d8dede1", "41bdae5c"],
     run: async (driver) => {
       const ran: Array<string> = []
       const boom = (id: string) => async () => {
@@ -946,7 +946,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H18 stores an injected user, assistant, or system message as given and presents it by perspective",
-    requirements: ["8fe975d3", "487717df", "b74ef581", "37cadafc"],
+    requirements: ["b74ef581", "8fe975d3", "487717df", "37cadafc"],
     run: async (driver) => {
       for (const humanOn of SIDES) {
         const returned: Array<Message> = []
@@ -1150,7 +1150,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
-    requirements: ["986689ca", "bf795e82", "4b6bc420", "04d1538b", "048a4525", "41bdae5c"],
+    requirements: ["986689ca", "4b6bc420", "41bdae5c", "bf795e82", "04d1538b", "048a4525"],
     run: async (driver) => {
       const calls: Array<unknown> = []
       const facts: Array<unknown> = []
