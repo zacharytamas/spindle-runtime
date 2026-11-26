@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, FileSystem, Layer, Scheduler } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { PlatformLive, processId, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
@@ -58,6 +59,28 @@ const rows = (threadId: string) =>
   )
 
 describe("ThreadStore claims", () => {
+  it.effect("recovers unregistered holders with this process id or a nonpositive pid", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const filename = `${yield* fs.makeTempDirectoryScoped({ prefix: "spindle-stale-" })}/spindle.db`
+      yield* Effect.gen(function* () {
+        const store = yield* ThreadStore
+        for (const pid of [processId, 0, -1]) {
+          const holder = `previous-${pid}`
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          yield* SqlClient.use((sql) => sql`INSERT INTO holders (id,pid) VALUES (${holder},${pid})`).pipe(
+            Effect.provide(SqliteLive({ filename })),
+          )
+          yield* store.admit(thread.id, message("pending"), claim("lost", holder))
+          expect(yield* store.recover(thread.id)).toEqual([thread.id])
+          expect((yield* store.getThread(thread.id)).status).toMatchObject({
+            state: "failed",
+            reason: "execution_lost",
+          })
+        }
+      }).pipe(Effect.provide(storeAt(filename)))
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
   it.effect("admit claims an idle thread for the caller and queues the entry, and a second admit only queues", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore

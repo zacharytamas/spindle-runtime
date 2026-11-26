@@ -2,7 +2,7 @@ import type { ThreadStatus } from "@standardagents/spec"
 import { Clock, Effect, Layer, Option, Scheduler } from "effect"
 import * as Migrator from "effect/sql/Migrator"
 import { BeginTransaction, SqlClient } from "effect/sql/SqlClient"
-import { processAlive } from "#platform"
+import { processAlive, processId } from "#platform"
 import { CLOSING, transition } from "../execution/run-status.ts"
 import threads from "./migrations/0001_threads.ts"
 import revisions from "./migrations/0002_revision.ts"
@@ -43,6 +43,9 @@ import {
   ValueNotJson,
   WritingHandle,
 } from "./ThreadStore.ts"
+
+// All connections in this process can observe claims held by its supervisors.
+const localHolders = new Set<string>()
 
 const migrate = Migrator.make({})({
   loader: Migrator.fromRecord({ "0001_threads": threads, "0002_revision": revisions, "0003_claims": claims }),
@@ -568,19 +571,21 @@ export const layer = Layer.effect(
 
       recover: (threadId, force = false) =>
         Effect.gen(function* () {
-          const candidates = sql<{ id: string; flow_id: string; pid: number | null }>`
-            SELECT t.id, t.flow_id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
+          const candidates = sql<{ id: string; flow_id: string; holder_id: string; pid: number | null }>`
+            SELECT t.id, t.flow_id, t.holder_id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
             WHERE t.run_state = 'running' ${threadId === undefined ? sql.literal("") : sql`AND t.id = ${threadId}`}`
-          const lost = (pid: number | null) =>
-            force || pid === null ? Effect.succeed(true) : Effect.map(processAlive(pid), (alive) => !alive)
+          const lost = ({ pid, holder_id }: { pid: number | null; holder_id: string }) =>
+            force || pid === null || pid <= 0 || (pid === processId && !localHolders.has(holder_id))
+              ? Effect.succeed(true)
+              : Effect.map(processAlive(pid), (alive) => !alive)
           const ids = new Set<string>()
-          for (const row of yield* candidates) if (yield* lost(row.pid)) ids.add(row.flow_id)
+          for (const row of yield* candidates) if (yield* lost(row)) ids.add(row.flow_id)
           if (!ids.size) return []
           return yield* sql.withTransaction(
             Effect.gen(function* () {
               const recovered = []
               for (const row of yield* candidates) {
-                if (!ids.has(row.flow_id) || !(yield* lost(row.pid))) continue
+                if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
                 yield* settleWith(row.id, yield* Effect.orDie(selectRun(row.id)), { type: "lose" }, CLOSING.lost)
                 recovered.push(row.id)
               }
@@ -589,9 +594,21 @@ export const layer = Layer.effect(
           )
         }),
 
-      registerHolder: (holder) => Effect.asVoid(sql`INSERT INTO holders ${sql.insert({ ...holder })}`),
+      registerHolder: (holder) =>
+        Effect.asVoid(
+          Effect.tap(sql`INSERT INTO holders ${sql.insert({ ...holder })}`, () =>
+            Effect.sync(() => {
+              if (holder.pid === processId) localHolders.add(holder.id)
+            }),
+          ),
+        ),
 
-      dropHolder: (holderId) => Effect.asVoid(sql`DELETE FROM holders WHERE id = ${holderId}`),
+      dropHolder: (holderId) =>
+        Effect.asVoid(
+          Effect.tap(sql`DELETE FROM holders WHERE id = ${holderId}`, () =>
+            Effect.sync(() => localHolders.delete(holderId)),
+          ),
+        ),
 
       holderOf: (threadId) =>
         Effect.map(
