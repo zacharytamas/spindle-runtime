@@ -56,7 +56,6 @@ export class ScriptedProvider implements LLMProviderInterface {
   readonly name: string
   readonly specificationVersion = "1" as const
   readonly requests: Array<RecordedRequest> = []
-  // How many streams the consumer read to their end.
   completedStreams = 0
   readonly configs: Array<ProviderFactoryConfig> = []
   readonly getResponseMetadata?: NonNullable<ScriptedProviderOptions["getResponseMetadata"]>
@@ -119,7 +118,6 @@ export class ScriptedProvider implements LLMProviderInterface {
     })()
   }
 
-  // The same chunks that stream yields, folded into one response. Like stream, it never invents a finish.
   async generate(request: ProviderRequest): Promise<ProviderResponse> {
     const step = await this.next(request)
     const chunks = "chunks" in step ? step.chunks : this.chunksOf(step)

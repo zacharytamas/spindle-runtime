@@ -39,7 +39,6 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   }
 }
 
-// A response that breaks what the prompt requires is not stored. The step asks again within the retry budget.
 export class ResponseRejected extends Data.TaggedError("ResponseRejected")<{ readonly message: string }> {}
 
 // Providers SHOULD attribute their errors, and the runtime MAY attribute the request boundary when they do not.

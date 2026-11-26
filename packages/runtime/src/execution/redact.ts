@@ -18,8 +18,8 @@ const isPlain = (value: object) => {
   return Array.isArray(value) || prototype === null || Object.getPrototypeOf(prototype) === null
 }
 
-// Copies plain data with every string redacted. Anything else, a cycle included, is kept as it is, so that the
-// store still rejects what JSON cannot represent.
+// Anything but plain data, a cycle included, is kept as it is, so that the store still rejects what JSON cannot
+// represent.
 export const redactDeep = <A>(redact: (text: string) => string, value: A): A => {
   const walk = (item: unknown, ancestors: Set<object>): unknown => {
     if (typeof item === "string") return redact(item)

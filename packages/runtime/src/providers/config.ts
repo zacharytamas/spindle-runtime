@@ -62,8 +62,6 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
 const isProvider = (value: unknown): value is LLMProviderInterface =>
   isRecord(value) && typeof value.stream === "function" && typeof value.generate === "function"
 
-// Adds every secret value of the model's provider config to secrets, and returns the config and the names of the
-// required values that are missing.
 export const resolveConfig = Effect.fn("resolveConfig")(function* (
   model: Loaded<ModelDefinition>,
   secrets: Set<string>,
