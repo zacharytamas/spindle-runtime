@@ -234,7 +234,7 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
 
 export const callModel = Effect.fn("callModel")(function* (context: CallContext, request: ProviderRequest) {
   for (let attempt = 1; ; attempt++) {
-    yield* context.record(`${request.model} attempt ${attempt}`)
+    yield* context.record(`${context.provider.name} ${request.model} attempt ${attempt}`)
     const log: ModelCall = { step: context.step, attempt, model: request.model }
     context.calls.push(log)
     const result = yield* Effect.result(streamResponse(context.provider, request))
