@@ -163,7 +163,7 @@ export const messageRow = (
   reasoning_details: stored(message.reasoning_details ?? null),
   prompt: stored(message.prompt ?? null),
   created_at: createdAt,
-  parent_id: message.parent_id ?? null,
+  parent_id: stored(message.parent_id ?? null),
   depth: message.depth ?? 0,
   silent: message.silent === true ? 1 : 0,
   metadata: json.metadata,

@@ -575,6 +575,21 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("appendMessages returns the parent id a fresh connection reads for a lone surrogate", () =>
+      withDatabaseFile((filename) =>
+        Effect.gen(function* () {
+          const writer = yield* ThreadStore
+          const thread = yield* writer.createThread({ agentId: "assistant" })
+          const [written] = yield* writer.appendMessages(thread.id, [user("child", { parent_id: "p\ud800" })])
+          const read = yield* ThreadStore.use((reader) => reader.getMessage(thread.id, written?.id ?? "")).pipe(
+            Effect.provide(storeAt(filename)),
+          )
+          expect(read?.parent_id).toBe("p\ufffd")
+          expect(written?.parent_id).toBe(read?.parent_id)
+        }).pipe(Effect.provide(storeAt(filename))),
+      ),
+    )
+
     it.effect("deleteMessage removes an assistant message whose tool_calls is not JSON", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
