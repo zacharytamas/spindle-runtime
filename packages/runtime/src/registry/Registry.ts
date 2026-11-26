@@ -210,7 +210,37 @@ const TYPESCRIPT_SYNTAX =
 const NODE_MODULES_TYPESCRIPT =
   "The file is a TypeScript file inside node_modules, and Node does not strip types from files there. Publish the package as JavaScript."
 
-export const describeCause = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
+export const describeCause = (cause: unknown): string => {
+  try {
+    const message = typeof cause === "object" && cause !== null ? Reflect.get(cause, "message") : undefined
+    return typeof message === "string" ? message : String(cause)
+  } catch {
+    return "The thrown value cannot be printed."
+  }
+}
+
+// Authored code can throw from a getter or a proxy trap wherever Spindle reads it, so a defect here becomes an issue.
+export const reportDefects = <A, R>(
+  load: Effect.Effect<A, LoadError, R>,
+  definition: Pick<Definition, "kind" | "file" | "path">,
+): Effect.Effect<A, LoadError, R> =>
+  load.pipe(
+    Effect.catchDefect((cause) =>
+      Effect.fail(
+        new LoadError({
+          issues: [
+            {
+              code: "definition_load_failed",
+              severity: "error",
+              message: `The ${definition.kind} threw while Spindle loaded it. ${describeCause(cause)}`,
+              file: definition.file,
+              path: definition.path,
+            },
+          ],
+        }),
+      ),
+    ),
+  )
 
 export const describeImportFailure = (cause: unknown): string => {
   const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined

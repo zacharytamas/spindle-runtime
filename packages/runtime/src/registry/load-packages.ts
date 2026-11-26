@@ -9,6 +9,7 @@ import {
   LoadError,
   type Package,
   PLURAL,
+  reportDefects,
 } from "./Registry.ts"
 
 type Source = PackageSignature["source"]
@@ -176,7 +177,8 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       return
     }
     const meta = exports.__meta
-    const entryAgents = isStringArray(meta.entryAgents) ? meta.entryAgents : []
+    const listed: unknown = Array.isArray(meta.entryAgents) ? [...meta.entryAgents] : undefined
+    const entryAgents = isStringArray(listed) ? listed : []
     const signature: PackageSignature = {
       packageId: name,
       version: String(meta.version),
@@ -230,13 +232,26 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
           package: pkg,
           file,
           path: at,
-          load: yield* Effect.cached(load),
+          load: yield* Effect.cached(reportDefects(load, { kind, file, path: at })),
         })
       }
     }
   })
 
-  for (const dir of yield* packageDirs(path.join(root, "node_modules"))) yield* loadPackage(dir, "npm")
-  for (const dir of yield* packageDirs(path.join(root, "agents", "packed"))) yield* loadPackage(dir, "local")
+  const inspect = (dir: string, source: Source) =>
+    loadPackage(dir, source).pipe(
+      Effect.catchDefect((cause) =>
+        Effect.sync(() =>
+          issue(
+            "package_invalid",
+            path.relative(root, path.join(dir, "package.json")),
+            `The package in ${path.relative(root, dir)} threw while Spindle read it. ${describeCause(cause)}`,
+          ),
+        ),
+      ),
+    )
+
+  for (const dir of yield* packageDirs(path.join(root, "node_modules"))) yield* inspect(dir, "npm")
+  for (const dir of yield* packageDirs(path.join(root, "agents", "packed"))) yield* inspect(dir, "local")
   return { definitions, packages, issues }
 })

@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Path } from "effect"
-import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL } from "./Registry.ts"
+import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL, reportDefects } from "./Registry.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
@@ -76,7 +76,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         package: undefined,
         file,
         path: "",
-        load: yield* Effect.cached(load),
+        load: yield* Effect.cached(reportDefects(load, { kind, file, path: "" })),
       })
     }
   }

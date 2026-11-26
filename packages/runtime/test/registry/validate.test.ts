@@ -328,6 +328,19 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports each definition or package that throws while Spindle reads it and goes on",
+    "throwing-reads",
+    [
+      error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+      error("definition_load_failed", "agents/models/fallback_trap.ts"),
+      error("package_invalid", "agents/packed/hooks-trap/index.js"),
+      error("package_invalid", "agents/packed/meta-trap/package.json"),
+      error("package_invalid", "agents/packed/registry-trap/package.json"),
+      error("definition_load_failed", "agents/prompts/content_trap.ts"),
+      error("definition_load_failed", "agents/tools/opaque_throw.ts"),
+    ],
+  ],
+  [
     "rejects an empty file, a comment-only file, and a file with no export",
     "empty-files",
     [

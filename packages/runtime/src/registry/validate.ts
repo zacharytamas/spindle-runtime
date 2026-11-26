@@ -76,7 +76,12 @@ const backingOf = (side: Shape) => {
   return present.length === 1 ? present[0] : undefined
 }
 
-type Edges = ReadonlyMap<Definition, ReadonlyArray<{ readonly target: Definition; readonly path: string }>>
+interface Edge {
+  readonly target: Definition
+  readonly path: string
+}
+
+type Edges = ReadonlyMap<Definition, ReadonlyArray<Edge>>
 
 const cyclesOf = (edges: Edges) => {
   const cycles: Array<{ readonly cycle: ReadonlyArray<Definition>; readonly path: string }> = []
@@ -486,9 +491,47 @@ export const validate = Effect.gen(function* () {
     handler: checkHandler,
     effect: checkEffect,
   }
+  const edgesTo = (
+    definition: Definition,
+    targets: ReadonlyArray<readonly [name: unknown, path: string]>,
+  ): ReadonlyArray<Edge> =>
+    targets.flatMap(([name, path]) => {
+      if (!isNonEmptyString(name)) return []
+      const resolution = registry.resolve(definition.kind, name, namespaceOf(definition))
+      return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
+    })
+
+  const includes = new Map<Definition, ReadonlyArray<Edge>>()
+  const fallbacks = new Map<Definition, ReadonlyArray<Edge>>()
   for (const [definition, value] of loaded) {
     try {
       checks[definition.kind](definition, value)
+      if (definition.kind === "prompt" && isRecord(value))
+        includes.set(
+          definition,
+          edgesTo(
+            definition,
+            Array.isArray(value.prompt)
+              ? value.prompt.map(
+                  (part: unknown, index) =>
+                    [
+                      isRecord(part) && part.type === "include" ? part.prompt : undefined,
+                      `prompt[${index}].prompt`,
+                    ] as const,
+                )
+              : [],
+          ),
+        )
+      if (definition.kind === "model" && isRecord(value))
+        fallbacks.set(
+          definition,
+          edgesTo(
+            definition,
+            isStringArray(value.fallbacks)
+              ? value.fallbacks.map((name, index) => [name, `fallbacks[${index}]`] as const)
+              : [],
+          ),
+        )
     } catch (cause) {
       site(definition).report(
         "definition_load_failed",
@@ -498,30 +541,6 @@ export const validate = Effect.gen(function* () {
     }
   }
 
-  const edgesOf = (kind: Kind, targets: (value: Shape) => ReadonlyArray<readonly [name: unknown, path: string]>) => {
-    const edges = new Map<Definition, ReadonlyArray<{ readonly target: Definition; readonly path: string }>>()
-    for (const [definition, value] of loaded) {
-      if (definition.kind !== kind || !isRecord(value)) continue
-      edges.set(
-        definition,
-        targets(value).flatMap(([name, path]) => {
-          if (!isNonEmptyString(name)) return []
-          const resolution = registry.resolve(kind, name, namespaceOf(definition))
-          return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
-        }),
-      )
-    }
-    return edges
-  }
-
-  const includes = edgesOf("prompt", (prompt) =>
-    Array.isArray(prompt.prompt)
-      ? prompt.prompt.map(
-          (part: unknown, index) =>
-            [isRecord(part) && part.type === "include" ? part.prompt : undefined, `prompt[${index}].prompt`] as const,
-        )
-      : [],
-  )
   for (const { cycle, path } of cyclesOf(includes)) {
     const names = cycle.map((d) => d.qualifiedName)
     site(cycle[0] as Definition).report(
@@ -533,9 +552,6 @@ export const validate = Effect.gen(function* () {
     )
   }
 
-  const fallbacks = edgesOf("model", (model) =>
-    isStringArray(model.fallbacks) ? model.fallbacks.map((name, index) => [name, `fallbacks[${index}]`] as const) : [],
-  )
   for (const { cycle, path } of cyclesOf(fallbacks).filter(({ cycle }) => cycle.length > 1)) {
     const names = cycle.map((d) => d.qualifiedName)
     site(cycle[0] as Definition).report(
@@ -547,32 +563,42 @@ export const validate = Effect.gen(function* () {
   }
 
   for (const pkg of registry.packages) {
-    for (const agentName of pkg.entryAgents) {
-      const definition = registry.definitions.find(
-        (d) => d.package === pkg && d.kind === "agent" && d.name === agentName,
-      )
-      const agent = definition && loaded.get(definition)
-      if (!isRecord(agent) || agent.parentHooks === undefined) continue
-      const sources = [
-        ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
-        [
-          "package.json",
-          "standardagent.parentHooks",
-          isRecord(pkg.manifest.standardagent) ? pkg.manifest.standardagent.parentHooks : undefined,
-          pkg.manifestFile,
-        ],
-      ] as const
-      for (const [label, field, value, file] of sources) {
-        const copy = isRecord(value) ? value[agentName] : undefined
-        if (!sameValue(copy, agent.parentHooks))
-          issues.push({
-            code: "package_parent_hooks_mismatch",
-            severity: "error",
-            message: `${pkg.signature.packageId} must reproduce the parentHooks of entry agent ${agentName} in ${label}`,
-            file,
-            path: `${field}.${agentName}`,
-          })
+    try {
+      for (const agentName of pkg.entryAgents) {
+        const definition = registry.definitions.find(
+          (d) => d.package === pkg && d.kind === "agent" && d.name === agentName,
+        )
+        const agent = definition && loaded.get(definition)
+        if (!isRecord(agent) || agent.parentHooks === undefined) continue
+        const sources = [
+          ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
+          [
+            "package.json",
+            "standardagent.parentHooks",
+            isRecord(pkg.manifest.standardagent) ? pkg.manifest.standardagent.parentHooks : undefined,
+            pkg.manifestFile,
+          ],
+        ] as const
+        for (const [label, field, value, file] of sources) {
+          const copy = isRecord(value) ? value[agentName] : undefined
+          if (!sameValue(copy, agent.parentHooks))
+            issues.push({
+              code: "package_parent_hooks_mismatch",
+              severity: "error",
+              message: `${pkg.signature.packageId} must reproduce the parentHooks of entry agent ${agentName} in ${label}`,
+              file,
+              path: `${field}.${agentName}`,
+            })
+        }
       }
+    } catch (cause) {
+      issues.push({
+        code: "package_invalid",
+        severity: "error",
+        message: `${pkg.signature.packageId} threw while Spindle compared its parentHooks disclosures. ${describeCause(cause)}`,
+        file: pkg.file,
+        path: "",
+      })
     }
   }
 
