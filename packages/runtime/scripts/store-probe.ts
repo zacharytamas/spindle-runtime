@@ -31,7 +31,7 @@ Perf:
   bench-interleaved    --rounds <n>, run bench on Node and on Bun in alternating order
 
 Helpers that the lanes spawn:
-  read --thread <id>, write, append --thread <id> [--hold], step --thread <id> [--hold | --loop],
+  read --thread <id>, write, kv-write, append --thread <id> [--hold], step --thread <id> [--hold | --loop],
   enqueue --count <n>, dequeue --thread <id>`
 
 const [command = "help", ...args] = process.argv.slice(2)
@@ -111,6 +111,13 @@ const runProbe = async (subcommand: string, flags: Array<string>, runtime = plat
   const last = child.lines.at(-1)
   if (last === undefined) return fail(`${runtime} ${subcommand} printed nothing`)
   return { pid: child.pid, output: JSON.parse(last) }
+}
+
+// Bun exits once no timer or handle is left, even while a promise is pending, so a held child needs a timer.
+const stayAlive = () => setInterval(() => {}, 60_000)
+
+const killedBySignal = (exit: { readonly code: number | null; readonly signal: NodeJS.Signals | null }) => {
+  if (exit.signal !== "SIGKILL") fail(`the child exited with ${JSON.stringify(exit)} instead of dying from SIGKILL`)
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -224,7 +231,7 @@ const commands: Record<string, () => Promise<void>> = {
       ),
     )
     print({ runtime: platformName, pid: process.pid, appended: message })
-    if (has("hold")) await new Promise(() => {})
+    if (has("hold")) stayAlive()
   },
 
   "kill-after-append": async () => {
@@ -235,6 +242,7 @@ const commands: Record<string, () => Promise<void>> = {
     child.kill("SIGKILL")
     const exit = await child.exited
     print({ child: child.pid, printed: "appended", appendedId: appended.id, exit })
+    killedBySignal(exit)
     const after = await runProbe("read", ["--db", db, "--thread", thread.id])
     print({
       reader: after.pid,
@@ -257,6 +265,7 @@ const commands: Record<string, () => Promise<void>> = {
               yield* store.appendMessages(threadId, assistant === undefined ? [] : [assistant])
               yield* store.appendMessages(threadId, results)
               if (hold) {
+                stayAlive()
                 print({ runtime: platformName, pid: process.pid, insideTransaction: true, written: 3, step })
                 return yield* Effect.never
               }
@@ -284,6 +293,7 @@ const commands: Record<string, () => Promise<void>> = {
     const after = await runProbe("read", ["--db", db, "--thread", thread.id])
     const found = after.output.messages.length
     print({ child: child.pid, killedInside: "a transaction that wrote 3 records", exit, recordsFound: found })
+    killedBySignal(exit)
     const randomRounds = []
     for (let n = 0; n < rounds; n++) {
       const looped = await createThread(db)
@@ -291,7 +301,7 @@ const commands: Record<string, () => Promise<void>> = {
       await looping.waitForLine((line) => line.includes('"looping"'))
       await sleep(Math.floor(Math.random() * 200))
       looping.kill("SIGKILL")
-      await looping.exited
+      killedBySignal(await looping.exited)
       const read = await runProbe("read", ["--db", db, "--thread", looped.id])
       const perStep = new Map<number, number>()
       for (const m of read.output.messages as Array<Message>) {
@@ -313,6 +323,20 @@ const commands: Record<string, () => Promise<void>> = {
           }
         : {}),
     })
+  },
+
+  "kv-write": async () => {
+    const result = await withStore(
+      required("db"),
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "kv" })
+        const value = { theme: "dark", locale: "en-US" }
+        yield* store.setValue(thread.id, "preferences", value)
+        return { thread: thread.id, key: "preferences", value }
+      }),
+    )
+    print({ runtime: platformName, pid: process.pid, ...result })
   },
 
   "kv-roundtrip": async () => {
