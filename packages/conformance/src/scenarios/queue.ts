@@ -62,6 +62,12 @@ const ref: AttachmentRef = {
 
 const statusOf = async (session: RuntimeSession, thread: string) => (await session.state(thread)).status()
 
+// A send that a failed expectation leaves behind is rejected when its session closes. Nothing awaits it then.
+const quiet = <A>(promise: Promise<A>): Promise<A> => {
+  promise.catch(() => undefined)
+  return promise
+}
+
 export const queueScenarios: ReadonlyArray<Scenario> = [
   {
     name: "Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
@@ -795,6 +801,144 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       } finally {
         await session.close()
       }
+    },
+  },
+  {
+    name: "Q18 does not run a queued tool whose started hook or create hook calls stop, and stores one result that says so",
+    requirements: ["7a032a6c"],
+    run: async (driver) => {
+      const started = defineHook({
+        hook: "tool_call_started",
+        id: "stop_when_started",
+        execute: async (state) => {
+          state.execution?.stop()
+        },
+      })
+      const beforeCreate = defineHook({
+        hook: "before_create_message",
+        id: "stop_before_create",
+        execute: async (state, message) => {
+          if (message.metadata?.queued === true) state.execution?.stop()
+          return message
+        },
+      })
+      const afterCreate = defineHook({
+        hook: "after_create_message",
+        id: "stop_after_create",
+        execute: async (state, message) => {
+          if (message.metadata?.queued === true) state.execution?.stop()
+        },
+      })
+      const seen: Record<string, unknown> = {}
+      for (const hook of [started, beforeCreate, afterCreate]) {
+        let entries = 0
+        const worker = defineTool({
+          description: "Count each run",
+          execute: async () => {
+            entries += 1
+            return ok("the effect happened")
+          },
+        })
+        const provider = new ScriptedProvider([{ text: "a reply that no stopped run asks for" }])
+        await using(
+          driver,
+          { provider, tools: { worker }, hooks: [hook], prompt: { hooks: [hook.id] } },
+          async (session, thread) => {
+            ;(await session.state(thread)).queueTool("worker", {})
+            const outcome = await session.settled(thread)
+            const stored = await session.messages(thread)
+            const call = callsOf(stored.find((message) => message.metadata?.queued === true))[0]
+            const results = stored.filter((message) => message.role === "tool")
+            seen[hook.id] = {
+              entries,
+              outcome: [outcome?.status, outcome?.reason],
+              requests: provider.requests.length,
+              results: results.map((m) => [
+                m.tool_call_id === call?.id,
+                m.tool_status,
+                /did not run/.test(m.content ?? ""),
+              ]),
+            }
+          },
+        )
+      }
+      const stopped = { entries: 0, outcome: ["idle", "aborted"], requests: 0, results: [[true, "error", true]] }
+      expect(seen).toEqual({ stop_when_started: stopped, stop_before_create: stopped, stop_after_create: stopped })
+    },
+  },
+  {
+    name: "Q19 does not retry a model attempt that was cut off after stop was called",
+    requirements: ["7a032a6c"],
+    run: async (driver) => {
+      let execution: ExecutionState | null = null
+      const keep = defineHook({
+        hook: "filter_messages",
+        id: "keep",
+        execute: async (state, messages) => {
+          execution = state.execution
+          return messages
+        },
+      })
+      const held = gate()
+      const release = gate()
+      const provider = new ScriptedProvider([
+        async () => {
+          held.release()
+          await release.opened
+          // A stream that ends with no finish chunk is an attempt the provider cut off, which a run retries.
+          return { chunks: [] }
+        },
+        { text: "from the retry" },
+      ])
+      await using(driver, { provider, hooks: [keep], prompt: { hooks: ["keep"] } }, async (session, thread) => {
+        const run = quiet(session.send(thread, "go"))
+        await held.opened
+        ;(execution as ExecutionState | null)?.stop()
+        release.release()
+        const outcome = await run
+        expect({
+          requests: provider.requests.length,
+          outcome: [outcome.status, outcome.reason],
+          stored: (await session.messages(thread)).map((message) => message.content),
+        }).toEqual({ requests: 1, outcome: ["idle", "aborted"], stored: ["go"] })
+      })
+    },
+  },
+  {
+    name: "Q20 runs a queued tool once when its started hook and its create hooks ask for no stop",
+    requirements: [],
+    run: async (driver) => {
+      let entries = 0
+      const calls: Array<string> = []
+      const worker = defineTool({
+        description: "Count each run",
+        execute: async () => {
+          entries += 1
+          return ok("the effect happened")
+        },
+      })
+      const started = defineHook({
+        hook: "tool_call_started",
+        id: "watch_started",
+        execute: async (_state, call) => {
+          calls.push(call.function.name)
+        },
+      })
+      const provider = new ScriptedProvider([{ text: "saw it" }])
+      await using(
+        driver,
+        { provider, tools: { worker }, hooks: [started], prompt: { hooks: ["watch_started"] } },
+        async (session, thread) => {
+          ;(await session.state(thread)).queueTool("worker", {})
+          expect(await session.settled(thread)).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
+          expect([entries, calls]).toEqual([1, ["worker"]])
+          expect((await session.messages(thread)).map((m) => m.tool_status ?? m.content)).toEqual([
+            null,
+            "success",
+            "saw it",
+          ])
+        },
+      )
     },
   },
 ]
