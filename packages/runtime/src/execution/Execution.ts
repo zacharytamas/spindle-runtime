@@ -54,7 +54,7 @@ export class Execution {
     await: Deferred.await(this.#done),
     isDone: () => Deferred.isDoneUnsafe(this.#done),
   })
-  #phase: "running" | "stopping" | "holding" | "dropping" | "ended" = "running"
+  #phase: "running" | "holding" | "dropping" | "ended" = "running"
   #stop: Side | "user" | undefined
   #steps = 0
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
@@ -80,8 +80,7 @@ export class Execution {
     return this.#stop === "user" ? "aborted_by_user" : "aborted"
   }
   requestStop(by: Side | "user" = "user") {
-    if (this.#phase !== "running" && this.#phase !== "stopping") return false
-    this.#phase = "stopping"
+    if (this.#phase !== "running") return false
     this.#stop ??= by
     return true
   }
