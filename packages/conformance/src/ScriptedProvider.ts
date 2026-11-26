@@ -1,15 +1,17 @@
-import type {
-  LLMProviderInterface,
-  ProviderFactory,
-  ProviderFactoryConfig,
-  ProviderFinishReason,
-  ProviderReasoningDetail,
-  ProviderRequest,
-  ProviderResponse,
-  ProviderStreamChunk,
-  ProviderToolCallPart,
-  ProviderUsage,
-  ResponseSummary,
+import {
+  type LLMProviderInterface,
+  ProviderError,
+  type ProviderErrorCode,
+  type ProviderFactory,
+  type ProviderFactoryConfig,
+  type ProviderFinishReason,
+  type ProviderReasoningDetail,
+  type ProviderRequest,
+  type ProviderResponse,
+  type ProviderStreamChunk,
+  type ProviderToolCallPart,
+  type ProviderUsage,
+  type ResponseSummary,
 } from "@standardagents/spec"
 
 export interface ScriptedCall {
@@ -111,13 +113,14 @@ export class ScriptedProvider implements LLMProviderInterface {
     })()
   }
 
+  // The same chunks that stream yields, folded into one response. Like stream, it never invents a finish.
   async generate(request: ProviderRequest): Promise<ProviderResponse> {
     const step = await this.next(request)
     const chunks = "chunks" in step ? step.chunks : this.chunksOf(step)
     let content: string | null = null
     let reasoning: string | undefined
     const calls = new Map<string, ProviderToolCallPart>()
-    let finish: ProviderResponse["finishReason"] = "stop"
+    let finish: ProviderResponse["finishReason"] | undefined
     let total = usage
     let details: Array<ProviderReasoningDetail> | undefined
     for (const chunk of chunks) {
@@ -133,7 +136,10 @@ export class ScriptedProvider implements LLMProviderInterface {
         total = chunk.usage
         details = chunk.reasoningDetails
       }
+      if (chunk.type === "error") throw new ProviderError(chunk.error, (chunk.code ?? "unknown") as ProviderErrorCode)
     }
+    if ("chunks" in step && step.thenThrow !== undefined) throw step.thenThrow
+    if (finish === undefined) throw new ProviderError("The scripted response has no finish chunk", "server_error")
     return {
       content,
       ...(reasoning === undefined ? {} : { reasoning }),

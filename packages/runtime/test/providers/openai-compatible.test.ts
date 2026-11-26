@@ -228,6 +228,25 @@ describe("openaiCompatible", () => {
     ])
   })
 
+  it("ends a stream cut off before a finish reason with a retryable error and no tool-call-done", async () => {
+    const cut = streamed.slice(0, 5).map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    for (const ending of ["data: [DONE]\n\n", ""]) {
+      const { fetch } = transport(() => new Response(`${cut.join("")}${ending}`))
+      const seen: Array<string> = []
+      const error = await (async () => {
+        for await (const chunk of await openaiCompatible({ apiKey: "", fetch }).stream(request)) seen.push(chunk.type)
+      })().catch((cause) => cause)
+      expect([error.code, error.isRetryable, error.origin]).toEqual([
+        "server_error",
+        true,
+        "provider:openai_compatible",
+      ])
+      expect(seen).toContain("tool-call-delta")
+      expect(seen).not.toContain("tool-call-done")
+      expect(seen).not.toContain("finish")
+    }
+  })
+
   it("returns from generate the same text, reasoning, call, and finish that stream yields", async () => {
     const { fetch } = transport(() => Response.json(generated))
     expect(await openaiCompatible({ apiKey: "", fetch }).generate(request)).toEqual({

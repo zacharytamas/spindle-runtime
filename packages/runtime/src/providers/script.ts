@@ -1,6 +1,7 @@
 import {
   type LLMProviderInterface,
   ProviderError,
+  type ProviderErrorCode,
   type ProviderReasoningDetail,
   type ProviderResponse,
   type ProviderStreamChunk,
@@ -38,6 +39,26 @@ export type Script = typeof Script.Type
 export const decodeScript = Schema.decodeUnknownEffect(Schema.fromJsonString(Script))
 
 const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+
+const CODES: ReadonlyArray<string> = [
+  "rate_limit",
+  "invalid_request",
+  "auth_error",
+  "server_error",
+  "timeout",
+  "unknown",
+]
+
+const failure = (message: string, code: string | undefined) =>
+  new ProviderError(
+    message,
+    CODES.includes(code ?? "") ? (code as ProviderErrorCode) : "unknown",
+    undefined,
+    undefined,
+    {
+      origin: "provider:script",
+    },
+  )
 
 export const scriptedProvider = (script: Script): LLMProviderInterface => {
   let index = 0
@@ -83,7 +104,7 @@ export const scriptedProvider = (script: Script): LLMProviderInterface => {
       let content: string | null = null
       let reasoning: string | undefined
       let details: Array<ProviderReasoningDetail> | undefined
-      let finishReason: ProviderResponse["finishReason"] = "stop"
+      let finishReason: ProviderResponse["finishReason"] | undefined
       const toolCalls = new Map<string, ProviderToolCallPart>()
       for (const chunk of next()) {
         if (chunk.type === "content-delta") content = (content ?? "") + chunk.delta
@@ -96,8 +117,9 @@ export const scriptedProvider = (script: Script): LLMProviderInterface => {
         } else if (chunk.type === "finish") {
           finishReason = chunk.finishReason
           details = chunk.reasoningDetails
-        }
+        } else if (chunk.type === "error") throw failure(chunk.error, chunk.code)
       }
+      if (finishReason === undefined) throw failure("The script's response has no finish chunk", "server_error")
       return {
         content,
         ...(reasoning === undefined ? {} : { reasoning }),

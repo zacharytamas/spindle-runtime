@@ -68,6 +68,11 @@ export interface StreamedCall {
   extraContent: Record<string, unknown> | undefined
 }
 
+interface Finish {
+  readonly finishReason: ProviderFinishReason
+  readonly usage: ProviderUsage
+}
+
 export interface ModelResponse {
   content: string | null
   reasoning: string | null
@@ -75,8 +80,10 @@ export interface ModelResponse {
   readonly calls: Map<string, StreamedCall>
   readonly images: Set<number>
   providerTools: number
-  finish: { readonly finishReason: ProviderFinishReason; readonly usage: ProviderUsage } | undefined
+  finish: Finish | undefined
 }
+
+type FinishedResponse = ModelResponse & { readonly finish: Finish }
 
 const callOf = (response: ModelResponse, id: string): StreamedCall => {
   let call = response.calls.get(id)
@@ -155,19 +162,21 @@ const streamResponse = (provider: LLMProviderInterface, request: ProviderRequest
         const failure = applyChunk(response, next.value)
         if (failure !== undefined) return yield* failure
       }
-      if (response.finish === undefined)
+      const { finish } = response
+      // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
+      if (finish === undefined)
         return yield* new ProviderFailure({
           message: "The provider stream ended without a finish chunk",
-          code: "unknown",
+          code: "server_error",
           origin: `provider:${provider.name}`,
         })
-      if (response.finish.finishReason === "error")
+      if (finish.finishReason === "error")
         return yield* new ProviderFailure({
           message: "The provider finished the response with an error",
           code: "unknown",
           origin: `provider:${provider.name}`,
         })
-      return response
+      return { ...response, finish } satisfies FinishedResponse
     })
     return yield* read.pipe(
       Effect.onError(() =>
@@ -251,10 +260,7 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
       continue
     }
     const response = result.success
-    const finish = response.finish ?? {
-      finishReason: "stop" as const,
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-    }
+    const { finish } = response
     log.finishReason = finish.finishReason
     log.usage = finish.usage
     if (response.images.size > 0) log.images = response.images.size

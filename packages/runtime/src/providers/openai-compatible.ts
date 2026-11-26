@@ -233,7 +233,8 @@ interface WireCall {
   arguments: string
 }
 
-// A call whose argument text is not a JSON object gets no tool-call-done, so the runtime never runs it.
+// A call whose argument text is not a JSON object gets no tool-call-done, so the runtime never runs it. A stream
+// that ends before a choice names its finish reason was cut off, so it ends in a retryable error, not a finish.
 async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<ProviderStreamChunk> {
   const calls = new Map<number, WireCall>()
   let finish: unknown
@@ -292,6 +293,16 @@ async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<P
       }
     if (choice.finish_reason !== undefined && choice.finish_reason !== null) finish = choice.finish_reason
   }
+  if (finish === undefined)
+    throw new ProviderError(
+      "The endpoint ended the stream without a finish reason",
+      "server_error",
+      undefined,
+      undefined,
+      {
+        origin: ORIGIN,
+      },
+    )
   if (sawReasoning) yield { type: "reasoning-done" }
   if (sawContent) yield { type: "content-done" }
   for (const call of calls.values()) {

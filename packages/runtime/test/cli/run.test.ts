@@ -2,9 +2,11 @@ import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
-import { PlatformLive } from "#platform"
+import { PlatformLive, SqliteLive } from "#platform"
 import { runCommand } from "../../src/cli/run.ts"
 import { PHASES } from "../../src/execution/trace.ts"
+import { layer as sqliteStore } from "../../src/store/sqlite.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
 const spindle = Command.make("spindle").pipe(Command.withSubcommands([runCommand]))
 
@@ -27,6 +29,13 @@ const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}) =>
     )
     return { exit, out, err }
   }).pipe(Effect.provide(PlatformLive))
+
+const storedMessages = (filename: string, err: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const threadId = err.join("\n").match(/thread ([0-9a-f-]{36})/)?.[1] ?? ""
+    const store = yield* ThreadStore
+    return (yield* store.getMessages(threadId, { order: "asc", includeSilent: true })).messages
+  }).pipe(Effect.provide(Layer.provide(sqliteStore, SqliteLive({ filename }))))
 
 describe("spindle run", () => {
   it.effect("prints the assistant text of a scripted reply and exits 0", () =>
@@ -156,6 +165,28 @@ describe("spindle run", () => {
       )
       expect(err.join("\n")).not.toContain(key)
     }),
+  )
+
+  it.live("stores nothing from a stream cut off before its finish and runs none of its tool calls", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" }), "run.db")
+      const answers = [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "Saving.", tool_calls: [{ index: 0, id: "c1", function: { name: "write_note", arguments: '{"key":"k","value":"v"}' } }] } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "Done." }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+      ]
+      const fetch = async (_input: string | URL | Request, _init?: RequestInit) => new Response(answers.shift() ?? "")
+      const { exit, err } = yield* run(["assistant", "-m", "save", "--db", db], {
+        SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
+      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      expect(Exit.isSuccess(exit)).toBe(true)
+      const messages = yield* storedMessages(db, err)
+      expect(messages.map((m) => [m.role, m.content, m.tool_calls])).toEqual([
+        ["user", "save", null],
+        ["assistant", "Done.", null],
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.effect("prints an HTTP 401 diagnostic without the key that the endpoint echoed", () =>

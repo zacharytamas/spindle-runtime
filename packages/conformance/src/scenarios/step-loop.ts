@@ -1518,11 +1518,28 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           ["assistant", "recovered"],
         ])
       })
-      const cut = new ScriptedProvider([{ chunks: partial }])
-      await using(driver, { provider: cut }, async (session, thread) => {
+      const ran = counter()
+      const probe = defineTool({ description: "Counts its runs", execute: async () => ran.tick(ok("ran")) })
+      const callChunks: Array<ProviderStreamChunk> = [
+        { type: "tool-call-start", id: "cut_1", name: "probe" },
+        { type: "tool-call-done", id: "cut_1", arguments: {} },
+      ]
+      const cut = new ScriptedProvider([{ chunks: callChunks }, { chunks: callChunks }, { text: "after the cut" }])
+      await using(driver, { provider: cut, tools: { probe } }, async (session, thread) => {
+        const outcome = await send(session, thread, "go", { retries: 2 })
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
+        expect(outcome.modelCalls.map((call) => call.error?.code)).toEqual(["server_error", "server_error", undefined])
+        expect(shape(await session.messages(thread))).toEqual([
+          ["user", "go"],
+          ["assistant", "after the cut"],
+        ])
+      })
+      expect(ran.count).toBe(0)
+      const cutOff = new ScriptedProvider([{ chunks: partial }])
+      await using(driver, { provider: cutOff }, async (session, thread) => {
         const outcome = await send(session, thread, "go", { retries: 0 })
         expect(outcome).toMatchObject({ status: "failed", reason: "step_error" })
-        expect(outcome.error?.message).toContain("finish")
+        expect(outcome.error).toMatchObject({ code: "server_error", message: expect.stringContaining("finish") })
       })
       const native = new ScriptedProvider([
         { reject: new DOMException("The operation timed out.", "TimeoutError") },
