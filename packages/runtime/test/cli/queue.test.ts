@@ -105,7 +105,7 @@ describe("spindle across processes", () => {
         yield* until(
           "the observer to see the run lost",
           Effect.map(
-            Effect.andThen(store.recover(thread), store.getThread(thread)),
+            Effect.andThen(store.recoverLost(thread), store.getThread(thread)),
             (found) => found.status.state === "failed",
           ),
         )

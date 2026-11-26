@@ -118,7 +118,7 @@ const openThread = (
             Effect.fail(new RunFailed({ message: "wrong agent" })),
           )
         yield* requireOpen(thread)
-        yield* store.recover(id)
+        yield* store.recoverLost(id)
         const { status } = yield* store.getThread(id)
         const holder = yield* store.holderOf(id)
         return { status, holder, cursor: yield* store.latestMessageSeq(id) }

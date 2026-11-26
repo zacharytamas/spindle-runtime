@@ -135,7 +135,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       const statusOf = (threadId: string) =>
         Effect.andThen(
-          store.recover(threadId),
+          store.recoverLost(threadId),
           Effect.map(store.getThread(threadId), (thread) => thread.status),
         )
 
@@ -232,7 +232,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // this process, and an active one takes the entry before its next model call.
       const admit = (threadId: string, entry: QueueEntry, options: SendOptions, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          if (origin.flowId === undefined) yield* store.recover(threadId)
+          if (origin.flowId === undefined) yield* store.recoverLost(threadId)
           let seq = 0
           const started = yield* claimWith(
             threadId,
@@ -289,7 +289,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Each poll also settles the runs whose holders died, settles a claim of this holder that has no execution
       // behind it, and interrupts an execution here whose run another process settled, by terminate or as lost.
       const tick = Effect.gen(function* () {
-        yield* store.recover()
+        yield* store.recoverLost()
         const running = [...live]
         const owned = yield* store.owned(holder.id)
         for (const [threadId, flowId] of owned)
@@ -309,15 +309,14 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
 
       // A process that shuts down aborts its executions, which settle, and drops its holder record last.
+      yield* store.acquireHolder(holder)
       yield* Effect.addFinalizer(() => {
         closing = true
         for (const { run } of live.values()) run.releaseWait.abort()
-        return Effect.andThen(
-          Fiber.interruptAll([...live.values()].flatMap((entry) => (entry.fiber === undefined ? [] : [entry.fiber]))),
-          Effect.ignore(store.dropHolder(holder.id)),
+        return Fiber.interruptAll(
+          [...live.values()].flatMap((entry) => (entry.fiber === undefined ? [] : [entry.fiber])),
         )
       })
-      yield* store.registerHolder(holder)
       yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
 
       const abortExecution = (threadId: string, exiting = false) =>

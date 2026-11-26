@@ -6,7 +6,7 @@ import type {
   QueueMessageInput,
   ThreadStatus,
 } from "@standardagents/spec"
-import { Context, Data, type Effect } from "effect"
+import { Context, Data, type Effect, type Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 
 export interface Thread {
@@ -141,6 +141,10 @@ export interface Admitted {
   readonly claimed: boolean
 }
 
+export type Recovery =
+  | { readonly kind: "atRest"; readonly status: ThreadStatus }
+  | { readonly kind: "alive" | "recovered"; readonly pid: number | null }
+
 export interface Holder {
   readonly id: string
   readonly pid: number
@@ -261,9 +265,9 @@ export class ThreadStore extends Context.Service<
     ) => Effect.Effect<Settlement, SqlError>
     // Settles each running thread whose holder process is gone, or only the given thread, as failed with
     // execution_lost, and returns their ids.
-    readonly recover: (threadId?: string, force?: boolean) => Effect.Effect<ReadonlyArray<string>, SqlError>
-    readonly registerHolder: (holder: Holder) => Effect.Effect<void, SqlError>
-    readonly dropHolder: (holderId: string) => Effect.Effect<void, SqlError>
+    readonly recoverLost: (threadId?: string) => Effect.Effect<ReadonlyArray<string>, SqlError>
+    readonly recoverThread: (threadId: string, force: boolean) => Effect.Effect<Recovery, ThreadNotFound | SqlError>
+    readonly acquireHolder: (holder: Holder) => Effect.Effect<void, SqlError, Scope.Scope>
     readonly holderOf: (threadId: string) => Effect.Effect<Holder | null, SqlError>
     readonly owned: (holderId: string) => Effect.Effect<ReadonlyMap<string, string>, SqlError>
 

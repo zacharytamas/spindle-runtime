@@ -170,7 +170,7 @@ const openSession = (
         }),
       ),
     inspect: (threadId) => rows.runPromise(inspectThread(threadId)),
-    forceRecover: (threadId) => withStore((s) => s.recover(threadId, true)).then(() => undefined),
+    forceRecover: (threadId) => withStore((s) => s.recoverThread(threadId, true)).then(() => undefined),
     queueRaw: (threadId, kind, payload) =>
       withSql((sql) =>
         sql.unsafe("INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, ?, ?, 0)", [

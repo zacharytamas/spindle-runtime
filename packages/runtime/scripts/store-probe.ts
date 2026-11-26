@@ -447,7 +447,7 @@ const commands: Record<string, () => Promise<void>> = {
       ThreadStore.use((store) =>
         Effect.gen(function* () {
           const threadId = required("thread")
-          yield* store.recover(threadId)
+          yield* store.recoverLost(threadId)
           if (!(yield* store.claim(threadId, claim))) return []
           const taken = yield* drainEntries(threadId, claim.flowId)
           yield* settleRun(threadId, { state: "idle", reason: "awaiting_human" })

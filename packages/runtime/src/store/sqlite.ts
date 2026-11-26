@@ -219,6 +219,15 @@ export const layer = Layer.effect(
         yield* release(threadId, next)
       })
 
+    type HeldRow = RunRow & { id: string; holder_id: string | null; pid: number | null }
+    const heldRows = (where: ReturnType<typeof sql.and>) => sql<HeldRow>`
+      SELECT t.id, ${sql.literal(runColumns)}, t.holder_id, h.pid
+      FROM threads t LEFT JOIN holders h ON h.id = t.holder_id WHERE ${where}`
+    const lost = ({ pid, holder_id }: HeldRow) =>
+      pid === null || pid <= 0 || (pid === processId && (holder_id === null || !localHolders.has(holder_id)))
+        ? Effect.succeed(true)
+        : Effect.map(processAlive(pid), (alive) => !alive)
+
     const store = ThreadStore.of({
       transaction: sql.withTransaction,
 
@@ -595,24 +604,20 @@ export const layer = Layer.effect(
           }),
         ),
 
-      recover: (threadId, force = false) =>
+      recoverLost: (threadId) =>
         Effect.gen(function* () {
-          const candidates = sql<{ id: string; flow_id: string; holder_id: string; pid: number | null }>`
-            SELECT t.id, t.flow_id, t.holder_id, h.pid FROM threads t LEFT JOIN holders h ON h.id = t.holder_id
-            WHERE t.run_state = 'running' ${threadId === undefined ? sql.literal("") : sql`AND t.id = ${threadId}`}`
-          const lost = ({ pid, holder_id }: { pid: number | null; holder_id: string }) =>
-            force || pid === null || pid <= 0 || (pid === processId && !localHolders.has(holder_id))
-              ? Effect.succeed(true)
-              : Effect.map(processAlive(pid), (alive) => !alive)
-          const ids = new Set<string>()
-          for (const row of yield* candidates) if (yield* lost(row)) ids.add(row.flow_id)
+          const candidates = heldRows(
+            sql.and([sql`t.run_state = 'running'`, ...(threadId === undefined ? [] : [sql`t.id = ${threadId}`])]),
+          )
+          const ids = new Map<string, string | null>()
+          for (const row of yield* candidates) if (yield* lost(row)) ids.set(row.id, row.flow_id)
           if (!ids.size) return []
           return yield* sql.withTransaction(
             Effect.gen(function* () {
               const recovered = []
               for (const row of yield* candidates) {
-                if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
-                yield* settleWith(row.id, yield* Effect.orDie(selectRun(row.id)), { type: "lose" }, CLOSING.lost)
+                if (ids.get(row.id) !== row.flow_id || !(yield* lost(row))) continue
+                yield* settleWith(row.id, row, { type: "lose" }, CLOSING.lost)
                 recovered.push(row.id)
               }
               return recovered
@@ -620,20 +625,28 @@ export const layer = Layer.effect(
           )
         }),
 
-      registerHolder: (holder) =>
-        Effect.asVoid(
-          Effect.tap(sql`INSERT INTO holders ${sql.insert({ ...holder })}`, () =>
-            Effect.sync(() => {
-              if (holder.pid === processId) localHolders.add(holder.id)
-            }),
-          ),
+      recoverThread: (threadId, force) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const row = yield* first(yield* heldRows(sql`t.id = ${threadId}`), () => new ThreadNotFound({ threadId }))
+            if (row.run_state !== "running") return { kind: "atRest" as const, status: toStatus(row) }
+            if (!force && !(yield* lost(row))) return { kind: "alive" as const, pid: row.pid }
+            yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
+            return { kind: "recovered" as const, pid: row.pid }
+          }),
         ),
 
-      dropHolder: (holderId) =>
-        Effect.asVoid(
-          Effect.tap(sql`DELETE FROM holders WHERE id = ${holderId}`, () =>
-            Effect.sync(() => localHolders.delete(holderId)),
-          ),
+      acquireHolder: (holder) =>
+        Effect.acquireRelease(
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO holders ${sql.insert({ ...holder })}`
+            if (holder.pid === processId) localHolders.add(holder.id)
+          }),
+          () =>
+            Effect.gen(function* () {
+              yield* Effect.ignore(sql`DELETE FROM holders WHERE id = ${holder.id}`)
+              if (holder.pid === processId) localHolders.delete(holder.id)
+            }),
         ),
 
       holderOf: (threadId) =>

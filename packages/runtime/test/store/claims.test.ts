@@ -79,7 +79,7 @@ describe("ThreadStore claims", () => {
             Effect.provide(SqliteLive({ filename })),
           )
           yield* store.admit(thread.id, message("pending"), claim("lost", holder), external)
-          expect(yield* store.recover(thread.id)).toEqual([thread.id])
+          expect(yield* store.recoverLost(thread.id)).toEqual([thread.id])
           expect((yield* store.getThread(thread.id)).status).toMatchObject({
             state: "failed",
             reason: "execution_lost",
@@ -109,7 +109,7 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.admit(thread.id, message("first"), claim("flow-a"), external)
-      yield* store.recover(thread.id)
+      yield* store.recoverLost(thread.id)
       yield* TestClock.adjust("2 seconds")
       expect((yield* store.admit(thread.id, message("again"), claim("flow-r"), external)).claimed).toBe(true)
       expect((yield* store.getThread(thread.id)).status).toEqual({ state: "running", since: 2_000_000, reason: null })
@@ -262,15 +262,15 @@ describe("ThreadStore claims", () => {
       const store = yield* ThreadStore
       const lost = yield* store.createThread({ agentId: "assistant" })
       const live = yield* store.createThread({ agentId: "assistant" })
-      yield* store.registerHolder({ id: "dead", pid: 2147483647 })
-      yield* store.registerHolder({ id: "alive", pid: processId })
+      yield* store.acquireHolder({ id: "dead", pid: 2147483647 })
+      yield* store.acquireHolder({ id: "alive", pid: processId })
       yield* store.admit(lost.id, message("x"), claim("flow-lost", "dead"), external)
       yield* store.admit(live.id, message("y"), claim("flow-live", "alive"), external)
       yield* insertCalls(lost.id, "flow-lost", callsBy("assistant", "c1", "c2"), resultFor("c1"))
       yield* store.admit(lost.id, message("z"), claim("flow-ignored"), external)
       yield* TestClock.adjust("2 seconds")
-      expect(yield* store.recover(live.id)).toEqual([])
-      expect(yield* store.recover()).toEqual([lost.id])
+      expect(yield* store.recoverLost(live.id)).toEqual([])
+      expect(yield* store.recoverLost()).toEqual([lost.id])
       expect((yield* store.getThread(lost.id)).status).toEqual({
         state: "failed",
         since: 2_000_000,
@@ -286,7 +286,7 @@ describe("ThreadStore claims", () => {
         CLOSING.lost,
       )
       expect(yield* store.queueLength(lost.id)).toBe(2)
-      expect(yield* store.recover()).toEqual([])
+      expect(yield* store.recoverLost()).toEqual([])
     }).pipe(Effect.provide(inMemory)),
   )
 
@@ -296,7 +296,7 @@ describe("ThreadStore claims", () => {
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.admit(thread.id, message("x"), claim("flow-a", "never-beat"), external)
       expect(yield* store.holderOf(thread.id)).toBeNull()
-      expect(yield* store.recover(thread.id)).toEqual([thread.id])
+      expect(yield* store.recoverLost(thread.id)).toEqual([thread.id])
     }).pipe(Effect.provide(inMemory)),
   )
 
@@ -387,11 +387,14 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.registerHolder({ id: "h", pid: 4242 })
-      yield* store.admit(thread.id, message("x"), claim("flow-a", "h"), external)
-      yield* TestClock.adjust("1 second")
-      expect(yield* store.holderOf(thread.id)).toEqual({ id: "h", pid: 4242 })
-      yield* store.dropHolder("h")
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* store.acquireHolder({ id: "h", pid: 4242 })
+          yield* store.admit(thread.id, message("x"), claim("flow-a", "h"), external)
+          yield* TestClock.adjust("1 second")
+          expect(yield* store.holderOf(thread.id)).toEqual({ id: "h", pid: 4242 })
+        }),
+      )
       expect(yield* store.holderOf(thread.id)).toBeNull()
     }).pipe(Effect.provide(inMemory)),
   )
