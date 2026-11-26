@@ -1724,7 +1724,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "Q39 does not claim an unknown outcome in the result of a call that a lost execution never started",
+    name: "Q39 closes both unanswered calls with the same error about whether the tool ran and never enters the second tool",
     requirements: ["286367b3"],
     run: async (driver) => {
       const entered = gate()
@@ -1773,8 +1773,12 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
               ["c_hold", "error"],
               ["c_later", "error"],
             ])
-            // The tool of the first call was running, so its outcome is unknown. The second call never started.
-            expect(results[1]?.content).not.toMatch(/does not know whether/)
+            for (const result of results) {
+              expect(result.content).toBe(
+                "Spindle lost the execution before it stored a result for this call. It does not know whether the tool ran, and it did not run the tool again.",
+              )
+              expect(result.content).not.toContain("whether the tool finished")
+            }
             expect(ran).toEqual(["hold"])
           } finally {
             await peer.close()

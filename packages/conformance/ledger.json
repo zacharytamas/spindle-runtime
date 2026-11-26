@@ -3755,7 +3755,8 @@
 			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > recover settles a thread whose process is gone as lost and keeps its queue and its history",
 			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > admit claims a failed thread, which is how a recovery run starts",
 			"packages/runtime/test/conformance.test.ts > ownership > O05 keeps a thread running whose holder is alive, however far the observer's wall clock moves",
-			"packages/runtime/test/conformance.test.ts > ownership > O14 closes the open call of a lost execution although a hook set the caller's prompt to null"
+			"packages/runtime/test/conformance.test.ts > ownership > O14 closes the open call of a lost execution although a hook set the caller's prompt to null",
+			"packages/runtime/test/conformance.test.ts > queue > Q39 closes both unanswered calls with the same error about whether the tool ran and never enters the second tool"
 		],
 		"reason": ""
 	},
