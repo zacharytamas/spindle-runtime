@@ -379,10 +379,11 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
         })
         // A scripted run still learns the secret values of the model's real provider config.
         yield* learnSecrets(turn, secrets)
-        const provider =
+        const configured =
           options.provider === undefined
             ? yield* providerFor(turn.model, promptState, secrets)
-            : Effect.succeed(options.provider)
+            : { lifetime: "shared" as const, provider: options.provider }
+        const provider = configured.lifetime === "shared" ? Effect.succeed(configured.provider) : configured.build
         const source = reasoningSource(turn)
         const acceptsDetails = (message: Message) => {
           const stored = message.metadata?.reasoning_source as Partial<typeof source> | null | undefined

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import {
   defineModel,
   defineProvider,
@@ -477,7 +477,9 @@ describe("provider config slots", () => {
     const { sent, fetch } = transport(() => Response.json(generated))
     const secrets = newSecrets()
     return Effect.gen(function* () {
-      const instance = yield* yield* providerFor(loaded(provider), {} as never, secrets)
+      const configured = yield* providerFor(loaded(provider), {} as never, secrets)
+      assert(configured.lifetime === "shared")
+      const instance = configured.provider
       yield* Effect.promise(() => instance.generate(request))
       return { sent, secrets }
     }).pipe(
@@ -560,8 +562,9 @@ describe("provider config slots", () => {
       })
       const state = { threadId: "thread-1" }
       const next = yield* providerFor(loaded(perRequest), state as never, newSecrets())
+      assert(next.lifetime === "perRequest")
       for (const _ of [1, 2]) {
-        const instance = yield* next
+        const instance = yield* next.build
         yield* Effect.promise(() => instance.generate(request))
       }
       expect(states).toEqual([state, state])
@@ -591,9 +594,11 @@ describe("provider config slots", () => {
       })
       const { fetch } = transport((entry) => (entry.body.stream === true ? sse(streamed) : Response.json(generated)))
       const state = { threadId: "thread-2" }
-      const instance = yield* yield* providerFor(loaded(overridden), state as never, newSecrets()).pipe(
+      const configured = yield* providerFor(loaded(overridden), state as never, newSecrets()).pipe(
         Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch),
       )
+      assert(configured.lifetime === "shared")
+      const instance = configured.provider
       yield* Effect.promise(() => instance.generate(request))
       yield* Effect.promise(async () => collect(await instance.stream(request)))
       expect(seen).toEqual([
