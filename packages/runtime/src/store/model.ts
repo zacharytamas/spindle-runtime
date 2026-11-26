@@ -141,12 +141,18 @@ export class HandleExpired extends Data.TaggedError("HandleExpired") {
   }
 }
 
-export interface WriteOrigin {
-  readonly flowId?: string
-  readonly handle?: { readonly terminated: number | null; readonly expired: () => boolean }
-}
+export type WriteOrigin =
+  | { readonly kind: "external" }
+  | { readonly kind: "flow"; readonly flowId: string }
+  | {
+      readonly kind: "handle"
+      readonly flowId: string | null
+      readonly terminated: number | null
+      readonly expired: () => boolean
+    }
 
-export const external = {} satisfies WriteOrigin
+export const external = { kind: "external" } satisfies WriteOrigin
+export const originFlow = (origin: WriteOrigin) => (origin.kind === "external" ? null : origin.flowId)
 
 export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{ readonly messageId: string }> {
   override get message() {
@@ -157,8 +163,3 @@ export interface MessagePosition {
   readonly seq: number
   readonly callerSeq: number | null
 }
-export type InsertOptions = WriteOrigin &
-  (
-    | { readonly flowId: string; readonly callerSeq?: number | undefined; readonly dequeue?: number | undefined }
-    | { readonly callerSeq?: never; readonly dequeue?: never }
-  )

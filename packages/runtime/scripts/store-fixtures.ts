@@ -32,7 +32,8 @@ export const drainEntries = (threadId: string, flowId: string) =>
       yield* messages.insertMessage(
         threadId,
         { role: message.role, content: message.content, id: crypto.randomUUID(), created_at: entry.queuedAt },
-        { dequeue: entry.seq, flowId },
+        { kind: "flow", flowId },
+        { dequeue: entry.seq },
       )
       delivered.push(entry)
     }

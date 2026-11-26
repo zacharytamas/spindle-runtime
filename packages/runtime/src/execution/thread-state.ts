@@ -195,8 +195,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   }
   const services = state.services
   const origin: WriteOrigin = {
-    ...(owner && { flowId: owner.flowId }),
-    handle: { terminated: state.thread.terminated, expired: () => expired() !== undefined },
+    kind: "handle",
+    flowId: owner?.flowId ?? null,
+    terminated: state.thread.terminated,
+    expired: () => expired() !== undefined,
   }
   const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.

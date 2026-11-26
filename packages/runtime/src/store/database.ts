@@ -1,7 +1,15 @@
 import { Clock, Effect, Scheduler } from "effect"
 import type { SqlClient } from "effect/sql/SqlClient"
 import { toJson } from "./json.ts"
-import { FlowEnded, HandleExpired, ThreadNotFound, ThreadTerminated, ValueNotJson, type WriteOrigin } from "./model.ts"
+import {
+  FlowEnded,
+  HandleExpired,
+  originFlow,
+  ThreadNotFound,
+  ThreadTerminated,
+  ValueNotJson,
+  type WriteOrigin,
+} from "./model.ts"
 import { callsIn, type MessageRow, type QueueRow, runReasonColumn, type ThreadRow, text } from "./schema.ts"
 
 export type RunRow = Pick<ThreadRow, "run_state" | "run_since" | "run_reason"> & {
@@ -33,14 +41,18 @@ export const authorize = (
   origin: WriteOrigin,
   operation?: "insert",
 ) => {
-  if (origin.flowId !== undefined && row.flow_id !== origin.flowId)
+  const flowId = originFlow(origin)
+  if (flowId !== null && row.flow_id !== flowId)
     return new FlowEnded({
       threadId,
-      flowId: origin.flowId,
+      flowId,
       why: row.terminated_at === null ? "superseded" : "terminated",
     })
-  if (origin.handle?.expired()) return new HandleExpired()
-  if (row.terminated_at !== null && !(operation === "insert" && origin.handle?.terminated === row.terminated_at))
+  if (origin.kind === "handle" && origin.expired()) return new HandleExpired()
+  if (
+    row.terminated_at !== null &&
+    !(operation === "insert" && origin.kind === "handle" && origin.terminated === row.terminated_at)
+  )
     return new ThreadTerminated({ threadId, terminated: row.terminated_at })
 }
 export const requireThread = <A>(threadId: string, rows: ReadonlyArray<A>) =>

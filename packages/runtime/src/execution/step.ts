@@ -382,7 +382,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         hooks,
         control,
       }
-      const write = { threadId, hooks, secrets, call: undefined, history, origin: { flowId } }
+      const write = { threadId, hooks, secrets, call: undefined, history, origin: { kind: "flow" as const, flowId } }
       // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
       // turn. The agent's hooks apply to it and see no execution, as they do at rest.
       const inbound: HookScope = {

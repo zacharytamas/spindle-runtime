@@ -235,14 +235,15 @@ describe("the history an execution keeps", () => {
       const caller = yield* messages.insertMessage(
         thread.id,
         { role: "assistant", id: "call", created_at: 1 },
-        { flowId: "f" },
+        { kind: "flow", flowId: "f" },
       )
       history.inserted(caller)
       const first = yield* history.read
       const result = yield* messages.insertMessage(
         thread.id,
         { role: "tool", id: "result", created_at: 2 },
-        { flowId: "f", callerSeq: caller.seq },
+        { kind: "flow", flowId: "f" },
+        { callerSeq: caller.seq },
       )
       history.inserted(result)
       expect(empty.rows).toHaveLength(0)

@@ -2,7 +2,14 @@ import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardag
 import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
-import { external, type Holder, type QueueEntry, ThreadTerminated, type WriteOrigin } from "../store/model.ts"
+import {
+  external,
+  type Holder,
+  originFlow,
+  type QueueEntry,
+  ThreadTerminated,
+  type WriteOrigin,
+} from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import type { Stores } from "../store/sqlite.ts"
@@ -229,7 +236,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // this process, and an active one takes the entry before its next model call.
       const admit = (threadId: string, entry: QueueEntry, options: SendOptions, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          if (origin.flowId === undefined) yield* runStore.recoverLost(threadId)
+          if (originFlow(origin) === null) yield* runStore.recoverLost(threadId)
           let seq = 0
           const started = yield* claimWith(
             threadId,

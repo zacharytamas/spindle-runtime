@@ -5,10 +5,10 @@ import { authorize, type Database, first, json, pending, unyielding } from "./da
 import {
   CallerHasOpenCalls,
   type IdentifiedMessage,
-  type InsertOptions,
   InvalidMessagesQuery,
   MessageIdTaken,
   MessageNotFound,
+  originFlow,
   QueueEntryGone,
   type ThreadHistory,
   type WriteOrigin,
@@ -39,13 +39,15 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
     insertMessage: Effect.fn("MessageStore.insertMessage")(function* (
       threadId: string,
       message: IdentifiedMessage,
-      origin: InsertOptions,
+      origin: WriteOrigin,
+      link: { readonly callerSeq?: number | undefined; readonly dequeue?: number | undefined } = {},
     ) {
       const nested = Option.isSome(yield* Effect.serviceOption(sql.transactionService))
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           const thread = yield* selectRun(threadId)
-          const { flowId, dequeue } = origin
+          const flowId = originFlow(origin)
+          const { callerSeq, dequeue } = flowId === null ? {} : link
           const refusal = authorize(threadId, thread, origin, "insert")
           if (refusal) return yield* refusal
           if (dequeue !== undefined) {
@@ -62,8 +64,8 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
           })
           const facts = {
             admission_seq: dequeue ?? null,
-            flow_id: flowId ?? null,
-            caller_seq: origin.callerSeq ?? null,
+            flow_id: flowId,
+            caller_seq: callerSeq ?? null,
           }
           const values = { ...row, ...facts }
           const [inserted] = yield* sql<{ seq: number }>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`

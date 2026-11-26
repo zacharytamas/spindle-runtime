@@ -41,13 +41,14 @@ const insertCalls = (threadId: string, flowId: string, caller: NewMessage, resul
     const inserted = yield* store.insertMessage(
       threadId,
       { ...caller, id: crypto.randomUUID(), created_at: 0 },
-      { flowId },
+      { kind: "flow", flowId },
     )
     if (result)
       yield* store.insertMessage(
         threadId,
         { ...result, id: crypto.randomUUID(), created_at: 0 },
-        { flowId, callerSeq: inserted.seq },
+        { kind: "flow", flowId },
+        { callerSeq: inserted.seq },
       )
   })
 
@@ -198,7 +199,8 @@ describe("ThreadStore claims", () => {
       yield* messageStore.insertMessage(
         thread.id,
         { id: "m1", created_at: 1, role: "user", content: "one" },
-        { flowId: "flow-a", dequeue: queued.seq },
+        { kind: "flow", flowId: "flow-a" },
+        { dequeue: queued.seq },
       )
       yield* TestClock.adjust("3 seconds")
       expect(yield* runStore.settle(thread.id, { flowId: "flow-a" }, idle, options)).toBe("settled")
@@ -333,7 +335,11 @@ describe("ThreadStore claims", () => {
       yield* runStore.admit(thread.id, message("x"), claim("flow-a"), external)
       yield* runStore.admit(other.id, message("x"), claim("flow-b"), external)
       const insert = (threadId: string, id: string, flowId: string) =>
-        messageStore.insertMessage(threadId, { id, created_at: 1, role: "assistant", content: id }, { flowId })
+        messageStore.insertMessage(
+          threadId,
+          { id, created_at: 1, role: "assistant", content: id },
+          { kind: "flow", flowId },
+        )
       yield* insert(thread.id, "kept", "flow-a")
       yield* runStore.settle(
         thread.id,
@@ -372,14 +378,21 @@ describe("ThreadStore claims", () => {
       )
       const taken = { id: "taken", created_at: 2, role: "user", content: "x" } as const
       expect(
-        yield* Effect.flip(messageStore.insertMessage(thread.id, taken, { flowId: "flow-a", dequeue: queued.seq })),
+        yield* Effect.flip(
+          messageStore.insertMessage(thread.id, taken, { kind: "flow", flowId: "flow-a" }, { dequeue: queued.seq }),
+        ),
       ).toMatchObject({
         _tag: "MessageIdTaken",
       })
       expect(yield* runStore.queueLength(thread.id)).toBe(1)
       const delivered = { id: "fresh", created_at: 2, role: "user", content: "x" } as const
       expect(
-        (yield* messageStore.insertMessage(thread.id, delivered, { flowId: "flow-a", dequeue: queued.seq })).revision,
+        (yield* messageStore.insertMessage(
+          thread.id,
+          delivered,
+          { kind: "flow", flowId: "flow-a" },
+          { dequeue: queued.seq },
+        )).revision,
       ).toBe(2)
       expect(yield* runStore.queueLength(thread.id)).toBe(0)
       expect(
@@ -387,7 +400,8 @@ describe("ThreadStore claims", () => {
           messageStore.insertMessage(
             thread.id,
             { ...delivered, id: "again" },
-            { flowId: "flow-a", dequeue: queued.seq },
+            { kind: "flow", flowId: "flow-a" },
+            { dequeue: queued.seq },
           ),
         ),
       ).toMatchObject({ _tag: "QueueEntryGone" })
