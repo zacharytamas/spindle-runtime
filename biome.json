@@ -43,6 +43,8 @@
                   {
                     "group": [
                       "node:*",
+                      "node:*/**",
+                      "bun",
                       "bun:*",
                       "@effect/platform-node",
                       "@effect/platform-node/**",
@@ -56,6 +58,16 @@
                     "message": "Only packages/runtime/src/platform/ may import a runtime module or a platform package. Use an Effect service or import from #platform."
                   }
                 ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "Only packages/runtime/src/platform/ may use a runtime global. Use an Effect service or import from #platform.",
+                  "Bun": "Only packages/runtime/src/platform/ may use a runtime global. Use an Effect service or import from #platform.",
+                  "Buffer": "Only packages/runtime/src/platform/ may use a runtime global. Use an Effect service or import from #platform."
+                }
               }
             }
           }
