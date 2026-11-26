@@ -16,6 +16,9 @@ export default Effect.gen(function* () {
 
   yield* sql`ALTER TABLE threads ADD COLUMN holder_id TEXT`
   yield* sql`ALTER TABLE threads ADD COLUMN flow_id TEXT`
-  yield* sql`ALTER TABLE threads ADD COLUMN claim_seq INTEGER`
+  yield* sql`ALTER TABLE messages ADD COLUMN flow_id TEXT`
+  yield* sql`ALTER TABLE messages ADD COLUMN caller_seq INTEGER`
+  yield* sql`CREATE INDEX messages_flow_calls ON messages(flow_id) WHERE tool_calls IS NOT NULL`
+  yield* sql`CREATE INDEX messages_results ON messages(caller_seq) WHERE caller_seq IS NOT NULL`
   yield* sql`CREATE INDEX threads_running ON threads (holder_id) WHERE run_state = 'running'`
 })

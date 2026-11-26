@@ -163,7 +163,12 @@ export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle
 
 export type WriteRefused = FlowEnded | ThreadTerminated | HandleExpired
 
+export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{readonly messageId:string}> {}
+export interface MessagePosition {readonly seq:number; readonly callerSeq:number|null}
+export const positions = new WeakMap<Message, MessagePosition>()
+
 export interface InsertOptions {
+  readonly callerSeq?: number
   // The execution that writes. The insert fails with FlowEnded when that flow no longer holds the thread.
   readonly flowId?: string
   // The queue entry that this message delivers, removed in the transaction of the insert.
@@ -204,7 +209,7 @@ export class ThreadStore extends Context.Service<
       messageId: string,
       updates: MessageUpdates,
     ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | WriteRefused | SqlError>
-    readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, WriteRefused | SqlError>
+    readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, CallerHasOpenCalls | WriteRefused | SqlError>
 
     readonly enqueue: (
       threadId: string,

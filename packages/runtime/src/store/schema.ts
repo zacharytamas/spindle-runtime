@@ -1,4 +1,5 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
+import { positions } from "./ThreadStore.ts"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
@@ -69,6 +70,8 @@ export const toThread = (row: ThreadRow): Thread => ({
 })
 
 export type MessageRow = {
+  readonly seq?: number
+  readonly caller_seq?: number|null
   readonly id: string
   readonly role: Message["role"]
   readonly content: Text | null
@@ -89,6 +92,7 @@ export type MessageRow = {
 }
 
 export const messageColumns = [
+  "seq", "caller_seq",
   "id",
   "role",
   textColumn("content"),
@@ -121,7 +125,8 @@ const noSubagent = {
   subagent_spawn_group_id: null,
 } satisfies Partial<Message>
 
-export const toMessage = (row: MessageRow): Message => ({
+export const toMessage = (row: MessageRow): Message => {
+ const message: Message = {
   id: row.id,
   role: row.role,
   content: text(row.content),
@@ -140,7 +145,10 @@ export const toMessage = (row: MessageRow): Message => ({
   silent: row.silent === 1,
   metadata: JSON.parse(row.metadata),
   ...noSubagent,
-})
+ }
+ if (row.seq !== undefined && (row.tool_calls !== null || row.caller_seq != null)) positions.set(message,{seq:row.seq, callerSeq:row.caller_seq ?? null})
+ return message
+}
 
 export const messageRow = (
   threadId: string,

@@ -24,6 +24,7 @@ export interface WriteContext {
   // The history of the execution that writes, when an execution writes.
   readonly history: History | undefined
   // The flow of the execution that writes. Its writes fail once that flow no longer holds the thread.
+  readonly callerSeq?:number
   readonly flowId?: string
 }
 
@@ -167,6 +168,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
     redacted = { ...redacted, id: original.id }
   }
   const options = {
+    ...(write.callerSeq === undefined ? {} : {callerSeq:write.callerSeq}),
     ...(write.flowId === undefined ? {} : { flowId: write.flowId }),
     ...(dequeue === undefined ? {} : { dequeue }),
   }

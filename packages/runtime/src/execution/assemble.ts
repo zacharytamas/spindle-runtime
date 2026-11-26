@@ -1,3 +1,4 @@
+import {positions} from "../store/ThreadStore.ts"
 import type {
   AttachmentRef,
   LLMMessage,
@@ -179,9 +180,12 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
 const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+  const bySeq = new Map<number,number>()
   const holder = new Map<string, number>()
   const holderOf = (message: Message, index: number) => {
-    if (message.role === "tool") return holder.get(message.tool_call_id ?? "")
+    const position = positions.get(message)
+    if (message.role === "tool") return position?.callerSeq != null ? bySeq.get(position.callerSeq) : holder.get(message.tool_call_id ?? "")
+    if (position) bySeq.set(position.seq,index)
     for (const call of parsed[index] ?? []) holder.set(call.id, index)
     return undefined
   }

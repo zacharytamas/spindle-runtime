@@ -1,3 +1,4 @@
+import {positions} from "../store/ThreadStore.ts"
 import type { Message } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
@@ -44,7 +45,12 @@ export const makeHistory = (threadId: string): History => {
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
       // The writer gets the same message object back, and injectMessage hands it to the tool or hook that wrote it.
       else if (revision === copy.revision + 1)
-        copy = { revision, messages: copy.messages.concat([copyMessage(message)]) }
+        {
+          const duplicate = copyMessage(message)
+          const position = positions.get(message)
+          if (position) positions.set(duplicate,position)
+          copy = {revision,messages:copy.messages.concat([duplicate])}
+        }
     },
   }
 }

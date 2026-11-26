@@ -26,7 +26,7 @@ import {
 } from "./schema.ts"
 import {
   type Claim, WritingHandle, HandleExpired, type HandleOwner,
-  FlowEnded,
+  FlowEnded, CallerHasOpenCalls,
   InvalidMessagesQuery,
   KeyNotWellFormed,
   MessageIdTaken,
@@ -45,11 +45,10 @@ const migrate = Migrator.make({})({
 
 type RunRow = Pick<ThreadRow, "run_state" | "run_since" | "run_reason"> & {
   readonly flow_id: string | null
-  readonly claim_seq: number | null
   readonly terminated_at: number | null
 }
 
-const runColumns = `run_state, run_since, ${runReasonColumn}, flow_id, claim_seq, terminated_at`
+const runColumns = `run_state, run_since, ${runReasonColumn}, flow_id, terminated_at`
 
 // A store call never yields to another fiber while it holds the one connection. Code outside Effect, such as a tool
 // that calls queueTool, runs only between fibers, so it always finds the connection free and its synchronous call
@@ -126,21 +125,21 @@ export const layer = Layer.effect(
 
     // Every call that the run stored with no result after it gets an error result, so that each call the next request
     // shows has its result. A result belongs to a later tool message with the same parent and call id.
-    const closeCalls = (threadId: string, claimSeq: number, closing: string, now: number) =>
+    const openCalls = (caller: {seq:number; tool_calls: MessageRow["tool_calls"]}) => Effect.gen(function* () {
+      const answered = yield* sql<{id: Uint8Array}>`SELECT CAST(tool_call_id AS BLOB) AS id FROM messages WHERE caller_seq = ${caller.seq}`
+      const ids = new Set(answered.map(row => new TextDecoder("utf-8", {ignoreBOM:true}).decode(row.id)))
+      return callsIn(caller.tool_calls ?? "[]").filter(call => !ids.has(call.id))
+    })
+    const closeCalls = (threadId: string, flowId: string|null, closing: string, now: number) =>
       Effect.gen(function* () {
         const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
           SELECT seq, tool_calls, parent_id, prompt FROM messages
-          WHERE thread_id = ${threadId} AND seq > ${claimSeq} AND tool_calls IS NOT NULL AND prompt IS NOT NULL
+          WHERE thread_id = ${threadId} AND flow_id = ${flowId} AND tool_calls IS NOT NULL
           ORDER BY seq`
         for (const caller of callers) {
-          const answered = yield* sql<{ tool_call_id: string }>`
-            SELECT tool_call_id FROM messages WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${caller.seq}
-            AND parent_id IS ${caller.parent_id}`
-          const ids = new Set(answered.map((row) => row.tool_call_id))
-          for (const call of callsIn(caller.tool_calls ?? "[]"))
-            if (!ids.has(call.id))
+          for (const call of yield* openCalls(caller))
               yield* sql`INSERT INTO messages ${sql.insert(
-                messageRow(
+                {flow_id:flowId,caller_seq:caller.seq,...messageRow(
                   threadId,
                   crypto.randomUUID(),
                   now,
@@ -155,7 +154,7 @@ export const layer = Layer.effect(
                     parent_id: typeof caller.parent_id === "string" ? caller.parent_id : null,
                   },
                   { attachments: null, metadata: "{}" },
-                ),
+                )},
               )}`
         }
       })
@@ -166,22 +165,20 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const next = transition(toStatus(row), { type: "start" }, now)
         if (next === undefined) return false
-        const [last] = yield* sql<{ seq: number }>`
-          SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ${threadId}`
         yield* sql`UPDATE threads SET run_state = ${next.state}, run_reason = NULL, run_since = ${next.since},
-          holder_id = ${claim.holder}, flow_id = ${claim.flowId}, claim_seq = ${last?.seq ?? 0}
+          holder_id = ${claim.holder}, flow_id = ${claim.flowId}
           WHERE id = ${threadId}`
         return true
       })
 
     const release = (threadId: string, status: ThreadStatus) =>
       sql`UPDATE threads SET run_state = ${status.state}, run_reason = ${stored(status.reason ?? null)},
-        run_since = ${status.since}, holder_id = NULL, flow_id = NULL, claim_seq = NULL WHERE id = ${threadId}`
+        run_since = ${status.since}, holder_id = NULL, flow_id = NULL WHERE id = ${threadId}`
 
     const settleWith = (threadId: string, row: RunRow, event: Parameters<typeof transition>[1], closing: string) =>
       Effect.gen(function* () {
         const now = yield* nowMicros
-        yield* closeCalls(threadId, row.claim_seq ?? 0, closing, now)
+        yield* closeCalls(threadId, row.flow_id, closing, now)
         const next = transition(toStatus(row), event, now)
         if (next === undefined)
           return yield* Effect.die(new Error(`run status ${row.run_state} cannot take ${event.type}`))
@@ -311,9 +308,15 @@ export const layer = Layer.effect(
                   message.attachments == null ? null : yield* json("the message attachments", message.attachments),
                 metadata: yield* json("the message metadata", message.metadata ?? {}),
               })
-              yield* sql`INSERT INTO messages ${sql.insert(row)}`
+              const facts = {flow_id: flowId ?? null, caller_seq: options.callerSeq ?? null}
+              const values = {...row,...facts}
+              let seq: number|undefined
+              if (row.tool_calls !== null || facts.caller_seq !== null) {
+                const [inserted] = yield* sql<{seq:number}>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`
+                seq = inserted?.seq
+              } else yield* sql`INSERT INTO messages ${sql.insert(values)}`
               // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
-              return { message: toMessage(row), revision: nested ? null : thread.revision + 1 }
+              return { message: toMessage(seq === undefined ? row : {...values,seq}), revision: nested ? null : thread.revision + 1 }
             }),
           )
         }),
@@ -407,17 +410,22 @@ export const layer = Layer.effect(
         sql.withTransaction(
           Effect.gen(function* () {
             yield* guardWrite(threadId)
+            const [active] = yield* sql<{seq:number; tool_calls:string}>`
+              SELECT m.seq,m.tool_calls FROM messages m JOIN threads t ON t.id = m.thread_id AND t.flow_id = m.flow_id
+              WHERE m.thread_id = ${threadId} AND m.id = ${messageId} AND m.tool_calls IS NOT NULL`
+            if (active && (yield* openCalls(active)).length) return yield* new CallerHasOpenCalls({messageId})
             const deleted = yield* sql<MessageRow & { seq: number }>`
               DELETE FROM messages WHERE thread_id = ${threadId} AND id = ${messageId}
-              RETURNING seq, ${sql.literal(messageColumns)}`
+              RETURNING ${sql.literal(messageColumns)}`
             if (deleted[0] === undefined) return false
             const parent = { ...toMessage(deleted[0]), seq: deleted[0].seq }
             // A message owns the results of the calls it lists, whatever its role, because a side B model
             // turn is stored as user. A provider may reuse a call id in a later turn or under another parent
             // message, so a result belongs to the nearest earlier message with the same parent that lists its id.
-            if (parent.tool_calls !== null)
+            if (parent.tool_calls !== null) {
+              yield* sql`DELETE FROM messages WHERE caller_seq = ${parent.seq}`
               yield* sql`
-                DELETE FROM messages AS result WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
+                DELETE FROM messages AS result WHERE caller_seq IS NULL AND flow_id IS NULL AND thread_id = ${threadId} AND role = 'tool' AND seq > ${parent.seq}
                 AND parent_id IS ${parent.parent_id}
                 AND tool_call_id IN (SELECT CASE WHEN type = 'object' THEN json_extract(value, '$.id') END FROM json_each(
                   CASE WHEN json_valid(${parent.tool_calls}) THEN ${parent.tool_calls} ELSE '[]' END))
@@ -428,6 +436,7 @@ export const layer = Layer.effect(
                   AND later.parent_id IS result.parent_id
                   AND later.seq > ${parent.seq} AND later.seq < result.seq
                   AND CASE WHEN json_each.type = 'object' THEN json_extract(json_each.value, '$.id') END = result.tool_call_id)`
+            }
             return true
           }),
         ),
