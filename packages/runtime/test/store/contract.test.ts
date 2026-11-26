@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import type { GetMessagesOptions } from "@standardagents/spec"
 import { Effect, FileSystem, Layer } from "effect"
 import * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
@@ -313,6 +314,34 @@ describe("ThreadStore", () => {
           expect((yield* writer.getMessages(thread.id)).total).toBe(2)
         }).pipe(Effect.provide(storeAt(filename))),
       ),
+    )
+
+    it.effect(
+      "getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          yield* store.appendMessages(thread.id, [user("m1"), user("m2"), user("m3")])
+          const invalid: Array<[keyof GetMessagesOptions, number]> = [
+            ["limit", -5],
+            ["limit", 2.5],
+            ["limit", Number.NaN],
+            ["offset", -1],
+            ["offset", 1.5],
+          ]
+          for (const [option, value] of invalid) {
+            const error = yield* Effect.flip(store.getMessages(thread.id, { [option]: value }))
+            expect(error).toMatchObject({ _tag: "InvalidMessagesQuery", option, value })
+            expect(error.message).toContain(option)
+          }
+          const empty = yield* store.getMessages(thread.id, { limit: 0 })
+          expect({ count: empty.messages.length, total: empty.total, hasMore: empty.hasMore }).toEqual({
+            count: 0,
+            total: 3,
+            hasMore: true,
+          })
+        }).pipe(Effect.provide(inMemory)),
     )
 
     it.effect("getMessages omits silent messages unless includeSilent is true", () =>

@@ -17,7 +17,14 @@ import {
   toStatus,
   toThread,
 } from "./schema.ts"
-import { KeyNotWellFormed, MessageNotFound, ThreadNotFound, ThreadStore, ValueNotJson } from "./ThreadStore.ts"
+import {
+  InvalidMessagesQuery,
+  KeyNotWellFormed,
+  MessageNotFound,
+  ThreadNotFound,
+  ThreadStore,
+  ValueNotJson,
+} from "./ThreadStore.ts"
 
 const migrate = Migrator.make({})({ loader: Migrator.fromRecord({ "0001_threads": threads }) })
 
@@ -33,6 +40,8 @@ const json = (field: string, value: unknown): Effect.Effect<string, ValueNotJson
     const text = toJson(value)
     return typeof text === "string" ? Effect.succeed(text) : Effect.fail(new ValueNotJson({ field, ...text }))
   })
+
+const isCount = (value: number) => Number.isInteger(value) && value >= 0
 
 const first = <A, E>(rows: ReadonlyArray<A>, missing: () => E): Effect.Effect<A, E> =>
   rows[0] === undefined ? Effect.fail(missing()) : Effect.succeed(rows[0])
@@ -131,6 +140,9 @@ export const layer = Layer.effect(
       getMessages: (threadId, options = {}) =>
         Effect.gen(function* () {
           const { limit, offset = 0, order = "desc", includeSilent = false, maxDepth } = options
+          if (limit !== undefined && !isCount(limit))
+            return yield* new InvalidMessagesQuery({ option: "limit", value: limit })
+          if (!isCount(offset)) return yield* new InvalidMessagesQuery({ option: "offset", value: offset })
           const where = sql.and([
             sql`thread_id = ${threadId}`,
             ...(includeSilent ? [] : [sql`silent = 0`]),

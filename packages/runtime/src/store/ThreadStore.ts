@@ -71,6 +71,15 @@ export class ValueNotJson extends Data.TaggedError("ValueNotJson")<{
   }
 }
 
+export class InvalidMessagesQuery extends Data.TaggedError("InvalidMessagesQuery")<{
+  readonly option: "limit" | "offset"
+  readonly value: number
+}> {
+  override get message() {
+    return `getMessages option ${this.option} must be a non-negative integer, got ${this.value}`
+  }
+}
+
 export class KeyNotWellFormed extends Data.TaggedError("KeyNotWellFormed")<{ readonly key: string }> {
   override get message() {
     return `key ${JSON.stringify(this.key)} holds a lone surrogate, so it is not well-formed Unicode and cannot be stored as UTF-8`
@@ -89,7 +98,10 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       messages: ReadonlyArray<NewMessage>,
     ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ValueNotJson | SqlError>
-    readonly getMessages: (threadId: string, options?: GetMessagesOptions) => Effect.Effect<MessagesResult, SqlError>
+    readonly getMessages: (
+      threadId: string,
+      options?: GetMessagesOptions,
+    ) => Effect.Effect<MessagesResult, InvalidMessagesQuery | SqlError>
     readonly getMessage: (threadId: string, messageId: string) => Effect.Effect<Message | null, SqlError>
     readonly updateMessage: (
       threadId: string,
