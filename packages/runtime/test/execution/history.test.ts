@@ -1,0 +1,233 @@
+import { describe, expect, it } from "@effect/vitest"
+import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
+import { Effect, Layer } from "effect"
+import { SqliteLive } from "#platform"
+import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { ok, project, type Setup } from "../../../conformance/src/scenarios/step-loop.ts"
+import { newSecrets } from "../../src/execution/env.ts"
+import { makeHistory } from "../../src/execution/history.ts"
+import type { HookScope } from "../../src/execution/hooks.ts"
+import { createMessage } from "../../src/execution/messages.ts"
+import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { layer } from "../../src/store/sqlite.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { registryOf } from "../spindle-driver.ts"
+
+const contents = (messages: ReadonlyArray<Message>) => messages.map((message) => message.content)
+
+const inMemory = () => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" }))))
+
+// A store that counts the reads of a thread's whole history that it serves.
+const countingStore = (reads: { count: number }) =>
+  Layer.effect(
+    ThreadStore,
+    Effect.gen(function* () {
+      const store = yield* ThreadStore
+      return ThreadStore.of({
+        ...store,
+        history: (threadId) =>
+          Effect.suspend(() => {
+            reads.count += 1
+            return store.history(threadId)
+          }),
+      })
+    }),
+  ).pipe(Layer.provide(inMemory()))
+
+const runOnce = (setup: Setup, reads: { count: number }) =>
+  Effect.gen(function* () {
+    const thread = yield* createThread("assistant")
+    return yield* sendMessage(thread.id, "go")
+  }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), countingStore(reads))))
+
+const keepHandle = (keep: (state: ThreadState) => void) =>
+  defineHook({
+    hook: "after_thread_created",
+    id: "keep_handle",
+    execute: async (state) => {
+      keep(state)
+    },
+  })
+
+describe("the history an execution keeps", () => {
+  it.effect("is read whole once over twenty steps that nobody else writes to, and once more after a write", () =>
+    Effect.gen(function* () {
+      const reads = { count: 0 }
+      let elsewhere: ThreadState | undefined
+      const perStep: Array<number> = []
+      let last: Array<unknown> = []
+      const hooks = [
+        keepHandle((state) => {
+          elsewhere = state
+        }),
+        defineHook({
+          hook: "after_system_message",
+          id: "write_last",
+          execute: async (state) => {
+            if (state.execution?.stepCount === 20)
+              await elsewhere?.injectMessage({ role: "user", content: "from another handle" })
+            return null
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "count",
+          execute: async (_state, messages) => {
+            perStep.push(reads.count)
+            last = contents(messages)
+            return messages
+          },
+        }),
+      ]
+      const provider = new ScriptedProvider([
+        ...Array.from({ length: 20 }, (_, index) => ({
+          toolCalls: [{ id: `c${index}`, name: "noop", arguments: {} }],
+        })),
+        { text: "done" },
+      ])
+      const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+      const outcome = yield* runOnce(
+        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_last", "count"] } },
+        reads,
+      )
+      expect(outcome.steps).toBe(21)
+      expect(perStep).toEqual([...Array.from({ length: 20 }, () => 1), 2])
+      expect(last.at(-1)).toBe("from another handle")
+      expect(last).toHaveLength(42)
+    }),
+  )
+
+  it.effect("serves repeated reads of execution.messageHistory in one step without a whole read after the first", () =>
+    Effect.gen(function* () {
+      const reads = { count: 0 }
+      let elsewhere: ThreadState | undefined
+      const seen: Record<string, unknown> = {}
+      const tools = {
+        look: defineTool({
+          description: "Read the live history many times",
+          execute: async (state: ThreadState) => {
+            const live = () => state.execution?.messageHistory ?? []
+            const mine = live()
+            const afterFirst = reads.count
+            mine.pop()
+            if (mine[0] !== undefined) mine[0].content = "changed by the tool"
+            const again = Array.from({ length: 9 }, live)
+            seen.quiet = { added: reads.count - afterFirst, reads: again.map(contents) }
+            await elsewhere?.injectMessage({ role: "user", content: "from another handle" })
+            const afterWrite = live()
+            const beforeMore = reads.count
+            Array.from({ length: 9 }, live)
+            seen.written = {
+              contents: contents(afterWrite),
+              added: reads.count - afterFirst,
+              more: reads.count - beforeMore,
+            }
+            return ok("looked")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "look", arguments: {} }] },
+        { text: "done" },
+      ])
+      yield* runOnce(
+        {
+          provider,
+          tools,
+          hooks: [
+            keepHandle((state) => {
+              elsewhere = state
+            }),
+          ],
+          agent: { hooks: ["keep_handle"] },
+        },
+        reads,
+      )
+      expect(seen).toEqual({
+        quiet: { added: 0, reads: Array.from({ length: 9 }, () => ["go", null]) },
+        written: { contents: ["go", null, "from another handle"], added: 1, more: 0 },
+      })
+    }),
+  )
+
+  it.effect("stays current through the step's own assistant message and every tool result", () =>
+    Effect.gen(function* () {
+      const reads = { count: 0 }
+      let elsewhere: ThreadState | undefined
+      const seen: Array<unknown> = []
+      const hooks = [
+        keepHandle((state) => {
+          elsewhere = state
+        }),
+        defineHook({
+          hook: "after_system_message",
+          id: "write_later",
+          execute: async (state) => {
+            if (state.execution?.stepCount === 1)
+              await elsewhere?.injectMessage({ role: "user", content: "from another handle" })
+            return null
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "count",
+          execute: async (_state, messages) => {
+            seen.push(["filter", reads.count, contents(messages)])
+            return messages
+          },
+        }),
+      ]
+      const tools = {
+        look: defineTool({
+          description: "Read the live history",
+          execute: async (state: ThreadState) => {
+            seen.push(["tool", reads.count, contents(state.execution?.messageHistory ?? [])])
+            return ok("looked")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c1", name: "look", arguments: {} },
+            { id: "c2", name: "look", arguments: {} },
+            { id: "c3", name: "look", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      yield* runOnce(
+        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_later", "count"] } },
+        reads,
+      )
+      expect(seen).toEqual([
+        ["filter", 1, ["go"]],
+        ["tool", 1, ["go", null]],
+        ["tool", 1, ["go", null, "looked"]],
+        ["tool", 1, ["go", null, "looked", "looked"]],
+        ["filter", 2, ["go", null, "looked", "looked", "looked", "from another handle"]],
+      ])
+    }),
+  )
+
+  it.effect("never holds an insert of the execution's that a caller's transaction rolled back", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore
+      const thread = yield* store.createThread({ agentId: "assistant" })
+      yield* store.appendMessages(thread.id, [{ role: "user", content: "first" }])
+      const history = makeHistory(thread.id)
+      expect(contents(yield* history.read)).toEqual(["first"])
+      const hooks: HookScope = {
+        set: { source: { kind: "agent", agentName: "assistant" }, byPosition: new Map() },
+        stateFor: () => {
+          throw new Error("no hook is selected")
+        },
+      }
+      const write = { threadId: thread.id, hooks, secrets: newSecrets(), call: undefined, history }
+      const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
+      expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
+      yield* store.appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
+      expect(contents(yield* history.read)).toEqual(["first", "from another writer"])
+    }).pipe(Effect.provide(inMemory())),
+  )
+})
