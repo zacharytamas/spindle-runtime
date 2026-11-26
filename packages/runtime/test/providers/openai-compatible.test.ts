@@ -12,6 +12,7 @@ import {
 } from "@standardagents/spec"
 import { ConfigProvider, Effect, Exit } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { newSecrets } from "../../src/execution/env.ts"
 import { SetupError } from "../../src/execution/turn.ts"
 import { providerFor } from "../../src/providers/config.ts"
 import { openaiCompatible, requestBody } from "../../src/providers/openai-compatible.ts"
@@ -447,7 +448,7 @@ describe("provider config slots", () => {
   })
   const build = (provider: ProviderFactoryWithOptions, env: Record<string, string>) => {
     const { sent, fetch } = transport(() => Response.json(generated))
-    const secrets = { names: new Set<string>(), values: new Set<string>() }
+    const secrets = newSecrets()
     return Effect.gen(function* () {
       const instance = yield* yield* providerFor(loaded(provider), {} as never, secrets)
       yield* Effect.promise(() => instance.generate(request))
@@ -531,7 +532,7 @@ describe("provider config slots", () => {
         },
       })
       const state = { threadId: "thread-1" }
-      const next = yield* providerFor(loaded(perRequest), state as never, { names: new Set(), values: new Set() })
+      const next = yield* providerFor(loaded(perRequest), state as never, newSecrets())
       for (const _ of [1, 2]) {
         const instance = yield* next
         yield* Effect.promise(() => instance.generate(request))
@@ -563,10 +564,9 @@ describe("provider config slots", () => {
       })
       const { fetch } = transport((entry) => (entry.body.stream === true ? sse(streamed) : Response.json(generated)))
       const state = { threadId: "thread-2" }
-      const instance = yield* yield* providerFor(loaded(overridden), state as never, {
-        names: new Set(),
-        values: new Set(),
-      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
+      const instance = yield* yield* providerFor(loaded(overridden), state as never, newSecrets()).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch),
+      )
       yield* Effect.promise(() => instance.generate(request))
       yield* Effect.promise(async () => collect(await instance.stream(request)))
       expect(seen).toEqual([
@@ -585,9 +585,7 @@ describe("provider config slots", () => {
           throw new Error("no credentials")
         },
       ]) {
-        const exit = yield* Effect.exit(
-          providerFor(loaded(factory as never), {} as never, { names: new Set(), values: new Set() }),
-        )
+        const exit = yield* Effect.exit(providerFor(loaded(factory as never), {} as never, newSecrets()))
         const reason = Exit.isFailure(exit) ? exit.cause.reasons.find((r) => r._tag === "Fail") : undefined
         failures.push(reason?._tag === "Fail" ? (reason.error as SetupError).message : "succeeded")
       }

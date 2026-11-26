@@ -1978,9 +1978,10 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
 			"packages/runtime/test/conformance.test.ts > step loop > S26d fails before any request when a secret variable or a secret value reaches the finished system prompt",
+			"packages/runtime/test/conformance.test.ts > step loop > S26e treats every instance value as secret, so a text variable from the instance never reaches the system prompt",
 			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable"
 		],
-		"reason": "A system prompt interpolates only declared text variables. The run fails before its first request when a declaration or the provider config marks an interpolated name secret, or when the finished prompt holds a secret value resolved before that request. An instance value that nothing declares is not checked. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
+		"reason": "A system prompt interpolates only declared text variables whose value a definition supplies. The run fails before a request when a declaration or the provider config marks an interpolated name secret, when an interpolated value comes from the instance environment, or when the finished prompt holds a secret value the execution knows by then. An instance value that nothing declares is checked only after a tool reads it. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
 	},
 	"specification:prompts:97e0539c": {
 		"status": "covered",

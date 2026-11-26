@@ -12,7 +12,7 @@ import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
-import { resolveEnv, type Secrets } from "./env.ts"
+import { addSecret, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { mapStrings, redactor, redactText } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
@@ -160,21 +160,26 @@ const stopToolOutcome = (turn: Turn, calls: ReadonlyArray<ToolCall>, results: Re
   return { tool: call.name, callId: call.id, status: result.status, value } satisfies StopToolOutcome
 }
 
-// A variable that the prompt or one of its tools declares secret is known before the first request, so that the
-// system prompt check and redaction do not wait for a tool to read it.
-const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn, secrets: Secrets) {
+// Before the first request, and before spindle run prints a line, the execution learns every secret value that the
+// turn can resolve: the provider config's, each value of a name marked secret, and the instance value of each
+// variable that the prompt or one of its tools declares.
+export const learnSecrets = Effect.fn("learnSecrets")(function* (turn: Turn, secrets: Secrets) {
+  yield* resolveConfig(turn.model, secrets)
   const declared = [
     ...(turn.prompt.value.variables ?? []).map((variable) => ({ variable, scope: promptScope(turn) })),
     ...[...turn.tools.values()].flatMap((exposed) =>
       (exposed.tool.value.variables ?? []).map((variable) => ({ variable, scope: scopeFor(turn, exposed.entry) })),
     ),
   ]
-  for (const { variable, scope } of declared)
-    if (variable.type === "secret") {
-      secrets.names.add(variable.name)
-      const value = yield* resolveEnv(scope, variable.name)
-      if (value !== undefined) secrets.values.add(value)
-    }
+  for (const { variable } of declared) if (variable.type === "secret") secrets.names.add(variable.name)
+  const lookups = [
+    ...declared.map(({ variable, scope }) => ({ name: variable.name, scope })),
+    ...[...secrets.names].map((name) => ({ name, scope: promptScope(turn) })),
+  ]
+  for (const { name, scope } of lookups) {
+    const found = yield* lookupEnv(scope, name)
+    if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
+  }
 })
 
 const describeCause = (cause: Cause.Cause<unknown>): string => {
@@ -192,7 +197,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const trace: Array<TraceEntry> = []
     const modelCalls: Array<ModelCall> = []
     const pending: Array<Fiber.Fiber<void>> = []
-    const secrets: Secrets = { names: new Set(), values: options.secrets ?? new Set() }
+    const secrets = newSecrets(options.secrets)
     const redact = redactor(secrets.values)
     const observe = (event: ExecutionEvent) => (options.observe === undefined ? Effect.void : options.observe(event))
     // Only the text a tool, a provider, or a model wrote is redacted, never a field that the runtime reads back.
@@ -267,7 +272,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         services,
         execution,
         context,
-        secrets: secrets.values,
+        secrets,
       }
       const toolContext: ToolContext = {
         turn,
@@ -287,14 +292,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           Effect.succeed({ status: "error", error: `invokeTool(${name}) needs a calling tool and its uses list` }),
       })
       // A scripted run still learns the secret values of the model's real provider config.
-      if (options.provider !== undefined) yield* resolveConfig(turn.model, secrets)
+      yield* learnSecrets(turn, secrets)
       const provider =
         options.provider === undefined
           ? yield* providerFor(turn.model, promptState, secrets)
           : Effect.succeed(options.provider)
-      yield* addDeclaredSecrets(turn, secrets)
-      // A value a tool reads through env() joins the values later and is redacted, but it may be a text variable.
-      const barred: Secrets = { names: secrets.names, values: new Set(secrets.values) }
       const source = reasoningSource(turn)
       const acceptsDetails = (message: Message) => {
         const stored = message.metadata?.reasoning_source as Partial<typeof source> | null | undefined
@@ -305,7 +307,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       while (true) {
         step += 1
         yield* record("drain", "no queue before M1-6")
-        const system = yield* renderSystemPrompt(turn, barred)
+        const system = yield* renderSystemPrompt(turn, secrets)
         const messages = toProviderMessages(history, {
           side: turn.side,
           turnStart,

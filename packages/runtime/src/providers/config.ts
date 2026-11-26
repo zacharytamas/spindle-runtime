@@ -8,7 +8,7 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { instanceEnv, type Secrets } from "../execution/env.ts"
+import { addSecret, instanceEnv, type Secrets } from "../execution/env.ts"
 import { type Loaded, SetupError } from "../execution/turn.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -31,7 +31,7 @@ interface Resolution {
 
 const learn = (found: Resolution, name: string | undefined, value: unknown) => {
   if (name !== undefined) found.secrets.names.add(name)
-  if (typeof value === "string") found.secrets.values.add(value)
+  if (typeof value === "string") addSecret(found.secrets, value)
 }
 
 const fromSlot = Effect.fn("fromSlot")(function* (key: string, slot: ProviderConfigSlot, found: Resolution) {

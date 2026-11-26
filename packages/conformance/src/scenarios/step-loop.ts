@@ -402,9 +402,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       expect(
         (await render(undefined, { tone: "prompt-tone" }, { tone: "instance-tone" })).request?.messages[0]?.content,
       ).toContain("tone=prompt-tone")
-      expect((await render(undefined, undefined, { tone: "instance-tone" })).request?.messages[0]?.content).toContain(
-        "tone=instance-tone",
-      )
+      const instanceOnly = await render(undefined, undefined, { tone: "instance-tone" })
+      expect(instanceOnly.outcome.error?.message).toMatch(/^Prompt assistant interpolates variable tone, whose value/)
+      expect(instanceOnly.request).toBeUndefined()
       const missing = await render(undefined, undefined, {})
       expect(missing.outcome).toMatchObject({ status: "failed", reason: "fatal_error" })
       expect(missing.outcome.error?.message).toContain("tone")
@@ -1829,7 +1829,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     requirements: ["5522b650", "d263e879", "b7cd3b54"],
     run: async (driver) => {
       const marker = "SECRET-MARKER-7f3a"
-      const instance = { API_TOKEN: marker, LABEL: "shown" }
+      const instance = { API_TOKEN: marker }
       const interpolating = (variables: PromptDefinition["variables"]) =>
         ({
           prompt: [
@@ -1899,6 +1899,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
               { type: "env", property: "LABEL" },
             ],
             variables: [{ name: "LABEL", type: "text", required: true, description: "Label" }],
+            env: { LABEL: "shown" },
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
@@ -2001,6 +2002,83 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         )
         expect([label, setup.provider.requests.length]).toEqual([label, 0])
       }
+    },
+  },
+  {
+    name: "S26e treats every instance value as secret, so a text variable from the instance never reaches the system prompt",
+    requirements: [],
+    run: async (driver) => {
+      const instance = { DISPLAY: "DISPLAY-TEST-449", REGION: "region-test-731", ZONE: "zone-test-562" }
+      const display = new ScriptedProvider([{ text: "never" }])
+      await using(
+        driver,
+        {
+          provider: display,
+          prompt: {
+            prompt: [
+              { type: "text", content: "Shown on " },
+              { type: "env", property: "DISPLAY" },
+            ],
+            variables: [{ name: "DISPLAY", type: "text", required: false, description: "Where the answer is shown" }],
+          } as Partial<PromptDefinition>,
+        },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect([outcome.status, outcome.reason]).toEqual(["failed", "fatal_error"])
+          expect(outcome.error?.message).toMatch(
+            /^Prompt assistant interpolates variable DISPLAY, whose value comes from/,
+          )
+          expect(holding(outcome, instance.DISPLAY)).toEqual([])
+        },
+        instance,
+      )
+      expect(display.requests).toHaveLength(0)
+      const region = new ScriptedProvider([{ text: "never" }])
+      await using(
+        driver,
+        {
+          provider: region,
+          tools: {
+            locate: defineTool({
+              description: "Reads the region as text",
+              variables: [{ name: "REGION", type: "text", required: false, description: "The region" }],
+              execute: async () => ok("unused"),
+            }),
+          },
+          prompt: { prompt: `Serve ${instance.REGION} only.` },
+        },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect(outcome.error?.message).toMatch(
+            /^The system prompt that prompt assistant renders holds a secret value/,
+          )
+        },
+        instance,
+      )
+      expect(region.requests).toHaveLength(0)
+      const zone = new ScriptedProvider([{ toolCalls: [{ name: "zone", arguments: {} }] }, { text: "never" }])
+      await using(
+        driver,
+        {
+          provider: zone,
+          tools: {
+            zone: defineTool({
+              description: "Reads an instance value nothing declares",
+              execute: async (state: ThreadState) => ok(`read ${await state.instanceEnv?.("ZONE")}`),
+            }),
+          },
+          prompt: { prompt: `Serve ${instance.ZONE} only.` },
+        },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect([outcome.reason, outcome.steps]).toEqual(["fatal_error", 1])
+          expect(outcome.error?.message).toMatch(
+            /^The system prompt that prompt assistant renders holds a secret value/,
+          )
+        },
+        instance,
+      )
+      expect(zone.requests).toHaveLength(1)
     },
   },
   {

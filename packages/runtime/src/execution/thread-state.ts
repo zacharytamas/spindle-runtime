@@ -3,7 +3,7 @@ import { Context, Effect } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { type EnvScope, instanceEnv, resolveEnv } from "./env.ts"
+import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { lookup, type Side } from "./turn.ts"
 
 export interface ExecutionRecord {
@@ -24,7 +24,7 @@ export interface StateContext {
   readonly scope: EnvScope
   readonly from: Definition | undefined
   readonly context: Record<string, unknown>
-  readonly secrets: Set<string>
+  readonly secrets: Secrets
   readonly invoke: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
 }
 
@@ -85,8 +85,9 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () =>
     registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
-  const remember = (value: string) => {
-    state.secrets.add(value)
+  const remember = (value: string, barred: boolean) => {
+    if (barred) addSecret(state.secrets, value)
+    else state.secrets.values.add(value)
     return value
   }
   return {
@@ -154,12 +155,12 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     env: (name) =>
       run(
         Effect.gen(function* () {
-          const value = yield* resolveEnv(state.scope, name)
-          if (value === undefined) return yield* Effect.fail(new Error(`Environment variable ${name} has no value`))
-          return remember(value)
+          const found = yield* lookupEnv(state.scope, name)
+          if (found === undefined) return yield* Effect.fail(new Error(`Environment variable ${name} has no value`))
+          return remember(found.value, found.fromInstance || state.secrets.names.has(name))
         }),
       ),
-    instanceEnv: (name) => run(Effect.map(instanceEnv(name), (value) => value && remember(value))),
+    instanceEnv: (name) => run(Effect.map(instanceEnv(name), (value) => value && remember(value, true))),
     // Threads section 2.3: a value from any source but the thread is secret, and thread values arrive with setEnv.
     envType: () => Promise.resolve("secret"),
     setEnv: notYetAsync("setEnv", "M2"),
