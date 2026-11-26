@@ -12,7 +12,7 @@ import { z } from "zod"
 import type { LoadOptions, RuntimeDriver, RuntimeSession } from "../RuntimeDriver.ts"
 import { type RecordedRequest, ScriptedProvider } from "../ScriptedProvider.ts"
 import { rolesFor, SIDES } from "./messages.ts"
-import { callsOf, gate, history, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
+import { callsOf, gate, history, holding, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
 
 // A short lease, so that a session notices within a tenth of a second that another session settled its run.
 const LEASE: LoadOptions = { holderTimeoutMs: 500 }
@@ -1300,6 +1300,263 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         expect(await session.settled(thread)).toMatchObject({ status: "idle", steps: 1 })
         expect([reads, ran]).toEqual([1, ["read 1"]])
       })
+    },
+  },
+  {
+    name: "Q28 throws from queueTool when the arguments hold a known secret at any depth or in a property name, and queues nothing",
+    requirements: [],
+    run: async (driver) => {
+      const token = "QUEUED-SECRET-28"
+      const tried = gate()
+      const leave = gate()
+      const received: Array<unknown> = []
+      const refusals: Array<{ tag: string; message: string }> = []
+      const take = defineTool({
+        description: "Record what it was given",
+        execute: async () => {
+          received.push("ran")
+          return ok("took")
+        },
+      })
+      const queue = defineTool({
+        description: "Try to queue a tool with a secret in its arguments",
+        variables: [{ name: "QUEUE_TOKEN", type: "secret", required: true, description: "A secret" }],
+        execute: async (state: ThreadState) => {
+          const secret = await state.env("QUEUE_TOKEN")
+          for (const args of [
+            { text: secret },
+            { nested: { list: [{ deep: `before ${secret} after` }] } },
+            { [secret]: 1 },
+            { nested: [{ [`key ${secret}`]: true }] },
+          ])
+            try {
+              state.queueTool("take", args)
+              refusals.push({ tag: "accepted", message: "" })
+            } catch (error) {
+              const refused = error as { _tag?: string; message?: string }
+              refusals.push({ tag: String(refused._tag), message: String(refused.message) })
+            }
+          tried.release()
+          await leave.opened
+          return ok("tried")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      const session = await driver.load(project({ provider, tools: { queue, take } }), {
+        instanceEnv: { QUEUE_TOKEN: token },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        const run = quiet(session.send(thread, "go"))
+        await tried.opened
+        const whileHeld = (await session.inspect(thread)).queue
+        leave.release()
+        expect(await run).toMatchObject({ status: "idle", steps: 2 })
+        expect({
+          tags: refusals.map((refusal) => refusal.tag),
+          queued: whileHeld.map((entry) => entry.kind),
+          received,
+        }).toEqual({ tags: Array.from({ length: 4 }, () => "SecretInArguments"), queued: [], received: [] })
+        expect(holding(refusals, token)).toEqual([])
+      } finally {
+        await session.close()
+      }
+    },
+  },
+  {
+    name: "Q29 redacts the name and the description of a queued attachment before the queue stores the entry",
+    requirements: [],
+    run: async (driver) => {
+      const token = "QUEUED-SECRET-29"
+      const queuedIt = gate()
+      const leave = gate()
+      const queue = defineTool({
+        description: "Queue a message whose attachment names a secret",
+        variables: [{ name: "QUEUE_TOKEN", type: "secret", required: true, description: "A secret" }],
+        execute: async (state: ThreadState) => {
+          const secret = await state.env("QUEUE_TOKEN")
+          await state.queueMessage({
+            role: "user",
+            content: "see the file",
+            attachments: [{ ...ref, name: `${secret}.txt`, description: `about ${secret}` }],
+          })
+          queuedIt.release()
+          await leave.opened
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      const session = await driver.load(project({ provider, tools: { queue } }), {
+        instanceEnv: { QUEUE_TOKEN: token },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        const run = quiet(session.send(thread, "go"))
+        await queuedIt.opened
+        const whileHeld = (await session.inspect(thread)).queue
+        leave.release()
+        expect(await run).toMatchObject({ status: "idle", steps: 2 })
+        expect(whileHeld).toHaveLength(1)
+        expect(
+          holding(
+            whileHeld.map((entry) => JSON.parse(entry.payload) as unknown),
+            token,
+          ),
+        ).toEqual([])
+        const stored = await session.messages(thread)
+        expect(stored.find((message) => message.content === "see the file")?.attachments).toEqual([
+          { ...ref, name: "[redacted].txt", description: "about [redacted]" },
+        ])
+        expect(holding(stored, token)).toEqual([])
+        expect(holding(provider.requests, token)).toEqual([])
+      } finally {
+        await session.close()
+      }
+    },
+  },
+  {
+    name: "Q30 keeps the id and the tool name of a queued call that a secret overlaps, and pairs its result with it",
+    requirements: ["41278e5e"],
+    run: async (driver) => {
+      const ran: Array<string> = []
+      const worker = defineTool({
+        description: "Record the run",
+        execute: async () => {
+          ran.push("worker")
+          return ok("ran")
+        },
+      })
+      const queue = defineTool({
+        description: "Learn three secrets, then queue a tool",
+        execute: async (state: ThreadState) => {
+          for (const name of ["ID_PREFIX", "TOOL_NAME", "FIELD_NAME"]) await state.instanceEnv?.(name)
+          state.queueTool("worker", {})
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      // The values equal the prefix of a queued call's id, the name of the queued tool, and a field name of a stored call.
+      const session = await driver.load(project({ provider, tools: { queue, worker } }), {
+        instanceEnv: { ID_PREFIX: "queued-", TOOL_NAME: "worker", FIELD_NAME: "arguments" },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const stored = await session.messages(thread)
+        const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
+        const results = stored.filter((message) => message.role === "tool" && message.tool_call_id !== "c_queue")
+        expect({
+          call: { ...call, id: call?.id.includes("[redacted]") === false },
+          results: results.map((m) => [m.tool_call_id === call?.id, m.name, m.tool_status]),
+          ran,
+        }).toEqual({
+          call: { id: true, type: "function", function: { name: "worker", arguments: "{}" } },
+          results: [[true, "worker", "success"]],
+          ran: ["worker"],
+        })
+        expect(history(provider.requests[1]).map(sideOf).slice(-2)).toEqual([
+          ["assistant", null, [call?.id]],
+          ["tool", call?.id],
+        ])
+      } finally {
+        await session.close()
+      }
+    },
+  },
+  {
+    name: "Q31 leaves no secret that holds a quote in the decoded arguments of a stored queued call or in the next request",
+    requirements: [],
+    run: async (driver) => {
+      const token = 'canary"quoted'
+      const received: Array<string> = []
+      const take = defineTool({
+        description: "Record what it was given",
+        args: z.object({ text: z.string() }),
+        execute: async (_state, { text }) => {
+          received.push(text)
+          return ok("took it")
+        },
+      })
+      // The tool queues the value before the runtime knows it as a secret, so the call is admitted. The runtime
+      // learns the value afterwards, and the stored call must not show it.
+      const queue = defineTool({
+        description: "Queue a value, then learn that it is a secret",
+        execute: async (state: ThreadState) => {
+          state.queueTool("take", { text: token })
+          await state.instanceEnv?.("LATE_TOKEN")
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      const session = await driver.load(project({ provider, tools: { queue, take } }), {
+        instanceEnv: { LATE_TOKEN: token },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const stored = await session.messages(thread)
+        const [call] = callsOf(stored.find((message) => message.metadata?.queued === true))
+        const decoded = JSON.parse(call?.function.arguments ?? "null") as unknown
+        expect(received).toHaveLength(1)
+        expect({ inArguments: holding(decoded, token), inRequests: holding(provider.requests, token) }).toEqual({
+          inArguments: [],
+          inRequests: [],
+        })
+        expect(holding(stored, token)).toEqual([])
+      } finally {
+        await session.close()
+      }
+    },
+  },
+  {
+    name: "Q32 queues a tool whose arguments hold no secret from a tool that knows one, and runs it with those arguments",
+    requirements: [],
+    run: async (driver) => {
+      const received: Array<string> = []
+      const take = defineTool({
+        description: "Record what it was given",
+        args: z.object({ text: z.string() }),
+        execute: async (_state, { text }) => {
+          received.push(text)
+          return ok(`took ${text}`)
+        },
+      })
+      const queue = defineTool({
+        description: "Read a secret, then queue plain arguments",
+        variables: [{ name: "QUEUE_TOKEN", type: "secret", required: true, description: "A secret" }],
+        execute: async (state: ThreadState) => {
+          await state.env("QUEUE_TOKEN")
+          state.queueTool("take", { text: "plain text" })
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_queue", name: "queue", arguments: {} }] },
+        { text: "done" },
+      ])
+      const session = await driver.load(project({ provider, tools: { queue, take } }), {
+        instanceEnv: { QUEUE_TOKEN: "QUEUED-SECRET-32" },
+      })
+      try {
+        const thread = await session.createThread("assistant")
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(received).toEqual(["plain text"])
+        expect((await session.messages(thread)).map((m) => m.content)).toContain("took plain text")
+      } finally {
+        await session.close()
+      }
     },
   },
 ]
