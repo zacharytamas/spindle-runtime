@@ -211,7 +211,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           if (claimed) return yield* start(threadId, run, options)
           flows.delete(run.flowId)
           return undefined
-        })
+        }).pipe(Effect.uninterruptible)
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.

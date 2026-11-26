@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, type Setup } from "../../../conformance/src/scenarios/step-loop.ts"
@@ -9,7 +9,7 @@ import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
-import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -306,4 +306,39 @@ describe("the history an execution keeps", () => {
     expect(copy.metadata?.list).not.toBe(metadata.list)
     expect(copy.attachments?.[0]).not.toBe(attachments[0])
   })
+})
+
+it.effect("runs the committed claim when its sender is interrupted before executor installation", () => {
+  const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }])
+  let cut = true
+  const store = Layer.effect(
+    ThreadStore,
+    Effect.gen(function* () {
+      const original = yield* ThreadStore
+      return ThreadStore.of({
+        ...original,
+        admit: (...args) =>
+          original.admit(...args).pipe(
+            Effect.tap(() =>
+              Effect.withFiberSucceed((fiber) => {
+                if (cut) {
+                  cut = false
+                  fiber.interruptUnsafe()
+                }
+              }),
+            ),
+          ),
+      })
+    }),
+  ).pipe(Layer.provide(inMemory()))
+  return Effect.gen(function* () {
+    const thread = yield* createThread("assistant")
+    const sender = yield* Effect.forkChild(sendMessage(thread.id, "one"))
+    yield* Fiber.await(sender)
+    const supervisor = yield* ThreadSupervisor
+    yield* supervisor.settled(thread.id)
+    expect((yield* supervisor.status(thread.id)).state).toBe("idle")
+    expect((yield* sendMessage(thread.id, "two")).outcome?.status).toBe("idle")
+    expect(provider.requests).toHaveLength(2)
+  }).pipe(Effect.provide(Layer.merge(registryOf(project({ provider })), Layer.provideMerge(supervisorLayer(), store))))
 })
