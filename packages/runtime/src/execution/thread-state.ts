@@ -8,13 +8,15 @@ import type {
 } from "@standardagents/spec"
 import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
+import { toJson } from "../store/schema.ts"
 import type { Thread } from "../store/ThreadStore.ts"
-import { HandleExpired, ThreadStore, WritingHandle } from "../store/ThreadStore.ts"
+import { HandleExpired, ThreadStore, ValueNotJson, WritingHandle } from "../store/ThreadStore.ts"
 import type { Callback } from "./callback.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
+import { mapStrings } from "./redact.ts"
 import { queueTarget } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
 
@@ -70,6 +72,12 @@ export interface ThreadControl {
 export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
   override get message() {
     return `Execution ${this.flowId} has ended, so Spindle refused this call from a ThreadState that belongs to it`
+  }
+}
+
+export class SecretInArguments extends Data.TaggedError("SecretInArguments") {
+  get message() {
+    return "queueTool arguments contain a secret"
   }
 }
 
@@ -303,13 +311,25 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     queueTool: (toolName, args) =>
       runSync(
         Effect.gen(function* () {
-          const given: unknown = args ?? {}
+          const given: unknown = args === undefined ? {} : args
           if (!isRecord(given))
             return yield* new InvalidArguments({
               message: `queueTool(${String(toolName)}) takes an object of arguments`,
             })
           const target = yield* queueTarget(state.caller, state.from, toolName)
-          yield* state.control.queueTool(target, given)
+          const encoded = toJson(given)
+          if (typeof encoded !== "string") return yield* new ValueNotJson({ field: "queued arguments", ...encoded })
+          const plain = JSON.parse(encoded)
+          if (state.secrets.values.size) {
+            let found = false
+            const check = (text: string) => {
+              for (const secret of state.secrets.values) if (secret && text.includes(secret)) found = true
+              return text
+            }
+            mapStrings(plain, check, check)
+            if (found) return yield* new SecretInArguments()
+          }
+          yield* state.control.queueTool(target, plain)
         }),
       ),
     invokeTool: (toolName, args) => run(state.invoke(toolName, args)),

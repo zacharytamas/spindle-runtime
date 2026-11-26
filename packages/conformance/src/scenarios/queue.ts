@@ -743,7 +743,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "Q17 stores a queued call and a queued message that a tool wrote without its secrets, and runs the tool with them",
+    name: "Q17 refuses the secret in queued tool arguments and stores a redacted queued message",
     requirements: [],
     run: async (driver) => {
       const token = "QUEUED-SECRET-81"
@@ -761,7 +761,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         variables: [{ name: "QUEUE_TOKEN", type: "secret", required: true, description: "A secret" }],
         execute: async (state: ThreadState) => {
           const secret = await state.env("QUEUE_TOKEN")
-          state.queueTool("take", { text: secret })
+          expect(() => state.queueTool("take", { text: secret })).toThrow()
           await state.queueMessage({ role: "user", content: `note ${secret}`, metadata: { [secret]: secret } })
           return ok("queued")
         },
@@ -776,7 +776,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       try {
         const thread = await session.createThread("assistant")
         expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        expect(received).toEqual([token])
+        expect(received).toEqual([])
         const stored = await session.messages(thread)
         expect(JSON.stringify(stored)).not.toContain(token)
         expect(JSON.stringify(provider.requests)).not.toContain(token)
@@ -786,12 +786,10 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
           ["user", "go"],
           ["assistant", "{}"],
           ["tool", "queued"],
-          ["assistant", '{"text":"[redacted]"}'],
-          ["tool", "took [redacted]"],
           ["user", "note [redacted]"],
           ["assistant", "done"],
         ])
-        expect(stored[5]?.metadata).toEqual({ "[redacted]": "[redacted]" })
+        expect(stored[3]?.metadata).toEqual({ "[redacted]": "[redacted]" })
       } finally {
         await session.close()
       }
@@ -1294,6 +1292,38 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         expect(await session.settled(thread)).toMatchObject({ status: "idle", steps: 1 })
         expect([reads, ran]).toEqual([1, ["read 1"]])
       })
+    },
+  },
+  {
+    name: "Q41 refuses a queued argument learned from the instance by an at-rest hook",
+    requirements: [],
+    run: async (driver) => {
+      let refusal: unknown
+      const hook = defineHook({
+        hook: "after_thread_created",
+        id: "admit",
+        execute: async (state) => {
+          const secret = await state.env("UNDECLARED")
+          try {
+            state.queueTool("take", { secret })
+          } catch (error) {
+            refusal = error
+          }
+        },
+      })
+      const take = defineTool({ description: "Return success", execute: async () => ok("ran") })
+      const session = await driver.load(
+        project({ provider: new ScriptedProvider([]), hooks: [hook], agent: { hooks: ["admit"] }, tools: { take } }),
+        { instanceEnv: { UNDECLARED: "example-instance-value" } },
+      )
+      try {
+        const thread = await session.createThread("assistant")
+        expect(refusal).toMatchObject({ _tag: "SecretInArguments" })
+        expect((await session.inspect(thread)).queue).toEqual([])
+        expect(await session.messages(thread)).toEqual([])
+      } finally {
+        await session.close()
+      }
     },
   },
   {

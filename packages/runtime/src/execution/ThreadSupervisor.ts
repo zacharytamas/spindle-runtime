@@ -9,7 +9,7 @@ import { redactor } from "./redact.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, type RunOutcome, runExecution } from "./step.ts"
 import type { Run, ThreadControl } from "./thread-state.ts"
-import { QueueRefused } from "./tools.ts"
+import { QueueRefused, redactAttachment } from "./tools.ts"
 import { roleOf, sidesOf } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
@@ -103,7 +103,13 @@ const queuedMessage = (input: QueueMessageInput, secrets: Secrets) =>
       content: redact(input.content),
       ...(input.silent === undefined ? {} : { silent: input.silent }),
       ...(input.metadata === undefined ? {} : { metadata: redactMetadata(input.metadata, redact) }),
-      ...(attachments.length === 0 ? {} : { attachments: attachments as Array<AttachmentRef> }),
+      ...(attachments.length === 0
+        ? {}
+        : {
+            attachments: attachments.map((item) =>
+              redactAttachment(item as Record<string, unknown>, redact),
+            ) as Array<AttachmentRef>,
+          }),
     } satisfies QueueMessageInput
   })
 
