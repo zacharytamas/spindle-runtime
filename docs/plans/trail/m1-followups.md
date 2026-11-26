@@ -4,7 +4,9 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 
 ## M1-5, hooks
 
-- A message that a tool injects or edits keeps a secret that appears as a property name, when its content is JSON text. The M1-4 verifier showed it at `3020531`. Message content is free text, so it takes a plain replacement of the secret. Only the top-level text of a tool result is treated as JSON.
+- Fixed in the M1-5 fix round. A secret is now replaced everywhere in text that a tool or a hook wrote, property names included.
+- A request hook can put a secret into a message of a role other than system, and the provider receives it. The developer's hook wrote that text. This is a documented limit, not a defect.
+- On a long thread, request assembly walks every stored message at every step, and each `filter_messages` hook gets a deep copy of the whole snapshot, which takes 8 ms at 5,000 messages.
 
 ## M1-6, queues and one execution per thread
 
@@ -15,6 +17,8 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 - The operator's open decision on a tool call that was running when the process died. The default is no replay. The next run stores an error result for that call.
 - Cleanup on interrupt is incomplete.
 - A caller of the runtime's API can pass `NaN` or `Infinity` as `retries`.
+- A thread state that a tool kept and used after its run ended fails with a database driver error. It needs a typed error, as a hook past its time limit already has.
+- Hooks that a tool's `injectMessage` started run on their own promise and survive an interrupt.
 
 ## M1-7, chat, and a cleanup PR after it
 
@@ -32,6 +36,7 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 
 ## A provider PR, or milestone 7
 
+- The OpenAI-compatible provider drops `extra_content` on a tool call.
 - The OpenAI-compatible provider does not forward `user`, sends no reasoning token budget, drops the `stream_options` sibling, reports zero usage when the endpoint sends none, accepts an empty JSON object from `generate`, and mishandles multi-line event data, an HTTP-date `Retry-After`, and status 408.
 
 ## Milestone 2
@@ -53,6 +58,11 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 
 ## Readings the operator can overrule
 
+- A failing create hook cannot stop a write the loop must make, which is the human's message, the model's response, or a tool result. The loop stores the last good version. A hook that fails on an optional injected message does prevent it.
+- `tool_call_done` fires, with an error result, for a call that began to stream in a response that then failed.
+- An inbound human message meets the agent's hooks and not the prompt's.
+- Only the store's own API may write to a thread. Raw SQL from outside it is not supported.
+- No tool is replayed after a crash. An unanswered tool call gets an error result.
 - A prompt variable whose value comes from the instance environment is refused, because the spec classifies that source as secret and forbids a secret in a system prompt. A default in an agent or prompt definition is treated as text.
 - Prompt variables use the package's `env` prompt part. There is no placeholder syntax.
 - The key-value store accepts plain JSON data only.
