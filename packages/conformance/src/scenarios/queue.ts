@@ -941,4 +941,126 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       )
     },
   },
+  {
+    name: "Q21 keeps the result of a call that a stop left unstarted an error that says it did not run, whatever a hook returns",
+    requirements: ["7a032a6c"],
+    run: async (driver) => {
+      const success = { status: "success" as const, result: "sent successfully" }
+      const failureHook = defineHook({
+        hook: "after_tool_call_failure",
+        id: "relabel_failure",
+        execute: async () => success,
+      })
+      const resultHook = defineHook({
+        hook: "before_store_tool_result",
+        id: "relabel_result",
+        execute: async () => success,
+      })
+      const createHook = defineHook({
+        hook: "before_create_message",
+        id: "relabel_message",
+        execute: async (_state, message) =>
+          message.role === "tool"
+            ? { ...message, tool_status: "success" as const, content: "sent successfully" }
+            : message,
+      })
+      const seen: Record<string, unknown> = {}
+      for (const hook of [failureHook, resultHook, createHook]) {
+        let execution: ExecutionState | null = null
+        let entries = 0
+        const keep = defineHook({
+          hook: "filter_messages",
+          id: "keep",
+          execute: async (state, messages) => {
+            execution = state.execution
+            return messages
+          },
+        })
+        const worker = defineTool({
+          description: "Count each run",
+          execute: async () => {
+            entries += 1
+            return ok("the effect happened")
+          },
+        })
+        const held = gate()
+        const release = gate()
+        const provider = new ScriptedProvider([
+          async () => {
+            held.release()
+            await release.opened
+            return {
+              toolCalls: [
+                { id: "x", name: "worker", arguments: {} },
+                { id: "y", name: "worker", arguments: {} },
+              ],
+            }
+          },
+        ])
+        await using(
+          driver,
+          { provider, tools: { worker }, hooks: [keep, hook], prompt: { hooks: ["keep", hook.id] } },
+          async (session, thread) => {
+            const run = quiet(session.send(thread, "go"))
+            await held.opened
+            ;(execution as ExecutionState | null)?.stop()
+            release.release()
+            const outcome = await run
+            const results = (await session.messages(thread)).filter((message) => message.role === "tool")
+            seen[hook.id] = {
+              entries,
+              outcome: [outcome.status, outcome.reason],
+              results: results.map((m) => [m.tool_call_id, m.tool_status, /did not run/.test(m.content ?? "")]),
+            }
+          },
+        )
+      }
+      const kept = {
+        entries: 0,
+        outcome: ["idle", "aborted"],
+        results: [
+          ["x", "error", true],
+          ["y", "error", true],
+        ],
+      }
+      expect(seen).toEqual({ relabel_failure: kept, relabel_result: kept, relabel_message: kept })
+    },
+  },
+  {
+    name: "Q22 still lets a failure hook replace the result of a call that ran and failed",
+    requirements: [],
+    run: async (driver) => {
+      let entries = 0
+      const failing = defineTool({
+        description: "Run and fail",
+        execute: async () => {
+          entries += 1
+          return { status: "error" as const, error: "the tool failed" }
+        },
+      })
+      const recover = defineHook({
+        hook: "after_tool_call_failure",
+        id: "recover",
+        execute: async () => ({ status: "success" as const, result: "recovered by the hook" }),
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_failing", name: "failing", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools: { failing }, hooks: [recover], prompt: { hooks: ["recover"] } },
+        async (session, thread) => {
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const result = (await session.messages(thread)).find((message) => message.role === "tool")
+          expect([entries, result?.tool_call_id, result?.tool_status, result?.content]).toEqual([
+            1,
+            "c_failing",
+            "success",
+            "recovered by the hook",
+          ])
+        },
+      )
+    },
+  },
 ]
