@@ -198,6 +198,55 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("insertMessage keeps the id and creation time the caller chose and stores it in arrival order", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* TestClock.adjust("5 seconds")
+        const [first] = yield* store.appendMessages(thread.id, [user("first")])
+        const inserted = yield* store.insertMessage(thread.id, {
+          id: "chosen-id",
+          created_at: 42,
+          role: "user",
+          content: "second",
+          silent: true,
+          metadata: { stamped: true },
+        })
+        expect(inserted).toMatchObject({ id: "chosen-id", created_at: 42, content: "second", silent: true })
+        expect(yield* store.getMessage(thread.id, "chosen-id")).toEqual(inserted)
+        const read = (yield* store.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
+        expect(read.map((m) => [m.id, m.created_at])).toEqual([
+          [first?.id, 5_000_000],
+          ["chosen-id", 42],
+        ])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("insertMessage fails with MessageIdTaken for an id that any thread holds and keeps the first row", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const other = yield* store.createThread({ agentId: "assistant" })
+        const [existing] = yield* store.appendMessages(thread.id, [user("original")])
+        const id = existing?.id ?? ""
+        const again = yield* Effect.flip(
+          store.insertMessage(thread.id, { id, created_at: 1, role: "user", content: "replacement" }),
+        )
+        expect(again).toMatchObject({ _tag: "MessageIdTaken", messageId: id })
+        const elsewhere = yield* Effect.flip(
+          store.insertMessage(other.id, { id, created_at: 1, role: "user", content: "elsewhere" }),
+        )
+        expect(elsewhere._tag).toBe("MessageIdTaken")
+        expect(yield* store.getMessage(thread.id, id)).toEqual(existing)
+        expect((yield* store.getMessages(thread.id, { includeSilent: true })).total).toBe(1)
+        expect((yield* store.getMessages(other.id, { includeSilent: true })).total).toBe(0)
+        const missing = yield* Effect.flip(
+          store.insertMessage("missing", { id: "fresh", created_at: 1, role: "user", content: "x" }),
+        )
+        expect(missing._tag).toBe("ThreadNotFound")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("appendMessages keeps reasoning_content and reasoning_details independently of each other", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore

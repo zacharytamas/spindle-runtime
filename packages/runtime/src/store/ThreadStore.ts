@@ -61,6 +61,14 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
   readonly messageId: string
 }> {}
 
+export type IdentifiedMessage = NewMessage & Pick<Message, "id" | "created_at">
+
+export class MessageIdTaken extends Data.TaggedError("MessageIdTaken")<{ readonly messageId: string }> {
+  override get message() {
+    return `a message with id ${JSON.stringify(this.messageId)} already exists`
+  }
+}
+
 export class ValueNotJson extends Data.TaggedError("ValueNotJson")<{
   readonly field: string
   readonly path: string
@@ -98,6 +106,11 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       messages: ReadonlyArray<NewMessage>,
     ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ValueNotJson | SqlError>
+    // Stores a message whose id and created_at the caller already chose, as a before_create_message hook saw them.
+    readonly insertMessage: (
+      threadId: string,
+      message: IdentifiedMessage,
+    ) => Effect.Effect<Message, ThreadNotFound | ValueNotJson | MessageIdTaken | SqlError>
     readonly getMessages: (
       threadId: string,
       options?: GetMessagesOptions,

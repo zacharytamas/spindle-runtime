@@ -21,6 +21,7 @@ import {
 import {
   InvalidMessagesQuery,
   KeyNotWellFormed,
+  MessageIdTaken,
   MessageNotFound,
   ThreadNotFound,
   ThreadStore,
@@ -135,6 +136,23 @@ export const layer = Layer.effect(
               )
             for (const row of rows) yield* sql`INSERT INTO messages ${sql.insert(row)}`
             return rows.map(toMessage)
+          }),
+        ),
+
+      insertMessage: (threadId, message) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            yield* requireThread(threadId)
+            // Message ids are unique across threads, so an id that another thread holds is taken too.
+            const taken = yield* sql`SELECT 1 FROM messages WHERE id = ${message.id}`
+            if (taken.length > 0) return yield* new MessageIdTaken({ messageId: message.id })
+            const row = messageRow(threadId, message.id, message.created_at, message, {
+              attachments:
+                message.attachments == null ? null : yield* json("the message attachments", message.attachments),
+              metadata: yield* json("the message metadata", message.metadata ?? {}),
+            })
+            yield* sql`INSERT INTO messages ${sql.insert(row)}`
+            return toMessage(row)
           }),
         ),
 
