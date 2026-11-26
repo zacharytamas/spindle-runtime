@@ -75,6 +75,19 @@ const everyWrite = async (state: ThreadState, messageId: string, label: string, 
 
 const all = (names: ReadonlyArray<string>, outcome: string) => Object.fromEntries(names.map((name) => [name, outcome]))
 
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000
+
+// Runs the body with the wall clock of this process moved by the shift. Timers keep their own time.
+const withClockShift = async <A>(shiftMs: number, body: () => Promise<A>): Promise<A> => {
+  const real = Date.now
+  Date.now = () => real() + shiftMs
+  try {
+    return await body()
+  } finally {
+    Date.now = real
+  }
+}
+
 export const ownershipScenarios: ReadonlyArray<Scenario> = [
   {
     name: "O01 refuses every write of a tool whose thread was recovered by force, and leaves the successor's thread as it was",
@@ -300,6 +313,42 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
           await run
           expect((await contents(session, thread))[0]).toBe("A")
         },
+      )
+    },
+  },
+  {
+    name: "O05 keeps a thread running whose holder is alive, however far the observer's wall clock moves",
+    requirements: ["286367b3"],
+    run: async (driver) => {
+      const held = gate()
+      const release = gate()
+      const provider = new ScriptedProvider([
+        async () => {
+          held.release()
+          await release.opened
+          return { text: "the real reply" }
+        },
+      ])
+      await using(
+        driver,
+        { provider },
+        async (session, thread, peer) => {
+          const run = quiet(session.send(thread, "go"))
+          await held.opened
+          const observer = await peer.state(thread)
+          const seen: Array<string> = []
+          try {
+            for (const shift of [YEAR_MS, -YEAR_MS])
+              seen.push(await withClockShift(shift, async () => (await observer.status()).state))
+            seen.push((await observer.status()).state)
+          } finally {
+            release.release()
+          }
+          expect(seen).toEqual(["running", "running", "running"])
+          expect(await run).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          expect(await contents(session, thread)).toEqual(["go", "the real reply"])
+        },
+        {},
       )
     },
   },
