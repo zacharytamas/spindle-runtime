@@ -1,4 +1,5 @@
 import type {
+  HookToolCall,
   LLMProviderInterface,
   Message,
   PromptToolConfig,
@@ -10,9 +11,20 @@ import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
-import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
-import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
+import {
+  buildRequest,
+  checkSystemPrompt,
+  fromLLMMessage,
+  pastOf,
+  promptScope,
+  renderSystemPrompt,
+  toLLMMessage,
+  toProviderMessages,
+} from "./assemble.ts"
+import { callModel, type ModelCall, type ModelResponse, type StreamedCalls } from "./call.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
+import { countHooks, has, hookScope, runHooks, turnHooks } from "./hooks.ts"
+import { createMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
@@ -86,6 +98,16 @@ const parseJson = (text: string | undefined): unknown => {
 
 const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...` : text)
 
+// Messages section 1 stores arguments as the JSON text of an object, so arguments that are not one are kept as the
+// text of invalid_json.
+const argumentsOf = (call: ToolCall) => JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText })
+
+const hookCall = (call: { readonly id: string; readonly name: string }, args: string): HookToolCall => ({
+  id: call.id,
+  type: "function",
+  function: { name: call.name, arguments: args },
+})
+
 // A call is run only when the provider named it and finished its arguments as one JSON object.
 const toolCallsOf = (response: ModelResponse): Array<ToolCall> =>
   [...response.calls.values()].map((call) => ({
@@ -109,9 +131,7 @@ const reasoningSource = (turn: Turn) => ({
 })
 
 // The response is stored as the model returned it, so the stored arguments are what the model sent and what the
-// next request shows. The tool gets them after its schema validates them, which may transform a value. Messages
-// section 1 stores arguments as the JSON text of an object, so arguments that are not one are kept as the text of
-// invalid_json.
+// next request shows. The tool gets them after its schema validates them, which may transform a value.
 const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
@@ -128,10 +148,7 @@ const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArr
             calls.map((call) => ({
               id: call.id,
               type: "function",
-              function: {
-                name: call.name,
-                arguments: JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText }),
-              },
+              function: { name: call.name, arguments: argumentsOf(call) },
             })),
           ),
     reasoning_content: response.reasoning,
@@ -259,6 +276,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const loop = Effect.gen(function* () {
       const thread = yield* store.getThread(threadId)
       const turn = yield* prepareTurn(thread.agentId)
+      const hookSet = yield* turnHooks(turn)
       const history = [...(yield* store.getMessages(threadId, { order: "asc", includeSilent: true })).messages]
       const execution: ExecutionRecord = {
         flowId,
@@ -271,13 +289,23 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         promptPath: [turn.prompt.definition.qualifiedName],
       }
       const context: Record<string, unknown> = {}
+      const noInvoke = (name: string) =>
+        Effect.succeed<ToolResult>({
+          status: "error",
+          error: `invokeTool(${name}) needs a calling tool and its uses list`,
+        })
+      const hooks = hookScope(hookSet, (hook) =>
+        makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, invoke: noInvoke }),
+      )
       const base = {
         thread,
         services,
         execution,
         context,
         secrets,
+        hooks,
       }
+      const write = { threadId, hooks, secrets, history }
       const toolContext: ToolContext = {
         turn,
         stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined): ThreadState =>
@@ -292,8 +320,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         ...base,
         scope: promptScope(turn),
         from: turn.prompt.definition,
-        invoke: (name) =>
-          Effect.succeed({ status: "error", error: `invokeTool(${name}) needs a calling tool and its uses list` }),
+        invoke: noInvoke,
       })
       // A scripted run still learns the secret values of the model's real provider config.
       yield* learnSecrets(turn, secrets)
@@ -307,21 +334,55 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         return stored?.definition === source.definition && stored?.model === source.model
       }
       const prompt = turn.prompt.value
-      const turnStart = turnStartOf(history, turn.side)
+      const view = {
+        side: turn.side,
+        past: pastOf(history, turn.side),
+        includeChat: prompt.includeChat === true,
+        includePastTools: prompt.includePastTools === true,
+        includeReasoning: prompt.reasoning?.include !== false,
+        acceptsDetails,
+      }
+      // Hooks section 5. A call that started in a response the loop then discarded is done too, and never ran.
+      const streamed: StreamedCalls | undefined =
+        has(hooks, "tool_call_started") || has(hooks, "tool_call_done")
+          ? {
+              progressArgument: (name) => turn.tools.get(name)?.tool.value.progressArgument,
+              started: (call, progress) =>
+                runHooks(hooks, "tool_call_started", [hookCall(call, call.argumentsText)], progress),
+              abandoned: (calls) =>
+                Effect.forEach(
+                  calls,
+                  (call) =>
+                    runHooks(hooks, "tool_call_done", [hookCall(call, call.argumentsText)], {
+                      status: "error",
+                      error: "Spindle did not run this call, because the model response that held it failed.",
+                    }),
+                  { discard: true },
+                ),
+            }
+          : undefined
       while (true) {
         step += 1
         yield* record("drain", "no queue before M1-6")
-        const system = yield* renderSystemPrompt(turn, secrets)
-        const messages = toProviderMessages(history, {
-          side: turn.side,
-          turnStart,
-          includeChat: prompt.includeChat === true,
-          includePastTools: prompt.includePastTools === true,
-          includeReasoning: prompt.reasoning?.include !== false,
-          acceptsDetails,
-        })
+        // Runtime section 4 orders the seven steps of an assembly.
+        const rendered = yield* renderSystemPrompt(turn, secrets)
+        yield* record("assemble", "interpolate the system prompt")
+        const system = yield* runHooks(hooks, "after_system_message", [], rendered)
+        yield* checkSystemPrompt(turn, system, secrets)
+        yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
+        // The snapshot is the persisted history at the moment filter_messages starts. A message written later
+        // belongs to the next assembly.
+        yield* record("assemble", `snapshot, ${history.length} messages`)
+        const filtered = yield* runHooks(hooks, "filter_messages", [], history.slice())
+        yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
+        const transformed = toProviderMessages(filtered, view)
+        yield* record("assemble", `transform, ${transformed.length} provider messages`)
+        const messages = has(hooks, "prefilter_llm_history")
+          ? (yield* runHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
+          : transformed
+        yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
         const request = buildRequest(turn, system, messages, abort.signal)
-        yield* record("assemble", `${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
+        yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
         yield* observe({ type: "request", request })
         const response = yield* callModel(
           {
@@ -332,6 +393,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             calls: modelCalls,
             pending,
             record: (detail) => record("call", detail),
+            ...(streamed === undefined ? {} : { streamed }),
           },
           request,
         )
@@ -340,12 +402,9 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
         const calls = toolCallsOf(response)
-        const [assistant] = yield* store.appendMessages(threadId, [responseMessage(turn, response, calls)])
-        if (assistant !== undefined) {
-          history.push(assistant)
-          yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
-          yield* observe({ type: "message", message: assistant })
-        }
+        const assistant = yield* createMessage(write, responseMessage(turn, response, calls), true)
+        yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
+        yield* observe({ type: "message", message: assistant })
         if (calls.length === 0) {
           yield* record("tools", "none")
           yield* record("persist-results", "none")
@@ -354,6 +413,16 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
           const returned = yield* runToolCall(toolContext, call)
+          // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the
+          // stored message, then tool_call_done with what was stored.
+          const toolCall = hookCall(call, argumentsOf(call))
+          const branched = yield* runHooks(
+            hooks,
+            returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
+            [toolCall],
+            returned,
+          )
+          const final = yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
           const save = (result: ToolResult) =>
             Effect.gen(function* () {
               const { redacted, message } = yield* Effect.try({
@@ -363,22 +432,19 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
                 }),
                 catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
               })
-              const [stored] = yield* store.appendMessages(threadId, [message])
-              return { redacted, stored }
+              return { redacted, stored: yield* createMessage(write, message, true) }
             })
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
-          const { redacted: result, stored } = yield* save(returned).pipe(
+          const { redacted: result, stored } = yield* save(final).pipe(
             Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
-              save(unstorableResult(returned, error.message)),
+              save(unstorableResult(final, error.message)),
             ),
           )
           // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
-          results.push(stored?.tool_status == null ? result : { ...result, status: stored.tool_status })
-          if (stored !== undefined) {
-            history.push(stored)
-            yield* record("persist-results", `${call.id} ${stored.tool_status}`)
-            yield* observe({ type: "message", message: stored })
-          }
+          results.push(stored.tool_status == null ? result : { ...result, status: stored.tool_status })
+          yield* record("persist-results", `${call.id} ${stored.tool_status}`)
+          yield* observe({ type: "message", message: stored })
+          yield* runHooks(hooks, "tool_call_done", [toolCall], result)
         }
         const reason = stopReason(
           {

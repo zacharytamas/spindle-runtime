@@ -49,8 +49,18 @@ describe("spindle run", () => {
   it.effect("prints the seven phases of a step in order with --trace", () =>
     Effect.gen(function* () {
       const { out } = yield* run(["assistant", "-m", "hello", "--script", "@text-reply.json", "--trace"])
-      const phases = out.filter((line) => line.startsWith("step 1 ")).map((line) => line.split(/\s+/)[2])
+      const lines = out.filter((line) => line.startsWith("step 1 ")).map((line) => line.split(/[\s,]+/))
+      const phases = lines.map((words) => words[2]).filter((phase, index, all) => phase !== all[index - 1])
       expect(phases).toEqual(["drain", "assemble", "call", "persist-response", "tools", "persist-results", "stop"])
+      expect(lines.filter((words) => words[2] === "assemble").map((words) => words[3])).toEqual([
+        "interpolate",
+        "after_system_message",
+        "snapshot",
+        "filter_messages",
+        "transform",
+        "prefilter_llm_history",
+        "dispatch",
+      ])
     }),
   )
 

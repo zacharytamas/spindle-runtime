@@ -4,6 +4,8 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
+import type { HookScope } from "./hooks.ts"
+import { createMessage, updateMessage } from "./messages.ts"
 import { mapStrings, redactor, redactText } from "./redact.ts"
 import { lookup, type Side } from "./turn.ts"
 
@@ -27,6 +29,8 @@ export interface StateContext {
   readonly context: Record<string, unknown>
   readonly secrets: Secrets
   readonly invoke: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
+  // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
+  readonly hooks: HookScope
 }
 
 const notYet = (member: string, arrival: string) => () => {
@@ -89,9 +93,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   // Threads section 2.3: text that user code writes into the thread is tool output, so it is redacted before it is
   // stored, by the rule for a tool result. The human's messages and the model's responses never pass through here.
   const redact = redactor(state.secrets.values)
-  const redactContent = redactText(redact)
-  const redactMetadata = (metadata: Record<string, unknown> | undefined) =>
-    metadata === undefined ? {} : { metadata: mapStrings(metadata, redact) }
+  const write = { threadId, hooks: state.hooks, secrets: state.secrets, history }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
     else state.secrets.values.add(value)
@@ -112,34 +114,19 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     getMessage: (messageId) => run(store.getMessage(threadId, messageId)),
     injectMessage: (input) =>
       run(
-        Effect.gen(function* () {
-          const [message] = yield* store.appendMessages(threadId, [
-            {
-              role: input.role,
-              content: typeof input.content === "string" ? redactContent(input.content) : input.content,
-              status: "completed",
-              ...(input.silent === undefined ? {} : { silent: input.silent }),
-              ...redactMetadata(input.metadata),
-            },
-          ])
-          if (message === undefined) return yield* Effect.die(new Error("appendMessages returned no message"))
-          history?.push(message)
-          return message
-        }),
+        createMessage(
+          write,
+          {
+            role: input.role,
+            content: typeof input.content === "string" ? redactText(redact)(input.content) : input.content,
+            status: "completed",
+            ...(input.silent === undefined ? {} : { silent: input.silent }),
+            ...(input.metadata === undefined ? {} : { metadata: mapStrings(input.metadata, redact) }),
+          },
+          false,
+        ),
       ),
-    updateMessage: (messageId, updates) =>
-      run(
-        Effect.gen(function* () {
-          const message = yield* store.updateMessage(threadId, messageId, {
-            ...updates,
-            ...(typeof updates.content === "string" ? { content: redactContent(updates.content) } : {}),
-            ...redactMetadata(updates.metadata),
-          })
-          const index = history?.findIndex((candidate) => candidate.id === messageId) ?? -1
-          if (history !== undefined && index !== -1) history[index] = message
-          return message
-        }),
-      ),
+    updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
     deleteMessage: (messageId) =>
       run(
         Effect.gen(function* () {

@@ -121,6 +121,16 @@ export const executeTool = Effect.fn("executeTool")(function* (
   return result
 })
 
+// A ToolResult read once into a plain object, or undefined when the value is not one or reading it throws.
+export const readResult = (value: unknown): ToolResult | undefined => {
+  try {
+    const result = fieldsOf(value)
+    return isToolResult(result) ? result : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {
   if (call.problem !== undefined) return failed(call.problem)
   const exposed = context.turn.tools.get(call.name)
@@ -173,7 +183,7 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))
 })
 
-const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
+export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
   ...item,
   ...(typeof item.name === "string" ? { name: redact(item.name) } : {}),
   ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),

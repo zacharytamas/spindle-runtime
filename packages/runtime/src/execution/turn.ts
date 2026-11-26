@@ -30,6 +30,7 @@ export interface FunctionTool {
   readonly execute: (state: ThreadState, args?: unknown) => Promise<unknown>
   readonly variables?: ReadonlyArray<VariableDefinition>
   readonly uses?: ReadonlyArray<string> | null
+  readonly progressArgument?: string
 }
 
 export interface ExposedTool {
