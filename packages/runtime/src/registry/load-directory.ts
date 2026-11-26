@@ -14,7 +14,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
       code: "agents_directory_missing",
       severity: "error",
       message: (yield* fs.exists(root))
-        ? "The directory has no agents directory. Run spindle validate on the project directory that holds agents/."
+        ? `The directory ${root} has no agents directory. Run spindle validate on the project directory that holds agents/.`
         : `The directory ${root} does not exist`,
       file: "agents",
       path: "",

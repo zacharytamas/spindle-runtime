@@ -388,6 +388,22 @@ describe("validate", () => {
     )
   })
 
+  describe("messages", () => {
+    it.effect("names the directory when it has no agents directory or does not exist", () =>
+      Effect.gen(function* () {
+        const root = yield* fixture("invalid/no-agents-directory")
+        const missing = `${root}-absent`
+        const messages = [...(yield* validateRoot(root)).issues, ...(yield* validateRoot(missing)).issues].map(
+          (issue) => issue.message,
+        )
+        expect(messages).toEqual([
+          `The directory ${root} has no agents directory. Run spindle validate on the project directory that holds agents/.`,
+          `The directory ${missing} does not exist`,
+        ])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+  })
+
   describe("load failures", () => {
     it("explains in plain words that Node cannot strip an enum", () => {
       const cause = Object.assign(new SyntaxError("TypeScript enum is not supported in strip-only mode"), {
