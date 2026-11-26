@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
+import { Clock, ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { PlatformLive, SqliteLive } from "#platform"
@@ -88,14 +88,14 @@ describe("spindle run", () => {
 
   it.live("goes on after --hook-timeout and prints the hook's id on standard error without the message", () =>
     Effect.gen(function* () {
-      const started = Date.now()
+      const started = yield* Clock.currentTimeMillis
       const { exit, out, err } = yield* run(
         ["stuck", "-m", "private words", "--script", "@text-reply.json", "--hook-timeout", "0.2"],
         {},
         "hooks",
       )
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(Date.now() - started).toBeLessThan(5000)
+      expect((yield* Clock.currentTimeMillis) - started).toBeLessThan(5000)
       expect(out).toEqual(["Hello! How can I help?"])
       expect(err[0]).toBe(
         "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means.",
