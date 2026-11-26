@@ -50,7 +50,7 @@ const spawn = (gate: string, script: string, args: ReadonlyArray<string>) =>
       err,
       exit: handle.exitCode.pipe(
         Effect.map(Number),
-        Effect.catch(() => Effect.succeed(-1)),
+        Effect.orElseSucceed(() => -1),
         Effect.flatMap((code) => Effect.as(Fiber.join(reading), code)),
       ),
       // kill waits until the process exits, so it runs on its own fiber.
