@@ -73,6 +73,41 @@ describe("checkLedger", () => {
     ])
   })
 
+  it("fails when the cited ledger-tool test sits in a directory spelled with another case", () => {
+    const tool = "packages/Conformance/test/ledger.test.ts > checkLedger > accepts one entry"
+    const ledger: Ledger = { "threads:aaaa": { ...covered, tests: [tool] } }
+    expect(checkLedger(["threads:aaaa"], ledger, new Map([[tool, ["passed"]]]))).toEqual([
+      `threads:aaaa is covered by a test of the ledger tool, not of the runtime: ${tool}`,
+    ])
+  })
+
+  it("accepts a partial entry that names a passing test and says what remains", () => {
+    const ledger: Ledger = {
+      "threads:aaaa": { ...covered, status: "partial", reason: "The session cap waits for M2." },
+    }
+    expect(checkLedger(["threads:aaaa"], ledger, passing)).toEqual([])
+  })
+
+  it("fails when a partial entry names no test", () => {
+    const ledger: Ledger = {
+      "threads:aaaa": { ...planned, status: "partial", reason: "The session cap waits for M2." },
+    }
+    expect(checkLedger(["threads:aaaa"], ledger, passing)).toEqual(["threads:aaaa is partial but names no test"])
+  })
+
+  it("fails when a partial, deferred, or not-testable entry gives no reason", () => {
+    const ledger: Ledger = {
+      "threads:aaaa": { ...covered, status: "partial" },
+      "threads:bbbb": { ...planned, status: "deferred" },
+      "threads:cccc": { ...planned, status: "not-testable", reason: " " },
+    }
+    expect(checkLedger(["threads:aaaa", "threads:bbbb", "threads:cccc"], ledger, passing)).toEqual([
+      "threads:aaaa is partial but gives no reason",
+      "threads:bbbb is deferred but gives no reason",
+      "threads:cccc is not-testable but gives no reason",
+    ])
+  })
+
   it("fails when the Vitest report holds a failed test that no entry cites", () => {
     const failing = "packages/runtime/test/other.test.ts > other > breaks"
     const tests = new Map([...passing, [failing, ["failed"]]])
@@ -87,6 +122,11 @@ describe("duplicateKeys", () => {
     const json = `{\n\t"threads:aaaa": { "reason": "{\\"x\\": 1}" },\n\t"threads:bbbb": {},\n\t"threads:aaaa": {}\n}\n`
     expect(duplicateKeys(json)).toEqual(["threads:aaaa"])
   })
+
+  it("finds a field that appears twice inside one entry", () => {
+    const json = `{ "threads:aaaa": { "status": "planned", "tests": [], "status": "covered" } }`
+    expect(duplicateKeys(json)).toEqual(["threads:aaaa.status"])
+  })
 })
 
 describe("decodeLedger", () => {
@@ -99,9 +139,14 @@ describe("decodeLedger", () => {
   it("names the entry and the field of a schema error on one line", () => {
     expect(decodeLedger({ "threads:aaaa": { ...planned, status: "done" } })).toEqual(
       Result.fail(
-        `ledger.json: Expected "covered" | "planned" | "deferred" | "not-testable" at ["threads:aaaa"]["status"]`,
+        `ledger.json: Expected "covered" | "partial" | "planned" | "deferred" | "not-testable" at ["threads:aaaa"]["status"]`,
       ),
     )
+  })
+
+  it("fails on a milestone that the plan does not have", () => {
+    const result = decodeLedger({ "threads:aaaa": { ...planned, milestone: "" } })
+    expect(Result.isFailure(result) && result.failure).toContain(`at ["threads:aaaa"]["milestone"]`)
   })
 })
 
