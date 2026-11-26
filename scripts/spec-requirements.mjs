@@ -20,7 +20,11 @@ const walk = (dir) =>
 		return entry.name.endsWith(".md") ? [full] : [];
 	});
 
-const slug = (file) => path.relative(specDir, file).replace(/\.md$/, "").replace(/^(specification|infrastructure|distribution|getting-started)\//, "$1:");
+const slug = (file) =>
+	path
+		.relative(specDir, file)
+		.replace(/\.md$/, "")
+		.replace(/^(specification|infrastructure|distribution|getting-started)\//, "$1:");
 
 const requirements = [];
 for (const file of walk(specDir).sort()) {
@@ -46,27 +50,29 @@ for (const file of walk(specDir).sort()) {
 			text,
 		});
 	};
-	fs.readFileSync(file, "utf8").split(/\r?\n/).forEach((line, index) => {
-		if (/^\s*(```|~~~)/.test(line)) {
-			flush();
-			fenced = !fenced;
-			return;
-		}
-		if (fenced) return;
-		const heading = line.match(/^#{1,6}\s+(.*)$/);
-		if (heading) {
-			flush();
-			section = heading[1].trim();
-			return;
-		}
-		const item = /^\s*([-*]|\d+\.)\s+/.test(line);
-		const row = /^\s*\|/.test(line);
-		if (line.trim() === "" || item || row) flush();
-		if (line.trim() === "") return;
-		if (!block.length) blockLine = index + 1;
-		block.push(line.replace(/^\s*([-*]|\d+\.)\s+/, "").trim());
-		if (row) flush();
-	});
+	fs.readFileSync(file, "utf8")
+		.split(/\r?\n/)
+		.forEach((line, index) => {
+			if (/^\s*(```|~~~)/.test(line)) {
+				flush();
+				fenced = !fenced;
+				return;
+			}
+			if (fenced) return;
+			const heading = line.match(/^#{1,6}\s+(.*)$/);
+			if (heading) {
+				flush();
+				section = heading[1].trim();
+				return;
+			}
+			const item = /^\s*([-*]|\d+\.)\s+/.test(line);
+			const row = /^\s*\|/.test(line);
+			if (line.trim() === "" || item || row) flush();
+			if (line.trim() === "") return;
+			if (!block.length) blockLine = index + 1;
+			block.push(line.replace(/^\s*([-*]|\d+\.)\s+/, "").trim());
+			if (row) flush();
+		});
 	flush();
 }
 
@@ -78,6 +84,9 @@ for (const r of requirements) {
 	row[r.rfc2119 ? "rfc2119" : "lowercase"] += 1;
 	byPage.set(r.page, row);
 }
-for (const [page, row] of byPage) console.log(`${String(row.rfc2119).padStart(4)} ${String(row.lowercase).padStart(4)}  ${page}`);
+for (const [page, row] of byPage)
+	console.log(`${String(row.rfc2119).padStart(4)} ${String(row.lowercase).padStart(4)}  ${page}`);
 const total = requirements.filter((r) => r.rfc2119).length;
-console.log(`${total} RFC 2119 statements, ${requirements.length - total} lowercase must or should statements, ${byPage.size} pages`);
+console.log(
+	`${total} RFC 2119 statements, ${requirements.length - total} lowercase must or should statements, ${byPage.size} pages`,
+);

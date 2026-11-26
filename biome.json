@@ -1,0 +1,60 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": ["**", "!packages/conformance/requirements.json"]
+	},
+	"formatter": {
+		"indentStyle": "tab",
+		"lineWidth": 120
+	},
+	"markdown": {
+		"formatter": {
+			"enabled": false
+		}
+	},
+	"linter": {
+		"rules": {
+			"style": {
+				"useNodejsImportProtocol": "error"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["packages/runtime/**", "!packages/runtime/src/platform/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"node:*",
+											"bun:*",
+											"@effect/platform-node",
+											"@effect/platform-node/**",
+											"@effect/platform-bun",
+											"@effect/platform-bun/**",
+											"@effect/sql-sqlite-node",
+											"@effect/sql-sqlite-node/**",
+											"@effect/sql-sqlite-bun",
+											"@effect/sql-sqlite-bun/**"
+										],
+										"message": "Only packages/runtime/src/platform/ may import a runtime module or a platform package. Use an Effect service or import from #platform."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	]
+}
