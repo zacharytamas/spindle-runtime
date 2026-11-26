@@ -32,7 +32,7 @@
           "globalErrorInEffectFailure": "suggestion",
           "missingConcurrencyOption": "warning",
           "preferTypedSchemaDecoder": "warning",
-          "returnEffectInGen": "warning",
+          "returnEffectInGen": "suggestion",
           "schemaNumber": "warning",
           "tryCatchInEffectGen": "suggestion",
           "unknownInEffectCatch": "warning",
