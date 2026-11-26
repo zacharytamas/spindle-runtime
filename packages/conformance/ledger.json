@@ -427,25 +427,25 @@
 	},
 	"infrastructure:runtime:0496b9da": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:fc8c359f": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c8fcd64f": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:022219f5": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -463,7 +463,7 @@
 	},
 	"infrastructure:runtime:bc5ba253": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -619,7 +619,7 @@
 	},
 	"infrastructure:runtime:86cae814": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -889,7 +889,7 @@
 	},
 	"infrastructure:runtime:eb83472c": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -985,49 +985,49 @@
 	},
 	"infrastructure:runtime:3faec548": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:7b5d1f06": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:43d5659d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:e28dedf2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:3b19a524": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:65371315": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:0ddeb438": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:5e2f73a8": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
@@ -1477,7 +1477,7 @@
 	},
 	"specification:hooks:cf1fb96d": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -1501,7 +1501,7 @@
 	},
 	"specification:hooks:eaca9825": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -4021,7 +4021,7 @@
 	},
 	"infrastructure:runtime:670aa282": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M4",
 		"tests": [],
 		"reason": ""
 	},
@@ -4057,7 +4057,7 @@
 	},
 	"infrastructure:runtime:a3bd2fbf": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -4129,7 +4129,7 @@
 	},
 	"infrastructure:runtime:ee44563a": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -4195,13 +4195,13 @@
 	},
 	"specification:hooks:118d0ec4": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:hooks:6fc64bc7": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
@@ -4213,13 +4213,13 @@
 	},
 	"specification:hooks:dce1c8bc": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:hooks:17286533": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
@@ -4231,19 +4231,19 @@
 	},
 	"specification:hooks:f66e7c81": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:hooks:f7da5f56": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:hooks:251bf5a2": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
@@ -4363,13 +4363,13 @@
 	},
 	"specification:threads/messages:b8f7cd7e": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/messages:3170d519": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -4435,19 +4435,19 @@
 	},
 	"specification:agents:8fb03a6e": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:cda6e847": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:2f2416ed": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -4465,7 +4465,7 @@
 	},
 	"specification:agents:b3f24116": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -4483,25 +4483,25 @@
 	},
 	"specification:agents:47d9e86c": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:afee8031": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:6e269b7f": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:d6567ce8": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -4513,25 +4513,25 @@
 	},
 	"specification:agents:e7466e70": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:050c4e51": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:38b9d170": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:3df00a7e": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
@@ -4543,19 +4543,19 @@
 	},
 	"specification:agents:5585bfa6": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:a9937a20": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:2d27cbb9": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	},
@@ -4585,13 +4585,13 @@
 	},
 	"specification:agents:c51baf9f": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M1",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:f990f511": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M3",
 		"tests": [],
 		"reason": ""
 	}
