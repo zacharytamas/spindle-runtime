@@ -668,5 +668,165 @@
     "level": "MUST",
     "lead": "HumanSide",
     "text": "| `label` | `string` | Optional UI/log label |"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Entry Point Exports",
+    "level": "MUST",
+    "text": "The package entry point exports named registries for each definition type, plus a `__meta` export with package metadata:"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Lazy Loading",
+    "level": "MUST",
+    "text": "Every definition is wrapped in an async function (`DefinitionLoader<T>`) that returns a Promise."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "package.json Requirements",
+    "level": "MUST",
+    "text": "Packed agents are identified by the `standardagent` field in `package.json`:"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Namespace Isolation",
+    "level": "MUST",
+    "text": "Each packed agent's definitions are isolated by package ID, preventing name collisions with host code or with other packages."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Visibility Rules",
+    "level": "MUST",
+    "text": "Global code sees unpacked definitions and packed entry agents"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Visibility Rules",
+    "level": "MUST",
+    "text": "Packed code sees only its own package contents plus other entry points"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Visibility Rules",
+    "level": "MUST",
+    "text": "Internal tools/prompts in a package are hidden from outside"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Qualified Names",
+    "level": "MUST",
+    "text": "A qualified name has the form `{packageId}/{name}`. Code outside a package uses a qualified name for a packed definition."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Qualified Names",
+    "level": "MUST",
+    "text": "For a scoped package, the second slash separates the package ID from the definition name."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Qualified Names",
+    "level": "MUST",
+    "text": "The name `@scope/name` has one slash and is unqualified."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Package Signature",
+    "level": "MUST",
+    "lead": "Each packed definition receives a signature marking its package membership:",
+    "text": "Signatures are injected at load time, not embedded in source, so packed definitions remain portable."
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Discovery",
+    "level": "MUST",
+    "lead": "Runtimes discover packed agents by:",
+    "text": "Scanning `node_modules` for packages with `\"standardagent\"` in `package.json`"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Discovery",
+    "level": "MUST",
+    "lead": "Runtimes discover packed agents by:",
+    "text": "Checking local `agents/packed/` directory for development packages"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Discovery",
+    "level": "MUST",
+    "lead": "Runtimes discover packed agents by:",
+    "text": "Importing each package and reading `__meta` for configuration"
+  },
+  {
+    "page": "distribution:packaging",
+    "section": "Naming Conventions",
+    "level": "SHOULD",
+    "text": "Agent, tool, prompt, hook, and effect names use `snake_case`"
+  },
+  {
+    "page": "specification:prompts",
+    "section": "3.4 Subagent Lifecycle Tools",
+    "level": "MUST",
+    "text": "The names `subagents`, `subagent_create`, and `subagent_message` are reserved in the tool namespace."
+  },
+  {
+    "page": "specification:prompts",
+    "section": "8. Hook Scoping",
+    "level": "MUST",
+    "text": "Hook IDs reference the `id` property from `defineHook({ hook, id, execute })`"
+  },
+  {
+    "page": "specification:models",
+    "section": "8.3 Runtime Validation",
+    "level": "MUST",
+    "text": "When `defineModel` is called, if the provider has a schema and `providerOptions` are provided, the options are validated at runtime:"
+  },
+  {
+    "page": "specification:handlers",
+    "section": "1. Handler Definition",
+    "level": "MUST",
+    "text": "Handlers live in their own definition directory (`agents/handlers/` in the conventional layout) and are created with `defineHandler()`:"
+  },
+  {
+    "page": "specification:handlers",
+    "section": "1. Handler Definition",
+    "level": "MUST",
+    "text": "| `execute` | `(state: ThreadState, message: Message) => Promise<void>` | The turn implementation |"
+  },
+  {
+    "page": "specification:handlers",
+    "section": "2. Referencing a Handler",
+    "level": "MUST",
+    "text": "A handler is referenced from exactly one place: the `handler` property of a [side configuration](/0.2.0/specification/agents#12-sideconfig)."
+  },
+  {
+    "page": "specification:handlers",
+    "section": "3. Execution Model",
+    "level": "MUST",
+    "text": "`maxSteps`, `stopOnResponse`, `stopTool`, and session bindings are not legal on handler sides"
+  },
+  {
+    "page": "specification:tools",
+    "section": "2.1 Tool Dependencies",
+    "level": "MAY",
+    "text": "Names may be local or [qualified](/0.2.0/distribution/packaging#qualified-names)."
+  },
+  {
+    "page": "specification:tools",
+    "section": "5. Subagent Composition",
+    "level": "MUST",
+    "text": "Subagent relationships are **not tool configuration**; a prompt `tools` entry attempting to configure one is a definition-time error."
+  },
+  {
+    "page": "specification:tools",
+    "section": "5. Subagent Composition",
+    "level": "MUST",
+    "text": "The relationship names `subagents`, `subagent_create`, and `subagent_message` are reserved in the tool namespace."
+  },
+  {
+    "page": "specification:effects",
+    "section": "1.3 Naming",
+    "level": "MUST",
+    "text": "Effect names are file-based (`agents/effects/send_digest.ts` => `send_digest`)"
   }
 ]
