@@ -565,6 +565,7 @@ Each row was run in this planning session on macOS with Node 22.22.3 and Bun 1.4
 | Does `node:sqlite` work on the installed runtimes? | Yes on both. Node prints an `ExperimentalWarning`. | A one-line script that opens an in-memory database. |
 | Can one package pick the Node module or the Bun module without a runtime check? | Yes. An `imports` entry with a `bun` condition and a `default` condition resolved to the Bun file under Bun and to the Node file under Node. | A three-file probe in `/tmp/spindle-cond-probe`. |
 | Does Node import `.ts` files directly? | Node 22.22.3 reports `process.features.typescript` as `strip`. | `node -e`. |
+| Is there a model endpoint for the real-model lanes? | Yes. The operator runs a local server at `http://localhost:8317/v1`. It answered one streaming chat completions request for `claude-haiku-5-5` with a `get_weather` tool call and the finish reason `tool_calls`. It needs a key, and the key is already in the environment as `ANTHROPIC_API_KEY`. | One `curl` request with a tool definition. |
 
 These questions stay unproven.
 
@@ -644,7 +645,7 @@ $ bun --bun run test            # after
 - **The spec moves.** A new spec commit changes requirement ids. M1-1 carries the risk. The `--check` flag fails until someone reviews the added and removed ids.
 - **The spec assumes Durable Objects in places.** M1-6 carries the risk. The lease and the recovery pass give the same guarantee, and lanes 5, 7, and 8 test it.
 - **No control skill drives the command line.** Every live block carries the risk. Lanes use the shell, and each transcript holds the command and the exit code.
-- **Lane 10 of M1-4 and of M1-7 needs a model endpoint.** Without `SPINDLE_TEST_BASE_URL` the lane reports `BLOCKED` and neither PR can get a clean verdict.
+- **Lane 10 of M1-4 and of M1-7 needs a model endpoint.** Without `SPINDLE_TEST_BASE_URL` the lane reports `BLOCKED` and neither PR can get a clean verdict. The operator supplied a local server. Each lane sets `SPINDLE_TEST_BASE_URL` to `http://localhost:8317/v1`, `SPINDLE_TEST_MODEL` to `claude-haiku-5-5`, and `SPINDLE_TEST_API_KEY` from `ANTHROPIC_API_KEY` at run time. No brief, transcript, or file holds the key.
 - **The perf budgets are guesses.** No measurement exists yet. Each owner replaces a budget only with a measured number and a stated reason, per `benchmark-checklist`.
 - **Ten live lanes per PR cost many agent runs.** Seventy lanes run across the seven PRs. The operator can lower the count, and the check script would then need the same change.
 - **The operator's review can change the file layout.** A large restructure makes a verdict stale. For that reason only M1-1 gets a full swarm before the review.
