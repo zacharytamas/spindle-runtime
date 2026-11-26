@@ -491,7 +491,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running",
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
-			"packages/runtime/test/conformance.test.ts > step loop > S14b stores a tool error for a result whose data cannot be stored and still runs the next call"
+			"packages/runtime/test/conformance.test.ts > step loop > S14b stores a tool error that keeps the tool's text for a result that cannot be stored, and runs the next call"
 		],
 		"reason": ""
 	},

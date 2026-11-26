@@ -1076,9 +1076,9 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ])
         expect(results.map((m) => m.content)).toEqual([
           "soft fail",
-          expect.stringContaining("kaboom"),
-          expect.stringContaining("rejected"),
-          expect.stringContaining("object"),
+          "Tool boom threw: kaboom",
+          "Tool reject threw: rejected",
+          'Tool weird threw: {"reason":42}',
           "fine",
         ])
       })
@@ -1097,7 +1097,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S14b stores a tool error for a result whose data cannot be stored and still runs the next call",
+    name: "S14b stores a tool error that keeps the tool's text for a result that cannot be stored, and runs the next call",
     requirements: ["732b2d4b"],
     run: async (driver) => {
       const tools = {
@@ -1106,35 +1106,77 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           execute: async () => {
             const data: Record<string, unknown> = {}
             data.self = data
-            return { status: "error" as const, error: "tangled", error_data: data }
+            return { status: "error" as const, error: "tangled", error_code: "loop", error_data: data }
+          },
+        }),
+        hollow: defineTool({
+          description: "Returns a null attachment",
+          execute: async () => ({ status: "success" as const, result: "partial", attachments: [null] }) as never,
+        }),
+        guarded: defineTool({
+          description: "Returns error data whose getter throws",
+          execute: async () => ({
+            status: "error" as const,
+            error: "guarded",
+            error_data: {
+              get secret() {
+                throw new Error("no access")
+              },
+            },
+          }),
+        }),
+        thrower: defineTool({
+          description: "Throws a plain object",
+          execute: async () => {
+            throw { reason: "quota", retry: false }
           },
         }),
         fine: defineTool({ description: "Returns at once", execute: async () => ok("fine") }),
       }
+      const names = ["tangled", "hollow", "guarded", "thrower", "fine"]
       const provider = new ScriptedProvider([
-        {
-          toolCalls: [
-            { id: "t1", name: "tangled", arguments: {} },
-            { id: "f1", name: "fine", arguments: {} },
-          ],
-        },
+        { toolCalls: names.map((name) => ({ id: `c_${name}`, name, arguments: {} })) },
         { text: "recovered" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
         const outcome = await send(session, thread, "go")
         expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
         const results = (await session.messages(thread)).filter((m) => m.role === "tool")
-        expect(results.map((m) => [m.tool_call_id, m.name, m.tool_status])).toEqual([
-          ["t1", "tangled", "error"],
-          ["f1", "fine", "success"],
+        expect(
+          results.map((m) => [m.tool_call_id, m.name, m.tool_status, m.content, m.attachments, m.metadata]),
+        ).toEqual([
+          [
+            "c_tangled",
+            "tangled",
+            "error",
+            "tangled\n\nSpindle dropped the error data of this result, because the message metadata holds a circular reference at $.error_data.self.self, which JSON cannot represent",
+            null,
+            { error_code: "loop" },
+          ],
+          [
+            "c_hollow",
+            "hollow",
+            "error",
+            "partial\n\nSpindle dropped 1 attachment that is neither a file reference nor a new file.",
+            null,
+            {},
+          ],
+          [
+            "c_guarded",
+            "guarded",
+            "error",
+            "guarded\n\nSpindle dropped the error data of this result, because reading it threw: no access",
+            null,
+            {},
+          ],
+          ["c_thrower", "thrower", "error", 'Tool thrower threw: {"reason":"quota","retry":false}', null, {}],
+          ["c_fine", "fine", "success", "fine", null, {}],
         ])
-        expect(results[0]?.content).toMatch(/^Tool tangled returned data that cannot be stored: .*circular reference/)
       })
       expect(history(provider.requests[1]).map(sideOf)).toEqual([
         ["user", "go"],
-        ["assistant", null, ["t1", "f1"]],
-        ["tool", "t1"],
-        ["tool", "f1"],
+        ["assistant", null, names.map((name) => `c_${name}`)],
+        ...names.map((name) => ["tool", `c_${name}`]),
       ])
     },
   },

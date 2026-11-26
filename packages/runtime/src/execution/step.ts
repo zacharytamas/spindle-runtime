@@ -17,14 +17,16 @@ import { mapStrings, redactor, redactText } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
 import {
-  failed,
+  describe,
   invokeTool,
+  ResultUnreadable,
   redactResult,
   runToolCall,
   scopeFor,
   storedResult,
   type ToolCall,
   type ToolContext,
+  unstorableResult,
 } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
 import { type FunctionTool, type Loaded, prepareTurn, roleOf, type Turn } from "./turn.ts"
@@ -173,7 +175,7 @@ const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn
     }
 })
 
-const describe = (cause: Cause.Cause<unknown>): string => {
+const describeCause = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause)
   return error instanceof Error ? error.message : String(error)
 }
@@ -341,13 +343,24 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const results: Array<ToolResult> = []
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
-          let result = redactResult(yield* runToolCall(toolContext, call), redactString)
-          // Runtime section 5.2: data that JSON cannot represent fails this one call, not the step.
-          const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)]).pipe(
-            Effect.catchTag("ValueNotJson", (error) => {
-              result = failed(`Tool ${call.name} returned data that cannot be stored: ${error.message}`)
-              return store.appendMessages(threadId, [storedResult(turn, call, result)])
-            }),
+          const returned = yield* runToolCall(toolContext, call)
+          const save = (result: ToolResult) =>
+            Effect.gen(function* () {
+              const { redacted, message } = yield* Effect.try({
+                try: () => {
+                  const redacted = redactResult(result, redactString)
+                  return { redacted, message: storedResult(turn, call, redacted) }
+                },
+                catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
+              })
+              const [stored] = yield* store.appendMessages(threadId, [message])
+              return { redacted, stored }
+            })
+          // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
+          const { redacted: result, stored } = yield* save(returned).pipe(
+            Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
+              save(unstorableResult(returned, error.message)),
+            ),
           )
           results.push(result)
           if (stored !== undefined) {
@@ -378,7 +391,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
         const found = Cause.findError(cause)
-        if (found._tag === "Failure") return settle("failed", "fatal_error", { error: { message: describe(cause) } })
+        if (found._tag === "Failure")
+          return settle("failed", "fatal_error", { error: { message: describeCause(cause) } })
         const error = found.success
         switch (error._tag) {
           case "SetupError":

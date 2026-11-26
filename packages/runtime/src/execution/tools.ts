@@ -1,5 +1,5 @@
 import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
-import { Effect, Result } from "effect"
+import { Data, Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { mapStrings } from "./redact.ts"
@@ -21,7 +21,17 @@ export interface ToolContext {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
+// A thrown value that is not an Error, such as a plain object, is shown as JSON where it can be.
+export const describe = (cause: unknown) => {
+  if (cause instanceof Error) return cause.message
+  try {
+    return JSON.stringify(cause) ?? String(cause)
+  } catch {
+    return String(cause)
+  }
+}
+
+export class ResultUnreadable extends Data.TaggedError("ResultUnreadable")<{ readonly message: string }> {}
 
 export const failed = (error: string): ToolResult => ({ status: "error", error })
 
@@ -46,7 +56,8 @@ const isToolResult = (value: unknown): value is ToolResult =>
 const isAttachmentRef = (value: unknown): value is AttachmentRef =>
   isRecord(value) && value.type === "file" && typeof value.id === "string" && typeof value.path === "string"
 
-const isNewAttachment = (value: unknown) => isRecord(value) && typeof value.data === "string"
+const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) && typeof value.data === "string"
 
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
@@ -169,36 +180,55 @@ const contentOf = (result: ToolResult) =>
     ? (result.result ?? "")
     : [result.error, result.result].filter((part) => part !== undefined && part !== "").join("\n\n")
 
-// A new file needs the thread file system, which arrives in M3. Until then such a result becomes an error.
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
+
+// Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
+// keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
-  const attachments = result.attachments ?? []
+  const attachments: ReadonlyArray<unknown> = result.attachments ?? []
+  const refs = attachments.filter(isAttachmentRef)
   const fresh = attachments.filter(isNewAttachment)
-  const odd = attachments.filter((item) => !isNewAttachment(item) && !isAttachmentRef(item))
-  const base = {
-    role: "tool" as const,
+  const odd = attachments.length - refs.length - fresh.length
+  const dropped = [
+    ...(fresh.length === 0
+      ? []
+      : [
+          `Spindle dropped the new file ${fresh.map((item) => String(item.name)).join(", ")}, because this version cannot store a new file. The thread file system arrives in M3.`,
+        ]),
+    ...(odd === 0
+      ? []
+      : [
+          `Spindle dropped ${odd} ${plural(odd, "attachment that is", "attachments that are")} neither a file reference nor a new file.`,
+        ]),
+  ]
+  return {
+    role: "tool",
     name: call.name,
     tool_call_id: call.id,
     prompt: turn.prompt.definition.qualifiedName,
-    status: "completed" as const,
-  }
-  if (fresh.length > 0 || odd.length > 0)
-    return {
-      ...base,
-      tool_status: "error",
-      content:
-        odd.length > 0
-          ? `Tool ${call.name} returned an attachment that is neither a file reference nor a new file`
-          : `Tool ${call.name} returned a new file attachment (${fresh.map((item) => String(item.name)).join(", ")}). This version of Spindle cannot store a new file, because the thread file system arrives in M3.`,
-    }
-  const refs = attachments.filter(isAttachmentRef)
-  return {
-    ...base,
-    tool_status: result.status,
-    content: contentOf(result),
+    status: "completed",
+    tool_status: dropped.length === 0 ? result.status : "error",
+    content: [contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n"),
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
       ...(result.error_data === undefined ? {} : { error_data: result.error_data }),
     },
+  }
+}
+
+// Runtime section 5.2: a result that fails between the tool's return and the store becomes a tool error for its
+// call. It keeps the tool's own text and error code, and drops its attachments and error data.
+export const unstorableResult = (result: ToolResult, reason: string): ToolResult => {
+  const parts = [
+    ...((result.attachments ?? []).length === 0 ? [] : ["attachments"]),
+    ...(result.error_data === undefined ? [] : ["error data"]),
+  ]
+  const note = `Spindle dropped the ${parts.length === 0 ? "data" : parts.join(" and ")} of this result, because ${reason}`
+  return {
+    status: "error",
+    error: [result.error ?? "", note].filter((part) => part !== "").join("\n\n"),
+    ...(result.result === undefined ? {} : { result: result.result }),
+    ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
   }
 }
