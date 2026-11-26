@@ -1,0 +1,12 @@
+{
+  "responses": [
+    {
+      "text": "I will save the note, then wait.",
+      "toolCalls": [
+        { "name": "write_note", "arguments": { "key": "color", "value": "blue" } },
+        { "name": "nap", "arguments": { "ms": 3000 } }
+      ]
+    },
+    { "text": "Done waiting." }
+  ]
+}

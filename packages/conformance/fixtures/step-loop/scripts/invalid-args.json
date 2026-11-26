@@ -1,0 +1,6 @@
+{
+  "responses": [
+    { "toolCalls": [{ "name": "strict", "arguments": { "count": "three", "label": 5 } }] },
+    { "text": "The arguments were wrong, so the tool did not run." }
+  ]
+}

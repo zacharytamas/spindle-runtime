@@ -1,0 +1,6 @@
+{
+  "responses": [
+    { "text": "I will nap for a minute.", "toolCalls": [{ "name": "nap", "arguments": { "ms": 60000 } }] },
+    { "text": "Awake." }
+  ]
+}

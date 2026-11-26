@@ -1,0 +1,12 @@
+{
+  "responses": [
+    {
+      "text": "I will save the note and read it back.",
+      "toolCalls": [
+        { "name": "write_note", "arguments": { "key": "color", "value": "blue" } },
+        { "name": "read_note", "arguments": { "key": "color" } }
+      ]
+    },
+    { "text": "The note says the color is blue." }
+  ]
+}
