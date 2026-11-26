@@ -7,6 +7,7 @@ import {
   type ProviderReasoningDetail,
   type ProviderRequest,
   type ProviderStreamChunk,
+  providerConst,
   providerEnv,
 } from "@standardagents/spec"
 import { ConfigProvider, Effect, Exit } from "effect"
@@ -423,6 +424,20 @@ describe("provider config slots", () => {
       expect(sent[0]?.headers.get("x-beta")).toBe("on")
       expect(sent[0]?.headers.has("x-unset")).toBe(false)
       expect([...secrets]).toEqual(["lane-key"])
+    }),
+  )
+
+  it.effect("records a secret slot's value when an extension sets it as a constant or a literal", () =>
+    Effect.gen(function* () {
+      for (const [apiKey, value] of [
+        [providerConst("const-key"), "const-key"],
+        ["literal-key", "literal-key"],
+      ] as const) {
+        const fixed = defineProvider({ name: "fixed_key", baseProvider: openaiCompatible, config: { apiKey } })
+        const { sent, secrets } = yield* build(fixed, {})
+        expect(sent[0]?.headers.get("authorization")).toBe(`Bearer ${value}`)
+        expect([...secrets]).toEqual([value])
+      }
     }),
   )
 

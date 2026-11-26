@@ -41,7 +41,10 @@ const fromSlot = Effect.fn("fromSlot")(function* (key: string, slot: ProviderCon
 const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found: Resolution): Effect.Effect<unknown> =>
   Effect.gen(function* () {
     if (isSource(source)) {
-      if (source.type === "const") return source.value
+      if (source.type === "const") {
+        if (slot?.type === "secret" && typeof source.value === "string") found.secrets.add(source.value)
+        return source.value
+      }
       const name = String(source.name)
       const value = (yield* instanceEnv(name)) ?? source.default
       const required = typeof source.required === "boolean" ? source.required : slot?.required === true
@@ -50,7 +53,10 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
       if (type === "secret" && typeof value === "string") found.secrets.add(value)
       return coerce(value, type)
     }
-    if (!isRecord(source)) return source
+    if (!isRecord(source)) {
+      if (slot?.type === "secret" && typeof source === "string") found.secrets.add(source)
+      return source
+    }
     const map: Record<string, unknown> = {}
     for (const [key, leaf] of Object.entries(source)) {
       const value = yield* fromSource(leaf, undefined, found)
