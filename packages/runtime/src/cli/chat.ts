@@ -27,7 +27,7 @@ import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
-import { ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
+import { type Thread, ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
 import { deliveryFlags, fail, openDatabase, operatorNotes, RunFailed } from "./run.ts"
 
 const shellWord = (word: string) =>
@@ -79,6 +79,11 @@ const readScript = (file: string) =>
     )
   })
 
+const requireOpen = (thread: Thread) =>
+  thread.terminated === null
+    ? Effect.void
+    : Effect.fail(new ThreadTerminated({ threadId: thread.id, terminated: thread.terminated }))
+
 const openThread = (
   agent: string,
   filename: string,
@@ -106,8 +111,7 @@ const openThread = (
             identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
             Effect.fail(new RunFailed({ message: "wrong agent" })),
           )
-        if (thread.terminated !== null)
-          return yield* new ThreadTerminated({ threadId: id, terminated: thread.terminated })
+        yield* requireOpen(thread)
         yield* store.recover(id)
         const { status } = yield* store.getThread(id)
         const holder = yield* store.holderOf(id)
@@ -237,6 +241,7 @@ const converse = (chat: Conversation) =>
             if (Exit.isSuccess(event.exit)) {
               yield* finishPrevious
               yield* flush
+              yield* requireOpen(yield* store.getThread(chat.id))
               yield* report(event.exit.value.outcome ?? event.exit.value.status)
               return "continue" as const
             }

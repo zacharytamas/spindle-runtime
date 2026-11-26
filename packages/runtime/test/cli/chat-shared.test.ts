@@ -20,7 +20,7 @@ import {
   statusOf,
   threadOf,
 } from "./chat-process.ts"
-import { exists, lines, query, setup, touch, until } from "./processes.ts"
+import { exists, lines, probe, project, query, setup, spawn, touch, until } from "./processes.ts"
 
 // A chat shares its thread with other processes, its database with other writers, and its output with whatever
 // reads it. Each test below makes one of them misbehave while the chat is at a known point.
@@ -34,6 +34,29 @@ const toolRows = (db: string, thread: string) =>
   )
 
 describe("spindle chat beside other processes", () => {
+  it.live(
+    "external termination during our run exits before another prompt",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const session = yield* chat(gate, ["assistant", ...dir, "--db", db])
+        yield* session.type(`${call("hold", { name: "busy" })}\n`)
+        yield* until("the tool to start", exists(at("tool-entered-busy")))
+        const thread = yield* threadOf(session)
+        const terminator = yield* spawn(gate, probe, ["terminate", "--thread", thread, ...project, "--db", db])
+        expect(yield* terminator.exit).toBe(0)
+        yield* until(
+          "termination or a new prompt",
+          Effect.sync(() => session.err().includes(note.terminated(thread)) || session.out().endsWith("> ")),
+        )
+        expect(session.out()).not.toMatch(/\n> $/)
+        expect(yield* session.exit).toBe(1)
+        expect(linesOf(session.err())).toEqual([note.thread(thread), note.terminated(thread)])
+        expect(yield* toolRows(db, thread)).toEqual([["error", CLOSING.terminated]])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
   it.live(
     "a write failure after admission reports that the line was sent",
     () =>
