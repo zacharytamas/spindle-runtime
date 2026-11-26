@@ -79,7 +79,7 @@ export interface RunOutcome {
   readonly modelCalls: ReadonlyArray<ModelCall>
 }
 
-// A message written into history before a run, as a client or another component would have written it.
+// A message that a client or another component writes into history, outside the run.
 export interface SeedMessage {
   readonly role: Message["role"]
   readonly content: string | null
@@ -107,6 +107,7 @@ export interface RuntimeSession {
   readonly send: (threadId: string, content: string, options?: SendOptions) => Promise<RunOutcome>
   // Reads every message of a thread, oldest first and silent ones included, on a connection the run does not use.
   readonly messages: (threadId: string) => Promise<ReadonlyArray<Message>>
+  // Writes messages on a connection the run does not use, as another process would, before or during a run.
   readonly seed: (threadId: string, messages: ReadonlyArray<SeedMessage>) => Promise<void>
   readonly close: () => Promise<void>
 }

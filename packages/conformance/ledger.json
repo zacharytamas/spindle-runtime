@@ -478,7 +478,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
-			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
+			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8b takes the snapshot and the live history from storage, so they hold a message that another connection stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8c takes the snapshot and the live history from storage, so they hold another handle's edit of a message the run already read",
+			"packages/runtime/test/conformance.test.ts > messages > M8d takes the snapshot and the live history from storage, so they lose a message the run already read and another handle deleted"
 		],
 		"reason": ""
 	},
@@ -3628,7 +3631,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
-			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row"
+			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
+			"packages/runtime/test/conformance.test.ts > messages > M8b takes the snapshot and the live history from storage, so they hold a message that another connection stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8c takes the snapshot and the live history from storage, so they hold another handle's edit of a message the run already read",
+			"packages/runtime/test/conformance.test.ts > messages > M8d takes the snapshot and the live history from storage, so they lose a message the run already read and another handle deleted"
 		],
 		"reason": ""
 	},
@@ -3898,7 +3904,10 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
 			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows",
-			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
+			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8b takes the snapshot and the live history from storage, so they hold a message that another connection stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8c takes the snapshot and the live history from storage, so they hold another handle's edit of a message the run already read",
+			"packages/runtime/test/conformance.test.ts > messages > M8d takes the snapshot and the live history from storage, so they lose a message the run already read and another handle deleted"
 		],
 		"reason": ""
 	},
@@ -3908,7 +3917,10 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one",
 			"packages/runtime/test/conformance.test.ts > messages > M7 interpolates first, then runs after_system_message, the snapshot, the filter, the transform, the prefilter, and the request",
-			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored"
+			"packages/runtime/test/conformance.test.ts > messages > M8 takes the snapshot and the live history from storage, so they hold a message that another handle stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8b takes the snapshot and the live history from storage, so they hold a message that another connection stored",
+			"packages/runtime/test/conformance.test.ts > messages > M8c takes the snapshot and the live history from storage, so they hold another handle's edit of a message the run already read",
+			"packages/runtime/test/conformance.test.ts > messages > M8d takes the snapshot and the live history from storage, so they lose a message the run already read and another handle deleted"
 		],
 		"reason": ""
 	},
