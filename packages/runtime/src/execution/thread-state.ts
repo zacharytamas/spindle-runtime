@@ -227,13 +227,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     return Effect.runSyncWith(state.services)(history.read).rows.map(({ message }) => copyMessage(message))
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
-    run(
-      Effect.gen(function* () {
-        const found = yield* lookup<unknown>(kind, name, state.from)
-        if (found === undefined) return yield* Effect.fail(new Error(`No ${kind} named ${name} is defined`))
-        return found.value
-      }),
-    ) as Promise<never>
+    run(lookup<unknown>(kind, name, state.from)).then((found) => {
+      if (found === undefined) throw new Error(`No ${kind} named ${name} is defined`)
+      return found.value
+    }) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () => {
     check()
     return registry.definitions
@@ -305,12 +302,14 @@ export const makeThreadState = (state: StateContext): ThreadState => {
 
     env: (name) =>
       run(
-        Effect.gen(function* () {
-          const found = yield* lookupEnv(state.scope, name)
-          if (found === undefined) return yield* Effect.fail(new Error(`Environment variable ${name} has no value`))
-          return remember(found.value, found.fromInstance || state.secrets.names.has(name))
-        }),
-      ),
+        Effect.map(
+          lookupEnv(state.scope, name),
+          (found) => found && remember(found.value, found.fromInstance || state.secrets.names.has(name)),
+        ),
+      ).then((value) => {
+        if (value === undefined) throw new Error(`Environment variable ${name} has no value`)
+        return value
+      }),
     instanceEnv: (name) => run(Effect.map(instanceEnv(name), (value) => value && remember(value, true))),
     // Threads section 2.3: a value from any source but the thread is secret, and thread values arrive with setEnv.
     envType: () => run(Effect.succeed("secret" as const)),
