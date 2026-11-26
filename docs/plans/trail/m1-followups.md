@@ -81,7 +81,7 @@ Open, not for this round.
 
 ## Before the stack lands
 
-- Codex and Copilot left threads on every PR. An earlier version of this line said the commits address them. That was not checked, and Copilot has since raised four of PR 4's points again on its current head. One agent is checking every thread against the code. Valid ones are fixed in the PR they belong to as the stack is rebased. Nobody replies to a thread or resolves one until the operator says so.
+- Codex and Copilot left threads on every PR. An earlier version of this line said the commits address them. That was not checked, and Copilot has since raised four of PR 4's points again on its current head. One agent is checking every thread against the code. Valid ones are fixed in the PR they belong to as the stack is rebased. The operator said on 2026-11-26 to reply to the threads and resolve them, so that an open thread always means a point that is still valid. Each thread gets a reply that names the commit that fixes it or the recorded decision that declines it, and is then resolved. A reply goes out after its PR's rebased push, so that it cites a commit hash that still exists.
 - The stack has six merge commits and is rebased to linear history, one PR at a time from the bottom, before the operator's review. The old tips get archive tags first, because the plan and this trail cite their commit hashes.
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
