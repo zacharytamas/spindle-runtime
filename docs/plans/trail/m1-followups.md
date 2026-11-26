@@ -51,6 +51,14 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 - A new file attachment in a tool result is refused with a message that names M3.
 - Three curated quotes for Runtime lines 124, 177, and 200 leave out their condition.
 
+## Process changes the operator approved on 2026-11-26
+
+- A design note for each cross-cutting concern, written once and before milestone 2. The three are user code at the edge, secrets, and message invariants. A rule of that kind is no longer settled inside a fix-round brief.
+- Every spec brief gets a failure-mode section, which lists what the model, the network, and user code can do wrong at each step and what the runtime must do then. M1-6 gets one as a supplement, because its owner was already building.
+- GPT-6.2 Astra writes the conformance scenarios before a build, and a Claude owner implements until they pass. This starts with M1-7.
+- Every audit is gated from its first round. Stored data lost or changed, a leaked secret, a tool call without its result, a tool that runs twice, two executions of one thread, or a thread that cannot continue blocks a PR. Everything else goes on this list.
+- Claude models implement. GPT and Gemini models read and judge.
+
 ## Before the stack lands
 
 - The review bot left threads on PR 4, PR 5, and PR 6. The commits address them, and nobody has replied to them or resolved them.
