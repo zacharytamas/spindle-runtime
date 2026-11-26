@@ -1,18 +1,18 @@
 # Spindle milestone 1 plan
 
 Spindle is a self-hosted runtime for Standard Agent Specification 0.2.0, written in TypeScript on Effect v4.
-Milestone 1 ends when `spindle run` executes a prompt side against a human side from an `agents/` directory, with every message durable in SQLite.
+Milestone 1 ends when `spindle run` and `spindle chat` execute a prompt side against a human side from an `agents/` directory, with every message durable in SQLite.
 The work is for people who want to run Standard Agents outside Standard Agents Hosting, and for the engineers who maintain Spindle after them.
 The program enforces one rule. A requirement counts as implemented only when the ledger maps it to a passing test.
 Core code imports Effect services only. The Node module and the Bun module under `src/platform/` supply the implementations.
-The PR ids in order are M1-1, M1-2, M1-3, M1-4, M1-5, and M1-6.
+The PR ids in order are M1-1, M1-2, M1-3, M1-4, M1-5, M1-6, and M1-7.
 Later milestones get their own plan files. Appendix E lists them.
 
 ## How to read this
 
 One box is one unit of work. Every box names the evidence that checks it. A nested box is a sub-step of the box above it. Check a box only when its evidence exists, a file, a log line, a screenshot, a test run, or a SHA. The body is a how-to. The appendices explain and record.
 
-The program runs `<pstack>/skills/poteto-mode/playbooks/autopilot-stack.md`, where `<pstack>` is `~/.claude/plugins/cache/cursor-plugins/pstack/0.15.34`. Owners build and verify. The root chains the PRs into one stack. The operator reviews and lands the stack bottom-up. M1-2 and M1-4 are review-gated and stop at merge-ready.
+The program runs `<pstack>/skills/poteto-mode/playbooks/autopilot-stack.md`, where `<pstack>` is `~/.claude/plugins/cache/cursor-plugins/pstack/0.15.34`. Owners build and verify. The root chains the PRs into one stack. The operator reviews and lands the stack bottom-up. M1-2, M1-4, and M1-7 are review-gated and stop at merge-ready.
 
 Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -47,11 +47,13 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
   - [ ] M1-4 after M1-2 and M1-3. The root chains M1-3 onto M1-2 first.
   - [ ] M1-5 after M1-4.
   - [ ] M1-6 after M1-5.
+  - [ ] M1-7 after M1-6.
 - [ ] Hold the file boundaries.
   - [ ] M1-2 touches only `packages/runtime/src/registry/**`, `packages/runtime/src/cli/**`, and `packages/conformance/fixtures/**`.
   - [ ] M1-3 touches only `packages/runtime/src/store/**` and `packages/runtime/src/platform/**`.
+  - [ ] M1-7 touches only `packages/runtime/src/cli/chat.ts`, `packages/runtime/src/execution/ThreadSupervisor.ts`, and `packages/runtime/test/cli/**`.
   - [ ] Every PR may edit `packages/conformance/ledger.json`. Each PR edits only the entries for its own requirement ids.
-- [ ] Hold the review gate. M1-2 and M1-4 add a command that a person types. They wait for the operator's review in chat with a transcript and a terminal video before merge.
+- [ ] Hold the review gate. M1-2, M1-4, and M1-7 add a command that a person types. They wait for the operator's review in chat with a transcript and a terminal video before merge.
 
 ### PR mechanics, for every PR
 
@@ -473,6 +475,70 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 - [ ] Rebased onto current trunk after the verdict, patch-id unchanged.
 - [ ] The root appends M1-6 to the stack above M1-5 and the operator lands the stack bottom-up.
 
+## Chat with an agent from the terminal (M1-7)
+
+`spindle chat` is a loop over one thread. It reads a line, sends the line as a message, prints each record the run persists, and waits for the run to settle. The command holds no state of its own. The thread id is the only thing a later session needs.
+
+**Depends on.** M1-6.
+
+**Files.**
+
+- [ ] Create `packages/runtime/src/cli/chat.ts`.
+- [ ] Edit `packages/runtime/src/execution/ThreadSupervisor.ts` to expose a stream of the records a thread persists.
+- [ ] Create `packages/runtime/test/cli/chat.test.ts`.
+
+**Build.**
+
+- [ ] Add `spindle chat <agent>`. It takes `--dir`, `--db`, and `--script` with the same meaning as in `spindle run`, and `--thread <id>` to continue an existing thread.
+- [ ] Validate the project directory before the first prompt. Print the issues that `spindle validate` prints and exit 1 when any issue is an error.
+- [ ] Print the thread id at the start. Print the command that resumes the thread at exit.
+- [ ] Read lines through the Effect `Terminal` service, so the command imports no platform module.
+- [ ] Print each persisted record as the run produces it. An assistant message prints its text. A tool call prints one line with the tool name and its arguments. A tool result prints one line with the tool name and `ok` or the error message.
+- [ ] Make Ctrl-C during a run call `execution.stop()` and return to the prompt. Make Ctrl-C or end of input at the prompt exit with code 0.
+- [ ] Load definitions once per process. To pick up an edited definition, exit and run the resume command.
+
+**You see.**
+
+- [ ] `spindle chat assistant --dir packages/conformance/fixtures/hello-world` prints `thread <id>` and a prompt, and each line you type prints a reply.
+- [ ] At exit the command prints `resume with spindle chat assistant --thread <id>`.
+
+**Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] `packages/runtime/test/cli/chat.test.ts` gains one case per build box above, each driven by a test `Terminal` layer with scripted input lines. Run `pnpm vitest run packages/runtime/test/cli/chat.test.ts` on Node and on Bun.
+
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+
+- [ ] Lane 1. Regression lane against trunk. The parent branch has no `spindle chat`, so record that. At the head, pipe three lines into `spindle chat` with a scripted provider. Save `three-turns.txt`. Pass when three replies print in order and the thread holds six messages.
+- [ ] Lane 2. Exit a chat after one turn, then run the printed resume command and send one more line with `--dump-requests`. Save `resume.txt`. Pass when the second session's provider request holds the first session's messages.
+- [ ] Lane 3. Chat with an agent whose script calls one tool that succeeds and one tool that throws. Save `tool-lines.txt`. Pass when the output shows one call line and one result line per tool, with `ok` for the first and the error message for the second.
+- [ ] Lane 4. Send Ctrl-C during a slow tool. Save `interrupt-run.txt`. Pass when the prompt returns, `spindle status` prints `idle` with a stop reason, and the next line gets a reply.
+- [ ] Lane 5. Send Ctrl-C at the prompt, and in a second run close the input. Save `exit-at-prompt.txt`. Pass when both runs exit with code 0 and both print the resume command.
+- [ ] Lane 6. Run `spindle chat` on the both-sides-human fixture. Save `invalid-directory.txt`. Pass when the issue line prints, the exit code is 1, and no prompt appears.
+- [ ] Lane 7. Chat one turn, exit, edit the text of the prompt file, and resume with `--dump-requests`. Save `edit-and-resume.txt`. Pass when the next request's system message holds the edited text.
+- [ ] Lane 8. Chat against a base URL that refuses connections, then fix the URL and resume. Save `provider-down.txt`. Pass when the first session prints the provider error and stays at the prompt, and the resumed session gets a reply.
+- [ ] Lane 9. Run lane 1 and lane 4 under Bun. Save `chat-bun.txt`. Pass when both meet the same predicates.
+- [ ] Lane 10. Chat three turns with the hello-world fixture against the real model at `SPINDLE_TEST_BASE_URL`, where the third line refers to the first. Save `real-model-chat.txt`. Pass when the third reply uses a fact from the first turn. If no endpoint is set, report `BLOCKED`.
+
+**Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
+
+- [ ] Metric. Time from process start to the first prompt, and time from a submitted line to the first printed record with a scripted provider. The parent branch has no chat, so the diff-added work is the read loop and the record stream, and the end state is a printed reply.
+- [ ] Probe. Drive `spindle chat` through a pseudo-terminal script in the PR, twenty turns per round, ten rounds on Node and ten rounds on Bun, alternating. Run the M1-4 per-step probe at the parent branch and at the head, interleaved.
+- [ ] Baseline. Record the parent branch's per-step median first, and record that the parent branch has no chat value.
+- [ ] Rule. The PR fails when the first prompt takes more than 1 second, when the first record takes more than 50 milliseconds beyond the per-step median, or when the head's per-step median is more than 20 percent above the parent's.
+
+**Review gate.** The operator reviews before merge.
+
+- [ ] Copy the lane 3 and lane 10 transcripts into `docs/plans/media/m1-7-review-<slug>.txt`, and add one screenshot of the lane 3 terminal as `docs/plans/media/m1-7-review-tools.png`.
+- [ ] Record a 30 to 60 second terminal video of a chat with a tool call, an interrupted run, and a resume. Save it as `docs/plans/media/m1-7-review.mp4`.
+- [ ] Post the screenshot and the video in chat. Stop at merge-ready. Wait for the operator's click.
+
+**Merge.**
+
+- [ ] Root's clean verdict at the exact head SHA.
+- [ ] Automated review comments triaged.
+- [ ] Rebased onto current trunk after the verdict, patch-id unchanged.
+- [ ] The root appends M1-7 to the stack above M1-6 and the operator lands the stack bottom-up.
+
 ## Close the program
 
 - [ ] Every box above is checked with its evidence.
@@ -527,9 +593,9 @@ These questions stay unproven.
 - **The spec moves.** A new spec commit changes requirement ids. M1-1 carries the risk. The `--check` flag fails until someone reviews the added and removed ids.
 - **The spec assumes Durable Objects in places.** M1-6 carries the risk. The lease and the recovery pass give the same guarantee, and lanes 5, 7, and 8 test it.
 - **No control skill drives the command line.** Every live block carries the risk. Lanes use the shell, and each transcript holds the command and the exit code.
-- **Lane 10 of M1-4 needs a model endpoint.** Without `SPINDLE_TEST_BASE_URL` the lane reports `BLOCKED` and M1-4 cannot get a clean verdict.
+- **Lane 10 of M1-4 and of M1-7 needs a model endpoint.** Without `SPINDLE_TEST_BASE_URL` the lane reports `BLOCKED` and neither PR can get a clean verdict.
 - **The perf budgets are guesses.** No measurement exists yet. Each owner replaces a budget only with a measured number and a stated reason, per `benchmark-checklist`.
-- **Ten live lanes per PR cost many agent runs.** Sixty lanes run across the six PRs. The operator can lower the count, and the check script would then need the same change.
+- **Ten live lanes per PR cost many agent runs.** Seventy lanes run across the seven PRs. The operator can lower the count, and the check script would then need the same change.
 - **Clean-room discipline depends on briefs.** The second audit lane checks each diff and each transcript for a path inside a proprietary package.
 - **The provider packages are licensed for conforming runtimes.** Spindle does not bundle them. `openai-compatible.ts` gives milestone 1 a provider that Spindle owns.
 
