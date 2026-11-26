@@ -518,7 +518,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 
 **You see.**
 
-- [x] A chat prints the thread id and prompt, then a reply to each line. The scripted process tests and the tools transcript exercise this. The hello-world real-model lane below is blocked.
+- [x] A chat prints the thread id and prompt, then a reply to each line. The scripted process tests and the tools transcript exercise this, and so does the hello-world session against a real model in lane 10.
 - [x] With a database file, exit prints `resume with spindle chat assistant --thread <id> --db <file>` and any explicit directory.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -536,7 +536,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 - [ ] Lane 7. Chat one turn, exit, edit the text of the prompt file, and resume with `--dump-requests`. Save `edit-and-resume.txt`. Pass when the next request's system message holds the edited text.
 - [ ] Lane 8. Chat against a base URL that refuses connections, then fix the URL and resume. Save `provider-down.txt`. Pass when the first session prints the provider error and stays at the prompt, and the resumed session gets a reply.
 - [ ] Lane 9. Run lane 1 and lane 4 under Bun. Save `chat-bun.txt`. Pass when both meet the same predicates.
-- [ ] Lane 10. Chat three turns with the hello-world fixture against the real model at `SPINDLE_TEST_BASE_URL`, where the third line refers to the first. Save `docs/plans/media/m1-7-review-real-model.txt`. Pass when the third reply uses a fact from the first turn. Blocked on authentication. Both sessions reached the specified endpoint and each of the six requests received HTTP 401.
+- [x] Lane 10. Chat three turns with the hello-world fixture against the real model at `SPINDLE_TEST_BASE_URL`, where the third line refers to the first. Save `docs/plans/media/m1-7-review-real-model.txt`. Pass when the third reply uses a fact from the first turn. The root ran it on Node and on Bun, because the owner's environment had no key. Both third replies named the beacon from the first line.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -922,7 +922,7 @@ The M1-6 owner ran each command below on 2026-11-26 on macOS, from the repositor
 5. The first Ctrl-C asks the current operation to finish. The second requests an abort and returns the prompt while the delivery fiber retains its outcome. The next submitted line shows the closing records. If a tool still holds the execution, the admitted line waits with its name. Ctrl-C at the prompt or behind a holder exits. The exit checks whether the last admission remains in the queue.
 6. Both platforms use Effect 4.1.5's shared Node terminal. Its line queue retains lines received together, and `readLine` never requests raw mode. Its separate `readInput` acquires and releases raw mode in a scope. The readline reference has a 10 ms idle lifetime. Chat keeps its own line reader for the session and uses `Terminal.display` for writes without a newline. A closed stdout ends chat with code 1 after cooperative stop. Node can emit the pipe error after the write callback has run. SIGTERM and a terminal hangup interrupt the main fiber so the supervisor releases local claims.
 7. The ledger now names the terminal tests for silent messages, role mapping, redaction, queueing behind a live holder, and a queued line delivered on resume. The silent flag has a witness in the ordinary terminal UI as well as model context and hooks. The separate client API remains due in M6. The ledger has 357 covered statements and 61 partial.
-8. The brief replaces the twenty-turn benchmark with one first-prompt test. The operator requested three scripted transcripts and one real session per runtime. The three scripted transcripts are under `docs/plans/media/`. The real endpoint answered `401 Missing API key` for all three turns on each runtime. The process environment lacked `ANTHROPIC_API_KEY`. The real-model lane and operator review remain open.
+8. The brief replaces the twenty-turn benchmark with one first-prompt test. The operator requested three scripted transcripts and one real session per runtime. The three scripted transcripts are under `docs/plans/media/`. The owner's environment lacked `ANTHROPIC_API_KEY`, so its real sessions got `401 Missing API key`. The root ran one session on each runtime with the key set on the command line, and both recalled the first line in the third reply. The operator's review remains open.
 
 ## Appendix B. Alternatives rejected
 
