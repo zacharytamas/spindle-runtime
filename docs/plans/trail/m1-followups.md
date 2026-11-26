@@ -41,6 +41,13 @@ Open, not for this round.
 - Cleanup on interrupt was incomplete before M1-6. The owner's report does not say whether it is complete now, so the audit has to.
 - Two sub-checks are not asserted. One is that a nested `invokeTool` starts no competing flow. The other is an execute alias after terminate.
 
+After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of the round are running, and they decide which of the items above are closed.
+
+- Recovery cannot tell whether a call without a result had started, because the runtime keeps no durable record of dispatch. Every such call gets one text that is true for both cases.
+- The step is 15.7 percent slower than its parent on Node and 15.0 percent on Bun, against a limit of 20 percent. Removing the lease did not make it faster.
+- The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
+- The temporary branch `m1/int-base` is still on origin, and nothing uses it.
+
 ## M1-7, chat, and a cleanup PR after it
 
 - `spindle send` prints only the status when another process ran the message. Its record stream must show the replies.
