@@ -18,9 +18,15 @@ const check = flags.includes("--check")
 const conformance = path.join(import.meta.dirname, "../packages/conformance")
 const lockFile = path.join(conformance, "spec.lock.json")
 const requirementsFile = path.join(conformance, "requirements.json")
+const extrasFile = path.join(conformance, "requirements.extra.json")
 
 const KEYWORD = /\b(MUST NOT|MUST|SHOULD NOT|SHOULD|MAY)\b/
 const LOWERCASE = /\b(must not|must|should not|should)\b/
+const FENCE = /^\s*(```|~~~)/
+const HEADING = /^#{1,6}\s+(.*)$/
+const ITEM = /^\s*([-*]|\d+\.)\s+/
+
+const normalize = (text) => text.replace(/\s+/g, " ").replace(/\*\*/g, "").trim()
 
 const requirementId = (page, section, text) =>
   `${page}:${createHash("sha1").update(`${section}\n${text}`).digest("hex").slice(0, 8)}`
@@ -61,7 +67,7 @@ const extract = (specDir) => {
     }
     const flush = () => {
       if (!block.length) return
-      const text = block.join(" ").replace(/\s+/g, " ").replace(/\*\*/g, "").trim()
+      const text = normalize(block.join(" "))
       block = []
       if (blockKind === "row" && tableRow <= 2) return
       const own = classify(text)
@@ -79,21 +85,21 @@ const extract = (specDir) => {
       .split(/\r?\n/)
       .forEach((line, index) => {
         tableRow = /^\s*\|/.test(line) ? tableRow + 1 : 0
-        if (/^\s*(```|~~~)/.test(line)) {
+        if (FENCE.test(line)) {
           flush()
           closeLead()
           fenced = !fenced
           return
         }
         if (fenced) return
-        const heading = line.match(/^#{1,6}\s+(.*)$/)
+        const heading = line.match(HEADING)
         if (heading) {
           flush()
           closeLead()
           section = heading[1].trim()
           return
         }
-        const item = /^\s*([-*]|\d+\.)\s+/.test(line)
+        const item = ITEM.test(line)
         const row = /^\s*\|/.test(line)
         if (line.trim() === "" || item || row) flush()
         if (line.trim() === "") return
@@ -101,7 +107,7 @@ const extract = (specDir) => {
           blockLine = index + 1
           blockKind = item ? "item" : row ? "row" : "paragraph"
         }
-        block.push(line.replace(/^\s*([-*]|\d+\.)\s+/, "").trim())
+        block.push(line.replace(ITEM, "").trim())
         if (row) flush()
       })
     flush()
@@ -110,6 +116,51 @@ const extract = (specDir) => {
   return requirements
 }
 
+const locate = (markdown, quote) => {
+  let section = ""
+  let fenced = false
+  let text = ""
+  const starts = []
+  markdown.split(/\r?\n/).forEach((line, index) => {
+    if (FENCE.test(line)) fenced = !fenced
+    const heading = !fenced && line.match(HEADING)
+    if (heading) section = heading[1].trim()
+    const part = normalize(line.replace(ITEM, ""))
+    if (fenced || FENCE.test(line) || heading || part === "") return
+    starts.push({ at: text.length, line: index + 1, section })
+    text += `${part} `
+  })
+  const at = text.indexOf(normalize(quote))
+  return at === -1 ? undefined : starts.findLast((start) => start.at <= at)
+}
+
+const extras = JSON.parse(fs.readFileSync(extrasFile, "utf8"))
+const curated = (extra, lineOf) => {
+  const text = normalize(extra.text)
+  const id = requirementId(extra.page, extra.section, text)
+  return {
+    id,
+    page: extra.page,
+    line: lineOf(id),
+    section: extra.section,
+    level: extra.level,
+    rfc2119: false,
+    curated: true,
+    text,
+  }
+}
+
+const curationProblems = []
+const curate = (specDir) =>
+  extras.map((extra) => {
+    const file = path.join(specDir, `${extra.page.replace(":", "/")}.md`)
+    const found = fs.existsSync(file) ? locate(fs.readFileSync(file, "utf8"), extra.text) : undefined
+    const entry = `requirements.extra.json entry for ${extra.page} "${extra.text}"`
+    if (found === undefined) curationProblems.push(`${entry} is not on its page`)
+    else if (found.section !== extra.section) curationProblems.push(`${entry} is under section "${found.section}"`)
+    return curated(extra, () => found?.line)
+  })
+
 const fetchSpec = ({ repository, commit, path: versionPath }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spindle-spec-"))
   const git = (...args) => execFileSync("git", ["-C", dir, ...args], { stdio: ["ignore", "ignore", "inherit"] })
@@ -117,7 +168,7 @@ const fetchSpec = ({ repository, commit, path: versionPath }) => {
     git("init", "--quiet")
     git("fetch", "--quiet", "--depth", "1", repository, commit)
     git("checkout", "--quiet", "FETCH_HEAD")
-    return extract(path.join(dir, versionPath))
+    return [...extract(path.join(dir, versionPath)), ...curate(path.join(dir, versionPath))]
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -125,9 +176,19 @@ const fetchSpec = ({ repository, commit, path: versionPath }) => {
 
 const committed = fs.readFileSync(requirementsFile, "utf8")
 const committedRequirements = JSON.parse(committed)
+const committedLines = new Map(committedRequirements.filter((r) => r.curated).map((r) => [r.id, r.line]))
 const requirements = refresh
   ? fetchSpec(JSON.parse(fs.readFileSync(lockFile, "utf8")))
-  : committedRequirements.map((r) => ({ ...r, id: requirementId(r.page, r.section, r.text) }))
+  : [
+      ...committedRequirements
+        .filter((r) => !r.curated)
+        .map((r) => ({ ...r, id: requirementId(r.page, r.section, r.text) })),
+      ...extras.map((extra) => curated(extra, (id) => committedLines.get(id))),
+    ]
+if (curationProblems.length) {
+  for (const problem of curationProblems) console.error(problem)
+  process.exit(1)
+}
 const output = `${JSON.stringify(requirements, null, "\t")}\n`
 
 const seen = new Set()
@@ -154,14 +215,16 @@ if (refresh && !check) fs.writeFileSync(requirementsFile, output)
 
 const byPage = new Map()
 for (const r of requirements) {
-  const row = byPage.get(r.page) ?? { rfc2119: 0, lowercase: 0 }
-  row[r.rfc2119 ? "rfc2119" : "lowercase"] += 1
+  const row = byPage.get(r.page) ?? { rfc2119: 0, lowercase: 0, curated: 0 }
+  row[r.curated ? "curated" : r.rfc2119 ? "rfc2119" : "lowercase"] += 1
   byPage.set(r.page, row)
 }
 if (!check)
   for (const [page, row] of byPage)
-    console.log(`${String(row.rfc2119).padStart(4)} ${String(row.lowercase).padStart(4)}  ${page}`)
-const total = requirements.filter((r) => r.rfc2119).length
+    console.log(
+      `${String(row.rfc2119).padStart(4)} ${String(row.lowercase).padStart(4)} ${String(row.curated).padStart(4)}  ${page}`,
+    )
+const count = (kind) => [...byPage.values()].reduce((sum, row) => sum + row[kind], 0)
 console.log(
-  `${total} RFC 2119 statements, ${requirements.length - total} lowercase must or should statements, ${byPage.size} pages`,
+  `${count("rfc2119")} RFC 2119 statements, ${count("lowercase")} lowercase must or should statements, ${count("curated")} curated statements with no keyword, ${byPage.size} pages`,
 )
