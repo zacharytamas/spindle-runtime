@@ -54,6 +54,39 @@ const abort = (session: Session) =>
 
 describe("spindle chat and Ctrl-C", () => {
   it.live(
+    "exit reports durable queued admissions even when a signal races the sender",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const holder = yield* spindleWith(gate, [
+          "run",
+          "assistant",
+          "-m",
+          call("hold", { name: "busy" }),
+          "--dir",
+          queue,
+          "--db",
+          db,
+        ])
+        yield* until("the holder to enter the tool", exists(at("tool-entered-busy")))
+        const thread = yield* threadOf(holder)
+        for (const signal of ["SIGTERM", "SIGINT"] as const) {
+          const session = yield* chat(gate, ["assistant", "--thread", thread, "--dir", queue, "--db", db])
+          yield* prompt(session, 1)
+          yield* session.type(`${signal}\n`)
+          if (signal === "SIGTERM") yield* printed("waiting", session.err, note.behindProcess(thread, holder.pid))
+          yield* session.signal(signal)
+          expect(yield* session.exit).toBe(signal === "SIGTERM" ? 130 : 0)
+          const admitted = (yield* queuedIn(db, thread)).some((row) => row.includes(signal))
+          expect(linesOf(session.err()).includes(note.stillQueued)).toBe(admitted)
+        }
+        yield* touch(at("release-busy"))
+        expect(yield* holder.exit).toBe(0)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "termination signals print the resume line at the second prompt",
     () =>
       Effect.gen(function* () {

@@ -115,6 +115,7 @@ interface Conversation {
   readonly id: string
   readonly cursor: number
   readonly role: Message["role"]
+  readonly onAdmitted: (seq: number) => void
   readonly identify: ReturnType<typeof operatorNotes>
   readonly clean: (text: string) => string
   readonly trace: boolean
@@ -135,7 +136,6 @@ const converse = (chat: Conversation) =>
     const closed = Effect.as(terminal.outputClosed, { kind: "closed" } as const)
     const write = (text: string) => terminal.write(chat.clean(text))
     const own = new Set<number>()
-    let lastAdmission: number | undefined
     let cursor = chat.cursor
     const output = yield* Semaphore.make(1)
     const flush = output.withPermit(
@@ -189,7 +189,7 @@ const converse = (chat: Conversation) =>
         observe,
         onAdmitted: (seq) => {
           own.add(seq)
-          lastAdmission = seq
+          chat.onAdmitted(seq)
         },
         onWaiting: (holder) =>
           Effect.gen(function* () {
@@ -263,7 +263,7 @@ const converse = (chat: Conversation) =>
       if (previous?.pollUnsafe()) yield* finishPrevious
       yield* flush
       waiting = false
-      const turn = yield* Effect.forkChild(send(read.line))
+      const turn = yield* Effect.forkScoped(send(read.line))
       const result = yield* waitForTurn(turn)
       if (result !== "continue") {
         ending = result
@@ -274,8 +274,6 @@ const converse = (chat: Conversation) =>
     if (ending === "input") yield* write("\n")
     if (yield* terminal.isOutputClosed) ending = "closed"
     if (ending === "closed") yield* note("standard output is closed")
-    if (lastAdmission !== undefined && (yield* store.isQueued(chat.id, lastAdmission)))
-      yield* note("your last line is still queued, and the next run of the thread delivers it")
     return ending
   })
 
@@ -330,12 +328,16 @@ export const chatCommand = Command.make(
           yield* Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               const thread = yield* restore(openThread(args.agent, filename, args.thread, secrets, identify, clean))
+              let lastAdmission: number | undefined
               const conversation = yield* Effect.exit(
                 restore(
                   converse({
                     ...thread,
                     role: roleOf(side),
                     identify,
+                    onAdmitted: (seq) => {
+                      lastAdmission = seq
+                    },
                     clean,
                     trace: args.trace,
                     dumpRequests: args.dumpRequests,
@@ -345,9 +347,12 @@ export const chatCommand = Command.make(
               // A conversation that a signal or an error ended still says how to resume the thread.
               const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
               if (ending === "terminated") return yield* new RunFailed({ message: ending })
+              const store = yield* ThreadStore
+              if (lastAdmission !== undefined && (yield* store.isQueued(thread.id, lastAdmission)))
+                yield* note("your last line is still queued, and the next run of the thread delivers it")
               if (filename !== ":memory:") {
                 if (!(yield* fs.exists(filename))) return yield* fail(`the database ${db} is gone`)
-                const stored = yield* ThreadStore.use((store) => store.getThread(thread.id))
+                const stored = yield* store.getThread(thread.id)
                 if (stored.terminated === null) {
                   const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
                   yield* identify(
