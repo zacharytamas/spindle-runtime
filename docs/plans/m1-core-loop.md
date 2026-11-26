@@ -928,6 +928,22 @@ The M1-6 owner ran each command below on 2026-11-26 on macOS, from the repositor
 7. The ledger now names the terminal tests for silent messages, role mapping, redaction, queueing behind a live holder, and a queued line delivered on resume. The silent flag has a witness in the ordinary terminal UI as well as model context and hooks. The separate client API remains due in M6. The ledger has 357 covered statements and 61 partial.
 8. The brief replaces the twenty-turn benchmark with one first-prompt test. The operator requested three scripted transcripts and one real session per runtime. The three scripted transcripts are under `docs/plans/media/`. The owner's environment lacked `ANTHROPIC_API_KEY`, so its real sessions got `401 Missing API key`. The root ran one session on each runtime with the key set on the command line, and both recalled the first line in the third reply. The operator's review remains open.
 
+### Settled in M1-8
+
+The workspace type check runs `effect-tsgo tsc` from `@effect/tsgo@0.73.7` with TypeScript 7.0.2. Both an error and a warning fail the check. Suggestions remain visible and let the check pass.
+
+- The default errors are `classSelfMismatch`, `effectFnImplicitAny`, `floatingEffect`, `floatingEffectInVitest`, `missingEffectContext`, `missingEffectError`, `missingLayerContext`, `missingReturnYieldStar`, `missingStarInYieldEffectGen`, `nonObjectEffectServiceType`, `overriddenSchemaConstructor`, `schemaLiteralNonFinite`, and `schemaOpaqueInstanceMember`.
+- The workspace also treats `duplicatePackage`, `effectInFailure`, `effectInVoidSuccess`, `layerMergeAllWithDependencies`, `lazyPromiseInEffectSync`, `promiseInEffectSuccess`, and `scopeInLayerEffect` as errors.
+- The practice rules at warning are `effectTryWithoutCatch`, `globalDateInEffect`, `globalErrorInEffectCatch`, `missingConcurrencyOption`, `preferTypedSchemaDecoder`, and `unknownInEffectCatch`.
+- `unsafeEffectTypeAssertion` stays at suggestion for the cast on the hook runner's return type. The hooks split should remove the cast and raise the rule to error.
+- `tryCatchInEffectGen` stays at suggestion for five recovery paths. The hooks and execution splits own hook result validation and tool result access. The store split owns delivery of a malformed queue row. The registry split owns both checks that read user definitions and package disclosures. Raise the rule to warning once all five paths have moved.
+- `globalErrorInEffectFailure` stays at suggestion for two errors that reach user callbacks through `ThreadState`. A missing definition and an unset environment variable each reject with a plain JavaScript `Error`. The execution split should preserve those public rejections when it raises the rule to warning.
+- `returnEffectInGen` stays at suggestion for the two returns from `providerFor`. Setup builds a normal provider immediately and reuses it. A provider with `createFetch` builds again for every request. The execution split should preserve both lifetimes when it raises the rule to warning.
+- `schemaNumber` stays at suggestion for the script provider's `statusCode` and `retryAfter`. JSON exponents can overflow to infinity, which the current decoder accepts. The CLI split should settle that input contract before raising the rule to warning.
+- `unstableApiUsage` is off. Effect 4.1.5 marks the CLI, SQL, and platform packages unstable. Other rules keep their defaults, including the suggestions and the disabled `anyUnknownInErrorContext`. The execution split owns the supervisor's public `unknown` error channels.
+
+The CLI exports the root command used by the run and validate tests. Node 22.19.0, Node 22.22.3, Node 24.10.0, and Bun 1.4.5 identify the entry module with `import.meta.main`. Node 24.0.0 lacks that property, so the platform resolves the command path, including a bin symlink, and compares its URL with the module URL. An evaluated script can pass that same path as an argument and import the CLI without starting it. On all five runtimes, both the source and the built entry print the version when launched and can be imported without running the command.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

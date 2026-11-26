@@ -14,7 +14,8 @@ Core code imports Effect services only. Only platform adapters under `packages/r
 
 ## Run the checks
 
-- `pnpm check` runs Biome, `tsc`, Vitest, the requirement check, and the ledger check. `bun --bun run check` runs the same steps under Bun.
+- `pnpm check` runs Biome, the Effect language service type check, Vitest, the requirement check, and the ledger check. `bun --bun run check` runs the same steps under Bun.
+- The 13 default Effect error rules and `duplicatePackage`, `effectInFailure`, `effectInVoidSuccess`, `layerMergeAllWithDependencies`, `lazyPromiseInEffectSync`, `promiseInEffectSuccess`, and `scopeInLayerEffect` are errors. Fix each finding at its source and never disable a rule with a comment.
 - `pnpm test` runs the tests on Node. `bun --bun run test` runs them on Bun. Each result line names the runtime, as in `|bun|`.
 - `pnpm build` writes `packages/runtime/dist`. `node packages/runtime/dist/cli/main.js --version` prints the platform.
 
