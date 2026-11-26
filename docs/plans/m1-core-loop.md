@@ -12,7 +12,7 @@ Later milestones get their own plan files. Appendix E lists them.
 
 One box is one unit of work. Every box names the evidence that checks it. A nested box is a sub-step of the box above it. Check a box only when its evidence exists, a file, a log line, a screenshot, a test run, or a SHA. The body is a how-to. The appendices explain and record.
 
-The program runs `<pstack>/skills/poteto-mode/playbooks/autopilot-stack.md`, where `<pstack>` is `~/.claude/plugins/cache/cursor-plugins/pstack/0.15.34`. Owners build and verify. The root chains the PRs into one stack. The operator reviews and lands the stack bottom-up. M1-2, M1-4, and M1-7 are review-gated and stop at merge-ready.
+The program runs `<pstack>/skills/poteto-mode/playbooks/autopilot-stack.md`, where `<pstack>` is `~/.claude/plugins/cache/cursor-plugins/pstack/0.15.34`. Owners build and verify. The root chains the PRs into one stack. The operator reviews and lands the stack bottom-up. The operator plans a review of code quality and file structure once the whole stack is built. Nothing lands and no later milestone starts before that review. M1-2, M1-4, and M1-7 are review-gated and stop at merge-ready.
 
 Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -36,7 +36,10 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 
 ### Spawn owners
 
-- [ ] Spawn one owner per PR as `subagent_type: "pstack:poteto-agent"` with the full lifecycle that `autopilot-stack.md` names. No `~/.claude/rules/pstack-models.md` exists, so code owners run on the session model, which is Claude Fable 5.2. Give M1-4 and M1-6 `effort: "xhigh"` on that same model, because the step loop and the concurrency rules are the hardest changes. Do not move them to `opus`, which ranks below the session model.
+- [ ] Spawn one owner per PR with `delegate_task`, `isolation` set to `worktree`, and the full lifecycle that `autopilot-stack.md` names. The brief tells the owner to read `<pstack>/skills/poteto-mode/SKILL.md` first.
+- [ ] Run every owner on Claude Opus 5.5. Give M1-1, M1-4, and M1-6 `xhigh` effort, because the foundation, the step loop, and the concurrency rules are the hardest changes. Give the other owners `high` effort.
+- [ ] Use Claude Fable 5.2 for the root only. The operator ruled it out for the other roles on cost. Tell the operator before you replace a stuck owner with one on Claude Fable 5.2.
+- [ ] Use no Grok model for any role. The operator allows one only with a careful review of its work.
 - [ ] Put these three rules in every owner brief.
   - [ ] Clean room. Read the spec text and `@standardagents/spec` only. Never open a file inside `@standardagents/builder`, `@standardagents/cloudflare`, or any other proprietary Standard Agents package. Never install `@standardagents/builder`.
   - [ ] Effect v4 from the installed package. Read the type declarations under `node_modules/effect` and `node_modules/@effect/*` before you write a call. Do not write Effect v3 names from memory. `@effect/platform` and `@effect/sql` stopped at 0.x and are not dependencies.
@@ -66,7 +69,8 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 
 ### Verdict and merge, for every PR
 
-- [ ] A full swarm runs once, at the code-ready head. Another full swarm runs only for new behavior, a redesign, or a large new diff. A rebase, a merge-conflict resolution, or a minor fix gets a single verifier at the new head. Run each full swarm per `<pstack>/skills/swarm/SKILL.md`. One gates lane runs `pnpm check` on Node and on Bun. The ten live lanes come from the PR's **Verify, live** block. The perf lane comes from its **Verify, perf** block. Two audit lanes read the diff and the receipts and distrust the PR body. One audit lane checks the diff against the spec text for the ledger entries the PR marks `covered`. The other audit lane checks the clean-room rule and the platform import rule.
+- [ ] A full swarm runs once, at the code-ready head. Another full swarm runs only for new behavior, a redesign, or a large new diff. A rebase, a merge-conflict resolution, or a minor fix gets a single verifier at the new head. Run each full swarm per `<pstack>/skills/swarm/SKILL.md`. One gates lane runs `pnpm check` on Node and on Bun. The ten live lanes come from the PR's **Verify, live** block. The perf lane comes from its **Verify, perf** block. Two audit lanes read the diff and the receipts and distrust the PR body. One audit lane checks the diff against the spec text for the ledger entries the PR marks `covered`. The other audit lane checks the clean-room rule and the platform import rule. The gates lane, the live lanes, and the perf lane run on Claude Sonnet 5.5. The spec audit lane runs on GPT-6.2 Astra through Codex. The clean-room audit lane runs on Gemini 4 Neon. Every lane brief carries the three owner-brief rules, because a lane on another provider loads no pstack skill.
+- [ ] Until the operator's review of the built stack, run the full swarm on M1-1 only. For each later PR, one Claude Sonnet 5.5 verifier runs the gates and the ten live lanes in sequence in one worktree, and the spec audit lane runs beside it. The full swarm for M1-2 through M1-7 runs after the review, at the reviewed head.
 - [ ] Clean only when every lane is `PASS`. A lane that cannot run reports `BLOCKED`, and `BLOCKED` is not `PASS`. Findings go back to the owner, including a defect that a lane filed as a note. A new head gets a fresh verdict, except for results that stay valid under the patch-id rule in `shipping.md`.
 - [ ] The owner reports STACK-READY. The root appends the PR to the stack in dependency order with `gh pr edit <pr> --base <parent-branch>`. The operator lands the stack bottom-up.
 
@@ -94,11 +98,13 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 - [ ] Create `packages/conformance/package.json`, `packages/conformance/spec.lock.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and `packages/conformance/src/ledger.ts`.
 - [ ] Edit `scripts/spec-requirements.mjs` so that it reads the spec commit from `spec.lock.json`, fetches the spec only under `--refresh`, and exits non-zero under `--check` when its output differs from `requirements.json`.
 - [ ] Create `AGENTS.md` with the three owner-brief rules, and symlink `CLAUDE.md` to it.
+- [ ] Create `LICENSE` with the MIT license text.
 - [ ] Edit `README.md`.
 
 **Build.**
 
 - [ ] Add `effect`, `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, and `@standardagents/spec` to `packages/runtime`. Add `vitest` and `@effect/vitest` as dev dependencies. Pin every Effect package to the same exact version.
+- [ ] Name the packages `spindle-runtime` and `spindle-conformance`, and set `license` to `MIT` in both. The npm registry returned 404 for both names on 2026-11-25.
 - [ ] Export one `PlatformLive` layer and one `runMain` function from each platform module. `node.ts` builds them from `NodeServices`, `NodeRuntime`, and the `SqliteClient` of `@effect/sql-sqlite-node`. `bun.ts` builds them from `BunServices`, `BunRuntime`, and the `SqliteClient` of `@effect/sql-sqlite-bun`.
 - [ ] Make `packages/runtime/src/cli/main.ts` import `PlatformLive` and `runMain` from `#platform` and print the package version, `SPEC_VERSION`, and the platform name for `spindle --version`.
 - [ ] Add a Biome `noRestrictedImports` rule. Only files under `packages/runtime/src/platform/` may import `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, a `node:` module, or a `bun:` module.
@@ -120,7 +126,7 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 - [ ] `packages/conformance/test/ledger.test.ts` gains one case for each of the four ledger failures. Run `pnpm vitest run packages/conformance/test/ledger.test.ts`.
 - [ ] `packages/runtime/test/platform.test.ts` gains a case that opens an in-memory SQLite database through `PlatformLive` and reads back one row. Run it on Node and on Bun.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Trunk holds only `README.md`, so record that trunk has no check command. At the head, clone fresh and run `pnpm install --frozen-lockfile && pnpm check`. Save `fresh-clone-check.txt`. Pass when the exit code is 0 and the output names the lint, typecheck, test, ledger, and requirements steps.
 - [ ] Lane 2. Run `pnpm test` on the lowest Node version that `engines` allows. Save `node-minimum.txt`. Pass when every test passes and none is skipped.
@@ -181,7 +187,7 @@ The registry is a map from definition kind and qualified name to a lazy loader, 
 - [ ] `packages/runtime/test/registry/validate.test.ts` gains one case per invalid fixture. Each case asserts the issue code and the path.
 - [ ] The ledger entries for `distribution:packaging` and for the definition-time statements in `specification:agents`, `specification:handlers`, `specification:prompts`, `specification:models`, and `specification:hooks` change to `covered`. Run `pnpm check`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no `spindle validate`, so record that. At the head, run `spindle validate packages/conformance/fixtures/agents-basic`. Save `validate-basic.txt`. Pass when the exit code is 0 and every kind has a count.
 - [ ] Lane 2. Validate an agent whose two sides are both human. Save `both-sides-human.txt`. Pass when the exit code is 1 and the issue names the agent file.
@@ -247,7 +253,7 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 - [ ] `packages/runtime/test/store/contract.test.ts` gains one case per `ThreadStore` method and one case per key-value rule. Run `pnpm vitest run packages/runtime/test/store` on Node and on Bun.
 - [ ] The ledger entries for the second section 14 of `infrastructure:runtime` and for the persistence statements in `specification:threads/execution-state` section 4.3 change to `covered`. Run `pnpm check`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no store, so record that. At the head, run the `roundtrip` probe, then read the database from a new process. Save `roundtrip.txt`. Pass when both processes print the same three records in the same order.
 - [ ] Lane 2. Append one message, send `SIGKILL` to the process after the append resolves, and read from a new process. Save `kill-after-append.txt`. Pass when the message is present.
@@ -315,7 +321,7 @@ An execution moves through one ordered list of phases per step, which are drain,
 - [ ] `packages/runtime/test/execution/stop-rules.test.ts` gains one case per row of the stop-rule table and one case per pair of rows that can both match.
 - [ ] The ledger entries for those statements, and for the statements in `specification:tools` section 9 and `specification:prompts` sections 4.2 and 5.2, change to `covered`. Run `pnpm check`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no `spindle run`, so record that. At the head, run the text-reply script. Save `text-reply.txt`. Pass when the exit code is 0 and the database holds one user message and one assistant message.
 - [ ] Lane 2. Script one response with two tool calls, where the second tool reads a value the first tool writes. Save `sequential-tools.txt`. Pass when the trace shows the first result persisted before the second tool starts and the second tool read the value.
@@ -382,7 +388,7 @@ The spec defines fourteen hooks, and this PR implements thirteen of them. The ho
 - [ ] `packages/conformance/src/scenarios/hooks.ts` gains one scenario per statement in sections 3, 4, and 5 of the Hooks page.
 - [ ] The ledger entries for `specification:hooks` sections 3 to 5, `specification:threads/messages`, and `specification:threads/execution-state` section 2.2 change to `covered`. Run `pnpm check`.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Run the text-reply script on a fixture with no hooks at the parent branch and at the head, with `--dump-requests`. Save `no-hooks-regression.txt`. Pass when the provider requests and the persisted messages are identical on both.
 - [ ] Lane 2. Run a tool that injects a message during an execution, followed by a second tool. Save `inject-active.txt`. Pass when each create hook ran once, `getMessage` returns the record, and the second tool saw it on `execution.messageHistory`.
@@ -446,7 +452,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 - [ ] `packages/runtime/test/execution/run-status.test.ts` gains one case per legal transition and one case per illegal transition of the run-status state machine.
 - [ ] The ledger entries for those statements change to `covered`. Run `pnpm check`. The last line reports the covered count for milestone 1.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Run the text-reply script with `--trace` at the parent branch and at the head. Save `single-run-regression.txt`. Pass when the phase traces and the persisted messages are identical.
 - [ ] Lane 2. Call `queueMessage` on an idle thread through the probe. Save `queue-idle.txt`. Pass when an execution starts without a send and the status goes `running` then `idle`.
@@ -506,7 +512,7 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 
 - [ ] `packages/runtime/test/cli/chat.test.ts` gains one case per build box above, each driven by a test `Terminal` layer with scripted input lines. Run `pnpm vitest run packages/runtime/test/cli/chat.test.ts` on Node and on Bun.
 
-**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `inherit-parent` at the PR head, per the boot recipe.
+**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no `spindle chat`, so record that. At the head, pipe three lines into `spindle chat` with a scripted provider. Save `three-turns.txt`. Pass when three replies print in order and the thread holds six messages.
 - [ ] Lane 2. Exit a chat after one turn, then run the printed resume command and send one more line with `--dump-requests`. Save `resume.txt`. Pass when the second session's provider request holds the first session's messages.
@@ -596,6 +602,7 @@ These questions stay unproven.
 - **Lane 10 of M1-4 and of M1-7 needs a model endpoint.** Without `SPINDLE_TEST_BASE_URL` the lane reports `BLOCKED` and neither PR can get a clean verdict.
 - **The perf budgets are guesses.** No measurement exists yet. Each owner replaces a budget only with a measured number and a stated reason, per `benchmark-checklist`.
 - **Ten live lanes per PR cost many agent runs.** Seventy lanes run across the seven PRs. The operator can lower the count, and the check script would then need the same change.
+- **The operator's review can change the file layout.** A large restructure makes a verdict stale. For that reason only M1-1 gets a full swarm before the review.
 - **Clean-room discipline depends on briefs.** The second audit lane checks each diff and each transcript for a path inside a proprietary package.
 - **The provider packages are licensed for conforming runtimes.** Spindle does not bundle them. `openai-compatible.ts` gives milestone 1 a provider that Spindle owns.
 
