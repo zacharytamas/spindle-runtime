@@ -319,6 +319,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports every issue that the defineAgent helper throws inside a packed loader",
+    "packed-define-agent",
+    [
+      error("definition_load_failed", "agents/packed/standardagent-gate/index.js:agents.gate.maxSessionTurns"),
+      error("definition_load_failed", "agents/packed/standardagent-gate/index.js:agents.gate.sideB"),
+    ],
+  ],
+  [
     "reports a definition that throws while it is checked and goes on",
     "throwing-getter",
     [

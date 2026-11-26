@@ -252,7 +252,12 @@ export const describeImportFailure = (cause: unknown): string => {
 // The definition helpers in @standardagents/spec, such as defineAgent, throw one "<path>: <message>" line per issue.
 const FIELD_LINE = /^([A-Za-z_$][\w$]*(?:\.[\w$]+|\[\d+\])*): (.+)$/
 
-const importFailureIssues = (file: string, cause: unknown): ReadonlyArray<Issue> => {
+export const fieldIssues = (
+  cause: unknown,
+  location: { readonly file: string; readonly path: string },
+  describe: (message: string) => string,
+  whole: string,
+): ReadonlyArray<Issue> => {
   const lines = describeCause(cause)
     .split("\n")
     .map((line) => FIELD_LINE.exec(line))
@@ -261,12 +266,14 @@ const importFailureIssues = (file: string, cause: unknown): ReadonlyArray<Issue>
     code: "definition_load_failed",
     severity: "error",
     message,
-    file,
+    file: location.file,
     path,
   })
   return fields.length === lines.length
-    ? fields.map(([, path = "", message = ""]) => issue(path, `The file failed to load. ${message}`))
-    : [issue("", describeImportFailure(cause))]
+    ? fields.map(([, field = "", message = ""]) =>
+        issue([location.path, field].filter((part) => part !== "").join("."), describe(message)),
+      )
+    : [issue(location.path, whole)]
 }
 
 export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
@@ -277,5 +284,15 @@ export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
         catch: (cause) => cause,
       }),
     ),
-    Effect.mapError((cause) => new LoadError({ issues: importFailureIssues(file, cause) })),
+    Effect.mapError(
+      (cause) =>
+        new LoadError({
+          issues: fieldIssues(
+            cause,
+            { file, path: "" },
+            (message) => `The file failed to load. ${message}`,
+            describeImportFailure(cause),
+          ),
+        }),
+    ),
   )

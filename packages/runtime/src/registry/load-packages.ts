@@ -3,6 +3,7 @@ import { Effect, FileSystem, Path, Result } from "effect"
 import {
   type Definition,
   describeCause,
+  fieldIssues,
   type Issue,
   importFile,
   KINDS,
@@ -214,15 +215,12 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
           },
           catch: (cause) =>
             new LoadError({
-              issues: [
-                {
-                  code: "definition_load_failed",
-                  severity: "error",
-                  message: `${name} ${at} failed to load: ${describeCause(cause)}`,
-                  file,
-                  path: at,
-                },
-              ],
+              issues: fieldIssues(
+                cause,
+                { file, path: at },
+                (message) => `${name} ${at} failed to load: ${message}`,
+                `${name} ${at} failed to load: ${describeCause(cause)}`,
+              ),
             }),
         })
         definitions.push({
