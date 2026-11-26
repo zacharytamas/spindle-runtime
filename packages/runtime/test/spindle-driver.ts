@@ -1,4 +1,5 @@
 import { ConfigProvider, Duration, Effect, FileSystem, Layer, Logger, ManagedRuntime, Path } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { PlatformLive, SqliteLive } from "#platform"
 import type {
   LoadOptions,
@@ -6,6 +7,7 @@ import type {
   RunOutcome,
   RuntimeDriver,
   RuntimeSession,
+  StoredThread,
 } from "../../conformance/src/RuntimeDriver.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
 import { HolderTimeout, layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
@@ -47,6 +49,49 @@ export const registryOf = (project: Project) => {
   })
 }
 
+type Row = Record<string, unknown>
+
+const text = (value: unknown) => (typeof value === "string" ? value : null)
+const count = (value: unknown) => (typeof value === "number" ? value : null)
+
+// The rows are read with SELECT *, so that a column this version of the store does not have reads as absent.
+const inspectThread = (threadId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient
+    const [thread] = yield* sql.unsafe<Row>("SELECT * FROM threads WHERE id = ?", [threadId])
+    if (thread === undefined) return yield* Effect.die(new Error(`no thread ${threadId}`))
+    const holders = yield* sql.unsafe<Row>("SELECT * FROM holders WHERE id = ?", [thread.holder_id ?? ""])
+    const messages = yield* sql.unsafe<Row>("SELECT * FROM messages WHERE thread_id = ? ORDER BY seq", [threadId])
+    const queue = yield* sql.unsafe<Row>("SELECT * FROM queue WHERE thread_id = ? ORDER BY seq", [threadId])
+    const values = yield* sql.unsafe<Row>("SELECT * FROM kv WHERE thread_id = ? ORDER BY key", [threadId])
+    const flowId = text(thread.flow_id)
+    return {
+      status: {
+        state: thread.run_state as StoredThread["status"]["state"],
+        since: Number(thread.run_since),
+        reason: text(thread.run_reason),
+      },
+      terminated: count(thread.terminated_at),
+      claim: flowId === null ? null : { flowId, pid: count(holders[0]?.pid) },
+      revision: Number(thread.revision),
+      messages: messages.map((row) => ({
+        id: String(row.id),
+        seq: Number(row.seq),
+        role: String(row.role),
+        content: text(row.content),
+        flowId: text(row.flow_id),
+        callerSeq: count(row.caller_seq),
+      })),
+      queue: queue.map((row) => ({
+        seq: Number(row.seq),
+        kind: String(row.kind),
+        payload: String(row.payload),
+        failed: row.disposition === "failed_delivery",
+      })),
+      values: Object.fromEntries(values.map((row) => [String(row.key), JSON.parse(String(row.value))])),
+    } satisfies StoredThread
+  })
+
 const store = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
 
 // One session is one process: its own connection, its own claims, and its own lease.
@@ -73,6 +118,14 @@ const openSession = (
     ),
   )
   const reader = ManagedRuntime.make(store(filename))
+  // A connection without the store, for the rows themselves.
+  const rows = ManagedRuntime.make(Layer.fresh(SqliteLive({ filename })))
+  const withSql = <A, E>(use: (sql: SqlClient) => Effect.Effect<A, E>) =>
+    rows.runPromise(
+      Effect.gen(function* () {
+        return yield* use(yield* SqlClient)
+      }),
+    )
   const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
     reader.runPromise(
       Effect.gen(function* () {
@@ -86,7 +139,10 @@ const openSession = (
     send: (threadId, content, sendOptions = {}) =>
       runtime
         .runPromise(
-          sendMessage(threadId, content, sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
+          sendMessage(threadId, content, {
+            ...(sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
+            ...(sendOptions.stepCap === undefined ? {} : { stepCap: sendOptions.stepCap }),
+          }),
         )
         .then(
           (delivery): RunOutcome =>
@@ -110,9 +166,48 @@ const openSession = (
         (result) => result.messages,
       ),
     seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
+    abort: (threadId) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          return yield* supervisor.abort(threadId)
+        }),
+      ),
+    inspect: (threadId) => rows.runPromise(inspectThread(threadId)),
+    // Until the runtime has a forced recovery, the only way to take a thread from a live holder is a lease that ran
+    // out. The driver ends the holder's lease and lets recovery run, which settles the thread the same way. Replace
+    // both statements with the operation behind spindle recover --force once it exists.
+    forceRecover: (threadId) =>
+      withSql((sql) =>
+        sql.unsafe("UPDATE holders SET expires_at = 0 WHERE id = (SELECT holder_id FROM threads WHERE id = ?)", [
+          threadId,
+        ]),
+      )
+        .then(() => withStore((s) => s.recover(threadId)))
+        .then(() => undefined),
+    queueRaw: (threadId, kind, payload) =>
+      withSql((sql) =>
+        sql.unsafe("INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, ?, ?, 0)", [
+          threadId,
+          kind,
+          payload,
+        ]),
+      ).then(() => undefined),
+    // A trigger cannot take a bound value, and a thread id is a UUID that the runtime made.
+    breakSettlement: (threadId) =>
+      /^[0-9a-f-]{36}$/.test(threadId)
+        ? withSql((sql) =>
+            sql.unsafe(
+              `CREATE TRIGGER driver_break_settlement BEFORE UPDATE ON threads
+               WHEN OLD.id = '${threadId}' AND OLD.run_state = 'running' AND NEW.run_state <> 'running'
+               BEGIN SELECT RAISE(ABORT, 'the disk is full'); END`,
+            ),
+          ).then(() => undefined)
+        : Promise.reject(new Error(`${threadId} is not a thread id`)),
     close: async () => {
       await runtime.dispose()
       await reader.dispose()
+      await rows.dispose()
       await cleanup()
     },
   }

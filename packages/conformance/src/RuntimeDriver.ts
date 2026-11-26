@@ -8,6 +8,7 @@ import type {
   PromptDefinition,
   ProviderUsage,
   ThreadState,
+  ThreadStatus,
   ToolDefinition,
 } from "@standardagents/spec"
 
@@ -36,6 +37,8 @@ export interface SendOptions {
   // How many times one step may repeat a model request after a retryable provider error or a response that
   // breaks the prompt's toolChoice.
   readonly retries?: number
+  // How many model steps one execution may take before the runtime ends it with max_total_steps.
+  readonly stepCap?: number
 }
 
 export interface RunError {
@@ -99,6 +102,42 @@ export interface SeedMessage {
   readonly metadata?: Record<string, unknown>
 }
 
+// One message row as a second connection reads it, with the facts the runtime records beside the message.
+export interface StoredMessage {
+  readonly id: string
+  // The position of the row in the store. A later row has a higher number.
+  readonly seq: number
+  readonly role: string
+  readonly content: string | null
+  // The execution that the runtime inserted the message for, or null for a message written from outside one.
+  readonly flowId: string | null
+  // On a tool result, the seq of the message that holds its call. Null on every other message.
+  readonly callerSeq: number | null
+}
+
+// One queue row as a second connection reads it.
+export interface StoredQueueEntry {
+  readonly seq: number
+  readonly kind: string
+  // The payload text as the row holds it.
+  readonly payload: string
+  // True when the runtime set the entry aside as a failed delivery. Such an entry is never delivered.
+  readonly failed: boolean
+}
+
+// Everything a thread stores, read on a connection that no run uses.
+export interface StoredThread {
+  readonly status: ThreadStatus
+  readonly terminated: number | null
+  // The flow that holds the thread and the process id of its holder, or null when no execution holds the thread.
+  readonly claim: { readonly flowId: string; readonly pid: number | null } | null
+  // Goes up by one for every insert, update, and delete of one of the thread's messages.
+  readonly revision: number
+  readonly messages: ReadonlyArray<StoredMessage>
+  readonly queue: ReadonlyArray<StoredQueueEntry>
+  readonly values: Readonly<Record<string, unknown>>
+}
+
 export interface RuntimeSession {
   // Creates a thread and runs its after_thread_created hooks before it resolves.
   readonly createThread: (agent: string) => Promise<string>
@@ -118,6 +157,20 @@ export interface RuntimeSession {
   readonly messages: (threadId: string) => Promise<ReadonlyArray<Message>>
   // Writes messages on a connection the run does not use, as another process would, before or during a run.
   readonly seed: (threadId: string, messages: ReadonlyArray<SeedMessage>) => Promise<void>
+  // Interrupts the execution that this session runs for the thread, as the second Ctrl-C of spindle run does, and
+  // resolves once the abort is requested. It does not wait for the tools and hooks of that execution to return.
+  // Resolves false when this session runs no execution for the thread.
+  readonly abort: (threadId: string) => Promise<boolean>
+  // Reads what the thread stores on a connection that no run uses.
+  readonly inspect: (threadId: string) => Promise<StoredThread>
+  // What spindle recover <thread> --force does: settles a running thread failed with execution_lost although its
+  // holder is alive. The code of the old execution keeps running in its session, and its writes are stale from then on.
+  readonly forceRecover: (threadId: string) => Promise<void>
+  // Writes one queue row with this payload text on a connection that no run uses, as a damaged file or a file from
+  // another version would hold it.
+  readonly queueRaw: (threadId: string, kind: "message" | "tool", payload: string) => Promise<void>
+  // From now on every write that would end the thread's run fails, as a full disk fails it.
+  readonly breakSettlement: (threadId: string) => Promise<void>
   readonly close: () => Promise<void>
 }
 
