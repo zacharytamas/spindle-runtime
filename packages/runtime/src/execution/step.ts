@@ -11,7 +11,7 @@ import { Cause, Effect, Fiber } from "effect"
 import { providerFor } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
-import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages } from "./assemble.ts"
+import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
@@ -222,6 +222,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         return detailsAccepted.get(name) ?? false
       }
       const prompt = turn.prompt.value
+      const turnStart = turnStartOf(history, turn.side)
       while (true) {
         step += 1
         yield* record("drain", "no queue before M1-6")
@@ -235,6 +236,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           }
         const messages = toProviderMessages(history, {
           side: turn.side,
+          turnStart,
           includeChat: prompt.includeChat === true,
           includePastTools: prompt.includePastTools === true,
           includeReasoning: prompt.reasoning?.include !== false,

@@ -77,6 +77,8 @@ export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (tur
 
 export interface HistoryView {
   readonly side: Side
+  // The message from the other side that started this turn. It and everything after it form the current exchange.
+  readonly turnStart: string | undefined
   readonly includeChat: boolean
   readonly includePastTools: boolean
   readonly includeReasoning: boolean
@@ -128,15 +130,19 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
   }
 }
 
+// The message from the other side that started the turn: the latest one at the moment the execution starts.
+export const turnStartOf = (history: ReadonlyArray<Message>, side: Side) =>
+  history.findLast((message) => message.role === roleOf(side === "a" ? "b" : "a"))?.id
+
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
-// side's tool calls stay hidden. History before the latest message from the other side is past history,
-// which includeChat and includePastTools admit. A call and its result are shown or hidden together.
+// side's tool calls stay hidden. History before the message that started the turn is past history, which
+// includeChat and includePastTools admit. A call and its result are shown or hidden together.
 export const toProviderMessages = (history: ReadonlyArray<Message>, view: HistoryView): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const current = Math.max(
     0,
-    history.findLastIndex((message) => message.role === other),
+    history.findIndex((message) => message.id === view.turnStart),
   )
   const shownCalls = new Map<string, boolean>()
   const messages: Array<ProviderMessage> = []
