@@ -258,6 +258,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports a definition that throws while it is checked and goes on",
+    "throwing-getter",
+    [
+      error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+      error("definition_load_failed", "agents/tools/trap.ts"),
+    ],
+  ],
+  [
     "reports a kind directory or a package scope that is not a directory and goes on",
     "unreadable-kind",
     [

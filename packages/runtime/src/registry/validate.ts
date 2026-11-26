@@ -1,6 +1,15 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
 import { Effect, Result } from "effect"
-import { type Definition, type Issue, type IssueCode, KINDS, type Kind, namespaceOf, Registry } from "./Registry.ts"
+import {
+  type Definition,
+  describeCause,
+  type Issue,
+  type IssueCode,
+  KINDS,
+  type Kind,
+  namespaceOf,
+  Registry,
+} from "./Registry.ts"
 import type { Resolution } from "./resolve.ts"
 
 const THREAD_HOOKS = [
@@ -431,7 +440,17 @@ export const validate = Effect.gen(function* () {
     handler: checkHandler,
     effect: checkEffect,
   }
-  for (const [definition, value] of loaded) checks[definition.kind](definition, value)
+  for (const [definition, value] of loaded) {
+    try {
+      checks[definition.kind](definition, value)
+    } catch (cause) {
+      site(definition).report(
+        "definition_load_failed",
+        "",
+        `The ${definition.kind} threw while Spindle checked it. ${describeCause(cause)}`,
+      )
+    }
+  }
 
   const includes = new Map<Definition, Array<{ readonly target: Definition; readonly path: string }>>()
   for (const [definition, value] of loaded) {
