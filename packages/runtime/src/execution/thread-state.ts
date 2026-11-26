@@ -4,6 +4,7 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
+import { mapStrings, redactor, redactText } from "./redact.ts"
 import { lookup, type Side } from "./turn.ts"
 
 export interface ExecutionRecord {
@@ -85,6 +86,12 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () =>
     registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
+  // Threads section 2.3: text that user code writes into the thread is tool output, so it is redacted before it is
+  // stored, by the rule for a tool result. The human's messages and the model's responses never pass through here.
+  const redact = redactor(state.secrets.values)
+  const redactContent = redactText(redact)
+  const redactMetadata = (metadata: Record<string, unknown> | undefined) =>
+    metadata === undefined ? {} : { metadata: mapStrings(metadata, redact) }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
     else state.secrets.values.add(value)
@@ -109,10 +116,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
           const [message] = yield* store.appendMessages(threadId, [
             {
               role: input.role,
-              content: input.content,
+              content: typeof input.content === "string" ? redactContent(input.content) : input.content,
               status: "completed",
               ...(input.silent === undefined ? {} : { silent: input.silent }),
-              ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+              ...redactMetadata(input.metadata),
             },
           ])
           if (message === undefined) return yield* Effect.die(new Error("appendMessages returned no message"))
@@ -123,7 +130,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     updateMessage: (messageId, updates) =>
       run(
         Effect.gen(function* () {
-          const message = yield* store.updateMessage(threadId, messageId, updates)
+          const message = yield* store.updateMessage(threadId, messageId, {
+            ...updates,
+            ...(typeof updates.content === "string" ? { content: redactContent(updates.content) } : {}),
+            ...redactMetadata(updates.metadata),
+          })
           const index = history?.findIndex((candidate) => candidate.id === messageId) ?? -1
           if (history !== undefined && index !== -1) history[index] = message
           return message

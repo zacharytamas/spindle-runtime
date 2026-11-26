@@ -2082,6 +2082,63 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S26f redacts the text a tool writes into the thread and keeps what the human and the model wrote",
+    requirements: [],
+    run: async (driver) => {
+      const marker = "INJECT-MARKER-3d1"
+      const written: Array<Message> = []
+      const tools = {
+        scribe: defineTool({
+          description: "Writes into the thread",
+          variables: [{ name: "MARK", type: "secret", required: true, description: "A secret" }],
+          execute: async (state: ThreadState) => {
+            const mark = await state.env("MARK")
+            written.push(
+              await state.injectMessage({ role: "user", content: `injected ${mark}`, metadata: { note: mark } }),
+            )
+            const blank = await state.injectMessage({ role: "user", content: "blank" })
+            written.push(await state.updateMessage(blank.id, { content: `edited ${mark}`, metadata: { by: mark } }))
+            return ok("written")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { text: `calling ${marker}`, toolCalls: [{ name: "scribe", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools },
+        async (session, thread) => {
+          await send(session, thread, `hello ${marker}`)
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => [m.role, m.content])).toEqual([
+            ["user", `hello ${marker}`],
+            ["assistant", `calling ${marker}`],
+            ["user", "injected [redacted]"],
+            ["user", "edited [redacted]"],
+            ["tool", "written"],
+            ["assistant", "done"],
+          ])
+          expect(stored.filter((m) => m.role === "user").map((m) => m.metadata)).toEqual([
+            {},
+            { note: "[redacted]" },
+            { by: "[redacted]" },
+          ])
+        },
+        { MARK: marker },
+      )
+      expect(written.map((m) => m.content)).toEqual(["injected [redacted]", "edited [redacted]"])
+      expect(history(provider.requests[1]).map((m) => m.content)).toEqual([
+        `hello ${marker}`,
+        `calling ${marker}`,
+        "injected [redacted]",
+        "edited [redacted]",
+        "written",
+      ])
+    },
+  },
+  {
     name: "S26b redacts a secret of any length from stored tool results, later requests, and run errors",
     requirements: ["287f2aef"],
     run: async (driver) => {
