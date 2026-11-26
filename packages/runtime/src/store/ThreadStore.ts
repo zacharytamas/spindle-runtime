@@ -175,13 +175,9 @@ export const callerSequence = (caller: Message) => {
   if (!position) throw new Error("Stored caller has no sequence")
   return position.seq
 }
-export interface InsertOptions {
-  readonly callerSeq?: number
-  // The execution that writes. The insert fails with FlowEnded when that flow no longer holds the thread.
-  readonly flowId?: string
-  // The queue entry that this message delivers, removed in the transaction of the insert.
-  readonly dequeue?: number
-}
+export type InsertOptions =
+  | { readonly flowId: string; readonly callerSeq?: number; readonly dequeue?: number }
+  | { readonly flowId?: never; readonly callerSeq?: never; readonly dequeue?: never }
 
 export class ThreadStore extends Context.Service<
   ThreadStore,
@@ -193,7 +189,7 @@ export class ThreadStore extends Context.Service<
     readonly appendMessages: (
       threadId: string,
       messages: ReadonlyArray<NewMessage>,
-    ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ValueNotJson | SqlError>
+    ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ThreadTerminated | ValueNotJson | SqlError>
     // Stores a message whose id and created_at the caller already chose, as a before_create_message hook saw them.
     readonly insertMessage: (
       threadId: string,

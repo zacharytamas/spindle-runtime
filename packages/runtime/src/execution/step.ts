@@ -749,7 +749,8 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           }),
           Effect.ignore(
             Effect.tap(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted), (settlement) =>
-              Effect.sync(() => {
+              Effect.gen(function* () {
+                if (settlement === "superseded") run.displaced = (yield* store.getThread(threadId)).terminated === null
                 run.resumeQueued = settlement === "settled" && run.waitForCallbacks === true
               }),
             ),

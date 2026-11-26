@@ -263,7 +263,9 @@ export const layer = Layer.effect(
       appendMessages: (threadId, messages) =>
         sql.withTransaction(
           Effect.gen(function* () {
-            yield* requireThread(threadId)
+            const run = yield* selectRun(threadId)
+            if (run.terminated_at !== null)
+              return yield* new ThreadTerminated({ threadId, terminated: run.terminated_at })
             const createdAt = yield* nowMicros
             const rows: Array<ReturnType<typeof messageRow>> = []
             for (const message of messages)
@@ -290,10 +292,6 @@ export const layer = Layer.effect(
                 () => new ThreadNotFound({ threadId }),
               )
               const handle = yield* WritingHandle
-              if (handle) {
-                const refusal = checkHandle(threadId, thread, handle, true)
-                if (refusal) return yield* refusal
-              }
               const { flowId, dequeue } = options
               if (dequeue !== undefined && flowId === undefined)
                 return yield* Effect.die(new Error("Queue delivery requires a flow"))
@@ -303,6 +301,8 @@ export const layer = Layer.effect(
                   flowId,
                   why: thread.terminated_at === null ? "superseded" : "terminated",
                 })
+              const refusal = checkHandle(threadId, thread, handle, true)
+              if (refusal) return yield* refusal
               if (dequeue !== undefined) {
                 const removed =
                   yield* sql`DELETE FROM queue WHERE thread_id = ${threadId} AND seq = ${dequeue} RETURNING seq`

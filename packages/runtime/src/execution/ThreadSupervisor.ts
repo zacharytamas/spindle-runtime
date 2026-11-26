@@ -133,6 +133,12 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       ): Effect.Effect<Live, never, ThreadStore | Registry> =>
         Effect.gen(function* () {
           const entry: Live = { run, done: yield* Deferred.make<RunOutcome>(), fiber: undefined }
+          const previous = live.get(threadId)
+          if (previous && !previous.run.ended) {
+            previous.run.displaced = true
+            previous.run.releaseWait.abort()
+            previous.fiber?.interruptUnsafe()
+          }
           live.set(threadId, entry)
           // An execution yields to other fibers only where it waits, for a model, a tool, or a hook, so its store calls
           // take the writer lock without a scheduler yield. The outcome is recorded in a finalizer, which an interrupt cannot cut short.
