@@ -29,7 +29,7 @@
           "effectTryWithoutCatch": "warning",
           "globalDateInEffect": "warning",
           "globalErrorInEffectCatch": "warning",
-          "globalErrorInEffectFailure": "warning",
+          "globalErrorInEffectFailure": "suggestion",
           "missingConcurrencyOption": "warning",
           "preferTypedSchemaDecoder": "warning",
           "returnEffectInGen": "warning",
