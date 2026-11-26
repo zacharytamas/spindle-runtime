@@ -8,7 +8,7 @@ import type {
 } from "@standardagents/spec"
 import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
-import { toJson } from "../store/schema.ts"
+import { toJson } from "../store/json.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { HandleExpired, ThreadStore, ValueNotJson, type WriteOrigin } from "../store/ThreadStore.ts"
 import type { Callback, PendingCallbacks } from "./callback.ts"

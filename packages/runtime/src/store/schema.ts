@@ -1,4 +1,5 @@
 import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
+import { Option, Schema } from "effect"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
@@ -177,12 +178,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
 export const callsIn = (toolCalls: Text): Array<{ readonly id: string; readonly name: string }> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text(toolCalls))
-  } catch {
-    return []
-  }
+  const parsed = Option.getOrUndefined(parsePayload(text(toolCalls)))
   if (!Array.isArray(parsed)) return []
   return parsed.flatMap((entry: unknown) =>
     isRecord(entry) && typeof entry.id === "string"
@@ -206,121 +202,37 @@ export interface QueueRow {
 export const queuePayload = (entry: QueueEntry): unknown =>
   entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args }
 
-const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+const attachment = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: Schema.String,
+  path: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  size: Schema.Natural,
+  width: Schema.optional(Schema.Natural),
+  height: Schema.optional(Schema.Natural),
+  description: Schema.optional(Schema.String),
+})
+const matchesAttachment = Schema.is(attachment)
+export const isAttachmentRef = (value: unknown): value is AttachmentRef => matchesAttachment(value)
+const record = Schema.Record(Schema.String, Schema.Unknown)
+const matchesMessage = Schema.is(
+  Schema.Struct({
+    role: Schema.Literals(["user", "assistant"]),
+    content: Schema.String,
+    silent: Schema.optional(Schema.Boolean),
+    metadata: Schema.optional(record),
+    attachments: Schema.optional(Schema.mutable(Schema.Array(attachment))),
+  }),
+)
+const isQueueMessage = (value: unknown): value is QueueMessageInput => matchesMessage(value)
+const isQueueTool = Schema.is(Schema.Struct({ toolName: Schema.String, args: record }))
+const parsePayload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
-export const isAttachmentRef = (value: unknown): value is AttachmentRef =>
-  isRecord(value) &&
-  value.type === "file" &&
-  typeof value.id === "string" &&
-  typeof value.path === "string" &&
-  typeof value.name === "string" &&
-  typeof value.mimeType === "string" &&
-  isCount(value.size) &&
-  (value.width === undefined || isCount(value.width)) &&
-  (value.height === undefined || isCount(value.height)) &&
-  (value.description === undefined || typeof value.description === "string")
-
-const isQueueMessage = (value: unknown): value is QueueMessageInput =>
-  isRecord(value) &&
-  (value.role === "user" || value.role === "assistant") &&
-  typeof value.content === "string" &&
-  (value.silent === undefined || typeof value.silent === "boolean") &&
-  (value.metadata === undefined || isRecord(value.metadata)) &&
-  (value.attachments === undefined || (Array.isArray(value.attachments) && value.attachments.every(isAttachmentRef)))
-
-export const toQueued = (row: QueueRow): Queued => {
-  const payload: unknown = JSON.parse(row.payload)
+export const decodeQueued = (row: QueueRow): Queued | undefined => {
+  const payload = Option.getOrUndefined(parsePayload(row.payload))
   const position = { seq: row.seq, queuedAt: row.queued_at }
   if (row.kind === "message" && isQueueMessage(payload)) return { ...position, kind: "message", message: payload }
-  if (row.kind === "tool" && isRecord(payload) && typeof payload.toolName === "string" && isRecord(payload.args))
+  if (row.kind === "tool" && isQueueTool(payload))
     return { ...position, kind: "tool", toolName: payload.toolName, args: payload.args }
-  throw new Error("Invalid queued payload")
-}
-
-export interface NotJson {
-  readonly path: string
-  readonly found: string
-}
-
-export const maxJsonDepth = 1000
-
-class Found implements NotJson {
-  readonly path: string
-  readonly found: string
-  constructor(path: string, found: string) {
-    this.path = path
-    this.found = found
-  }
-}
-
-const read = <A>(path: string, get: () => A): A => {
-  try {
-    return get()
-  } catch (cause) {
-    throw new Found(path, `a property that threw ${String(cause)}`)
-  }
-}
-
-// Builds the text from the same reads that validate it, so a value that changes between the check and
-// the write cannot reach the database. JSON.stringify would drop or rewrite the values rejected here.
-export const toJson = (value: unknown): string | NotJson => {
-  const ancestors = new Set<object>()
-  const write = (value: unknown, path: string): string => {
-    switch (typeof value) {
-      case "string":
-        return JSON.stringify(value)
-      case "boolean":
-        return String(value)
-      case "number":
-        if (Number.isFinite(value)) return JSON.stringify(value)
-        throw new Found(path, String(value))
-      case "bigint":
-        throw new Found(path, "a BigInt")
-      case "object": {
-        if (value === null) return "null"
-        if (ancestors.has(value)) throw new Found(path, "a circular reference")
-        if (ancestors.size === maxJsonDepth) throw new Found(path, `nesting deeper than ${maxJsonDepth} levels`)
-        ancestors.add(value)
-        let text: string
-        if (Array.isArray(value)) {
-          const items: Array<string> = []
-          const length = read(path, () => value.length)
-          for (let index = 0; index < length; index++)
-            items.push(
-              write(
-                read(path, () => value[index]),
-                `${path}[${index}]`,
-              ),
-            )
-          text = `[${items.join(",")}]`
-        } else {
-          // A plain object has no prototype or one that has none itself, in whichever realm made it.
-          // Anything else, such as a Date or a class instance, can serialize to a value that differs from its members.
-          const prototype = read(path, () => Object.getPrototypeOf(value))
-          if (prototype !== null && read(path, () => Object.getPrototypeOf(prototype)) !== null)
-            throw new Found(path, `a ${read(path, () => prototype.constructor?.name) ?? "non-plain"} object`)
-          const entries = read(path, () => Object.entries(value))
-          const ownToJson = entries.find(([key]) => key === "toJSON")
-          if (
-            typeof (ownToJson ? ownToJson[1] : read(path, () => (value as { toJSON?: unknown }).toJSON)) === "function"
-          )
-            throw new Found(path, "an object with a toJSON method")
-          const members: Array<string> = []
-          for (const [key, member] of entries)
-            if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)
-          text = `{${members.join(",")}}`
-        }
-        ancestors.delete(value)
-        return text
-      }
-      default:
-        throw new Found(path, typeof value === "undefined" ? "undefined" : `a ${typeof value}`)
-    }
-  }
-  try {
-    return write(value, "$")
-  } catch (error) {
-    if (error instanceof Found) return { path: error.path, found: error.found }
-    throw error
-  }
 }

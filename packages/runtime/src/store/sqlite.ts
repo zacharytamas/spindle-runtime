@@ -1,15 +1,17 @@
 import type { ThreadStatus } from "@standardagents/spec"
-import { Clock, Effect, Layer, Option, Scheduler } from "effect"
+import { Clock, Effect, Layer, Option, Scheduler, Schema } from "effect"
 import * as Migrator from "effect/sql/Migrator"
 import { BeginTransaction, SqlClient } from "effect/sql/SqlClient"
 import { processAlive, processId } from "#platform"
 import { CLOSING, transition } from "../execution/run-status.ts"
+import { toJson } from "./json.ts"
 import threads from "./migrations/0001_threads.ts"
 import revisions from "./migrations/0002_revision.ts"
 import claims from "./migrations/0003_claims.ts"
 import admission from "./migrations/0004_message_admission.ts"
 import {
   callsIn,
+  decodeQueued,
   type MessageRow,
   messageColumns,
   messageRow,
@@ -20,9 +22,7 @@ import {
   type ThreadRow,
   text,
   threadColumns,
-  toJson,
   toMessage,
-  toQueued,
   toStatus,
   toThread,
 } from "./schema.ts"
@@ -96,7 +96,7 @@ const json = (field: string, value: unknown): Effect.Effect<string, ValueNotJson
     return typeof text === "string" ? Effect.succeed(text) : Effect.fail(new ValueNotJson({ field, ...text }))
   })
 
-const isCount = (value: number) => Number.isSafeInteger(value) && value >= 0
+const isCount = Schema.is(Schema.Natural)
 
 const first = <A, E>(rows: ReadonlyArray<A>, missing: () => E): Effect.Effect<A, E> =>
   rows[0] === undefined ? Effect.fail(missing()) : Effect.succeed(rows[0])
@@ -502,7 +502,8 @@ export const layer = Layer.effect(
             const rows = yield* sql<QueueRow>`
               INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload, queued_at: now })}
               RETURNING seq, kind, payload, queued_at`
-            const queued = toQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
+            const queued = decodeQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
+            if (!queued) return yield* Effect.die(new Error("Invalid queued payload"))
             return { queued, claimed: yield* claimRun(threadId, row, claim, now) }
           }),
         ),
@@ -525,18 +526,16 @@ export const layer = Layer.effect(
             const [row] =
               yield* sql<QueueRow>`SELECT seq, kind, payload, queued_at FROM queue WHERE ${pending(threadId)} ORDER BY seq LIMIT 1`
             if (!row) return undefined
-            try {
-              return toQueued(row)
-            } catch {
-              const changed = yield* sql.withTransaction(
-                Effect.gen(function* () {
-                  const [run] = yield* runRows(threadId)
-                  if (!run || authorize(threadId, run, origin, "settle")) return []
-                  return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(threadId)} AND seq = ${row.seq} RETURNING seq`
-                }),
-              )
-              if (!changed.length) return undefined
-            }
+            const entry = decodeQueued(row)
+            if (entry) return entry
+            const changed = yield* sql.withTransaction(
+              Effect.gen(function* () {
+                const [run] = yield* runRows(threadId)
+                if (!run || authorize(threadId, run, origin, "settle")) return []
+                return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(threadId)} AND seq = ${row.seq} RETURNING seq`
+              }),
+            )
+            if (!changed.length) return undefined
           }
         }),
 
