@@ -62,6 +62,27 @@ Some sections record a point that the spec text leaves open. Spindle takes the s
 - **Disagreement.** The spec says a reader can rely on each field. The package lets a runtime leave it out.
 - **Spindle.** The store returns every field of the spec's table on every message, with `null` for an absent value, `0` for `depth`, `false` for `silent`, and `{}` for `metadata`. The nine `subagent_*` fields are always `null` until M3 adds the child registry they project from. That record satisfies both types. `packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back` asserts the full record.
 
+## Stream chunks that only the package declares
+
+- **Spec.** Providers section 6 lists the stream chunks, and its `finish` chunk carries `finishReason` and `usage` only. Messages section 1.3, `specification:threads/messages:7abccc72`, still requires the runtime to persist provider-specific reasoning data.
+- **Package.** `ProviderStreamChunk` in `@standardagents/spec` 0.45.13 adds `reasoningDetails` to `finish`, `extraContent` to `tool-call-start` and `tool-call-done`, and the chunks `web-search-done` and `provider-tool-done`.
+- **Disagreement.** Without the package's `reasoningDetails`, a streamed response has no way to carry the reasoning data that the spec requires Spindle to persist.
+- **Spindle.** The chunk union is a signature, so Spindle reads all of them. It stores `finish.reasoningDetails` as `reasoning_details`, keeps `extraContent` in `metadata.tool_call_extra` and sends it back with the call, and counts the two provider-executed chunks without running anything. `packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments` and `S27 treats provider-executed tools and generated images as parts of one response and runs nothing locally` show it.
+
+## invokeTool and a target outside uses
+
+- **Spec.** Tools section 2.1, `specification:tools:a403d2a5`. "`invokeTool()` returns an error result for an undeclared target."
+- **Package.** The doc comment on `DefineToolOptions.uses` in `@standardagents/spec` 0.45.13 says "At runtime, attempts to call unlisted items will throw an error."
+- **Disagreement.** The spec text returns an error result. The package comment throws.
+- **Spindle.** `invokeTool` returns `{ status: "error" }` for a target outside a supplied `uses` list and never throws for it. `S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool` shows it. M1-6 makes `queueTool` throw, as both sides agree.
+
+## Members of a provider request and a prompt that only the package declares
+
+- **Spec.** Providers section 2 lists the fields of `ProviderRequest`, and Prompts section 1.2 lists the optional properties of a prompt.
+- **Package.** `ProviderRequest` in `@standardagents/spec` 0.45.13 adds `reasoning.levels` and `user`, and `PromptDefinition` adds `historyLimit` and `providerOptions`.
+- **Disagreement.** The spec text has none of the four, although Providers section 2.1 merges `prompt.providerOptions`.
+- **Spindle.** A request carries `reasoning.levels` from the model's `capabilities.reasoningLevels` whenever the prompt sets a level, because Providers section 2.2 maps a level to the model's declared levels. Spindle merges `prompt.providerOptions` after the model's. It sends no `user` and ignores `historyLimit`, which would window the execution history that Execution State section 2.2 requires in full. `S06a merges provider options from the model and then the prompt, later keys winning` and `S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels` show the first two.
+
 ## Limits that Spindle sets where the spec allows one
 
 Runtime section 14.2 lets a runtime cap key length, value size, and the number of keys, and asks that each cap be documented with the runtime. This section is that record. It is not a disagreement between the spec and the package.

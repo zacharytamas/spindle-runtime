@@ -294,36 +294,36 @@ An execution moves through one ordered list of phases per step, which are drain,
 
 **Files.**
 
-- [ ] Create `packages/runtime/src/execution/step.ts`, `assemble.ts`, `tools.ts`, `stop-rules.ts`, `trace.ts`, and `thread-state.ts`.
-- [ ] Create `packages/runtime/src/providers/openai-compatible.ts`.
-- [ ] Create `packages/runtime/src/cli/run.ts`.
-- [ ] Create `packages/conformance/src/ScriptedProvider.ts`, `packages/conformance/src/RuntimeDriver.ts`, and `packages/conformance/src/scenarios/step-loop.ts`.
+- [x] Create `packages/runtime/src/execution/step.ts`, `assemble.ts`, `tools.ts`, `stop-rules.ts`, `trace.ts`, and `thread-state.ts`.
+- [x] Create `packages/runtime/src/providers/openai-compatible.ts`.
+- [x] Create `packages/runtime/src/cli/run.ts`.
+- [x] Create `packages/conformance/src/ScriptedProvider.ts`, `packages/conformance/src/RuntimeDriver.ts`, and `packages/conformance/src/scenarios/step-loop.ts`.
 
 **Build.**
 
-- [ ] Define `RuntimeDriver` in the conformance package. A driver creates a thread, sends a message, waits for the run to settle, reads messages, and returns the provider requests. Every scenario uses the driver and imports nothing from `packages/runtime`.
-- [ ] Write `ScriptedProvider` against `LLMProviderInterface` from `@standardagents/spec`. A script lists the responses in order, as text, tool calls, stream chunks, or errors. The provider records each request it receives.
-- [ ] Assemble the context. Interpolate the system prompt with its includes and variables, map the prompt side's own turns to `assistant` and the other side's turns to `user`, and convert the history to provider messages.
-- [ ] Call the model through the provider's stream, and persist the assistant message with its reasoning fields before any tool runs.
-- [ ] Generate each tool's JSON Schema from its Zod arguments, validate the model's arguments against the schema, and run the tool calls one at a time in the order the model returned them.
-- [ ] Persist a tool error as a tool result and continue the loop.
-- [ ] Evaluate `stopTool`, then `stopOnResponse`, then `maxSteps`, from the one stop-rule table. Pass `toolChoice` through, including `none` with the tool definitions.
-- [ ] Write `openai-compatible.ts` against `LLMProviderInterface` for the chat completions wire format. It reads the base URL and the key from provider config slots. The real-model lanes set those slots from `SPINDLE_TEST_BASE_URL`, `SPINDLE_TEST_API_KEY`, and `SPINDLE_TEST_MODEL`. The key is optional, because a local server needs none. The model must support tool calls and streaming.
-- [ ] Export the provider from `packages/runtime` as a factory named `openaiCompatible`, so that a file under `agents/models/` can import it and pass it as `provider`.
-- [ ] Copy the Hello, World example from the spec's Examples page into `packages/conformance/fixtures/hello-world/`. Change only the provider import in `agents/models/conversational.ts`.
-- [ ] Add `spindle run <agent> -m <text>`. It loads the `agents/` folder of the current directory, and `--dir <path>` names a different project directory. `--script <file>` selects the scripted provider. `--trace` prints the phase trace. `--dump-requests` prints each provider request as JSON. `--db <file>` selects the database.
+- [x] Define `RuntimeDriver` in the conformance package. A driver creates a thread, sends a message, waits for the run to settle, reads messages, and returns the provider requests. Every scenario uses the driver and imports nothing from `packages/runtime`.
+- [x] Write `ScriptedProvider` against `LLMProviderInterface` from `@standardagents/spec`. A script lists the responses in order, as text, tool calls, stream chunks, or errors. The provider records each request it receives.
+- [x] Assemble the context. Interpolate the system prompt with its includes and variables, map the prompt side's own turns to `assistant` and the other side's turns to `user`, and convert the history to provider messages.
+- [x] Call the model through the provider's stream, and persist the assistant message with its reasoning fields before any tool runs.
+- [x] Generate each tool's JSON Schema from its Zod arguments, validate the model's arguments against the schema, and run the tool calls one at a time in the order the model returned them.
+- [x] Persist a tool error as a tool result and continue the loop.
+- [x] Evaluate `stopTool`, then `stopOnResponse`, then `maxSteps`, from the one stop-rule table. Pass `toolChoice` through, including `none` with the tool definitions.
+- [x] Write `openai-compatible.ts` against `LLMProviderInterface` for the chat completions wire format. It reads the base URL and the key from provider config slots. The real-model lanes set those slots from `SPINDLE_TEST_BASE_URL`, `SPINDLE_TEST_API_KEY`, and `SPINDLE_TEST_MODEL`. The key is optional, because a local server needs none. The model must support tool calls and streaming.
+- [x] Export the provider from `packages/runtime` as a factory named `openaiCompatible`, so that a file under `agents/models/` can import it and pass it as `provider`.
+- [x] Copy the Hello, World example from the spec's Examples page into `packages/conformance/fixtures/hello-world/`. Change only the provider import in `agents/models/conversational.ts`.
+- [x] Add `spindle run <agent> -m <text>`. It loads the `agents/` folder of the current directory, and `--dir <path>` names a different project directory. `--script <file>` selects the scripted provider. `--trace` prints the phase trace. `--dump-requests` prints each provider request as JSON. `--db <file>` selects the database.
 
 **You see.**
 
-- [ ] `spindle run assistant -m "hello" --script text-reply.json --db /tmp/x.db` prints the assistant text and exits 0.
-- [ ] `spindle run assistant -m "hello" --script text-reply.json --trace` prints the phases in the order drain, assemble, call, persist-response, tools, persist-results, stop.
-- [ ] `spindle run assistant --dir packages/conformance/fixtures/hello-world -m "What does idempotent mean?"` prints a reply from the model at `SPINDLE_TEST_BASE_URL`.
+- [x] `spindle run assistant -m "hello" --script text-reply.json --db /tmp/x.db` prints the assistant text and exits 0.
+- [x] `spindle run assistant -m "hello" --script text-reply.json --trace` prints the phases in the order drain, assemble, call, persist-response, tools, persist-results, stop.
+- [x] `spindle run assistant --dir packages/conformance/fixtures/hello-world -m "What does idempotent mean?"` prints a reply from the model at `SPINDLE_TEST_BASE_URL`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/conformance/src/scenarios/step-loop.ts` gains one scenario per statement in sections 3, 4, 5, and 6 of the Runtime page that this PR covers. `packages/runtime/test/conformance.test.ts` runs every scenario through the Spindle driver. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
-- [ ] `packages/runtime/test/execution/stop-rules.test.ts` gains one case per row of the stop-rule table and one case per pair of rows that can both match.
-- [ ] The ledger entries for those statements, and for the statements in `specification:tools` section 9 and `specification:prompts` sections 4.2 and 5.2, change to `covered`. Run `pnpm check`.
+- [x] `packages/conformance/src/scenarios/step-loop.ts` gains one scenario per statement in sections 3, 4, 5, and 6 of the Runtime page that this PR covers. `packages/runtime/test/conformance.test.ts` runs every scenario through the Spindle driver. Run `pnpm vitest run packages/runtime/test/conformance.test.ts` on Node and on Bun.
+- [x] `packages/runtime/test/execution/stop-rules.test.ts` gains one case per row of the stop-rule table and one case per pair of rows that can both match.
+- [x] The ledger entries for those statements, and for the statements in `specification:tools` section 9 and `specification:prompts` sections 4.2 and 5.2, change to `covered`. Run `pnpm check`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
@@ -719,6 +719,65 @@ The first-head numbers are the verifier's run. To split the read cost, four buil
 - `packages/runtime/scripts/` is exempt from the platform import rule, and `tsconfig.json` now type-checks it. The probe spawns and kills processes and reads its arguments.
 - The probe imports `#platform`, which resolves to `dist` under plain Node and Bun. Run `pnpm build` before the probe, as the boot recipe does.
 - Threads 7.3 points at "Runtime §15" for the key-value semantics, and the Runtime page numbers that section 14. The Runtime page has two sections numbered 14.
+
+### Settled in M1-4
+
+The M1-4 owner ran each command below on 2026-11-26 on macOS, from the repository root, with Node 22.22.3 and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-4/evidence/` on that machine. The brief `docs/plans/briefs/m1-4.md` corrected this section before the build, and the owner followed it.
+
+**Layout.** `execution/turn.ts` resolves the agent's sides, the prompt, the model, and the offered tools before the first request. `assemble.ts` renders the system prompt and turns history into provider messages. `call.ts` streams one response and keeps per-call state chunk by chunk. `tools.ts` validates, runs, and stores one tool call. `stop-rules.ts` holds the ordered rule table. `thread-state.ts` builds `ThreadState` and is the only file that turns an Effect into a Promise. `step.ts` runs one execution from start to settled, and `trigger.ts` holds `sendMessage`, which stores the human's message and starts the execution. `providers/config.ts` resolves config slots, and `providers/script.ts` answers `--script`. The conformance package has its own `ScriptedProvider`, because a scenario imports nothing from the runtime and the runtime ships no test code.
+
+**Readings taken for part 5 of the brief.** Each line is one reading. The operator can overrule any of them.
+
+1. Malformed arguments. `openaiCompatible` sends no `tool-call-done` for a call whose argument text is not a JSON object. The loop stores the raw text in `tool_calls`, stores an error result tied to the call id and name, never runs the call, and runs its siblings. A later request replays that call with an empty argument object, and its error result carries the raw text.
+2. Stream details. The loop reads `finish.reasoningDetails` and the `extraContent` of a call from the package's chunk type. It stores the details as JSON, so an empty list stays `[]`, and keeps `extraContent` in `metadata.tool_call_extra`. It counts `provider-tool-done`, `web-search-done`, and distinct `image-done` indexes in the run's model call log and never runs them.
+3. Partial streams. The first appearance of a call id orders the calls, and `tool-call-done` holds the final arguments. A stream that ends without `finish`, or finishes with `error`, fails the attempt. Empty text, whitespace-only text, and reasoning-only responses are stored as completed steps, and none of them is a response stop.
+4. History. The turn starts at the other side's latest message when the execution starts, and everything before it is past history. `includeChat` admits past text, and `includePastTools` admits past calls together with their results. The current turn is always in the request. `historyLimit` from the package is ignored.
+5. Tool results. A success stores `result`. An error stores `error`, then `result` after a blank line. `error_code` and `error_data` go to the message's `metadata`, and `stack` is dropped. Attachment references are stored. A new file (`ToolAttachment`) turns the result into an error that names M3, and a return value that is not a `ToolResult` becomes an error result.
+6. Stop outcome. The first call to `stopTool` in returned order sets the outcome, every call of that step runs first, and a failed stop call still stops the turn. `stopToolResponseProperty` reads that property from the result parsed as JSON, and the value is `null` when it is absent. The outcome is `stopTool` on the run outcome.
+7. Retries and caps. One setting, `retries`, defaults to 2 and covers a retryable provider error and a response that breaks `toolChoice` (no call under `required`, a call under `none`). A rejected response is not stored and is not a step. The delay is `retryAfter` seconds up to 60, or 0.5 seconds doubling. Exhausted retries settle the run as `failed` with `step_error`. `maxSteps` counts the side's model steps in one turn. The runtime step cap defaults to 1000 and settles with `max_total_steps`. At 100 it cut short an agent whose `maxSteps` was 200.
+8. Usage and metadata. The loop keeps finish usage as the provider gives it, zeros included, and stores no usage on a message. `getResponseMetadata` runs on a forked fiber with a 30 second limit, its result goes to the model call log, and the execution joins every fiber before it settles. `openaiCompatible` reports zeros when the endpoint sends no usage.
+9. Options and reasoning. The merge is shallow, model options first and prompt options second, and the later top-level key wins. The request carries the model's `capabilities.reasoningLevels` as `reasoning.levels` when the prompt sets a level. `openaiCompatible` maps the level with `mapReasoningLevel` to `reasoning_effort`, removes `reasoning_effort` when the mapping is `null`, and leaves the options alone when the model declares no levels.
+10. Credentials. The `apiKey` slot of `openaiCompatible` is optional, and an empty key sends no `Authorization` header. Its slots read `OPENAI_API_KEY` and `OPENAI_BASE_URL`. `--dump-requests` redacts every value of a secret slot and every value a tool read through `env()`.
+11. Variables. The spec's examples show no placeholder syntax, so Spindle interpolates the package's env part, `{ type: 'env', property }`. An env part may name only a variable that the rendered prompt declares with type `text`, so a secret cannot enter a system prompt. A declared required variable with no value fails the run before any request. The env and variables of an included prompt are ignored, because only its `prompt` field is included. Thread arguments reach interpolation in M2.
+12. Commits. The assistant message commits alone before any tool runs, and each tool result commits alone before the next tool starts. No transaction spans a step.
+13. Tool names. A call to a tool the prompt does not offer, or to no tool at all, gets an error result. `invokeTool` reaches function tools only. It allows a target that the calling tool's `uses` list names or resolves to, and returns an error result for any other target. A prompt that lists a prompt tool, an agent handoff, or a provider tool fails before the first request.
+
+**Other choices.** With a human on side A, the human's messages are stored as `assistant` and the model's turns as `user`, and the model still sees its own turns as `assistant`. The store cascades a delete only from an `assistant` message, so deleting a side B model turn leaves its tool results. Messages section 6 says "parent assistant message", so this stays open for the operator. An execution settles after the prompt side's turn with a reason code from Execution State section 4.2. A definition or config problem settles as `fatal_error`, and a provider, policy, or store failure as `step_error`. `spindle run` keeps the thread in memory unless `--db` names a file. `ThreadState` members that a later milestone owns reject with a message that names that milestone. `emit` does nothing, because no client connects before M6. Until M3 every attachment reaches the model as a text description.
+
+**The Hello, World fixture.** The three files are the example as written, plus a first line that tells Biome not to format them. Two lines of `agents/models/conversational.ts` change. Line 3, `import { openrouter } from '@standardagents/openrouter';`, becomes `import openrouter from '../providers/spindle_test.ts';`. Line 8, `model: 'anthropic/claude-sonnet-5',`, becomes `model: process.env.SPINDLE_TEST_MODEL ?? 'anthropic/claude-sonnet-5',`. The new file `agents/providers/spindle_test.ts` extends `openaiCompatible` with `SPINDLE_TEST_BASE_URL` and `SPINDLE_TEST_API_KEY`. `/tmp/spindle-m1-4/evidence/hello-world-diff.txt` holds the diff against the spec.
+
+**Effect v4 names.** These come from the `.d.ts` files under `node_modules/effect/dist`.
+
+- `FetchHttpClient.Fetch` from `effect/http` is a `Context.Reference` whose default is the global `fetch`. The runtime passes it as `ProviderFactoryConfig.fetch`, and a test replaces it with `Effect.provideService`.
+- `Config.option(Config.String(name))` reads the runtime instance environment. A test replaces it with `ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))`.
+- `Effect.runPromiseWith(context)` runs an Effect against the services the execution captured with `Effect.context()`.
+- `Effect.tryPromise({ try: (signal) => ..., catch })` passes an `AbortSignal` only when the thunk declares a parameter.
+- `Effect.forkChild` and `Fiber.join` run `getResponseMetadata` beside the loop, and `Effect.timeoutOption` bounds it.
+- `Cause.hasInterruptsOnly` and `Cause.findError` turn a failure into a run outcome while an interruption stays an interruption.
+- `Schema.optionalKey`, `Schema.fromJsonString`, and `Schema.decodeUnknownEffect` decode a `--script` file.
+
+**Live lanes, owner runs.** Each lane ran on Node and on Bun at `40475ed` and passed. `lanes.sh` saved one transcript per lane in `/tmp/spindle-m1-4/evidence/node/` and `/tmp/spindle-m1-4/evidence/bun/`. In lane 2, a second process read the `write_note` result while the second tool slept. In lane 6, `kill -9` during the tool left the user message and the assistant message with its call on disk, and the process exited 137. Lane 10 ran once on each runtime against `claude-haiku-5-5` at `http://localhost:8317/v1`, and the Hello, World fixture ran once on Node. Those three runs sent five requests. The verifier's lanes still run at the verdict, so the live and perf boxes of the M1-4 section stay unchecked.
+
+**Perf, owner run.** `node packages/runtime/scripts/step-probe.ts interleaved --rounds 10` alternated Node and Bun. Each round timed one 200-step run of the `bench` agent on a new file database and checked the reason `max_side_steps`, 200 steps, and 401 stored rows. No round failed. The load average was about 3 on 24 cores.
+
+| Runtime | Median per step | Range |
+|---|---|---|
+| Node 22.22.3 | 0.610 ms | 0.578 to 0.660 ms |
+| Bun 1.4.5 | 0.521 ms | 0.505 to 0.578 ms |
+
+Both medians are about 6% of the 10 ms budget. The ranges touch at 0.578 ms, so the run does not show that one runtime is faster. A CPU profile of one Node run, not counted above, put the most time in the synchronous SQLite statements of the two commits per step, and the second most in parsing every stored `tool_calls` string again at each assembly, which grows with the history.
+
+**Mutation checks.** For 13 covered statements the owner broke the code the statement describes and ran the test the ledger names, and each test failed. `/tmp/spindle-m1-4/mutate.py` holds the edits, and `/tmp/spindle-m1-4/evidence/mutations.txt` holds the runs. The statements are the assistant response persisted before tools, calls run in returned order, arguments validated against the schema, a thrown tool error stored as a result, the other side's calls hidden, `toolChoice` `none` sent with the definitions, `include: false` withholding reasoning, `stopTool` evaluated before step limits, the wait for pending metadata, an include inserted at its location, secrets kept out of `--dump-requests`, a reasoning level replacing the native effort, and `reasoning_details` left `null` when the model returns none.
+
+**Where M1-4 differs from this plan.**
+
+- The plan adds files to the six it names. `turn.ts`, `env.ts`, `call.ts`, `trigger.ts`, `providers/config.ts`, `providers/script.ts`, and `scripts/step-probe.ts` each hold one job named above.
+- The conformance package now depends on `@standardagents/spec`, `zod`, and `spindle-runtime`, so that fixtures can import them, and `spindle-runtime` has an `exports` entry.
+- The unit box asks for `covered` on Prompts section 5.2. The brief moves those three entries to M2, because they apply to a prompt called as a tool.
+- The ledger has 93 more curated statements from part 4 of the brief, and the count line is `606 RFC 2119 statements, 61 lowercase must or should statements, 244 curated statements with no keyword, 24 pages`. 248 entries are `covered` and 54 `partial`, up from 86 and 42. Each partial entry names the milestone that owes the rest.
+- Milestones moved by hand. The base provider's config slots, `createFetch`, request-scoped overrides, and the credential, header, timeout, and missing-variable entries of `infrastructure:providers` moved from M7 to M1. Prompt safety, agent `env`, the agent, prompt, and instance levels of env resolution, `required` variables, `envType`, and function-to-function `uses` moved from M2 to M1. The three requiredSchema entries of Prompts section 5.2 moved from M1 to M2, the image threshold entries of Prompts section 7 from M1 to M3, and user-account env to later.
+- The Spindle driver in `packages/runtime/test/spindle-driver.ts` runs each scenario through a `ManagedRuntime`. That is a second place that turns an Effect into a Promise, in test code, at the edge the conformance harness needs.
+- Scenario 25 of the brief tests Spindle's own provider, so it lives in `packages/runtime/test/providers/openai-compatible.test.ts` and not in the conformance package.
 
 ## Appendix B. Alternatives rejected
 
