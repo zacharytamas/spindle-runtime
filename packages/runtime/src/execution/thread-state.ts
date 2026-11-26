@@ -4,7 +4,7 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
-import type { History } from "./history.ts"
+import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
 import { lookup, type Side } from "./turn.ts"
@@ -87,7 +87,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const readHistory = (history: History) => () => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    return structuredClone(Effect.runSyncWith(state.services)(history.read)) as Array<Message>
+    return Effect.runSyncWith(state.services)(history.read).map(copyMessage)
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(

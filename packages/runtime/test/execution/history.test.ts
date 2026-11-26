@@ -5,7 +5,7 @@ import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, type Setup } from "../../../conformance/src/scenarios/step-loop.ts"
 import { newSecrets } from "../../src/execution/env.ts"
-import { makeHistory } from "../../src/execution/history.ts"
+import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
@@ -110,9 +110,16 @@ describe("the history an execution keeps", () => {
             const mine = live()
             const afterFirst = reads.count
             mine.pop()
-            if (mine[0] !== undefined) mine[0].content = "changed by the tool"
+            if (mine[0] !== undefined) {
+              mine[0].content = "changed by the tool"
+              Object.assign(mine[0].metadata ?? {}, { changed: true })
+            }
             const again = Array.from({ length: 9 }, live)
-            seen.quiet = { added: reads.count - afterFirst, reads: again.map(contents) }
+            seen.quiet = {
+              added: reads.count - afterFirst,
+              reads: again.map(contents),
+              metadata: again.map((read) => read[0]?.metadata),
+            }
             await elsewhere?.injectMessage({ role: "user", content: "from another handle" })
             const afterWrite = live()
             const beforeMore = reads.count
@@ -144,7 +151,11 @@ describe("the history an execution keeps", () => {
         reads,
       )
       expect(seen).toEqual({
-        quiet: { added: 0, reads: Array.from({ length: 9 }, () => ["go", null]) },
+        quiet: {
+          added: 0,
+          reads: Array.from({ length: 9 }, () => ["go", null]),
+          metadata: Array.from({ length: 9 }, () => ({})),
+        },
         written: { contents: ["go", null, "from another handle"], added: 1, more: 0 },
       })
     }),
@@ -230,4 +241,16 @@ describe("the history an execution keeps", () => {
       expect(contents(yield* history.read)).toEqual(["first", "from another writer"])
     }).pipe(Effect.provide(inMemory())),
   )
+
+  it("copies a message deeply, and keeps a __proto__ key of its metadata as an own key", () => {
+    const metadata = JSON.parse('{"__proto__": {"inherited": true}, "list": [{"deep": 1}]}')
+    const attachments = [{ type: "file", id: "f", path: "/f", name: "f", mimeType: "text/plain", size: 1 }]
+    const message = { id: "m", role: "user", content: "x", created_at: 1, metadata, attachments } as Message
+    const copy = copyMessage(message)
+    expect(Object.keys(copy.metadata ?? {})).toEqual(["__proto__", "list"])
+    expect(JSON.stringify(copy)).toBe(JSON.stringify(message))
+    expect([copy.metadata, copy.metadata?.list, copy.attachments, copy.attachments?.[0]]).not.toContain(metadata)
+    expect(copy.metadata?.list).not.toBe(metadata.list)
+    expect(copy.attachments?.[0]).not.toBe(attachments[0])
+  })
 })

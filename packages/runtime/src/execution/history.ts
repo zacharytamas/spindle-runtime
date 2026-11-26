@@ -3,6 +3,19 @@ import { Effect } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { type Inserted, type ThreadNotFound, ThreadStore } from "../store/ThreadStore.ts"
 
+// A stored message's metadata and attachments come from JSON.parse, so they hold only plain objects, arrays, and
+// primitives. On Bun, structuredClone of a history took longer than reading it from the store, and this copy takes
+// a tenth of that time. Object.fromEntries keeps a "__proto__" key that JSON.parse made as an own key.
+const copyJson = (value: unknown): unknown =>
+  typeof value !== "object" || value === null
+    ? value
+    : Array.isArray(value)
+      ? value.map(copyJson)
+      : Object.fromEntries(Object.entries(value).map(([key, member]) => [key, copyJson(member)]))
+
+export const copyMessage = (message: Message) =>
+  ({ ...message, metadata: copyJson(message.metadata), attachments: copyJson(message.attachments) }) as Message
+
 // Execution State section 2.2 and Runtime section 4: the history an execution reads is the thread's persisted
 // messages at that moment, whoever wrote them. The execution keeps a copy and the thread revision it matches, and
 // reads the whole history again only when the revision shows that someone else wrote.
@@ -29,7 +42,7 @@ export const makeHistory = (threadId: string): History => {
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
       else if (revision === copy.revision + 1) {
         // The writer gets the same object back, and injectMessage hands it to the tool or hook that wrote it.
-        copy.messages.push(structuredClone(message))
+        copy.messages.push(copyMessage(message))
         copy.revision = revision
       }
     },
