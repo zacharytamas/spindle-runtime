@@ -24,6 +24,7 @@ import {
   KeyNotWellFormed,
   MessageIdTaken,
   MessageNotFound,
+  type ThreadHistory,
   ThreadNotFound,
   ThreadStore,
   ValueNotJson,
@@ -182,7 +183,14 @@ export const layer = Layer.effect(
           )
           const rows = yield* sql<MessageRow>`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
           return { revision: thread.revision, messages: rows.map(toMessage) }
-        }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN")),
+        }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
+          Effect.flatMap(Effect.serviceOption(sql.transactionService), (outer) =>
+            Effect.map(
+              read,
+              (history): ThreadHistory => (Option.isSome(outer) ? { ...history, revision: null } : history),
+            ),
+          ),
+        ),
 
       getMessages: (threadId, options = {}) =>
         Effect.gen(function* () {

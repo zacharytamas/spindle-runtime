@@ -32,8 +32,10 @@ export const makeHistory = (threadId: string): History => {
     read: Effect.gen(function* () {
       const store = yield* ThreadStore
       if (copy !== undefined && copy.revision === (yield* store.revision(threadId))) return copy.messages
-      copy = yield* store.history(threadId)
-      return copy.messages
+      // A read inside a caller's transaction may see writes that roll back, so the copy never keeps it.
+      const read = yield* store.history(threadId)
+      if (read.revision !== null) copy = { revision: read.revision, messages: read.messages }
+      return read.messages
     }),
     // A revision at or below the copy's means a read after the insert already holds it. One past the copy's means
     // nobody else wrote in between. Anything else, or an insert that a caller's transaction may still roll back,

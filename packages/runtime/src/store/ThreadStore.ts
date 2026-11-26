@@ -69,8 +69,9 @@ export interface Inserted {
   readonly revision: number | null
 }
 
+// The revision is null when the read ran inside a caller's transaction, which may still roll back what it read.
 export interface ThreadHistory {
-  readonly revision: number
+  readonly revision: number | null
   readonly messages: ReadonlyArray<Message>
 }
 

@@ -242,6 +242,29 @@ describe("the history an execution keeps", () => {
     }).pipe(Effect.provide(inMemory())),
   )
 
+  it.effect("never keeps a history it read inside a caller's transaction that rolled back", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore
+      for (const savepoint of [false, true]) {
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const append = (content: string) => store.appendMessages(thread.id, [{ role: "user", content }])
+        const history = makeHistory(thread.id)
+        yield* append("first")
+        expect(contents(yield* history.read)).toEqual(["first"])
+        const inner = store.transaction(
+          Effect.gen(function* () {
+            yield* append("rolled back")
+            expect(contents(yield* history.read)).toEqual(["first", "rolled back"])
+            return yield* Effect.fail("crash")
+          }),
+        )
+        expect(yield* savepoint ? store.transaction(Effect.flip(inner)) : Effect.flip(inner)).toBe("crash")
+        yield* append("committed")
+        expect(contents(yield* history.read)).toEqual(["first", "committed"])
+      }
+    }).pipe(Effect.provide(inMemory())),
+  )
+
   it("copies a message deeply, and keeps a __proto__ key of its metadata as an own key", () => {
     const metadata = JSON.parse('{"__proto__": {"inherited": true}, "list": [{"deep": 1}]}')
     const attachments = [{ type: "file", id: "f", path: "/f", name: "f", mimeType: "text/plain", size: 1 }]
