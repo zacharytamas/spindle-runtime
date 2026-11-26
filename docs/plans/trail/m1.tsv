@@ -1,0 +1,6 @@
+ts	phase	decision	why	evidence	result
+2026-11-26T02:35:18Z	plan	chose self-hosted Node and Bun, core conformance first, clean room, and Effect v4 with one platform module per runtime	the operator answered four questions and then asked for Effect v4 and Bun's own primitives	docs/plans/m1-core-loop.md	plan written, checker reports 0 problems
+2026-11-26T02:35:18Z	plan	split milestone 1 into seven stacked PRs, with spindle chat as its own PR	the operator asked for a light chat command, and the concurrency PR should get its own verdict	commit 140c6c3	open
+2026-11-26T02:35:18Z	models	owners on Claude Opus 5.5, scripted lanes on Claude Sonnet 5.5, audits on GPT-6.2 Astra and Gemini 4 Neon, no Grok, Fable for the root only	the operator said Fable for everything costs too much and ruled out Grok without careful review	commit 17375aa	open
+2026-11-26T02:35:18Z	verify	full swarm on M1-1 only until the operator reviews the built stack	the operator plans code quality and file structure changes, which would make earlier verdicts stale	commit 17375aa	open, the operator can overrule
+2026-11-26T02:35:18Z	kickoff	skipped the hourly audit loop while one owner runs	the harness reports when a delegate finishes and its rules say not to poll a running delegate	docs/plans/m1-core-loop.md Arm the program	open, arm it when several owners run at once
