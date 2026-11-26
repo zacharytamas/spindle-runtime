@@ -1758,8 +1758,162 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S29 resolves definitions, names, environment values, and direct invocations through ThreadState",
-    requirements: [],
+    name: "S29 loads definitions and lists their names through ThreadState",
+    requirements: ["c4b75828", "e3afb48b", "4d4c50a2", "cf66e53e", "be6b8ba1", "75fba4a7"],
+    run: async (driver) => {
+      let report: Record<string, unknown> = {}
+      const tools = {
+        survey: defineTool({
+          description: "Survey",
+          execute: async (state: ThreadState) => {
+            const model = await state.loadModel<{ model: string }>("scripted")
+            const prompt = await state.loadPrompt<{ name: string }>("assistant")
+            const agent = await state.loadAgent<{ name: string }>("assistant")
+            report = {
+              model: model.model,
+              prompt: prompt.name,
+              agent: agent.name,
+              prompts: state.getPromptNames(),
+              agents: state.getAgentNames(),
+              models: state.getModelNames(),
+              missing: await state.loadModel("absent").then(
+                () => "resolved",
+                (error: Error) => error.message,
+              ),
+            }
+            return ok("surveyed")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "survey", arguments: {} }] }, { text: "done" }])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        await send(session, thread, "go")
+      })
+      expect(report).toEqual({
+        model: "scripted-model-v1",
+        prompt: "assistant",
+        agent: "assistant",
+        prompts: ["assistant"],
+        agents: ["assistant"],
+        models: ["scripted"],
+        missing: "No model named absent is defined",
+      })
+    },
+  },
+  {
+    name: "S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
+    requirements: ["8cefb16e", "b74ef581", "73bce32e", "6d37745b", "16606350", "8233eb0b", "41fe7364", "c4905fe6"],
+    run: async (driver) => {
+      const seen: Array<unknown> = []
+      const tools = {
+        inject: defineTool({
+          description: "Inject a note",
+          execute: async (state: ThreadState) => {
+            const message = await state.injectMessage({
+              role: "user",
+              content: "note from a tool",
+              silent: true,
+              metadata: { source: "tool" },
+            })
+            const read = await state.getMessage(message.id)
+            const listed = await state.getMessages({ order: "asc", includeSilent: true })
+            seen.push([message.silent, read?.content, read?.metadata, listed.messages.at(-1)?.id === message.id])
+            return ok("injected")
+          },
+        }),
+        observe: defineTool({
+          description: "Look at the live history",
+          execute: async (state: ThreadState) => {
+            const history = state.execution?.messageHistory ?? []
+            seen.push(history.map((message) => message.content))
+            history.pop()
+            return ok("observed")
+          },
+        }),
+        check: defineTool({
+          description: "Check the live history again",
+          execute: async (state: ThreadState) => {
+            seen.push((state.execution?.messageHistory ?? []).length)
+            return ok("checked")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { id: "c_inject", name: "inject", arguments: {} },
+            { id: "c_observe", name: "observe", arguments: {} },
+            { id: "c_check", name: "check", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+      })
+      expect(seen).toEqual([
+        [true, "note from a tool", { source: "tool" }, true],
+        ["go", null, "note from a tool", "injected"],
+        5,
+      ])
+      expect(provider.requests).toHaveLength(2)
+      expect(JSON.stringify(provider.requests[0])).not.toContain("note from a tool")
+      expect(history(provider.requests[1]).map(sideOf)).toEqual([
+        ["user", "go"],
+        ["assistant", null, ["c_inject", "c_observe", "c_check"]],
+        ["user", "note from a tool"],
+        ["tool", "c_inject"],
+        ["tool", "c_observe"],
+        ["tool", "c_check"],
+      ])
+    },
+  },
+  {
+    name: "S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
+    requirements: ["04d1538b", "c544edac", "6ad6d3c1", "8a66bc04", "6f984718", "18655cf1"],
+    run: async (driver) => {
+      const seen: Array<unknown> = []
+      const tools = {
+        probe: defineTool({
+          description: "Probe",
+          execute: async (state: ThreadState) => {
+            const execution = state.execution
+            seen.push([
+              execution?.flowId,
+              execution?.promptPath,
+              execution?.abortSignal instanceof AbortSignal,
+              execution?.abortSignal.aborted,
+              Array.isArray(execution?.messageHistory),
+            ])
+            return ok("probed")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ name: "probe", arguments: {} }] },
+        { toolCalls: [{ name: "probe", arguments: {} }] },
+        { text: "first done" },
+        { toolCalls: [{ name: "probe", arguments: {} }] },
+        { text: "second done" },
+      ])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        await send(session, thread, "first")
+        await send(session, thread, "second")
+      })
+      const flows = seen.map((entry) => (entry as Array<unknown>)[0])
+      expect(typeof flows[0]).toBe("string")
+      expect(flows[0]).toBe(flows[1])
+      expect(flows[2]).not.toBe(flows[0])
+      expect(seen.map((entry) => (entry as Array<unknown>).slice(1))).toEqual([
+        [["assistant"], true, false, true],
+        [["assistant"], true, false, true],
+        [["assistant"], true, false, true],
+      ])
+    },
+  },
+  {
+    name: "S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
+    requirements: ["341727f4", "a01f5667", "39260b1a", "d6567ce8", "7553bb50", "5522b650"],
     run: async (driver) => {
       let report: Record<string, unknown> = {}
       const tools = {
@@ -1772,16 +1926,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           description: "Survey",
           uses: ["helper"] as Array<string>,
           execute: async (state: ThreadState) => {
-            const model = await state.loadModel<{ model: string }>("scripted")
-            const prompt = await state.loadPrompt<{ name: string }>("assistant")
-            const agent = await state.loadAgent<{ name: string }>("assistant")
             report = {
-              model: model.model,
-              prompt: prompt.name,
-              agent: agent.name,
-              prompts: state.getPromptNames(),
-              agents: state.getAgentNames(),
-              models: state.getModelNames(),
               region: await state.env("REGION"),
               level: await state.env("LEVEL"),
               source: await state.env("SOURCE"),
@@ -1796,8 +1941,21 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             return ok("surveyed")
           },
         }),
+        other: defineTool({
+          description: "Another tool",
+          execute: async (state: ThreadState) => ok(await state.env("LEVEL")),
+        }),
       }
-      const provider = new ScriptedProvider([{ toolCalls: [{ name: "survey", arguments: {} }] }, { text: "done" }])
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: [
+            { name: "survey", arguments: {} },
+            { id: "c_other", name: "other", arguments: {} },
+          ],
+        },
+        { text: "done" },
+      ])
+      let otherLevel: string | null | undefined
       await using(
         driver,
         {
@@ -1806,21 +1964,17 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           agent: { env: { REGION: "agent-region" } },
           prompt: {
             env: { REGION: "prompt-region", LEVEL: "prompt-level" },
-            tools: [{ name: "survey", env: { LEVEL: "tool-level" } }, "helper"],
+            variables: [{ name: "LEVEL", type: "text", required: true, description: "Level" }],
+            tools: [{ name: "survey", env: { LEVEL: "tool-level" } }, "helper", "other"],
           } as Partial<PromptDefinition>,
         },
         async (session, thread) => {
           await send(session, thread, "go")
+          otherLevel = (await session.messages(thread)).find((m) => m.tool_call_id === "c_other")?.content
         },
         { REGION: "instance-region", SOURCE: "instance" },
       )
       expect(report).toMatchObject({
-        model: "scripted-model-v1",
-        prompt: "assistant",
-        agent: "assistant",
-        prompts: ["assistant"],
-        agents: ["assistant"],
-        models: ["scripted"],
         region: "agent-region",
         level: "tool-level",
         source: "instance",
@@ -1829,6 +1983,103 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         invoked: { status: "success", result: "42" },
         invalid: { status: "error" },
       })
+      expect(otherLevel).toBe("prompt-level")
+    },
+  },
+  {
+    name: "S33 passes ThreadState message reads, updates, and deletes through to thread storage",
+    requirements: ["37e69561", "3489685d", "f67424cd", "bd122f30", "7f464a24", "1edbcdb1", "96307380", "79171656"],
+    run: async (driver) => {
+      const seen: Record<string, unknown> = {}
+      const tools = {
+        reader: defineTool({
+          description: "Reads and edits messages",
+          execute: async (state: ThreadState) => {
+            const contents = (result: { messages: ReadonlyArray<Message> }) => result.messages.map((m) => m.content)
+            seen.newest = contents(await state.getMessages({ limit: 2 }))
+            seen.paged = contents(await state.getMessages({ order: "asc", limit: 2, offset: 1 }))
+            seen.visible = contents(await state.getMessages({ order: "asc" }))
+            seen.all = contents(await state.getMessages({ order: "asc", includeSilent: true }))
+            seen.shallow = contents(await state.getMessages({ order: "asc", includeSilent: true, maxDepth: 0 }))
+            const { messages } = await state.getMessages({ order: "asc", includeSilent: true })
+            const old = messages.find((m) => m.content === "old call")
+            const updated = await state.updateMessage(messages[0]?.id ?? "", { metadata: { seen: true } })
+            seen.updated = updated.metadata
+            seen.deleted = [await state.deleteMessage(old?.id ?? ""), await state.deleteMessage(old?.id ?? "")]
+            seen.after = contents(await state.getMessages({ order: "asc", includeSilent: true }))
+            return ok("read")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "reader", arguments: {} }] }, { text: "done" }])
+      await using(driver, { provider, tools }, async (session, thread) => {
+        await session.seed(thread, [
+          { role: "user", content: "first" },
+          {
+            role: "assistant",
+            content: "old call",
+            tool_calls: JSON.stringify([
+              { id: "old", type: "function", function: { name: "reader", arguments: "{}" } },
+            ]),
+          },
+          { role: "tool", content: "old result", name: "reader", tool_call_id: "old", tool_status: "success" },
+          { role: "user", content: "quiet", silent: true },
+          { role: "assistant", content: "nested", depth: 1 },
+        ])
+        await send(session, thread, "go")
+      })
+      expect(seen).toEqual({
+        newest: [null, "go"],
+        paged: ["old call", "old result"],
+        visible: ["first", "old call", "old result", "nested", "go", null],
+        all: ["first", "old call", "old result", "quiet", "nested", "go", null],
+        shallow: ["first", "old call", "old result", "quiet", "go", null],
+        updated: { seen: true },
+        deleted: [true, false],
+        after: ["first", "quiet", "nested", "go", null],
+      })
+    },
+  },
+  {
+    name: "S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
+    requirements: ["d0bf2dee", "70e01371", "b680018e", "1c6df0f5", "5e2f73a8"],
+    run: async (driver) => {
+      const tools = {
+        remember: defineTool({
+          description: "Remember a color",
+          args: z.object({ color: z.string() }),
+          execute: async (state, { color }) => {
+            await state.setValue("color", { color })
+            return ok("remembered")
+          },
+        }),
+        recall: defineTool({
+          description: "Recall the color",
+          execute: async (state: ThreadState) => ok(JSON.stringify(await state.getValue("color"))),
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ name: "remember", arguments: { color: "teal" } }] },
+        { text: "saved" },
+        { toolCalls: [{ id: "c_later", name: "recall", arguments: {} }] },
+        { text: "recalled" },
+        { toolCalls: [{ id: "c_elsewhere", name: "recall", arguments: {} }] },
+        { text: "nothing" },
+      ])
+      const session = await driver.load(project({ provider, tools }))
+      try {
+        const thread = await session.createThread("assistant")
+        await send(session, thread, "remember teal")
+        await send(session, thread, "what color?")
+        const other = await session.createThread("assistant")
+        await send(session, other, "what color?")
+        const result = async (id: string, threadId: string) =>
+          (await session.messages(threadId)).find((m) => m.tool_call_id === id)?.content
+        expect(await result("c_later", thread)).toBe(JSON.stringify({ color: "teal" }))
+        expect(await result("c_elsewhere", other)).toBe("null")
+      } finally {
+        await session.close()
+      }
     },
   },
 ]

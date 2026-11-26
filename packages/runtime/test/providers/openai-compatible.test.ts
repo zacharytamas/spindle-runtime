@@ -131,6 +131,17 @@ describe("openaiCompatible", () => {
     expect(sent[0]?.headers.has("authorization")).toBe(false)
   })
 
+  it("fails a request that outlives the timeout slot with a timeout ProviderError", async () => {
+    const fetch = (_input: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+      })
+    const error = await openaiCompatible({ apiKey: "", timeout: 20, fetch })
+      .generate(request)
+      .catch((cause) => cause)
+    expect([error.code, error.isRetryable, error.origin]).toEqual(["timeout", true, "provider:openai_compatible"])
+  })
+
   it("maps the standard request to chat completions, and a reasoning level replaces only the native effort", () => {
     const body = requestBody(request, true)
     expect(body).toMatchObject({
@@ -298,6 +309,8 @@ describe("provider config slots", () => {
       const bare = yield* build(openaiCompatible, {})
       expect(bare.sent[0]?.url).toBe("https://api.openai.com/v1/chat/completions")
       expect(bare.sent[0]?.headers.has("authorization")).toBe(false)
+      expect(openaiCompatible.configSlots?.apiKey).toMatchObject({ type: "secret", defaultEnv: "OPENAI_API_KEY" })
+      expect([...withEnv.secrets]).toEqual(["env-key"])
     }),
   )
 
@@ -311,6 +324,56 @@ describe("provider config slots", () => {
           new SetupError({ message: "The provider of model lane needs LANE_BASE_URL, which has no value" }),
         )
       }
+    }),
+  )
+
+  it.effect("builds an extension with createFetch again for each request, with the thread state", () =>
+    Effect.gen(function* () {
+      const states: Array<unknown> = []
+      const { sent, fetch } = transport(() => Response.json(generated))
+      const perRequest = defineProvider({
+        name: "per_request",
+        baseProvider: openaiCompatible,
+        config: { baseUrl: "http://tunnel.test/v1" },
+        createFetch: ({ state }) => {
+          states.push(state)
+          return fetch
+        },
+      })
+      const state = { threadId: "thread-1" }
+      const next = yield* providerFor(loaded(perRequest), state as never, new Set())
+      for (const _ of [1, 2]) {
+        const instance = yield* next
+        yield* Effect.promise(() => instance.generate(request))
+      }
+      expect(states).toEqual([state, state])
+      expect(sent.map((entry) => entry.url)).toEqual([
+        "http://tunnel.test/v1/chat/completions",
+        "http://tunnel.test/v1/chat/completions",
+      ])
+    }),
+  )
+
+  it.effect("hands the executing thread's state to a request-scoped override", () =>
+    Effect.gen(function* () {
+      const seen: Array<unknown> = []
+      const overridden = defineProvider({
+        name: "overridden",
+        baseProvider: openaiCompatible,
+        overrides: {
+          generate: (context, next) => {
+            seen.push(context.state)
+            return next()
+          },
+        },
+      })
+      const { fetch } = transport(() => Response.json(generated))
+      const state = { threadId: "thread-2" }
+      const instance = yield* yield* providerFor(loaded(overridden), state as never, new Set()).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch),
+      )
+      yield* Effect.promise(() => instance.generate(request))
+      expect(seen).toEqual([state])
     }),
   )
 })

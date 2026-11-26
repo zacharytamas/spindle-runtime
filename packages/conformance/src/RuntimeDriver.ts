@@ -78,6 +78,7 @@ export interface SeedMessage {
   readonly reasoning_details?: string
   readonly prompt?: string
   readonly silent?: boolean
+  readonly depth?: number
   readonly attachments?: Array<AttachmentRef>
 }
 
