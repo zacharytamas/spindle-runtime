@@ -214,7 +214,13 @@ export const queuePayload = (entry: QueueEntry): unknown =>
 
 export const toQueued = (row: QueueRow): Queued => {
   const payload = JSON.parse(row.payload)
-  if (!isRecord(payload) || (row.kind === "tool" ? typeof payload.toolName !== "string" || !isRecord(payload.args) : !["user","assistant"].includes(payload.role as string) || typeof payload.content !== "string")) throw new Error("Invalid queued payload")
+  if (
+    !isRecord(payload) ||
+    (row.kind === "tool"
+      ? typeof payload.toolName !== "string" || !isRecord(payload.args)
+      : !["user", "assistant"].includes(payload.role as string) || typeof payload.content !== "string")
+  )
+    throw new Error("Invalid queued payload")
   const entry: QueueEntry =
     row.kind === "message"
       ? { kind: "message", message: payload as unknown as QueueMessageInput }

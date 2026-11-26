@@ -76,7 +76,7 @@ export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonl
 }
 
 export class SecretInArguments extends Data.TaggedError("SecretInArguments") {
-  get message() {
+  override get message() {
     return "queueTool arguments contain a secret"
   }
 }
@@ -253,7 +253,9 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     userId: null,
     createdAt: state.thread.createdAt,
     children: [],
-    get terminated() { return terminated },
+    get terminated() {
+      return terminated
+    },
     arguments: structuredClone(state.thread.arguments) as Record<string, unknown>,
     context: state.context,
     execution:
@@ -342,7 +344,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: () => {
       const refused = expired()
-      return refused === undefined ? runPromise(state.control.terminate).then(time => { terminated = time }) : Promise.reject(refused)
+      return refused === undefined
+        ? runPromise(state.control.terminate).then((time) => {
+            terminated = time
+          })
+        : Promise.reject(refused)
     },
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,

@@ -503,24 +503,30 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const [row] = yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
             if (row === undefined || row.terminated_at !== null) return false
-            const head = yield* sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} LIMIT 1`
+            const head =
+              yield* sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} LIMIT 1`
             return head.length > 0 && (yield* claimRun(threadId, row, claim, yield* nowMicros))
           }),
         ),
 
       isQueued: (threadId, seq) =>
-        Effect.map(sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} AND seq = ${seq}`, (rows) => rows.length > 0),
+        Effect.map(
+          sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} AND seq = ${seq}`,
+          (rows) => rows.length > 0,
+        ),
 
       nextQueued: (threadId, flowId) =>
         Effect.gen(function* () {
           while (true) {
-            const [row] = yield* sql<QueueRow>`SELECT seq, kind, payload, queued_at FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} ORDER BY seq LIMIT 1`
+            const [row] =
+              yield* sql<QueueRow>`SELECT seq, kind, payload, queued_at FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} ORDER BY seq LIMIT 1`
             if (!row) return undefined
             try {
               return toQueued(row)
             } catch {
               if (flowId === undefined) return undefined
-              const changed = yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE seq = ${row.seq} AND disposition = 'pending' AND EXISTS (SELECT 1 FROM threads WHERE id = ${threadId} AND flow_id = ${flowId}) RETURNING seq`
+              const changed =
+                yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE seq = ${row.seq} AND disposition = 'pending' AND EXISTS (SELECT 1 FROM threads WHERE id = ${threadId} AND flow_id = ${flowId}) RETURNING seq`
               if (!changed.length) return undefined
             }
           }
@@ -528,7 +534,9 @@ export const layer = Layer.effect(
 
       queueLength: (threadId) =>
         Effect.map(
-          sql<{ count: number }>`SELECT count(*) AS count FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId}`,
+          sql<{
+            count: number
+          }>`SELECT count(*) AS count FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId}`,
           (rows) => rows[0]?.count ?? 0,
         ),
 
@@ -540,10 +548,16 @@ export const layer = Layer.effect(
             // The check and the release share one transaction, so work queued after the last drain either keeps this
             // run going or finds the thread released and starts the next one.
             if (options.continueIfQueued && row.terminated_at === null) {
-              const head = yield* sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} LIMIT 1`
+              const head =
+                yield* sql`SELECT 1 FROM queue WHERE disposition = 'pending' AND thread_id = ${threadId} LIMIT 1`
               if (head.length > 0) {
                 if (!options.atCap) return "continue"
-                yield* settleWith(threadId, row, { type: "settle", state: "idle", reason: "max_total_steps" }, options.closing)
+                yield* settleWith(
+                  threadId,
+                  row,
+                  { type: "settle", state: "idle", reason: "max_total_steps" },
+                  options.closing,
+                )
                 return "capped"
               }
             }

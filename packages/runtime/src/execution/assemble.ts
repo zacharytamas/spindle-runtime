@@ -167,9 +167,12 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
 }
 
 // Read once when the execution starts, so that a message a tool injects later cannot move the start of the turn.
-export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
+export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDelivered?: string) => {
   const other = roleOf(side === "a" ? "b" : "a")
-  const start = history.findLastIndex((message) => message.role === other)
+  const start =
+    firstDelivered !== undefined
+      ? history.findIndex((m) => m.id === firstDelivered)
+      : history.findLastIndex((message) => message.role === other)
   return new Set(history.slice(0, Math.max(0, start)).map((message) => message.id))
 }
 

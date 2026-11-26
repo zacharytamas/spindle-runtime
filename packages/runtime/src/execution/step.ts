@@ -292,10 +292,12 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     // Execution State section 4.3: every run settles. A run that ended its turn goes on while the queue holds work.
     // Once the run settles, every ThreadState of the execution refuses its calls.
     const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
-      Effect.tap(store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }), (settlement) =>
-        Effect.sync(() => {
-          if (settlement !== "continue") run.ended = true
-        }),
+      Effect.tap(
+        store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }),
+        (settlement) =>
+          Effect.sync(() => {
+            if (settlement !== "continue") run.ended = true
+          }),
       )
 
     const settle = (
@@ -336,7 +338,9 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         ? Effect.flatMap(store.getThread(threadId), (thread) =>
             thread.terminated === null ? settle("failed", "execution_lost") : settle("idle", "aborted"),
           )
-        : settlement === "capped" ? settle("idle", "max_total_steps") : settle(status, reason, extra)
+        : settlement === "capped"
+          ? settle("idle", "max_total_steps")
+          : settle(status, reason, extra)
 
     const loop = Effect.gen(function* () {
       const thread = yield* store.getThread(threadId)
@@ -546,11 +550,13 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
                   scopeFor(turn, exposed?.entry),
                 ),
           )
+          return message.id
         })
       // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
       // leaves the queue in the transaction that stores what it delivers. The result says whether the prompt side got
       // something to act on: a queued tool, or a message from the other side's perspective.
       const drain = Effect.gen(function* () {
+        let first: string | undefined
         let prompted = false
         let count = 0
         while (run.stop === undefined) {
@@ -558,17 +564,19 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           if (entry === undefined) break
           count += 1
           if (entry.kind === "tool") {
-            yield* runQueuedTool(entry)
+            const id = yield* runQueuedTool(entry)
+            first ??= id
             prompted = true
             continue
           }
           const message = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
+          first ??= message.id
           yield* record("drain", `message ${message.id}`)
           yield* observe({ type: "message", message })
           if (message.role !== roleOf(turn.side)) prompted = true
         }
         if (count === 0) yield* record("drain", "none")
-        return prompted
+        return { prompted, first, count }
       })
       // Execution State section 3: a stop takes effect at the boundary between two operations. The run settles idle,
       // and the work still queued waits for the next trigger.
@@ -584,7 +592,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       while (true) {
         step += 1
         if (run.stop !== undefined) return yield* stopHere
-        const prompted = yield* drain
+        const { prompted, first, count } = yield* drain
         if (run.stop !== undefined) return yield* stopHere
         if (turnStart) {
           // Runtime section 3: with nothing for the prompt side to act on, the turn is the human's.
@@ -595,7 +603,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             return yield* ended(settlement, "idle", "awaiting_human")
           }
           // The turn starts at the other side's latest message, and everything before it is past history.
-          view = { ...view, past: pastOf(yield* history.read, turn.side) }
+          view = { ...view, past: pastOf(yield* history.read, turn.side, count > 1 ? first : undefined) }
           turnStart = false
           turnSteps = 0
         }

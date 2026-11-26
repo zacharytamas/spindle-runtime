@@ -156,7 +156,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 flows.delete(run.flowId)
                 if (live.get(threadId) === entry) live.delete(threadId)
                 // An interrupted run settled itself. Its outcome is the status the store holds.
-                if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Deferred.failCause(entry.done, exit.cause)
+                if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+                  return yield* Deferred.failCause(entry.done, exit.cause)
                 const outcome: RunOutcome = Exit.isSuccess(exit)
                   ? exit.value
                   : yield* store.getThread(threadId).pipe(
@@ -344,11 +345,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               }
               const status = yield* awaitRest(threadId)
               const current = yield* store.getThread(threadId)
-              if (current.terminated !== null) return yield* new ThreadTerminated({threadId, terminated: current.terminated})
-              if (
-                status.reason === "execution_lost" ||
-                !(yield* store.isQueued(threadId, admitted.seq))
-              ) {
+              if (current.terminated !== null)
+                return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
+              if (status.reason === "execution_lost" || !(yield* store.isQueued(threadId, admitted.seq))) {
                 const delivery = { status, ...(elsewhere === undefined ? {} : { elsewhere }) }
                 return outcome === undefined ? delivery : { ...delivery, outcome }
               }

@@ -162,7 +162,15 @@ export const createMessage = Effect.fn("createMessage")(function* (
   })
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
   let redacted = redactWrite(writer, original, hooked, redact)
-  if (writer === "skipped") redacted = {...redacted, role: original.role, name: original.name, tool_call_id: original.tool_call_id, tool_status: "error", content: original.content}
+  if (writer === "skipped")
+    redacted = {
+      ...redacted,
+      role: original.role,
+      name: original.name ?? null,
+      tool_call_id: original.tool_call_id ?? null,
+      tool_status: "error",
+      content: original.content,
+    }
   if (idOwner !== undefined && hooked.id !== original.id && redact(hooked.id) !== hooked.id) {
     const problem = "returned an id that holds a secret value"
     if (!essential) return yield* new HookFailed({ hook: idOwner, position: "before_create_message", problem })
