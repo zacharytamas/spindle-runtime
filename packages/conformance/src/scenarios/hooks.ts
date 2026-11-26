@@ -1676,6 +1676,64 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H22c checks hook-chosen ids against values learned later in the same write",
+    requirements: ["d263e879"],
+    run: async (driver) => {
+      const instance = { OPTIONAL: "fixture-optional", REQUIRED: "fixture-required" }
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "choose_id",
+          execute: async (_state, message) => {
+            if (message.content === "note") return { ...message, id: instance.OPTIONAL }
+            if (message.content === "done") return { ...message, id: instance.REQUIRED }
+            return message
+          },
+        }),
+        defineHook({
+          hook: "before_create_message",
+          id: "learn_value",
+          execute: async (state, message) => {
+            if (message.content === "note") await state.env("OPTIONAL")
+            if (message.content === "done") await state.env("REQUIRED")
+            return message
+          },
+        }),
+      ]
+      let refusal = ""
+      const tools = {
+        note: defineTool({
+          description: "Inject a note",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "note" }).catch((error: Error) => {
+              refusal = error.message
+            })
+            return ok("attempted")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "note", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle" })
+          const rows = await session.messages(thread)
+          expect(rows.at(-1)?.content).toBe("done")
+          expect(rows.at(-1)?.id).not.toContain(instance.REQUIRED)
+          expect(rows.some((row) => row.content === "note")).toBe(false)
+          expect(refusal).toContain("choose_id")
+          for (const value of Object.values(instance))
+            expect([refusal, ...session.logs()].join("\n")).not.toContain(value)
+        },
+        instance,
+      )
+    },
+  },
+  {
     name: "H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn",
     requirements: ["3d8dede1"],
     run: async (driver) => {

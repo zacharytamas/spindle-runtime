@@ -466,7 +466,7 @@ export const runHooks = <K extends Position>(
     readonly depth?: number
     // A check the return passes only against stored state, such as an id that no message holds yet. It gives the
     // problem, or undefined when there is none.
-    readonly check?: (next: Values[K], current: Values[K]) => Effect.Effect<string | undefined>
+    readonly check?: (next: Values[K], current: Values[K], hook: string) => Effect.Effect<string | undefined>
   } = {},
 ): Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never> =>
   Effect.gen(function* () {
@@ -507,7 +507,8 @@ export const runHooks = <K extends Position>(
         } catch {
           next = INVALID
         }
-        const found = next === INVALID ? `returned a value that is not ${row.expects}` : yield* check(next, current)
+        const found =
+          next === INVALID ? `returned a value that is not ${row.expects}` : yield* check(next, current, hook.id)
         if (found === undefined) {
           current = next as Values[K]
           continue

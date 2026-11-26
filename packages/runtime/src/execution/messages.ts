@@ -3,7 +3,15 @@ import { Clock, Effect } from "effect"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import type { History } from "./history.ts"
-import { type HookCall, type HookScope, NestedWriteLimit, NestedWriteTooDeep, runHooks, TEXT_FIELDS } from "./hooks.ts"
+import {
+  type HookCall,
+  HookFailed,
+  type HookScope,
+  NestedWriteLimit,
+  NestedWriteTooDeep,
+  runHooks,
+  TEXT_FIELDS,
+} from "./hooks.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
 
@@ -135,19 +143,23 @@ export const createMessage = Effect.fn("createMessage")(function* (
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
   // An id is stored and printed as it is, so redaction cannot reach it, and a hook may not choose one that holds a
   // secret value.
-  const check = (next: Message, current: Message) =>
-    next.id === current.id
-      ? Effect.succeed(undefined)
-      : redactor(write.secrets.values)(next.id) !== next.id
-        ? Effect.succeed("returned an id that holds a secret value")
-        : !essential
-          ? Effect.succeed(undefined)
-          : store.messageIdTaken(next.id).pipe(
-              Effect.map((found) => (found ? "returned the id of a message that already exists" : undefined)),
-              Effect.orDie,
-            )
+  const redact = redactor(write.secrets.values)
+  let idOwner: string | undefined
+  const check = Effect.fnUntraced(function* (next: Message, current: Message, hook: string) {
+    if (next.id === current.id) return
+    if (redact(next.id) !== next.id) return "returned an id that holds a secret value"
+    if (essential && (yield* store.messageIdTaken(next.id).pipe(Effect.orDie)))
+      return "returned the id of a message that already exists"
+    idOwner = hook
+  })
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
-  const redacted = redactWrite(writer, original, hooked, redactor(write.secrets.values))
+  let redacted = redactWrite(writer, original, hooked, redact)
+  if (idOwner !== undefined && hooked.id !== original.id && redact(hooked.id) !== hooked.id) {
+    const problem = "returned an id that holds a secret value"
+    if (!essential) return yield* new HookFailed({ hook: idOwner, position: "before_create_message", problem })
+    yield* Effect.logWarning(`Hook ${idOwner} (before_create_message) ${problem}. Spindle kept the generated id.`)
+    redacted = { ...redacted, id: original.id }
+  }
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
   // stored once under an id from the runtime, and its hooks, which have already run, do not run again.
   const inserted = yield* store.insertMessage(write.threadId, redacted).pipe(
@@ -155,7 +167,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
       if (!essential) return Effect.fail(error)
       const id = crypto.randomUUID()
       return Effect.logWarning(
-        `Message id ${JSON.stringify(error.messageId)} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
+        `Message id ${JSON.stringify(redact(error.messageId))} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
       ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id })))
     }),
   )
