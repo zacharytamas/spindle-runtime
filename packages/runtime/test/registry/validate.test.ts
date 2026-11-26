@@ -61,6 +61,8 @@ const invalid: ReadonlyArray<Case> = [
     [
       error("agent_side_option_invalid_for_backing", "agents/agents/greeter.ts:sideB.greeting"),
       error("agent_side_invalid", "agents/agents/half_human.ts:sideA.human"),
+      error("agent_side_invalid", "agents/agents/numbered.ts:sideA.label"),
+      error("agent_side_invalid", "agents/agents/numbered.ts:sideB.label"),
     ],
   ],
   [

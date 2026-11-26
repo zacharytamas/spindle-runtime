@@ -185,6 +185,8 @@ export const validate = Effect.gen(function* () {
       const side = agent[sideKey]
       if (!isRecord(side)) continue
       const backing = backingOf(side)
+      if (side.label !== undefined && typeof side.label !== "string")
+        at.report("agent_side_invalid", `${sideKey}.label`, "label must be a string")
       if (backing === "human") {
         for (const key of Object.keys(side)) {
           if (HUMAN_SIDE_KEYS.includes(key) || REPORTED_BY_SPEC_PACKAGE.includes(key)) continue
