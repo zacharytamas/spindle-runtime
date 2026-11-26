@@ -30,7 +30,8 @@ export interface ScriptedResponse {
 }
 
 export interface ScriptedChunks {
-  readonly chunks: ReadonlyArray<ProviderStreamChunk>
+  // A function in the list runs when the stream reaches it, and the stream waits for its promise.
+  readonly chunks: ReadonlyArray<ProviderStreamChunk | (() => Promise<void>)>
   readonly thenThrow?: unknown
 }
 
@@ -112,7 +113,10 @@ export class ScriptedProvider implements LLMProviderInterface {
       this.completedStreams += 1
     }
     return (async function* () {
-      yield* chunks
+      for (const chunk of chunks) {
+        if (typeof chunk === "function") await chunk()
+        else yield chunk
+      }
       if (thenThrow !== undefined) throw thenThrow
       completed()
     })()
@@ -120,7 +124,9 @@ export class ScriptedProvider implements LLMProviderInterface {
 
   async generate(request: ProviderRequest): Promise<ProviderResponse> {
     const step = await this.next(request)
-    const chunks = "chunks" in step ? step.chunks : this.chunksOf(step)
+    const chunks = ("chunks" in step ? step.chunks : this.chunksOf(step)).filter(
+      (chunk): chunk is ProviderStreamChunk => typeof chunk !== "function",
+    )
     let content: string | null = null
     let reasoning: string | undefined
     const calls = new Map<string, ProviderToolCallPart>()

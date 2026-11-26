@@ -31,7 +31,7 @@ export interface Scenario {
 // biome-ignore lint/suspicious/noExplicitAny: tools differ in their argument types.
 type Tools = Record<string, any>
 
-interface Setup {
+export interface Setup {
   readonly provider: ScriptedProvider
   readonly prompt?: Partial<PromptDefinition>
   readonly prompts?: ReadonlyArray<PromptDefinition>
@@ -42,9 +42,10 @@ interface Setup {
   readonly model?: Partial<ModelDefinition>
   readonly models?: ReadonlyArray<ModelDefinition>
   readonly tools?: Tools
+  readonly hooks?: Project["hooks"]
 }
 
-const project = (setup: Setup): Project => {
+export const project = (setup: Setup): Project => {
   const side = { prompt: "assistant", ...setup.side } as AgentDefinition["sideA"]
   const human = { human: true } as const
   return {
@@ -72,16 +73,17 @@ const project = (setup: Setup): Project => {
       ...(setup.agents ?? []),
     ],
     tools: setup.tools ?? {},
+    ...(setup.hooks === undefined ? {} : { hooks: setup.hooks }),
   }
 }
 
-const open = async (driver: RuntimeDriver, setup: Setup, instanceEnv?: Record<string, string>) => {
+export const open = async (driver: RuntimeDriver, setup: Setup, instanceEnv?: Record<string, string>) => {
   const session = await driver.load(project(setup), instanceEnv === undefined ? {} : { instanceEnv })
   const thread = await session.createThread("assistant")
   return { session, thread }
 }
 
-const using = async (
+export const using = async (
   driver: RuntimeDriver,
   setup: Setup,
   body: (session: RuntimeSession, thread: string) => Promise<void>,
@@ -95,7 +97,7 @@ const using = async (
   }
 }
 
-const gate = () => {
+export const gate = () => {
   let release: () => void = () => {}
   const opened = new Promise<void>((resolve) => {
     release = resolve
@@ -103,9 +105,9 @@ const gate = () => {
   return { release, opened }
 }
 
-const ok = (result: string) => ({ status: "success" as const, result })
+export const ok = (result: string) => ({ status: "success" as const, result })
 
-const callsOf = (message: Message | undefined) =>
+export const callsOf = (message: Message | undefined) =>
   JSON.parse(message?.tool_calls ?? "[]") as Array<{
     id: string
     type: string
@@ -127,15 +129,15 @@ const stringsIn = (value: unknown): Array<string> => {
   return Object.entries(value).flatMap(([key, member]) => [key, ...stringsIn(member)])
 }
 
-const holding = (value: unknown, secret: string) => stringsIn(value).filter((text) => text.includes(secret))
+export const holding = (value: unknown, secret: string) => stringsIn(value).filter((text) => text.includes(secret))
 
 const shape = (messages: ReadonlyArray<Message>) =>
   messages.map((message) => [message.role, message.role === "tool" ? message.tool_call_id : message.content])
 
-const history = (request: RecordedRequest | undefined) =>
+export const history = (request: RecordedRequest | undefined) =>
   (request?.messages ?? []).filter((message) => message.role !== "system")
 
-const sideOf = (message: ProviderMessage) =>
+export const sideOf = (message: ProviderMessage) =>
   message.role === "assistant"
     ? ["assistant", message.content ?? null, (message.toolCalls ?? []).map((call) => call.id)]
     : message.role === "tool"
@@ -155,8 +157,12 @@ const counter = () => {
   }
 }
 
-const send = (session: RuntimeSession, thread: string, text: string, options?: SendOptions): Promise<RunOutcome> =>
-  session.send(thread, text, options)
+export const send = (
+  session: RuntimeSession,
+  thread: string,
+  text: string,
+  options?: SendOptions,
+): Promise<RunOutcome> => session.send(thread, text, options)
 
 const orientation = async (driver: RuntimeDriver, humanOn: "a" | "b") => {
   const humanRole = humanOn === "b" ? "user" : "assistant"

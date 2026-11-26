@@ -1,7 +1,8 @@
-import { ConfigProvider, Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect"
+import { ConfigProvider, Duration, Effect, FileSystem, Layer, Logger, ManagedRuntime, Path } from "effect"
 import { PlatformLive, SqliteLive } from "#platform"
 import type { Project, RunOutcome, RuntimeDriver } from "../../conformance/src/RuntimeDriver.ts"
-import { sendMessage } from "../src/execution/trigger.ts"
+import { HookTimeout } from "../src/execution/hooks.ts"
+import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
 import { resolver } from "../src/registry/resolve.ts"
 import { validate } from "../src/registry/validate.ts"
@@ -25,6 +26,7 @@ export const registryOf = (project: Project) => {
     ...project.prompts.map((prompt) => definition("prompt", prompt.name, prompt)),
     ...project.models.map((model) => definition("model", model.name, model)),
     ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
+    ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
   ]
   const loaded = new Map<Definition, unknown>()
   for (const entry of definitions) loaded.set(entry, Effect.runSync(entry.load))
@@ -56,11 +58,16 @@ export const spindleDriver: RuntimeDriver = {
         return { dir, filename: path.join(dir, "spindle.db") }
       }).pipe(Effect.provide(PlatformLive)),
     )
+    const logs: Array<string> = []
     const runtime = ManagedRuntime.make(
       Layer.mergeAll(
         registry,
         store(filename),
         ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
+        Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
+        options.hookTimeoutMs === undefined
+          ? Layer.empty
+          : Layer.succeed(HookTimeout, Duration.millis(options.hookTimeoutMs)),
       ),
     )
     const reader = ManagedRuntime.make(store(filename))
@@ -71,13 +78,9 @@ export const spindleDriver: RuntimeDriver = {
         }),
       )
     return {
-      createThread: (agent) =>
-        runtime.runPromise(
-          Effect.gen(function* () {
-            const store = yield* ThreadStore
-            return (yield* store.createThread({ agentId: agent })).id
-          }),
-        ),
+      createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
+      state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
+      logs: () => [...logs],
       send: (threadId, content, sendOptions = {}) =>
         runtime.runPromise(
           sendMessage(threadId, content, sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
