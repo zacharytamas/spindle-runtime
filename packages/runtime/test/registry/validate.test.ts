@@ -323,6 +323,7 @@ const invalid: ReadonlyArray<Case> = [
     "throwing-getter",
     [
       error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+      error("definition_load_failed", "agents/hooks/named_trap.ts"),
       error("definition_load_failed", "agents/tools/trap.ts"),
     ],
   ],

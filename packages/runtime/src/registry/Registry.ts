@@ -133,7 +133,19 @@ export class Registry extends Context.Service<
             if (result !== undefined) issues.push(...result.failure.issues)
             return source
           }
-          const definition = identified(source, result.success, issues)
+          let definition: Definition
+          try {
+            definition = identified(source, result.success, issues)
+          } catch (cause) {
+            issues.push({
+              code: "definition_load_failed",
+              severity: "error",
+              message: `The ${source.kind} threw while Spindle read its identifier. ${describeCause(cause)}`,
+              file: source.file,
+              path: source.path,
+            })
+            return source
+          }
           loaded.set(definition, result.success)
           const key = `${definition.kind}\u0000${definition.package?.signature.packageId ?? ""}\u0000${definition.name}`
           const earlier = byKey.get(key)
