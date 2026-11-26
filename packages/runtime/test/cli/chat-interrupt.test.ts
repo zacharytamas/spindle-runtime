@@ -250,7 +250,7 @@ describe("spindle chat and Ctrl-C", () => {
           `> ${line}`,
           callLine("hold", { name: "a", watch: true }),
           note.stopping,
-          "[tool result] hold ok",
+          "[tool result] hold ok: released a, aborted false",
           note.status("idle", "aborted_by_user"),
           "> next",
           "ack: next",
@@ -473,7 +473,7 @@ describe("spindle chat and Ctrl-C", () => {
             () => visible(session).includes(note.status("idle", "aborted_by_user")) && visible(session).endsWith("> "),
           ),
         )
-        expect(visible(session)).toContain("[tool result] hold ok")
+        expect(visible(session)).toContain("[tool result] hold ok: released a, aborted false")
         expect(yield* exists(at("tool-aborted-a"))).toBe(false)
         expect(yield* toolRows(db, thread)).toEqual([["success", "released a, aborted false"]])
         yield* session.type("\u0004")

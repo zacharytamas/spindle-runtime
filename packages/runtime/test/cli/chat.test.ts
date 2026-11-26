@@ -40,6 +40,41 @@ const threadsIn = (db: string) =>
 
 describe("spindle chat", () => {
   it.live(
+    "successful results show one line of stored content with an optional full preview",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        const boundary = "😀".repeat(200)
+        const content = `${boundary}\nextra\u202e`
+        for (const full of [false, true]) {
+          const session = yield* chat(gate, [
+            "assistant",
+            "--dir",
+            queue,
+            "--db",
+            db,
+            ...(full ? ["--full-results"] : []),
+          ])
+          for (const text of ["", boundary, content]) yield* session.type(`${call("echo", { text })}\n`)
+          yield* session.end
+          expect(yield* session.exit).toBe(0)
+          expect(linesOf(session.out()).filter((line) => line.startsWith("[tool result]"))).toEqual([
+            "[tool result] echo ok",
+            `[tool result] echo ok: ${boundary}`,
+            `[tool result] echo ok: ${boundary}${full ? " extra\\u202e" : "..."}`,
+          ])
+          const rows = yield* query(
+            db,
+            "SELECT content FROM messages WHERE thread_id = ? AND role = 'tool' ORDER BY seq",
+            [yield* threadOf(session)],
+          )
+          expect(rows.map((row) => row.content)).toEqual(["", boundary, content])
+        }
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "a deleted database gets one plain diagnostic when the next line arrives",
     () =>
       Effect.gen(function* () {
@@ -183,7 +218,7 @@ describe("spindle chat", () => {
           "[tool call] explode {}",
           '[tool call] write_note {"key":"after","value":"still ran"}',
           "[tool result] explode error: Tool explode threw: The explode tool failed on purpose",
-          "[tool result] write_note ok",
+          "[tool result] write_note ok: Saved after",
           "The first tool failed and the second one still ran.",
           "> ",
         ])
@@ -208,7 +243,7 @@ describe("spindle chat", () => {
         expect(linesOf(session.out())).toEqual([
           `> ${line}`,
           callLine("hold", { name: "a" }),
-          "[tool result] hold ok",
+          "[tool result] hold ok: released a, aborted false",
           "done",
         ])
         yield* session.end
@@ -478,7 +513,7 @@ describe("spindle chat", () => {
           "> my token is [redacted]",
           "the token is [redacted]",
           '[tool call] reveal {"note":"[redacted]"}',
-          "[tool result] reveal ok",
+          "[tool result] reveal ok: key [redacted] token [redacted]",
           "again [redacted]",
           "> more",
           "> ",

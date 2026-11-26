@@ -42,17 +42,23 @@ const escapeControls = (text: string) =>
 const note = (text: string) => Console.error(`spindle: ${text}`)
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-const messageLines = (message: Message, modelRole: Message["role"], own: boolean) => {
+const messageLines = (message: Message, chat: Conversation, own: boolean) => {
   if (message.silent || own) return []
   const content = message.content ?? ""
-  if (message.role === "tool")
-    return [`[tool result] ${message.name} ${message.tool_status === "success" ? "ok" : `error: ${content}`}`]
-  if (message.role === modelRole)
+  if (message.role === "tool") {
+    const label = `[tool result] ${chat.clean(String(message.name))}`
+    const text = chat.clean(content).replaceAll(/[\n\u2028\u2029]/g, " ")
+    if (message.tool_status !== "success") return [`${label} error: ${text}`]
+    if (!text) return [`${label} ok`]
+    const preview = chat.fullResults ? text : text.replace(/^(.{200}).+$/su, "$1...")
+    return [`${label} ok: ${preview}`]
+  }
+  if (message.role === chat.role)
     return [
-      ...(content ? [content] : []),
-      ...toolCallsOf(message).map((call) => `[tool call] ${call.name} ${JSON.stringify(call.arguments)}`),
+      ...(content ? [chat.clean(content)] : []),
+      ...toolCallsOf(message).map((call) => chat.clean(`[tool call] ${call.name} ${JSON.stringify(call.arguments)}`)),
     ]
-  return message.role === "user" || message.role === "assistant" ? [`[elsewhere] ${content}`] : []
+  return message.role === "user" || message.role === "assistant" ? [chat.clean(`[elsewhere] ${content}`)] : []
 }
 
 const report = (result: RunOutcome | ThreadStatus) =>
@@ -137,6 +143,7 @@ interface Conversation {
   readonly onAdmitted: (seq: number) => void
   readonly identify: ReturnType<typeof operatorNotes>
   readonly clean: (text: string) => string
+  readonly fullResults: boolean
   readonly trace: boolean
   readonly dumpRequests: boolean
 }
@@ -161,10 +168,7 @@ const converse = (chat: Conversation) =>
       Effect.gen(function* () {
         for (const row of yield* store.messagesAfter(chat.id, cursor)) {
           const sent = row.admission !== null && own.delete(row.admission)
-          for (const line of messageLines(row.message, chat.role, sent)) {
-            const text = chat.clean(line)
-            yield* terminal.write(`${row.message.role === "tool" ? text.replaceAll("\n", " ") : text}\n`)
-          }
+          for (const line of messageLines(row.message, chat, sent)) yield* terminal.write(`${line}\n`)
           cursor = row.seq
         }
       }),
@@ -312,6 +316,10 @@ export const chatCommand = Command.make(
     db: Flag.String("db").pipe(Flag.optional),
     thread: Flag.String("thread").pipe(Flag.optional),
     script: deliveryFlags.script,
+    fullResults: Flag.Boolean("full-results").pipe(
+      Flag.withDescription("Show successful tool results beyond 200 characters"),
+      Flag.withDefault(false),
+    ),
     trace: deliveryFlags.trace,
     dumpRequests: deliveryFlags.dumpRequests,
   },
@@ -366,6 +374,7 @@ export const chatCommand = Command.make(
                       lastAdmission = seq
                     },
                     clean,
+                    fullResults: args.fullResults,
                     trace: args.trace,
                     dumpRequests: args.dumpRequests,
                   }).pipe(Effect.scoped),

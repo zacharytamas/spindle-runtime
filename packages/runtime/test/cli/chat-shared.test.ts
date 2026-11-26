@@ -127,7 +127,7 @@ describe("spindle chat beside other processes", () => {
         expect(linesOf(session.out())).toEqual([
           `> ${line}`,
           callLine("hold", { name: "a" }),
-          "[tool result] hold ok",
+          "[tool result] hold ok: released a, aborted false",
           "[elsewhere] beta",
           "ack: beta",
         ])
@@ -204,7 +204,11 @@ describe("spindle chat beside other processes", () => {
         expect(yield* holder.exit).toBe(0)
         // The holder took the queued line into its own run, so the chat made no request of its own.
         expect(yield* requesters(gate)).toEqual([holder.pid, holder.pid])
-        expect(linesOf(session.out())).toEqual(["> beta", "[tool result] hold ok", "ack: beta"])
+        expect(linesOf(session.out())).toEqual([
+          "> beta",
+          "[tool result] hold ok: released a, aborted false",
+          "ack: beta",
+        ])
         yield* session.end
         expect(yield* session.exit).toBe(0)
         expect(linesOf(session.err())).toEqual([

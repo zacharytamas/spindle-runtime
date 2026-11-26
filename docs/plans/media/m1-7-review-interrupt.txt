@@ -1,18 +1,18 @@
-$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/two-tools-slow.json --db /tmp/swarm-m1-7/review-rr3bz8w1/interrupt.db
-spindle: thread 9139af08-a6fe-4eba-b3a7-ad3bb3e640f4
+$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/two-tools-slow.json --db /tmp/swarm-m1-7/review-dlv616jn/interrupt.db
+spindle: thread ba73fa47-7601-4466-889f-5803f182203b
 > Save a note and wait.
 I will save the note, then wait.
 [tool call] write_note {"key":"color","value":"blue"}
 [tool call] nap {"ms":3000}
-[tool result] write_note ok
+[tool result] write_note ok: Saved color
 spindle: stopping after the current operation. Press Ctrl-C again to abort.
-[tool result] nap ok
+[tool result] nap ok: Slept 3000 ms
 spindle: idle (aborted_by_user)
 > Are you there?
 Done waiting.
 > 
-spindle: resume with spindle chat assistant --thread 9139af08-a6fe-4eba-b3a7-ad3bb3e640f4 --db /tmp/swarm-m1-7/review-rr3bz8w1/interrupt.db --dir packages/conformance/fixtures/step-loop
+spindle: resume with spindle chat assistant --thread ba73fa47-7601-4466-889f-5803f182203b --db /tmp/swarm-m1-7/review-dlv616jn/interrupt.db --dir packages/conformance/fixtures/step-loop
 
-$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js status 9139af08-a6fe-4eba-b3a7-ad3bb3e640f4 --db /tmp/swarm-m1-7/review-rr3bz8w1/interrupt.db
-idle aborted_by_user since 2026-11-26T17:04:25.849Z (1795712665849369)
+$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js status ba73fa47-7601-4466-889f-5803f182203b --db /tmp/swarm-m1-7/review-dlv616jn/interrupt.db
+idle aborted_by_user since 2026-11-26T18:19:57.982Z (1795717197982525)
 queued 0

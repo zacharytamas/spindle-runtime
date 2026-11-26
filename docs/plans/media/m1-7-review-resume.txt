@@ -1,12 +1,12 @@
-$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db
-spindle: thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07
+$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --db /tmp/swarm-m1-7/review-dlv616jn/resume.db
+spindle: thread b4a9cb23-e630-4183-956e-05ca6d051203
 > My note is cobalt.
 Hello! How can I help?
 > 
-spindle: resume with spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop
+spindle: resume with spindle chat assistant --thread b4a9cb23-e630-4183-956e-05ca6d051203 --db /tmp/swarm-m1-7/review-dlv616jn/resume.db --dir packages/conformance/fixtures/step-loop
 
-$ spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --dump-requests
-spindle: thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07
+$ spindle chat assistant --thread b4a9cb23-e630-4183-956e-05ca6d051203 --db /tmp/swarm-m1-7/review-dlv616jn/resume.db --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --dump-requests
+spindle: thread b4a9cb23-e630-4183-956e-05ca6d051203
 spindle: idle (stop_on_response)
 > Recall my note.
 {
@@ -154,4 +154,4 @@ spindle: idle (stop_on_response)
 }
 Hello! How can I help?
 > 
-spindle: resume with spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop
+spindle: resume with spindle chat assistant --thread b4a9cb23-e630-4183-956e-05ca6d051203 --db /tmp/swarm-m1-7/review-dlv616jn/resume.db --dir packages/conformance/fixtures/step-loop
