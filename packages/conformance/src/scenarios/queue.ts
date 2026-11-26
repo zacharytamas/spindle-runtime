@@ -12,6 +12,7 @@ import { z } from "zod"
 import type { LoadOptions, RuntimeDriver, RuntimeSession } from "../RuntimeDriver.ts"
 import { type RecordedRequest, ScriptedProvider } from "../ScriptedProvider.ts"
 import { rolesFor, SIDES } from "./messages.ts"
+import { attempt } from "./ownership.ts"
 import { callsOf, gate, history, holding, ok, project, type Scenario, type Setup, sideOf } from "./step-loop.ts"
 
 // A short lease, so that a session notices within a tenth of a second that another session settled its run.
@@ -1597,6 +1598,63 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
         },
         {},
       )
+    },
+  },
+  {
+    name: "Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
+    requirements: ["dc7d7df0", "9090af10"],
+    run: async (driver) => {
+      const held = gate()
+      const watch = defineTool({
+        description: "Wait for the abort",
+        execute: async (state: ThreadState) => {
+          const signal = state.execution?.abortSignal
+          held.release()
+          await new Promise((resolve) => signal?.addEventListener("abort", resolve))
+          return ok("aborted")
+        },
+      })
+      const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_watch", name: "watch", arguments: {} }] }])
+      await using(driver, { provider, tools: { watch } }, async (session, thread) => {
+        const waiter = await session.peer()
+        const other = await session.peer()
+        try {
+          const run = quiet(session.send(thread, "go"))
+          await held.opened
+          const behindHere = attempt(() => session.send(thread, "waited here"))
+          const behindElsewhere = attempt(() => waiter.send(thread, "waited elsewhere"))
+          // Both sends are durable once their entries are in the queue. The poll only waits for those two writes.
+          for (let tries = 0; tries < 500 && (await other.inspect(thread)).queue.length < 2; tries++)
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          await (await other.state(thread)).terminate()
+          expect(await run).toMatchObject({ status: "idle", reason: "aborted" })
+          expect({ behindHere: await behindHere, behindElsewhere: await behindElsewhere }).toEqual({
+            behindHere: "ThreadTerminated",
+            behindElsewhere: "ThreadTerminated",
+          })
+          expect(shape(await session.messages(thread)).map((row) => row[0])).toEqual(["user", "assistant", "tool"])
+          expect(provider.requests).toHaveLength(1)
+        } finally {
+          await waiter.close()
+          await other.close()
+        }
+      })
+    },
+  },
+  {
+    name: "Q35 never reports idle to a sender whose run could not be settled",
+    requirements: ["37e4432c"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([{ text: "a reply" }])
+      await using(driver, { provider }, async (session, thread) => {
+        await session.breakSettlement(thread)
+        const reported = await session.send(thread, "go").then(
+          (outcome) => outcome.status,
+          () => "rejected",
+        )
+        const stored = await session.inspect(thread)
+        expect([stored.status.state, reported === "idle" ? "idle" : "a failure"]).toEqual(["running", "a failure"])
+      })
     },
   },
 ]
