@@ -1,6 +1,7 @@
 import {
   type AgentDefinition,
   defineAgent,
+  defineHook,
   defineModel,
   definePrompt,
   defineProvider,
@@ -1504,7 +1505,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S18b reads the stop property of a redacted result when a secret is part of its name or of its value",
+    name: "S18b reads the stop property before redaction, so a secret inside the property name cannot hide it",
     requirements: ["e70c9393"],
     run: async (driver) => {
       const stopWith = async (summary: string) => {
@@ -1529,10 +1530,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         )
         return { value: outcome?.stopTool?.value, content: stored?.content }
       }
-      expect(await stopWith("valid")).toEqual({ value: "valid", content: '{"summary":"valid","count":2}' })
+      expect(await stopWith("valid")).toEqual({ value: "valid", content: '{"[redacted]mary":"valid","count":2}' })
       expect(await stopWith("the sum is 4")).toEqual({
         value: "the [redacted] is 4",
-        content: '{"summary":"the [redacted] is 4","count":2}',
+        content: '{"[redacted]mary":"the [redacted] is 4","count":2}',
       })
     },
   },
@@ -2168,7 +2169,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S26g treats only the top-level text of a result as JSON and replaces a secret in every nested string as written",
+    name: "S26g replaces a secret wherever a tool writes it, in property names and in nested JSON text alike",
     requirements: [],
     run: async (driver) => {
       const marker = "nested-821"
@@ -2181,8 +2182,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             return {
               status: "error" as const,
               error: "sample",
-              result: JSON.stringify({ k: mark }),
-              error_data: { label: JSON.stringify({ [mark]: 7 }), list: [`[${JSON.stringify(mark)}]`] },
+              result: JSON.stringify({ [mark]: mark }),
+              error_data: { label: JSON.stringify({ [mark]: 7 }), list: [`[${JSON.stringify(mark)}]`], [mark]: 1 },
               attachments: [
                 {
                   type: "file" as const,
@@ -2206,8 +2207,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           await send(session, thread, "go")
           const result = (await session.messages(thread)).find((m) => m.role === "tool")
           expect([result?.content, result?.metadata, result?.attachments]).toEqual([
-            'sample\n\n{"k":"[redacted]"}',
-            { error_data: { label: '{"[redacted]":7}', list: ['["[redacted]"]'] } },
+            'sample\n\n{"[redacted]":"[redacted]"}',
+            { error_data: { label: '{"[redacted]":7}', list: ['["[redacted]"]'], "[redacted]": 1 } },
             [
               {
                 type: "file",
@@ -2257,6 +2258,73 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         { MARK: "Spindle" },
       )
       expect(holding(provider.requests, "Spindle")).toEqual([])
+    },
+  },
+  {
+    name: "S26i redacts a secret that a tool or a hook writes as a property name, in a result, an injection, and an edit",
+    requirements: [],
+    run: async (driver) => {
+      const mark = "sk-fake-0123456789abcdef"
+      const keyed = (n: number) => JSON.stringify({ [mark]: n })
+      const variables = [{ name: "MARK", type: "secret" as const, required: true, description: "A secret" }]
+      let injected = false
+      const hooks = [
+        defineHook({
+          hook: "filter_messages",
+          id: "inject_keyed",
+          execute: async (state, messages) => {
+            if (!injected) {
+              injected = true
+              const secret = await state.env("MARK")
+              await state.injectMessage({ role: "user", content: keyed(1), metadata: { [secret]: "hook" } })
+            }
+            return messages
+          },
+        }),
+        defineHook({
+          hook: "before_update_message",
+          id: "edit_keyed",
+          execute: async (_state, _id, updates) =>
+            updates.content === "for the hook" ? { ...updates, content: keyed(2) } : updates,
+        }),
+      ]
+      const tools = {
+        keyed: defineTool({
+          description: "Writes its secret as a property name",
+          variables,
+          execute: async (state: ThreadState) => {
+            const secret = await state.env("MARK")
+            await state.injectMessage({ role: "user", content: keyed(3), metadata: { [secret]: "tool" } })
+            const first = await state.injectMessage({ role: "user", content: "blank" })
+            await state.updateMessage(first.id, { content: keyed(4) })
+            const second = await state.injectMessage({ role: "user", content: "blank" })
+            await state.updateMessage(second.id, { content: "for the hook" })
+            return ok(JSON.stringify({ [secret]: true }))
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "keyed", arguments: {} }] }, { text: "done" }])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { variables, hooks: ["inject_keyed", "edit_keyed"] } },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => [m.role, m.content, m.metadata])).toEqual([
+            ["user", "go", {}],
+            ["user", '{"[redacted]":1}', { "[redacted]": "hook" }],
+            ["assistant", null, {}],
+            ["user", '{"[redacted]":3}', { "[redacted]": "tool" }],
+            ["user", '{"[redacted]":4}', {}],
+            ["user", '{"[redacted]":2}', {}],
+            ["tool", '{"[redacted]":true}', {}],
+            ["assistant", "done", {}],
+          ])
+          expect(holding(stored, mark)).toEqual([])
+        },
+        { MARK: mark },
+      )
+      expect(holding(provider.requests, mark)).toEqual([])
     },
   },
   {
@@ -2335,7 +2403,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           expect([result?.tool_status, result?.content, result?.metadata]).toEqual([
             "error",
             "r[redacted]j[redacted]ct[redacted]d",
-            { error_data: { "key e": "k[redacted]pt" } },
+            { error_data: { "k[redacted]y [redacted]": "k[redacted]pt" } },
           ])
         },
         { ONE_CHAR: "e" },

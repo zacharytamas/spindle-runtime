@@ -3,7 +3,7 @@ import { Clock, Effect } from "effect"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { type HookScope, runHooks, TEXT_FIELDS } from "./hooks.ts"
-import { mapStrings, redactor, redactText } from "./redact.ts"
+import { mapStrings, redactor } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
 
 export interface WriteContext {
@@ -63,10 +63,10 @@ const redactChanged = (before: Message, after: Message, redact: (text: string) =
   const changed: Record<string, unknown> = {}
   for (const field of TEXT_FIELDS) {
     const value = after[field]
-    if (typeof value === "string" && value !== before[field]) changed[field] = redactText(redact)(value)
+    if (typeof value === "string" && value !== before[field]) changed[field] = redact(value)
   }
   if (!sameJson(before.metadata, after.metadata) && isRecord(after.metadata))
-    changed.metadata = mapStrings(after.metadata, redact)
+    changed.metadata = mapStrings(after.metadata, redact, redact)
   if (!sameJson(before.attachments, after.attachments) && Array.isArray(after.attachments))
     changed.attachments = after.attachments.map((item: unknown) =>
       isRecord(item) ? redactAttachment(item, redact) : item,
@@ -105,8 +105,8 @@ export const createMessage = Effect.fn("createMessage")(function* (
 // Threads section 2.3: text that user code writes is redacted before it is stored, as tool output is.
 const redactUpdates = (updates: Record<string, unknown>, redact: (text: string) => string) => ({
   ...updates,
-  ...(typeof updates.content === "string" ? { content: redactText(redact)(updates.content) } : {}),
-  ...(isRecord(updates.metadata) ? { metadata: mapStrings(updates.metadata, redact) } : {}),
+  ...(typeof updates.content === "string" ? { content: redact(updates.content) } : {}),
+  ...(isRecord(updates.metadata) ? { metadata: mapStrings(updates.metadata, redact, redact) } : {}),
 })
 
 // Hooks sections 4.3 and 4.4. A failed before_update_message hook refuses the update.

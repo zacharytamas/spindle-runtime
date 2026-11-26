@@ -162,7 +162,13 @@ const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArr
   }
 }
 
-const stopToolOutcome = (turn: Turn, calls: ReadonlyArray<ToolCall>, results: ReadonlyArray<ToolResult>) => {
+// The runtime reads the stop property from the result before redaction, and reports the value redacted.
+const stopToolOutcome = (
+  turn: Turn,
+  calls: ReadonlyArray<ToolCall>,
+  results: ReadonlyArray<ToolResult>,
+  redact: (text: string) => string,
+) => {
   const index = calls.findIndex((call) => call.name === turn.config.stopTool)
   const call = calls[index]
   const result = results[index]
@@ -175,7 +181,12 @@ const stopToolOutcome = (turn: Turn, calls: ReadonlyArray<ToolCall>, results: Re
       : typeof parsed === "object" && parsed !== null && Object.hasOwn(parsed, property)
         ? (parsed as Record<string, unknown>)[property]
         : null
-  return { tool: call.name, callId: call.id, status: result.status, value } satisfies StopToolOutcome
+  return {
+    tool: call.name,
+    callId: call.id,
+    status: result.status,
+    value: mapStrings(value, redact, redact),
+  } satisfies StopToolOutcome
 }
 
 // Before the first request, and before spindle run prints a line, the execution learns every secret value that the
@@ -441,7 +452,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             ),
           )
           // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
-          results.push(stored.tool_status == null ? result : { ...result, status: stored.tool_status })
+          results.push(stored.tool_status == null ? final : { ...final, status: stored.tool_status })
           yield* record("persist-results", `${call.id} ${stored.tool_status}`)
           yield* observe({ type: "message", message: stored })
           yield* runHooks(hooks, "tool_call_done", [toolCall], result)
@@ -458,7 +469,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         )
         yield* record("stop", reason ?? "continue")
         if (reason !== undefined) {
-          const stopTool = reason === "stop_tool" ? stopToolOutcome(turn, calls, results) : undefined
+          const stopTool = reason === "stop_tool" ? stopToolOutcome(turn, calls, results, redact) : undefined
           return yield* settle("idle", reason, stopTool === undefined ? {} : { stopTool })
         }
       }

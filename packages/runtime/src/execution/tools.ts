@@ -2,7 +2,7 @@ import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@
 import { Data, Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
-import { mapStrings, redactText } from "./redact.ts"
+import { mapStrings } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -189,14 +189,13 @@ export const redactAttachment = (item: Record<string, unknown>, redact: (text: s
   ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),
 })
 
-// Threads section 2.3: a result is redacted in its string values only. The status, the error code, every property
-// name, and the parts of an attachment that the runtime reads back keep their values. Only the result and error
-// text are read as JSON, and every other string loses each secret as written, whatever it looks like.
+// Threads section 2.3: a result loses each secret wherever its text holds one, property names included. The status,
+// the error code, and the parts of an attachment that the runtime reads back keep their values.
 export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
   ...result,
-  ...(result.result === undefined ? {} : { result: redactText(redact)(result.result) }),
-  ...(result.error === undefined ? {} : { error: redactText(redact)(result.error) }),
-  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact) }),
+  ...(result.result === undefined ? {} : { result: redact(result.result) }),
+  ...(result.error === undefined ? {} : { error: redact(result.error) }),
+  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact, redact) }),
   ...(result.attachments === undefined
     ? {}
     : {
@@ -246,7 +245,7 @@ export const storedResult = (
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
     tool_status: dropped.length === 0 ? result.status : "error",
-    content: redactText(redact)([contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n")),
+    content: redact([contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n")),
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),

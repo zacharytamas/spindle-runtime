@@ -6,7 +6,7 @@ import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import type { HookScope } from "./hooks.ts"
 import { createMessage, updateMessage } from "./messages.ts"
-import { mapStrings, redactor, redactText } from "./redact.ts"
+import { mapStrings, redactor } from "./redact.ts"
 import { lookup, type Side } from "./turn.ts"
 
 export interface ExecutionRecord {
@@ -118,10 +118,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
           write,
           {
             role: input.role,
-            content: typeof input.content === "string" ? redactText(redact)(input.content) : input.content,
+            content: typeof input.content === "string" ? redact(input.content) : input.content,
             status: "completed",
             ...(input.silent === undefined ? {} : { silent: input.silent }),
-            ...(input.metadata === undefined ? {} : { metadata: mapStrings(input.metadata, redact) }),
+            ...(input.metadata === undefined ? {} : { metadata: mapStrings(input.metadata, redact, redact) }),
           },
           false,
         ),
