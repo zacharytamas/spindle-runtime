@@ -297,12 +297,15 @@ An execution moves through one ordered list of phases per step, which are drain,
 - [ ] Persist a tool error as a tool result and continue the loop.
 - [ ] Evaluate `stopTool`, then `stopOnResponse`, then `maxSteps`, from the one stop-rule table. Pass `toolChoice` through, including `none` with the tool definitions.
 - [ ] Write `openai-compatible.ts` against `LLMProviderInterface` for the chat completions wire format. It reads the base URL and the key from provider config slots.
-- [ ] Add `spindle run <agent> -m <text>`. `--script <file>` selects the scripted provider. `--trace` prints the phase trace. `--dump-requests` prints each provider request as JSON. `--db <file>` selects the database.
+- [ ] Export the provider from `packages/runtime` as a factory named `openaiCompatible`, so that a file under `agents/models/` can import it and pass it as `provider`.
+- [ ] Copy the Hello, World example from the spec's Examples page into `packages/conformance/fixtures/hello-world/`. Change only the provider import in `agents/models/conversational.ts`.
+- [ ] Add `spindle run <agent> -m <text>`. It loads the `agents/` folder of the current directory, and `--dir <path>` names a different project directory. `--script <file>` selects the scripted provider. `--trace` prints the phase trace. `--dump-requests` prints each provider request as JSON. `--db <file>` selects the database.
 
 **You see.**
 
 - [ ] `spindle run assistant -m "hello" --script text-reply.json --db /tmp/x.db` prints the assistant text and exits 0.
 - [ ] `spindle run assistant -m "hello" --script text-reply.json --trace` prints the phases in the order drain, assemble, call, persist-response, tools, persist-results, stop.
+- [ ] `spindle run assistant --dir packages/conformance/fixtures/hello-world -m "What does idempotent mean?"` prints a reply from the model at `SPINDLE_TEST_BASE_URL`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
