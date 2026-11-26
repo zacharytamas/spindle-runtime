@@ -205,8 +205,8 @@ const converse = (chat: Conversation) =>
               ),
             )
             yield* chat.identify(
-              holder.abortedTool
-                ? `tool ${chat.clean(holder.abortedTool)} has not returned since the abort, so the line waits in the queue until it does`
+              holder.abortedOperation
+                ? `${chat.clean(holder.abortedOperation)} has not returned since the abort, so the line waits in the queue until it does`
                 : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
             )
           }),

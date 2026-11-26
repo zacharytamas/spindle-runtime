@@ -29,7 +29,7 @@ export interface Delivery {
 
 interface SendOptions extends ExecutionOptions {
   readonly onAdmitted?: (seq: number) => void
-  readonly onWaiting?: (holder: { readonly pid: number; readonly abortedTool?: string }) => Effect.Effect<void>
+  readonly onWaiting?: (holder: { readonly pid: number; readonly abortedOperation?: string }) => Effect.Effect<void>
 }
 
 interface Live {
@@ -195,7 +195,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
       const newRun = (): Run => ({
-        pending: new Set(),
+        pending: new Map(),
         releaseWait: new AbortController(),
         flowId: crypto.randomUUID(),
         abort: new AbortController(),
@@ -331,13 +331,10 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               let local = live.get(threadId)
               let outcome: RunOutcome | undefined
               if (local !== undefined) {
-                if (options.onWaiting)
-                  yield* options.onWaiting({
-                    pid: holder.pid,
-                    ...(local.run.waitForCallbacks && local.run.activeTool
-                      ? { abortedTool: local.run.activeTool }
-                      : {}),
-                  })
+                if (options.onWaiting) {
+                  const operation = local.run.waitForCallbacks ? local.run.pending.values().next().value : undefined
+                  yield* options.onWaiting({ pid: holder.pid, ...(operation ? { abortedOperation: operation } : {}) })
+                }
                 while (local) {
                   outcome = yield* Deferred.await(local.done)
                   local = local.successor

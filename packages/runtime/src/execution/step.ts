@@ -465,9 +465,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
       ) =>
         Effect.gen(function* () {
-          run.activeTool = call.name
           const returned = run.stop !== undefined ? notRun : yield* outcome
-          delete run.activeTool
           const skipped = returned === notRun
           const toolCall = hookCall(call, argumentsOf(call))
           const branched = skipped
@@ -754,7 +752,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             abort.abort()
             if (run.waitForCallbacks && run.pending.size && !run.releaseWait.signal.aborted) {
               await Promise.race([
-                Promise.allSettled(run.pending),
+                Promise.allSettled(run.pending.keys()),
                 new Promise<void>((resolve) =>
                   run.releaseWait.signal.addEventListener("abort", () => resolve(), { once: true }),
                 ),

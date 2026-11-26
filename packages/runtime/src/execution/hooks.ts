@@ -9,7 +9,7 @@ import type {
 import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { isAttachmentRef, toJson } from "../store/schema.ts"
-import { type Callback, invokeCallback } from "./callback.ts"
+import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -357,7 +357,7 @@ export interface HookCall extends Callback {
 }
 
 export interface HookScope {
-  readonly pending?: Set<Promise<unknown>>
+  readonly pending?: PendingCallbacks
   readonly set: HookSet
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
@@ -444,7 +444,7 @@ const callHook = (
   pending: HookScope["pending"],
 ) =>
   Effect.tryPromise({
-    try: () => invokeCallback(call, pending, () => hook.execute(...args())),
+    try: () => invokeCallback(call, pending, `hook ${hook.id}`, () => hook.execute(...args())),
     catch: () => "threw an error",
   }).pipe(Effect.timeoutOption(timeout), Effect.result)
 

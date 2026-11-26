@@ -54,6 +54,32 @@ const abort = (session: Session) =>
 
 describe("spindle chat and Ctrl-C", () => {
   it.live(
+    "an aborted hook is named while it holds the thread",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        yield* touch(at("hold-hook"))
+        const session = yield* chat(gate, ["hooked", "--dir", queue, "--db", db])
+        yield* session.type(`${call("echo", { text: "hi" })}\n`)
+        yield* until("the hook to enter", exists(at("hook-entered")))
+        yield* abort(session)
+        yield* session.type("next\n")
+        yield* until(
+          "the wait note",
+          Effect.sync(() => session.err().includes("so the line waits")),
+        )
+        expect(linesOf(session.err()).at(-1)).toBe(
+          "spindle: hook gate_store has not returned since the abort, so the line waits in the queue until it does",
+        )
+        yield* touch(at("release-hook"))
+        yield* prompt(session, 3)
+        yield* session.end
+        expect(yield* session.exit).toBe(0)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "exit reports durable queued admissions even when a signal races the sender",
     () =>
       Effect.gen(function* () {
