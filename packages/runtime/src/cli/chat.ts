@@ -127,7 +127,7 @@ const openThread = (
     return { id, cursor: opened.cursor }
   })
 
-type Ending = "input" | "closed" | "terminated"
+type Ending = "input" | "closed"
 type Turn = Fiber.Fiber<Delivery, unknown>
 
 interface Conversation {
@@ -246,10 +246,7 @@ const converse = (chat: Conversation) =>
               return "continue" as const
             }
             const error = Cause.squash(event.exit.cause)
-            if (error instanceof ThreadTerminated) {
-              yield* chat.identify(error.message)
-              return "terminated" as const
-            }
+            if (error instanceof ThreadTerminated) return yield* error
             const problem = wasAdmitted() ? "the line was sent, but the run could not finish" : "the line was not sent"
             yield* note(`${problem}: ${describe(error)}`)
             return "continue" as const
@@ -280,7 +277,10 @@ const converse = (chat: Conversation) =>
       }
       if (read.kind === "interrupt" || read.line === null) break
       if (!terminal.isTerminal) yield* write(`${read.line}\n`)
-      if (read.line.trim() === "") continue
+      if (read.line.trim() === "") {
+        yield* requireOpen(yield* store.getThread(chat.id))
+        continue
+      }
       atPrompt = false
       if (previous && Deferred.isDoneUnsafe(previous)) yield* finishPrevious
       yield* flush
@@ -373,20 +373,17 @@ export const chatCommand = Command.make(
               )
               // A conversation that a signal or an error ended still says how to resume the thread.
               const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
-              if (ending === "terminated") return yield* new RunFailed({ message: ending })
               if (filename !== ":memory:" && !(yield* fs.exists(filename)))
                 return yield* fail(`the database ${db} is gone`)
               const store = yield* ThreadStore
+              yield* requireOpen(yield* store.getThread(thread.id))
               if (lastAdmission !== undefined && (yield* store.isQueued(thread.id, lastAdmission)))
                 yield* note("your last line is still queued, and the next run of the thread delivers it")
               if (filename !== ":memory:") {
-                const stored = yield* store.getThread(thread.id)
-                if (stored.terminated === null) {
-                  const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
-                  yield* identify(
-                    `resume with spindle chat ${shellWord(clean(args.agent))} --thread ${shellWord(thread.id)} --db ${shellWord(clean(db))}${dir}`,
-                  )
-                }
+                const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
+                yield* identify(
+                  `resume with spindle chat ${shellWord(clean(args.agent))} --thread ${shellWord(thread.id)} --db ${shellWord(clean(db))}${dir}`,
+                )
               }
               if (Exit.isFailure(conversation)) return yield* Effect.failCause(conversation.cause)
               if (ending === "closed") return yield* new RunFailed({ message: ending })

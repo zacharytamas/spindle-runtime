@@ -35,6 +35,28 @@ const toolRows = (db: string, thread: string) =>
 
 describe("spindle chat beside other processes", () => {
   it.live(
+    "termination at the prompt is reported on the next input or interrupt",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        for (const action of ["eof", "interrupt", "message", "blank"]) {
+          const session = yield* chat(gate, ["assistant", ...dir, "--db", db])
+          yield* prompt(session, 1)
+          const thread = yield* threadOf(session)
+          const terminator = yield* spawn(gate, probe, ["terminate", "--thread", thread, ...project, "--db", db])
+          expect(yield* terminator.exit).toBe(0)
+          if (action === "interrupt") yield* session.signal("SIGINT")
+          else if (action === "eof") yield* session.end
+          else yield* session.type(action === "blank" ? "\n" : "hello\n")
+          expect(yield* session.exit).toBe(1)
+          expect(linesOf(session.err())).toEqual([note.thread(thread), note.terminated(thread)])
+          expect(yield* queuedIn(db, thread)).toEqual([])
+        }
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "external termination during our run exits before another prompt",
     () =>
       Effect.gen(function* () {
