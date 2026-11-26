@@ -2,9 +2,10 @@ import type { GetMessagesOptions, MessageUpdates } from "@standardagents/spec"
 import { Context, Effect, HashMap, Option, Schema } from "effect"
 import { BeginTransaction } from "effect/sql/SqlClient"
 import { authorize, type Database, first, json, pending, unyielding } from "./database.ts"
-import type { IdentifiedMessage, InsertOptions } from "./model.ts"
 import {
   CallerHasOpenCalls,
+  type IdentifiedMessage,
+  type InsertOptions,
   InvalidMessagesQuery,
   MessageIdTaken,
   MessageNotFound,
@@ -160,18 +161,14 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
         yield* guardWrite(threadId, origin)
         const where = sql.and([sql`thread_id = ${threadId}`, sql`id = ${messageId}`])
         const current = yield* first(yield* selectMessages(where), () => new MessageNotFound({ threadId, messageId }))
-        const changes = {
-          ...(updates.content === undefined ? {} : { content: stored(updates.content) }),
-          ...(updates.metadata === undefined
-            ? {}
-            : {
-                metadata: yield* json(
-                  "the message metadata",
-                  yield* json("the message metadata", updates.metadata).pipe(
-                    Effect.map((patch) => ({ ...JSON.parse(current.metadata), ...JSON.parse(patch) })),
-                  ),
-                ),
-              }),
+        const changes: { content?: string | null; metadata?: string } = {}
+        if (updates.content !== undefined) changes.content = stored(updates.content)
+        if (updates.metadata !== undefined) {
+          const patch = yield* json("the message metadata", updates.metadata)
+          changes.metadata = yield* json("the message metadata", {
+            ...JSON.parse(current.metadata),
+            ...JSON.parse(patch),
+          })
         }
         if (Object.keys(changes).length === 0) return toMessage(current)
         const updated =

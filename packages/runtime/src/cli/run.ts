@@ -15,8 +15,7 @@ import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
 import { ThreadTerminated } from "../store/model.ts"
-import type { Stores } from "../store/sqlite.ts"
-import { layer as sqliteStore } from "../store/sqlite.ts"
+import { type Stores, layer as sqliteStore } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 
 export class RunFailed extends Data.TaggedError("RunFailed")<{ readonly message: string }> {

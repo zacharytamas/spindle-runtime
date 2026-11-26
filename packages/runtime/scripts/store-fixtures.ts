@@ -1,5 +1,6 @@
 import { Effect } from "effect"
-import { nowMicros } from "../src/store/database.ts"
+import { SqlClient } from "effect/sql/SqlClient"
+import { nowMicros, queueHead } from "../src/store/database.ts"
 import { MessageStore } from "../src/store/MessageStore.ts"
 import {
   type Claim,
@@ -10,17 +11,19 @@ import {
   ThreadTerminated,
 } from "../src/store/model.ts"
 import { RunStore } from "../src/store/RunStore.ts"
+import { decodeQueued } from "../src/store/schema.ts"
 import { ThreadStore } from "../src/store/ThreadStore.ts"
 
 export const admitEntry = (threadId: string, entry: QueueEntry, claim: Claim) =>
   RunStore.use((store) => store.admit(threadId, entry, claim, external))
+export const peekQueued = (threadId: string) =>
+  SqlClient.use((sql) => Effect.map(queueHead(sql, threadId), ([row]) => row && decodeQueued(row)))
 export const drainEntries = (threadId: string, flowId: string) =>
   Effect.gen(function* () {
-    const store = yield* RunStore
     const messages = yield* MessageStore
     const delivered: Queued[] = []
     while (true) {
-      const entry = yield* store.nextQueued(threadId, { flowId })
+      const entry = yield* peekQueued(threadId)
       if (!entry) return delivered
       const message =
         entry.kind === "tool"

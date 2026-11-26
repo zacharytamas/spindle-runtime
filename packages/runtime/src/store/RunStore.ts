@@ -1,6 +1,5 @@
 import type { ThreadStatus } from "@standardagents/spec"
 import { Context, Effect } from "effect"
-
 import { processAlive, processId } from "#platform"
 import { CLOSING, transition } from "../execution/run-status.ts"
 import {
@@ -15,8 +14,7 @@ import {
   runColumns,
   unyielding,
 } from "./database.ts"
-import type { Holder, QueueEntry, Thread } from "./model.ts"
-import { type Claim, external, type WriteOrigin } from "./model.ts"
+import { type Claim, external, type Holder, type QueueEntry, type Thread, type WriteOrigin } from "./model.ts"
 import {
   decodeQueued,
   type MessageRow,
@@ -218,28 +216,26 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     ),
 
     recoverLost: (threadId?: string) =>
-      unyielding(
-        Effect.gen(function* () {
-          const candidates = heldRows<RunRow & { id: string }>(
-            `id, ${runColumns}`,
-            sql.and([running, ...(threadId === undefined ? [] : [sql`id = ${threadId}`])]),
-          )
-          const ids = new Set<string | null>()
-          for (const row of yield* candidates) if (yield* lost(row)) ids.add(row.flow_id)
-          if (!ids.size) return []
-          return yield* sql.withTransaction(
-            Effect.gen(function* () {
-              const recovered = []
-              for (const row of yield* candidates) {
-                if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
-                yield* settleWith(row.id, row, { type: "lose" }, CLOSING.lost)
-                recovered.push(row.id)
-              }
-              return recovered
-            }),
-          )
-        }),
-      ),
+      Effect.gen(function* () {
+        const candidates = heldRows<RunRow & { id: string }>(
+          `id, ${runColumns}`,
+          sql.and([running, ...(threadId === undefined ? [] : [sql`id = ${threadId}`])]),
+        )
+        const ids = new Set<string | null>()
+        for (const row of yield* candidates) if (yield* lost(row)) ids.add(row.flow_id)
+        if (!ids.size) return []
+        return yield* sql.withTransaction(
+          Effect.gen(function* () {
+            const recovered = []
+            for (const row of yield* candidates) {
+              if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
+              yield* settleWith(row.id, row, { type: "lose" }, CLOSING.lost)
+              recovered.push(row.id)
+            }
+            return recovered
+          }),
+        )
+      }).pipe(Effect.withSpan("RunStore.recoverLost"), unyielding),
 
     recoverThread: <E = never, R = never>(
       threadId: string,
@@ -257,7 +253,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         if (!force && !(yield* lost(row))) return { kind: "alive" as const, status: thread.status, pid: row.pid }
         const status = yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
         return { kind: "recovered" as const, status, pid: row.pid }
-      }).pipe(sql.withTransaction, unyielding),
+      }).pipe(sql.withTransaction, Effect.withSpan("RunStore.recoverThread"), unyielding),
 
     acquireHolder: Effect.fn("RunStore.acquireHolder")(
       (holder: Holder) =>

@@ -1,7 +1,6 @@
 import { Context, Effect } from "effect"
 import { authorize, type Database, json, nowMicros, requireThread, unyielding } from "./database.ts"
-import type { NewThread } from "./model.ts"
-import { KeyNotWellFormed, type WriteOrigin } from "./model.ts"
+import { KeyNotWellFormed, type NewThread, type WriteOrigin } from "./model.ts"
 import { stored, type ThreadRow, threadColumns, toThread } from "./schema.ts"
 
 const loneSurrogate = /[\uD800-\uDFFF]/u

@@ -2,7 +2,6 @@ import { Cause, Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { RunStore } from "../store/RunStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-
 import { fail, openDatabase, RunFailed } from "./run.ts"
 
 const time = (micros: number) =>

@@ -109,9 +109,7 @@ describe("ThreadStore", () => {
             const thread = yield* threadStore.createThread({ agentId: "assistant" })
             yield* appendMessages(thread.id, [user("first"), user("quiet", { silent: true })])
             const before = yield* messageStore.history(thread.id)
-            yield* Effect.gen(function* () {
-              yield* appendMessages(thread.id, [user("from another connection")])
-            }).pipe(Effect.provide(storeAt(filename)))
+            yield* appendMessages(thread.id, [user("from another connection")]).pipe(Effect.provide(storeAt(filename)))
             const after = yield* messageStore.history(thread.id)
             expect({ revision: before.revision, contents: before.messages.map((m) => m.content) }).toEqual({
               revision: 2,

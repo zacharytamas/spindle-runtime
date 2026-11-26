@@ -13,8 +13,7 @@ import { platformName, SqliteLive } from "#platform"
 import { MessageStore } from "../src/store/MessageStore.ts"
 import { external, type NewMessage } from "../src/store/model.ts"
 import { RunStore } from "../src/store/RunStore.ts"
-import type { Stores } from "../src/store/sqlite.ts"
-import { layer } from "../src/store/sqlite.ts"
+import { layer, type Stores } from "../src/store/sqlite.ts"
 import { ThreadStore } from "../src/store/ThreadStore.ts"
 import { admitEntry, appendMessages, drainEntries, settleRun, startRun } from "./store-fixtures.ts"
 
@@ -54,7 +53,7 @@ const fail = (message: string): never => {
 
 const print = (value: unknown) => console.log(JSON.stringify(value, (_, v) => (typeof v === "bigint" ? `${v}n` : v)))
 
-const claim = { holder: crypto.randomUUID(), flowId: crypto.randomUUID() }
+const newClaim = () => ({ holder: crypto.randomUUID(), flowId: crypto.randomUUID() })
 const withStore = <A, E>(filename: string, use: Effect.Effect<A, E, Stores | SqlClient>) =>
   Effect.runPromise(Effect.provide(use, Layer.provideMerge(layer, SqliteLive({ filename }))))
 
@@ -150,10 +149,10 @@ const stepRecords = (step: number): Array<NewMessage> => [
   },
 ]
 
-const createThread = (filename: string, agentId = "probe") =>
+const createThread = (filename: string) =>
   withStore(
     filename,
-    ThreadStore.use((store) => store.createThread({ agentId })),
+    ThreadStore.use((store) => store.createThread({ agentId: "probe" })),
   )
 
 const readThread = (threadId: string) =>
@@ -402,6 +401,7 @@ const commands: Record<string, () => Promise<void>> = {
   },
 
   enqueue: async () => {
+    const claim = newClaim()
     const count = Number(option("count") ?? 100)
     const result = await withStore(
       required("db"),
@@ -425,6 +425,7 @@ const commands: Record<string, () => Promise<void>> = {
   },
 
   dequeue: async () => {
+    const claim = newClaim()
     const taken = await withStore(
       required("db"),
       RunStore.use((store) =>
@@ -459,6 +460,7 @@ const commands: Record<string, () => Promise<void>> = {
   },
 
   "status-since": async () => {
+    const claim = newClaim()
     const result = await withStore(
       required("db"),
       Effect.gen(function* () {

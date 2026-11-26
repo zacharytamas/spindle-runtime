@@ -4,7 +4,7 @@ import type { NewMessage } from "../../src/store/model.ts"
 import { layer } from "../../src/store/sqlite.ts"
 
 // Effect.provide reuses a layer that an enclosing provide already built, so a nested store would share its connection.
-export const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
+export const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provideMerge(SqliteLive({ filename }))))
 
 export const claim = { holder: "fixture", flowId: "fixture-flow" }
 

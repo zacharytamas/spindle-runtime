@@ -1,13 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Message } from "@standardagents/spec"
 import { Effect, Layer } from "effect"
-import { SqlClient } from "effect/sql/SqlClient"
 import { PlatformLive, SqliteLive } from "#platform"
+import { peekQueued } from "../../scripts/store-fixtures.ts"
 import { CLOSING } from "../../src/execution/run-status.ts"
-import { queueHead } from "../../src/store/database.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
-import { decodeQueued } from "../../src/store/schema.ts"
 import { layer as storeLayer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
@@ -292,8 +290,7 @@ describe("spindle across processes", () => {
         )
         const services = yield* Layer.build(storeAt(db))
         const store = yield* Effect.provide(RunStore, services)
-        const sql = yield* Effect.provide(SqlClient, services)
-        const peek = Effect.map(queueHead(sql, thread), ([row]) => row && decodeQueued(row))
+        const peek = Effect.provide(peekQueued(thread), services)
         const claim = yield* store.holderOf(thread)
         const entry = yield* peek
         expect(claim?.pid).toBe(owner.pid)
