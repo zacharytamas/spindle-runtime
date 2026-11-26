@@ -103,14 +103,26 @@ const cyclesOf = (edges: Edges) => {
   return cycles
 }
 
+// A caller reads inherited fields too, so keys come from for...in.
+const keysOf = (value: Shape) => {
+  const keys: Array<string> = []
+  for (const key in value) keys.push(key)
+  return keys
+}
+
+// Array.from reads a missing element as undefined, where every() would skip it.
 const sameValue = (a: unknown, b: unknown): boolean => {
   if (Array.isArray(a) || Array.isArray(b))
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]))
-  if (isRecord(a) && isRecord(b)) {
-    const keys = Object.keys(a)
     return (
-      keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameValue(a[key], b[key]))
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      Array.from(a, (item, i) => sameValue(item, b[i])).every(Boolean)
     )
+  if (isRecord(a) && isRecord(b)) {
+    const keys = keysOf(a)
+    const other = keysOf(b)
+    return keys.length === other.length && keys.every((key) => other.includes(key) && sameValue(a[key], b[key]))
   }
   return Object.is(a, b)
 }
@@ -239,9 +251,15 @@ export const validate = Effect.gen(function* () {
     at.hookList("hooks", agent.hooks)
     // validateAgentDefinition reports two equal spellings, so this check reports only another spelling of one hook.
     const spellings = new Map<Definition, string>()
-    if (Array.isArray(agent.parentHooks))
-      agent.parentHooks.forEach((requirement: unknown, index) => {
-        if (!isRecord(requirement) || !isNonEmptyString(requirement.hook)) return
+    const required: unknown = agent.parentHooks
+    if (Array.isArray(required))
+      for (const [index, requirement] of Array.from(required as Array<unknown>).entries()) {
+        // validateAgentDefinition uses forEach, which skips a missing element, so this check reports it.
+        if (!(index in required)) {
+          at.report("agent_parent_hooks_invalid", `parentHooks[${index}]`, "parentHooks entries must be objects")
+          continue
+        }
+        if (!isRecord(requirement) || !isNonEmptyString(requirement.hook)) continue
         const resolution = at.resolve("hook", requirement.hook)
         if (resolution._tag === "Found") {
           const earlier = spellings.get(resolution.definition)
@@ -258,7 +276,7 @@ export const validate = Effect.gen(function* () {
             `parentHooks[${index}].hook`,
             `${at.describe("hook", requirement.hook, resolution)}. A required parent hook must be defined in the agent's own namespace.`,
           )
-      })
+      }
   }
 
   const checkPrompt = (definition: Definition, prompt: unknown) => {

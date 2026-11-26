@@ -117,6 +117,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields",
+    "parent-hooks-sparse",
+    [
+      error("agent_parent_hooks_invalid", "agents/agents/sparse_child.ts:parentHooks[1]"),
+      error("package_parent_hooks_mismatch", "agents/packed/standardagent-sparse-meta/index.js:parentHooks.relay"),
+    ],
+  ],
+  [
     "rejects a handler named in a prompt's tools",
     "handler-as-tool",
     [error("prompt_tool_is_handler", "agents/prompts/assistant.ts:tools[0]")],
