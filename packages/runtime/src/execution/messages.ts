@@ -84,18 +84,24 @@ const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
 const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
 
 // Threads section 2.3. error_code and error_data are the keys Spindle stores a tool result's error under, so they keep
-// their names, and the error code is an identifier that the runtime reads back, so it keeps its value too.
-const redactMetadata = (metadata: Record<string, unknown>, redact: (text: string) => string) =>
+// their names. A tool result's own error code is an identifier that the runtime and clients read back, so that one
+// string keeps its value too. Everything else under either key is redacted.
+const redactMetadata = (metadata: Record<string, unknown>, redact: (text: string) => string, result = false) =>
   Object.fromEntries(
     Object.entries(metadata).map(([key, value]) =>
-      key === "error_code"
+      result && key === "error_code" && typeof value === "string"
         ? [key, value]
-        : [key === "error_data" ? key : redact(key), mapStrings(value, redact, redact)],
+        : [key === "error_code" || key === "error_data" ? key : redact(key), mapStrings(value, redact, redact)],
     ),
   )
 
-const redactField = (field: (typeof FIELDS)[number], value: unknown, redact: (text: string) => string) => {
-  if (field === "metadata") return isRecord(value) ? redactMetadata(value, redact) : value
+const redactField = (
+  field: (typeof FIELDS)[number],
+  value: unknown,
+  redact: (text: string) => string,
+  result: boolean,
+) => {
+  if (field === "metadata") return isRecord(value) ? redactMetadata(value, redact, result) : value
   if (field === "attachments")
     return Array.isArray(value) ? value.map((item) => (isRecord(item) ? redactAttachment(item, redact) : item)) : value
   return typeof value === "string" ? redact(value) : value
@@ -105,7 +111,7 @@ const redactWrite = (writer: Writer, before: Message, after: Message, redact: (t
   const redacted: Record<string, unknown> = {}
   for (const field of FIELDS)
     if (WRITTEN[writer].includes(field) || !sameJson(before[field], after[field]))
-      redacted[field] = redactField(field, after[field], redact)
+      redacted[field] = redactField(field, after[field], redact, writer === "result")
   return { ...after, ...redacted }
 }
 

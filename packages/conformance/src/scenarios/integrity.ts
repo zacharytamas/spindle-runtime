@@ -180,4 +180,43 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
       ])
     },
   },
+  {
+    name: "I5 keeps only a tool result's own error_code and redacts a secret under error_code anywhere else",
+    requirements: [],
+    run: async (driver) => {
+      const tools = {
+        inject: defineTool({
+          description: "Inject a message whose metadata nests a secret under error_code",
+          execute: async (state: ThreadState) => {
+            const secret = await state.instanceEnv?.("CANARY")
+            await state.injectMessage({
+              role: "user",
+              content: "note",
+              metadata: { error_code: { description: secret }, nested: { error_code: secret } },
+            })
+            return { status: "error" as const, error: "failed", error_code: "E_FAIL" }
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "inject", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          expect(holding(stored, CANARY)).toEqual([])
+          expect(stored.find((m) => m.content === "note")?.metadata).toEqual({
+            error_code: { description: "[redacted]" },
+            nested: { error_code: "[redacted]" },
+          })
+          expect(stored.find((m) => m.role === "tool")?.metadata).toMatchObject({ error_code: "E_FAIL" })
+        },
+        { CANARY },
+      )
+    },
+  },
 ]
