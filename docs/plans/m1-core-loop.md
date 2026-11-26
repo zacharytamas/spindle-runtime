@@ -36,7 +36,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 
 ### Spawn owners
 
-- [ ] Spawn one owner per PR as `subagent_type: "pstack:poteto-agent"` with the full lifecycle that `autopilot-stack.md` names. No `~/.claude/rules/pstack-models.md` exists, so code owners run on the session model. Give M1-4 and M1-6 `model: "opus"` with `effort: "xhigh"`, because the step loop and the concurrency rules are the hardest changes.
+- [ ] Spawn one owner per PR as `subagent_type: "pstack:poteto-agent"` with the full lifecycle that `autopilot-stack.md` names. No `~/.claude/rules/pstack-models.md` exists, so code owners run on the session model, which is Claude Fable 5.2. Give M1-4 and M1-6 `effort: "xhigh"` on that same model, because the step loop and the concurrency rules are the hardest changes. Do not move them to `opus`, which ranks below the session model.
 - [ ] Put these three rules in every owner brief.
   - [ ] Clean room. Read the spec text and `@standardagents/spec` only. Never open a file inside `@standardagents/builder`, `@standardagents/cloudflare`, or any other proprietary Standard Agents package. Never install `@standardagents/builder`.
   - [ ] Effect v4 from the installed package. Read the type declarations under `node_modules/effect` and `node_modules/@effect/*` before you write a call. Do not write Effect v3 names from memory. `@effect/platform` and `@effect/sql` stopped at 0.x and are not dependencies.
