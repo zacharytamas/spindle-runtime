@@ -6,7 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!packages/conformance/requirements.json"]
+		"includes": ["**", "!packages/conformance/requirements.json", "!packages/conformance/ledger.json"]
 	},
 	"formatter": {
 		"indentStyle": "tab",
