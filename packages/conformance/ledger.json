@@ -107,7 +107,55 @@
 		"tests": [],
 		"reason": "The statement is part of an example prompt for a coding agent, not a requirement."
 	},
-	"infrastructure:providers:1939dbe3": {
+	"infrastructure:providers:3f84bf33": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:5c3d58a6": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:78a455ea": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:b003c14a": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:0da5f168": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:d955706d": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:41c38e98": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:50cb89fd": {
+		"status": "planned",
+		"milestone": "M7",
+		"tests": [],
+		"reason": ""
+	},
+	"infrastructure:providers:e85c2df6": {
 		"status": "planned",
 		"milestone": "M7",
 		"tests": [],
@@ -1553,19 +1601,19 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:models:24f418bc": {
+	"specification:models:6c863b89": {
 		"status": "planned",
 		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
-	"specification:models:8e186a9a": {
+	"specification:models:774f9601": {
 		"status": "planned",
 		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
-	"specification:models:8c4f6857": {
+	"specification:models:b6ce7a54": {
 		"status": "planned",
 		"milestone": "M7",
 		"tests": [],
@@ -1967,7 +2015,13 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:subagents:bf74a7d2": {
+	"specification:subagents:c300b4f1": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:subagents:1c066041": {
 		"status": "planned",
 		"milestone": "M3",
 		"tests": [],
@@ -1979,7 +2033,19 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:subagents:5ad9be05": {
+	"specification:subagents:ce7cb361": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:subagents:5898017d": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:subagents:72d479f3": {
 		"status": "planned",
 		"milestone": "M3",
 		"tests": [],
@@ -2069,13 +2135,13 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads:3aa13eec": {
+	"specification:threads:2ea40632": {
 		"status": "planned",
 		"milestone": "M2",
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads:658d7beb": {
+	"specification:threads:c487ef3f": {
 		"status": "planned",
 		"milestone": "M2",
 		"tests": [],
@@ -2297,7 +2363,31 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads/client-api:bfa87f9e": {
+	"specification:threads/client-api:b1e4959b": {
+		"status": "planned",
+		"milestone": "M6",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/client-api:ed42eb87": {
+		"status": "planned",
+		"milestone": "M6",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/client-api:d2541211": {
+		"status": "planned",
+		"milestone": "M6",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/client-api:2a2f9fd1": {
+		"status": "planned",
+		"milestone": "M6",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/client-api:94aefc38": {
 		"status": "planned",
 		"milestone": "M6",
 		"tests": [],
@@ -2999,7 +3089,19 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads/decisions:648deff1": {
+	"specification:threads/decisions:826e27a3": {
+		"status": "planned",
+		"milestone": "M4",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/decisions:d6a8fa2c": {
+		"status": "planned",
+		"milestone": "M4",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/decisions:b696acd6": {
 		"status": "planned",
 		"milestone": "M4",
 		"tests": [],
@@ -3143,7 +3245,13 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads/execution-state:75f6be1e": {
+	"specification:threads/execution-state:1a0354bc": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:7029c151": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
@@ -3329,7 +3437,43 @@
 		"tests": [],
 		"reason": ""
 	},
-	"specification:threads/messages:12822287": {
+	"specification:threads/messages:4fcc1f95": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:a63f8e52": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:35d60289": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:77a09885": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:1ba43990": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:e0078c2e": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/messages:b17aee6d": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
@@ -3683,7 +3827,19 @@
 		"tests": [],
 		"reason": "The Users page is a Draft in spec 0.2.0."
 	},
-	"specification:users:b1341adc": {
+	"specification:users:b2d4e599": {
+		"status": "deferred",
+		"milestone": "later",
+		"tests": [],
+		"reason": "The Users page is a Draft in spec 0.2.0."
+	},
+	"specification:users:f11baea7": {
+		"status": "deferred",
+		"milestone": "later",
+		"tests": [],
+		"reason": "The Users page is a Draft in spec 0.2.0."
+	},
+	"specification:users:cc4dd119": {
 		"status": "deferred",
 		"milestone": "later",
 		"tests": [],

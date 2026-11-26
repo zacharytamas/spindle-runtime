@@ -63,25 +63,22 @@ const extract = (specDir) => {
       if (!block.length) return
       const text = block.join(" ").replace(/\s+/g, " ").replace(/\*\*/g, "").trim()
       block = []
+      if (blockKind === "row" && tableRow <= 2) return
       const own = classify(text)
-      if (blockKind === "row") {
-        tableRow += 1
-        if (lead && tableRow <= 2) return
-      }
-      if (lead && blockKind !== "paragraph") {
+      if (lead && (blockKind === "row" || (blockKind === "item" && !lead.rowsOnly))) {
         lead.used = true
         emit(blockLine, `${lead.text} ${text}`, own ?? lead)
         return
       }
       closeLead()
       if (!own) return
-      if (text.endsWith(":") && classify(text.slice(text.lastIndexOf(". ") + 1))) {
-        lead = { ...own, line: blockLine, text, used: false }
-      } else emit(blockLine, text, own)
+      if (blockKind === "row") emit(blockLine, text, own)
+      else lead = { ...own, line: blockLine, text, used: false, rowsOnly: !text.endsWith(":") }
     }
     fs.readFileSync(file, "utf8")
       .split(/\r?\n/)
       .forEach((line, index) => {
+        tableRow = /^\s*\|/.test(line) ? tableRow + 1 : 0
         if (/^\s*(```|~~~)/.test(line)) {
           flush()
           closeLead()
@@ -103,7 +100,6 @@ const extract = (specDir) => {
         if (!block.length) {
           blockLine = index + 1
           blockKind = item ? "item" : row ? "row" : "paragraph"
-          if (!row) tableRow = 0
         }
         block.push(line.replace(/^\s*([-*]|\d+\.)\s+/, "").trim())
         if (row) flush()
