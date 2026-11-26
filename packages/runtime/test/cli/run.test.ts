@@ -247,6 +247,19 @@ describe("spindle run", () => {
     }),
   )
 
+  it.effect("redacts a secret learned only by a thread creation hook", () =>
+    Effect.gen(function* () {
+      const { exit, out, err } = yield* run(
+        ["creation_secret", "-m", "hi", "--script", "@text-reply.json"],
+        { SPINDLE_CREATION_SECRET: "Hello!" },
+        "hooks",
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(out).toEqual(["[redacted] How can I help?"])
+      expect(err.join("\n")).not.toContain("Hello!")
+    }),
+  )
+
   it.effect("redacts the endpoint key and a three-character token from every printed line and the database", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
