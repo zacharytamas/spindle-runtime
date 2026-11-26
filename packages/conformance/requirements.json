@@ -7511,5 +7511,935 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "| `failed` | The last run ended in an error. |"
+	},
+	{
+		"id": "specification:providers:3ad3e23c",
+		"page": "specification:providers",
+		"line": 34,
+		"section": "1.1 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `generate` | Non-streaming generation. Returns complete response. |"
+	},
+	{
+		"id": "specification:providers:e23472e0",
+		"page": "specification:providers",
+		"line": 35,
+		"section": "1.1 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `stream` | Streaming generation. Returns async iterable of chunks. |"
+	},
+	{
+		"id": "specification:providers:be41f88f",
+		"page": "specification:providers",
+		"line": 140,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Provider config is for connection-level values: API keys, base URLs, regions, account IDs, timeouts, and similar values used to construct the provider instance. Per-model request behavior still belongs in `providerOptions` on the model, prompt, or runtime request."
+	},
+	{
+		"id": "specification:providers:9df2bdf4",
+		"page": "specification:providers",
+		"line": 251,
+		"section": "2.1 Provider Options",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When a prompt sets `reasoning.level`, the provider maps that level to the native control. The mapped value replaces any native effort value in the merged `providerOptions`. Other `providerOptions` keys remain unchanged. When a prompt omits `reasoning.level`, the merged `providerOptions` apply as they are."
+	},
+	{
+		"id": "specification:providers:171552a1",
+		"page": "specification:providers",
+		"line": 255,
+		"section": "2.2 Reasoning Levels",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A prompt specifies `reasoning.level` on a scale from 0 to 100. A model declares its supported levels in `capabilities.reasoningLevels`. A provider maps the prompt level to the model's native reasoning control. A level between declared values maps to the nearest declared value."
+	},
+	{
+		"id": "specification:providers:d0c166ad",
+		"page": "specification:providers",
+		"line": 264,
+		"section": "2.2 Reasoning Levels",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A level of `0` requests no reasoning. A model can have a control that disables reasoning. For level `0`, the provider sends that control to such a model. A model without that control can have a lowest reasoning setting. For level `0`, the provider sends that lowest setting to such a model. This keeps level `0` at or below every higher level. For a model with no reasoning control, the provider sends no control."
+	},
+	{
+		"id": "specification:providers:d7a1b4b5",
+		"page": "specification:providers",
+		"line": 396,
+		"section": "7. Error Handling",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Providers throw typed errors for error conditions."
+	},
+	{
+		"id": "specification:providers:d20be44c",
+		"page": "specification:providers",
+		"line": 528,
+		"section": "9.2 getResponseMetadata Method",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`summary`: Stripped-down response info (no content/attachments to avoid passing large data)"
+	},
+	{
+		"id": "specification:providers:a894b520",
+		"page": "specification:providers",
+		"line": 563,
+		"section": "9.5 Implementation Notes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "This method is called after the response completes."
+	},
+	{
+		"id": "specification:providers:b68429b5",
+		"page": "specification:providers",
+		"line": 565,
+		"section": "9.5 Implementation Notes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The flow engine waits for all pending metadata promises before completing."
+	},
+	{
+		"id": "specification:providers:6eb61992",
+		"page": "specification:providers",
+		"line": 566,
+		"section": "9.5 Implementation Notes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Results update log records with provider-reported metadata."
+	},
+	{
+		"id": "specification:providers:a0076042",
+		"page": "specification:providers",
+		"line": 247,
+		"section": "2.1 Provider Options",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `providerOptions` field allows provider-specific options not covered by the standard interface. Options are merged in order (later wins): `model.providerOptions` - Defaults for the model"
+	},
+	{
+		"id": "specification:providers:bf553948",
+		"page": "specification:providers",
+		"line": 248,
+		"section": "2.1 Provider Options",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `providerOptions` field allows provider-specific options not covered by the standard interface. Options are merged in order (later wins): `prompt.providerOptions` - Overrides for the prompt"
+	},
+	{
+		"id": "specification:providers:da82bb5b",
+		"page": "specification:providers",
+		"line": 249,
+		"section": "2.1 Provider Options",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `providerOptions` field allows provider-specific options not covered by the standard interface. Options are merged in order (later wins): `request.providerOptions` - Runtime overrides"
+	},
+	{
+		"id": "specification:providers:8fd04a52",
+		"page": "specification:providers",
+		"line": 434,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `rate_limit` | Rate limit exceeded (429) | Yes |"
+	},
+	{
+		"id": "specification:providers:d3de63cd",
+		"page": "specification:providers",
+		"line": 435,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `server_error` | Provider server error (5xx) | Yes |"
+	},
+	{
+		"id": "specification:providers:3ff82607",
+		"page": "specification:providers",
+		"line": 436,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `timeout` | Request timed out | Yes |"
+	},
+	{
+		"id": "specification:providers:31f3e684",
+		"page": "specification:providers",
+		"line": 437,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `auth_error` | Authentication failed (401/403) | No |"
+	},
+	{
+		"id": "specification:providers:fe4cd03b",
+		"page": "specification:providers",
+		"line": 438,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `invalid_request` | Bad request (400) | No |"
+	},
+	{
+		"id": "specification:providers:bd7788f4",
+		"page": "specification:providers",
+		"line": 439,
+		"section": "7.1 Error Codes",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Code | Description | Retryable | | `unknown` | Unknown error | No |"
+	},
+	{
+		"id": "specification:providers:e08292c5",
+		"page": "specification:providers",
+		"line": 144,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For each slot: If the extension defines `config[slotName]`, that value source supplies the value."
+	},
+	{
+		"id": "specification:providers:d746d4b2",
+		"page": "specification:providers",
+		"line": 145,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For each slot: If the extension does not define the slot, the base provider slot is resolved from its `defaultEnv` when present."
+	},
+	{
+		"id": "specification:providers:5131e507",
+		"page": "specification:providers",
+		"line": 146,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For each slot: If no environment value is present, the base provider slot `default` is used when present."
+	},
+	{
+		"id": "specification:providers:3adfdd7f",
+		"page": "specification:providers",
+		"line": 147,
+		"section": "Config Slots",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For each slot: If a required slot has no value, the implementation reports the slot as a missing provider variable."
+	},
+	{
+		"id": "infrastructure:providers:e356062e",
+		"page": "infrastructure:providers",
+		"line": 177,
+		"section": "Method Overrides",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The request-scoped overrides (`generate`, `stream`, `inspectRequest`, `getResponseMetadata`) additionally receive the executing thread's `state` on their context when the runtime has one; catalog overrides (`getModels`, `getIcon`, etc.) run without a thread and leave it undefined."
+	},
+	{
+		"id": "infrastructure:providers:34cea831",
+		"page": "infrastructure:providers",
+		"line": 184,
+		"section": "Per-request Transport (`createFetch`)",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A provider extension may declare `createFetch` to build a request transport per request. The runtime calls it with the executing thread's `state` and uses the returned transport as `ProviderFactoryConfig.fetch`. Because the transport can close over `state`, an extension declaring `createFetch` is constructed fresh per request rather than cached. It is a generic hook — \"override the fetch mechanism however you want\" — with no knowledge of what the transport does."
+	},
+	{
+		"id": "infrastructure:runtime:a7e2995d",
+		"page": "infrastructure:runtime",
+		"line": 57,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Before each model call, runtime context includes: interpolated system prompt"
+	},
+	{
+		"id": "infrastructure:runtime:07cc7193",
+		"page": "infrastructure:runtime",
+		"line": 58,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Before each model call, runtime context includes: filtered conversation history"
+	},
+	{
+		"id": "infrastructure:runtime:482d644d",
+		"page": "infrastructure:runtime",
+		"line": 75,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Silent messages remain eligible for the snapshot. `silent` affects client presentation only."
+	},
+	{
+		"id": "specification:agents:37cadafc",
+		"page": "specification:agents",
+		"line": 64,
+		"section": "1.3 Derivations",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Perspective — role mapping is the single source of perspective truth: `role: 'user'` is the side B perspective, `role: 'assistant'` is the side A perspective — for queueing, injection, and rendering alike. See [Messages](/0.2.0/specification/threads/messages#4-queueing-messages)."
+	},
+	{
+		"id": "specification:agents:44e51927",
+		"page": "specification:agents",
+		"line": 120,
+		"section": "4. Stop Semantics",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtime stop evaluation order for prompt-backed sides: side-level stop bindings (`stopTool`)"
+	},
+	{
+		"id": "specification:agents:8d9a5b12",
+		"page": "specification:agents",
+		"line": 121,
+		"section": "4. Stop Semantics",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtime stop evaluation order for prompt-backed sides: response stop (`stopOnResponse`)"
+	},
+	{
+		"id": "specification:agents:35afe886",
+		"page": "specification:agents",
+		"line": 122,
+		"section": "4. Stop Semantics",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtime stop evaluation order for prompt-backed sides: safety limits (`maxSteps`, `maxSessionTurns`)"
+	},
+	{
+		"id": "specification:prompts:f46d5136",
+		"page": "specification:prompts",
+		"line": 38,
+		"section": "1.2 Optional Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "An explicit `parallelToolCalls` value controls the provider option. When omitted, the provider default applies."
+	},
+	{
+		"id": "specification:prompts:07a378de",
+		"page": "specification:prompts",
+		"line": 125,
+		"section": "3.2 Tool Configuration with Environment Values",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Prompt-level `env` values serve as defaults. They can be overridden by higher-precedence sources. See the [Tools specification](/0.2.0/specification/tools) for variable declaration details."
+	},
+	{
+		"id": "specification:prompts:cc611236",
+		"page": "specification:prompts",
+		"line": 241,
+		"section": "6.2 Reasoning Levels",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `level` property uses the [reasoning scale](/0.2.0/specification/providers#22-reasoning-levels). An unset `level` uses the model's default reasoning behavior. A level of `0` requests no reasoning."
+	},
+	{
+		"id": "specification:prompts:3f5e07ed",
+		"page": "specification:prompts",
+		"line": 245,
+		"section": "6.3 Reasoning Visibility",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When `exclude` is `true`, reasoning is used internally but not returned"
+	},
+	{
+		"id": "specification:prompts:aea91179",
+		"page": "specification:prompts",
+		"line": 246,
+		"section": "6.3 Reasoning Visibility",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When `include` is `true` or unset, the runtime supplies the persisted reasoning of earlier assistant messages on later requests ([Messages §1.3](/0.2.0/specification/threads/messages#13-reasoning))"
+	},
+	{
+		"id": "specification:prompts:13e0d197",
+		"page": "specification:prompts",
+		"line": 247,
+		"section": "6.3 Reasoning Visibility",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When `include` is `false`, the runtime does not supply it. The reasoning stays in the persisted message record"
+	},
+	{
+		"id": "specification:prompts:3a27e944",
+		"page": "specification:prompts",
+		"line": 90,
+		"section": "2.4 Include Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When a prompt includes another prompt: The included prompt's content is inserted at the include location"
+	},
+	{
+		"id": "specification:prompts:8e8bbe20",
+		"page": "specification:prompts",
+		"line": 91,
+		"section": "2.4 Include Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When a prompt includes another prompt: Only the `prompt` field is included (not tools, model, etc.)"
+	},
+	{
+		"id": "specification:prompts:29d03e8b",
+		"page": "specification:prompts",
+		"line": 234,
+		"section": "6.1 Reasoning Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For models with extended thinking capabilities: | `level` | `number` | Reasoning level from 0 to 100 |"
+	},
+	{
+		"id": "specification:prompts:132940db",
+		"page": "specification:prompts",
+		"line": 235,
+		"section": "6.1 Reasoning Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For models with extended thinking capabilities: | `maxTokens` | `number` | Max tokens for reasoning |"
+	},
+	{
+		"id": "specification:prompts:c4839f4c",
+		"page": "specification:prompts",
+		"line": 236,
+		"section": "6.1 Reasoning Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For models with extended thinking capabilities: | `exclude` | `boolean` | Exclude reasoning from response |"
+	},
+	{
+		"id": "specification:prompts:6e1d2f01",
+		"page": "specification:prompts",
+		"line": 237,
+		"section": "6.1 Reasoning Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For models with extended thinking capabilities: | `include` | `boolean` | Supply the persisted reasoning of earlier messages on later requests. Defaults to `true` |"
+	},
+	{
+		"id": "specification:prompts:49f402d9",
+		"page": "specification:prompts",
+		"line": 254,
+		"section": "7. Image Context Management",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `recentImageThreshold` property controls how images are handled in conversation context: Images in the most recent N messages are kept as full image content"
+	},
+	{
+		"id": "specification:prompts:aac9da80",
+		"page": "specification:prompts",
+		"line": 255,
+		"section": "7. Image Context Management",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `recentImageThreshold` property controls how images are handled in conversation context: Older images are replaced with text descriptions"
+	},
+	{
+		"id": "specification:tools:b7cd3b54",
+		"page": "specification:tools",
+		"line": 61,
+		"section": "3. Variable Declarations",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`required: true` means execution cannot continue until a value resolves."
+	},
+	{
+		"id": "specification:threads/messages:6638d0e6",
+		"page": "specification:threads/messages",
+		"line": 14,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `role` | `'system' \\| 'user' \\| 'assistant' \\| 'tool'` | Message role |"
+	},
+	{
+		"id": "specification:threads/messages:d50d7c17",
+		"page": "specification:threads/messages",
+		"line": 15,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `content` | `string \\| null` | Message content |"
+	},
+	{
+		"id": "specification:threads/messages:50d12acc",
+		"page": "specification:threads/messages",
+		"line": 21,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `attachments` | `AttachmentRef[] \\| null` | Files delivered with the message ([§1.2](#12-attachment-references)) |"
+	},
+	{
+		"id": "specification:threads/messages:a5a61544",
+		"page": "specification:threads/messages",
+		"line": 22,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `reasoning_content` | `string \\| null` | Model reasoning text returned with an assistant message ([§1.3](#13-reasoning)) |"
+	},
+	{
+		"id": "specification:threads/messages:f3f5c522",
+		"page": "specification:threads/messages",
+		"line": 23,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `reasoning_details` | `string \\| null` | Provider-specific reasoning data returned with an assistant message, JSON-encoded ([§1.3](#13-reasoning)) |"
+	},
+	{
+		"id": "specification:threads/messages:778b4467",
+		"page": "specification:threads/messages",
+		"line": 24,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `prompt` | `string \\| null` | Name of the prompt that produced the message |"
+	},
+	{
+		"id": "specification:threads/messages:61c7bee3",
+		"page": "specification:threads/messages",
+		"line": 28,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `silent` | `boolean` | Client-presentation flag. Ordinary UI lists hide the message. The message remains eligible for model context and request-context hooks. |"
+	},
+	{
+		"id": "specification:threads/messages:1d6d311a",
+		"page": "specification:threads/messages",
+		"line": 29,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `metadata` | `Record<string, unknown>` | Custom metadata (may include runtime status markers such as `status_kind`) |"
+	},
+	{
+		"id": "specification:threads/execution-state:04d1538b",
+		"page": "specification:threads/execution-state",
+		"line": 10,
+		"section": "1. Availability",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `execution` property is: Present during active execution (tools, hooks)"
+	},
+	{
+		"id": "specification:threads/execution-state:048a4525",
+		"page": "specification:threads/execution-state",
+		"line": 11,
+		"section": "1. Availability",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `execution` property is: Null when accessing at rest (endpoints)"
+	},
+	{
+		"id": "specification:threads/execution-state:8a66bc04",
+		"page": "specification:threads/execution-state",
+		"line": 37,
+		"section": "2.1 Prompt Path",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `promptPath` property tracks the current position in the prompt hierarchy: At root level: `['my_prompt']`"
+	},
+	{
+		"id": "specification:threads/execution-state:6ad6d3c1",
+		"page": "specification:threads/execution-state",
+		"line": 23,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `flowId` | `string` | Unique execution ID |"
+	},
+	{
+		"id": "specification:threads/execution-state:ffcb95d1",
+		"page": "specification:threads/execution-state",
+		"line": 24,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `currentSide` | `'a' \\| 'b'` | The side whose turn is executing |"
+	},
+	{
+		"id": "specification:threads/execution-state:77517ef7",
+		"page": "specification:threads/execution-state",
+		"line": 25,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `stepCount` | `number` | Total LLM request/response cycles |"
+	},
+	{
+		"id": "specification:threads/execution-state:5c3c3e89",
+		"page": "specification:threads/execution-state",
+		"line": 26,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `sideAStepCount` | `number` | Side A steps |"
+	},
+	{
+		"id": "specification:threads/execution-state:0700c380",
+		"page": "specification:threads/execution-state",
+		"line": 27,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `sideBStepCount` | `number` | Side B steps |"
+	},
+	{
+		"id": "specification:threads/execution-state:7a728ef6",
+		"page": "specification:threads/execution-state",
+		"line": 28,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `stopped` | `boolean` | Execution stopped |"
+	},
+	{
+		"id": "specification:threads/execution-state:da3295e2",
+		"page": "specification:threads/execution-state",
+		"line": 29,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `stoppedBy` | `'a' \\| 'b' \\| undefined` | Who stopped |"
+	},
+	{
+		"id": "specification:threads/execution-state:18655cf1",
+		"page": "specification:threads/execution-state",
+		"line": 30,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `messageHistory` | `Message[]` | Live chronological persisted execution history, including silent messages |"
+	},
+	{
+		"id": "specification:threads/execution-state:6f984718",
+		"page": "specification:threads/execution-state",
+		"line": 31,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `abortSignal` | `AbortSignal` | Cancellation signal |"
+	},
+	{
+		"id": "specification:threads/execution-state:903da2e2",
+		"page": "specification:threads/execution-state",
+		"line": 32,
+		"section": "2. Execution Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `promptPath` | `string[]` | Path from root to current prompt |"
+	},
+	{
+		"id": "specification:threads:bb21b13f",
+		"page": "specification:threads",
+		"line": 40,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `threadId` | `string` | Unique thread identifier (readonly) |"
+	},
+	{
+		"id": "specification:threads:afa3f93e",
+		"page": "specification:threads",
+		"line": 41,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `agentId` | `string` | Owning agent name (readonly) |"
+	},
+	{
+		"id": "specification:threads:ac0df6bc",
+		"page": "specification:threads",
+		"line": 42,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `userId` | `string \\| null` | Associated user (readonly) |"
+	},
+	{
+		"id": "specification:threads:bc63a67f",
+		"page": "specification:threads",
+		"line": 43,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `createdAt` | `number` | Creation timestamp in microseconds (readonly) |"
+	},
+	{
+		"id": "specification:threads:7b26e7c9",
+		"page": "specification:threads",
+		"line": 45,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `terminated` | `number \\| null` | Termination timestamp in microseconds, or null when active (readonly) |"
+	},
+	{
+		"id": "specification:threads:e6e64d26",
+		"page": "specification:threads",
+		"line": 46,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `arguments` | `Record<string, unknown>` | Arguments supplied when this thread was created or invoked. Subagent initial arguments appear here. See [Thread Arguments](#61-thread-arguments) |"
+	},
+	{
+		"id": "specification:threads:31e057f3",
+		"page": "specification:threads",
+		"line": 48,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `context` | `Record<string, unknown>` | Mutable per-execution scratch storage. See [Context Storage](#62-per-execution-context) |"
+	},
+	{
+		"id": "specification:threads:09150a13",
+		"page": "specification:threads",
+		"line": 49,
+		"section": "1.2.1 Properties",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `execution` | `ExecutionState \\| null` | Execution state during active execution, null at rest. See [Execution State](/0.2.0/specification/threads/execution-state) |"
+	},
+	{
+		"id": "specification:threads:c4b75828",
+		"page": "specification:threads",
+		"line": 104,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `loadModel(name)` | `Promise<T>` | Load model definition |"
+	},
+	{
+		"id": "specification:threads:e3afb48b",
+		"page": "specification:threads",
+		"line": 105,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `loadPrompt(name)` | `Promise<T>` | Load prompt definition |"
+	},
+	{
+		"id": "specification:threads:4d4c50a2",
+		"page": "specification:threads",
+		"line": 106,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `loadAgent(name)` | `Promise<T>` | Load agent definition |"
+	},
+	{
+		"id": "specification:threads:cf66e53e",
+		"page": "specification:threads",
+		"line": 107,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `getPromptNames()` | `string[]` | List available prompts |"
+	},
+	{
+		"id": "specification:threads:be6b8ba1",
+		"page": "specification:threads",
+		"line": 108,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `getAgentNames()` | `string[]` | List available agents |"
+	},
+	{
+		"id": "specification:threads:75fba4a7",
+		"page": "specification:threads",
+		"line": 109,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `getModelNames()` | `string[]` | List available models |"
+	},
+	{
+		"id": "specification:threads:341727f4",
+		"page": "specification:threads",
+		"line": 110,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `env(propertyName)` | `Promise<string>` | Resolve environment variable using thread/agent/prompt/user/instance precedence |"
+	},
+	{
+		"id": "specification:threads:a01f5667",
+		"page": "specification:threads",
+		"line": 112,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `envType(propertyName)` | `Promise<'text' \\| 'secret'>` | Resolve display/redaction classification for an environment value |"
+	},
+	{
+		"id": "specification:threads:39260b1a",
+		"page": "specification:threads",
+		"line": 120,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `invokeTool(toolName, args)` | `Promise<ToolResult>` | Invoke tool and wait for result |"
+	},
+	{
+		"id": "specification:threads:c544edac",
+		"page": "specification:threads",
+		"line": 184,
+		"section": "1.3 Access Contexts",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Tools | Present | During agent execution |"
+	},
+	{
+		"id": "specification:threads:4495359b",
+		"page": "specification:threads",
+		"line": 221,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`env(propertyName)` resolves in this order: Thread environment variables"
+	},
+	{
+		"id": "specification:threads:65b3e24e",
+		"page": "specification:threads",
+		"line": 222,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`env(propertyName)` resolves in this order: Agent definition defaults (`agent.env`)"
+	},
+	{
+		"id": "specification:threads:3918859a",
+		"page": "specification:threads",
+		"line": 223,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`env(propertyName)` resolves in this order: Prompt definition defaults (`prompt.env`)"
+	},
+	{
+		"id": "specification:threads:a12ed69e",
+		"page": "specification:threads",
+		"line": 224,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`env(propertyName)` resolves in this order: User-account environment variables"
+	},
+	{
+		"id": "specification:threads:6cd8ba3f",
+		"page": "specification:threads",
+		"line": 225,
+		"section": "2.3 Environment Variable Resolution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`env(propertyName)` resolves in this order: Runtime instance environment variables"
+	},
+	{
+		"id": "infrastructure:runtime:244b7d29",
+		"page": "infrastructure:runtime",
+		"line": 82,
+		"section": "4. Context Assembly",
+		"level": "MAY",
+		"rfc2119": false,
+		"curated": true,
+		"text": "If a model does not support vision, runtimes may filter image parts at request time while preserving stored message attachments."
 	}
 ]
