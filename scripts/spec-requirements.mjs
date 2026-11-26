@@ -160,10 +160,15 @@ const curate = (specDir) =>
   extras.map((extra) => {
     const file = path.join(specDir, `${extra.page.replace(":", "/")}.md`)
     const markdown = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""
-    const lines = [extra.lead, extra.text].filter(Boolean).map((quote) => {
+    const quotes = extra.lead === undefined ? [extra.text] : [extra.lead, extra.text]
+    const lines = quotes.map((quote) => {
+      const entry = `requirements.extra.json entry for ${extra.page} "${quote}"`
+      if (typeof quote !== "string" || normalize(quote) === "") {
+        curationProblems.push(`${entry} has an empty quote`)
+        return undefined
+      }
       const hits = locate(markdown, quote)
       const hit = hits.find(({ section }) => section === extra.section)
-      const entry = `requirements.extra.json entry for ${extra.page} "${quote}"`
       if (hits.length === 0) curationProblems.push(`${entry} is not on its page`)
       else if (hit === undefined) curationProblems.push(`${entry} is under section "${hits[0].section}"`)
       return hit?.line
