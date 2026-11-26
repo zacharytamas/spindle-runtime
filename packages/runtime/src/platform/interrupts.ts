@@ -13,11 +13,13 @@ export const onInterrupt = (handler: () => void): (() => void) => {
 }
 
 export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
+  // After a signal the process exits when the main fiber ends, even when a tool that an abort left behind still holds
+  // a timer.
   let receivedSignal = false
   const onSignal = (signal: string) => {
+    receivedSignal = true
     const handler = signal === "SIGINT" ? handlers.at(-1) : undefined
     if (handler !== undefined) return handler()
-    receivedSignal = true
     fiber.interruptUnsafe(fiber.id)
   }
   fiber.addObserver((exit) => {

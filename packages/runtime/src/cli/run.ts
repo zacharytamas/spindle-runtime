@@ -55,6 +55,10 @@ const printer =
   (event: ExecutionEvent): Effect.Effect<void> => {
     const print = (line: string) => Console.log(line)
     if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
+    if (event.type === "queued")
+      return Console.error(
+        `spindle: thread ${event.threadId} is running in ${event.pid === null ? "another process" : `process ${event.pid}`}, so the message waits in its queue`,
+      )
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
       const { signal: _, ...request } = event.request

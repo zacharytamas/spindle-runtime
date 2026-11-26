@@ -273,6 +273,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               return { outcome, status: yield* awaitRest(threadId) }
             }
             const elsewhere = yield* store.holderOf(threadId)
+            if (options.observe !== undefined)
+              yield* options.observe({ type: "queued", threadId, pid: elsewhere?.pid ?? null })
             const status = yield* awaitRest(threadId)
             return elsewhere === null ? { status } : { elsewhere, status }
           }),
