@@ -269,7 +269,7 @@ describe("spindle run", () => {
         ["assistant", null, null, "done"],
       ])
       const files = (yield* fs.readDirectory(path.dirname(db))).map((name) => path.join(path.dirname(db), name))
-      const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file))).map((bytes) =>
+      const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file), { concurrency: 1 })).map((bytes) =>
         new TextDecoder().decode(bytes),
       )
       for (const secret of Object.values(secrets))

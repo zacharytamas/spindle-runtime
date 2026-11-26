@@ -306,7 +306,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       extra: { readonly error?: RunError; readonly stopTool?: StopToolOutcome } = {},
     ) =>
       Effect.gen(function* () {
-        yield* Effect.forEach(pending, Fiber.join, { discard: true })
+        yield* Effect.forEach(pending, Fiber.join, { concurrency: 1, discard: true })
         const calls = modelCalls.map((call) => ({
           ...call,
           ...(call.error === undefined ? {} : { error: redactError(call.error) }),
@@ -453,7 +453,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
                       status: "error",
                       error: "Spindle did not run this call, because the model response that held it failed.",
                     }),
-                  { discard: true },
+                  { concurrency: 1, discard: true },
                 ),
             }
           : undefined

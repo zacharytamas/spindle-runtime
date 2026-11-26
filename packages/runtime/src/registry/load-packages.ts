@@ -205,7 +205,9 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       return
     }
     const file = path.relative(root, entry)
-    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry), fs.stat(entry)]).pipe(Effect.result)
+    const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry), fs.stat(entry)], { concurrency: 1 }).pipe(
+      Effect.result,
+    )
     if (Result.isFailure(located) || located.success[2].type !== "File") {
       issue(
         "package_invalid",

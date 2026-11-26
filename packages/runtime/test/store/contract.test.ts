@@ -507,8 +507,10 @@ describe("ThreadStore", () => {
           }).pipe(Effect.provide(storeAt(filename)))
           const contents = yield* Effect.gen(function* () {
             const store = yield* ThreadStore
-            return yield* Effect.forEach(ids, (id) =>
-              Effect.map(store.getMessages(id, { order: "asc" }), (r) => r.messages.map((m) => m.content)),
+            return yield* Effect.forEach(
+              ids,
+              (id) => Effect.map(store.getMessages(id, { order: "asc" }), (r) => r.messages.map((m) => m.content)),
+              { concurrency: 1 },
             )
           }).pipe(Effect.provide(storeAt(filename)))
           expect(contents).toEqual([

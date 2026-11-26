@@ -70,7 +70,7 @@ const bench = Effect.gen(function* () {
   const supervisor = yield* ThreadSupervisor
   const ids: Array<string> = []
   for (let index = 0; index < threads; index++) ids.push((yield* createThread("assistant")).id)
-  const states = yield* Effect.forEach(ids, stateAtRest)
+  const states = yield* Effect.forEach(ids, stateAtRest, { concurrency: 1 })
   const sequential = args.includes("--sequential")
   const rest = (id: string) =>
     Effect.gen(function* () {

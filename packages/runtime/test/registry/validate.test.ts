@@ -495,6 +495,7 @@ describe("validate", () => {
         const hooks = yield* Effect.forEach(
           definitions.filter((d) => d.kind === "hook"),
           (d) => d.load,
+          { concurrency: 1 },
         )
         expect(hooks.map((hook) => (hook as { hook: string }).hook)).toEqual(["filter_messages", "filter_messages"])
         expect(issues).toEqual([])
@@ -732,8 +733,10 @@ describe("validate", () => {
           "handler",
           "effect",
         ])
-        const signatures = yield* Effect.forEach(definitions, (d) =>
-          d.load.pipe(Effect.map((value) => Reflect.get(Object(value), "__package"))),
+        const signatures = yield* Effect.forEach(
+          definitions,
+          (d) => d.load.pipe(Effect.map((value) => Reflect.get(Object(value), "__package"))),
+          { concurrency: 1 },
         )
         expect(signatures).toEqual(
           definitions.map(() => ({
