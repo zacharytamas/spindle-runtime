@@ -10,7 +10,7 @@ Spindle is a self-hosted runtime for Standard Agent Specification 0.2.0, written
 
 ## Keep platform code in one folder
 
-Core code imports Effect services only. Only files under `packages/runtime/src/platform/` may import `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, a `node:` module, or a `bun:` module. Biome enforces this rule for `packages/runtime`. Other code gets the platform module through the `#platform` import, which picks `bun.ts` under Bun and `node.ts` everywhere else.
+Core code imports Effect services only. Only files under `packages/runtime/src/platform/` may import `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, a `node:` module, `bun`, or a `bun:` module, and only they may use the `process`, `Bun`, and `Buffer` globals. Biome enforces this rule for `packages/runtime`. Other code gets the platform module through the `#platform` import, which picks `bun.ts` under Bun and `node.ts` everywhere else.
 
 ## Run the checks
 

@@ -4,8 +4,8 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { platformName, SqliteLive } from "#platform"
 
 describe("platform", () => {
-  it("resolves #platform to the module for the running runtime", () => {
-    expect(platformName).toBe(process.versions.bun === undefined ? "node" : "bun")
+  it("resolves #platform to the module for the running runtime", ({ task }) => {
+    expect(platformName).toBe(task.file.projectName)
   })
 
   it.effect("reads back a row from an in-memory SQLite database", () =>
