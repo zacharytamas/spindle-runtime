@@ -6063,24 +6063,24 @@
 		"text": "A human-backed side's turn parks execution until the human's inbound message arrives."
 	},
 	{
-		"id": "infrastructure:runtime:71b8c22e",
+		"id": "infrastructure:runtime:58bf6a6d",
 		"page": "infrastructure:runtime",
 		"line": 78,
 		"section": "4. Context Assembly",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "the side's own turns appear as `assistant`"
+		"text": "For any prompt-backed side: the side's own turns appear as `assistant`"
 	},
 	{
-		"id": "infrastructure:runtime:326c9bc0",
+		"id": "infrastructure:runtime:3b206e78",
 		"page": "infrastructure:runtime",
 		"line": 79,
 		"section": "4. Context Assembly",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "the opposite side's turns appear as `user`"
+		"text": "For any prompt-backed side: the opposite side's turns appear as `user`"
 	},
 	{
 		"id": "infrastructure:runtime:43bbb05d",
@@ -6183,44 +6183,44 @@
 		"text": "`sessionStatus` updates child status in the parent registry without terminating child execution."
 	},
 	{
-		"id": "infrastructure:runtime:f57e9ceb",
+		"id": "infrastructure:runtime:b4305106",
 		"page": "infrastructure:runtime",
 		"line": 230,
 		"section": "10. Termination Semantics",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "set terminated timestamp"
+		"text": "`terminate()` is a soft shutdown: set terminated timestamp"
 	},
 	{
-		"id": "infrastructure:runtime:01e5ae34",
+		"id": "infrastructure:runtime:e95fd065",
 		"page": "infrastructure:runtime",
 		"line": 231,
 		"section": "10. Termination Semantics",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "abort in-flight work"
+		"text": "`terminate()` is a soft shutdown: abort in-flight work"
 	},
 	{
-		"id": "infrastructure:runtime:492a4d5d",
+		"id": "infrastructure:runtime:dc7d7df0",
 		"page": "infrastructure:runtime",
 		"line": 232,
 		"section": "10. Termination Semantics",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "reject future execute/queue/send operations"
+		"text": "`terminate()` is a soft shutdown: reject future execute/queue/send operations"
 	},
 	{
-		"id": "infrastructure:runtime:ee44563a",
+		"id": "infrastructure:runtime:3a060edd",
 		"page": "infrastructure:runtime",
 		"line": 233,
 		"section": "10. Termination Semantics",
 		"level": "MUST",
 		"rfc2119": false,
 		"curated": true,
-		"text": "propagate child termination status to parent registry when linked"
+		"text": "`terminate()` is a soft shutdown: propagate child termination status to parent registry when linked"
 	},
 	{
 		"id": "infrastructure:runtime:432ac56a",
@@ -6991,5 +6991,115 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "When execution reaches the human-backed side's turn, the child session pauses: the child's registry status becomes `awaiting_human`, and the session resumes when a human's inbound message arrives on that side's perspective."
+	},
+	{
+		"id": "infrastructure:runtime:853d2427",
+		"page": "infrastructure:runtime",
+		"line": 80,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For any prompt-backed side: opposite-side tool calls are not directly visible"
+	},
+	{
+		"id": "infrastructure:runtime:ec3b4b7f",
+		"page": "infrastructure:runtime",
+		"line": 59,
+		"section": "4. Context Assembly",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Before each model call, runtime context includes: provider/tool configuration"
+	},
+	{
+		"id": "specification:hooks:3b4fc9bc",
+		"page": "specification:hooks",
+		"line": 194,
+		"section": "2.4 Execution Provenance",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Prompt and agent hooks receive their corresponding prompt/agent source. This context is deterministic runtime metadata and must not be inferred from mutable thread data."
+	},
+	{
+		"id": "specification:hooks:5fc8a060",
+		"page": "specification:hooks",
+		"line": 32,
+		"section": "1.1 Available Hooks",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `before_store_tool_result` | Before tool result storage | Transform tool results |"
+	},
+	{
+		"id": "specification:threads/messages:968989f2",
+		"page": "specification:threads/messages",
+		"line": 16,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `name` | `string \\| null` | Tool name (for tool results) |"
+	},
+	{
+		"id": "specification:threads/messages:41278e5e",
+		"page": "specification:threads/messages",
+		"line": 18,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `tool_call_id` | `string \\| null` | Tool call ID (for results) |"
+	},
+	{
+		"id": "specification:threads/messages:3b0dd02b",
+		"page": "specification:threads/messages",
+		"line": 19,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `tool_status` | `'success' \\| 'error' \\| null` | Outcome of the tool call (for results) |"
+	},
+	{
+		"id": "specification:threads/messages:e551bf33",
+		"page": "specification:threads/messages",
+		"line": 27,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `depth` | `number` | Nesting depth (0 = top-level) |"
+	},
+	{
+		"id": "specification:agents:65d917e9",
+		"page": "specification:agents",
+		"line": 3,
+		"section": "Agents",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "An agent has exactly two sides, and each side is backed by exactly one of three things: a human, a prompt, or a handler."
+	},
+	{
+		"id": "specification:agents:bcd0c21d",
+		"page": "specification:agents",
+		"line": 29,
+		"section": "1.2 SideConfig",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "HumanSide | `human` | `true` | Required discriminator |"
+	},
+	{
+		"id": "specification:agents:945becb5",
+		"page": "specification:agents",
+		"line": 30,
+		"section": "1.2 SideConfig",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "HumanSide | `label` | `string` | Optional UI/log label |"
 	}
 ]
