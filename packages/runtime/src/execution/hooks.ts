@@ -78,7 +78,8 @@ const metadataOf = (value: unknown): Record<string, unknown> | undefined | typeo
   }
 }
 
-const TEXT_FIELDS = [
+// The text fields of a stored message, which a hook may set and Spindle redacts when a hook changes them.
+export const TEXT_FIELDS = [
   "content",
   "name",
   "tool_calls",

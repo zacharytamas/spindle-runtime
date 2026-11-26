@@ -2,7 +2,7 @@ import type { Message, MessageUpdates } from "@standardagents/spec"
 import { Clock, Effect } from "effect"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
-import { type HookScope, runHooks } from "./hooks.ts"
+import { type HookScope, runHooks, TEXT_FIELDS } from "./hooks.ts"
 import { mapStrings, redactor, redactText } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
 
@@ -48,17 +48,6 @@ const messageOf = (draft: NewMessage, id: string, created_at: number): Message =
   subagent_thread_name: null,
   subagent_spawn_group_id: null,
 })
-
-const TEXT_FIELDS = [
-  "content",
-  "name",
-  "tool_calls",
-  "tool_call_id",
-  "reasoning_content",
-  "reasoning_details",
-  "prompt",
-  "parent_id",
-] as const
 
 const sameJson = (a: unknown, b: unknown) => {
   try {
