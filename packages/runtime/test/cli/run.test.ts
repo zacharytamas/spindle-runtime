@@ -64,6 +64,27 @@ describe("spindle run", () => {
     }),
   )
 
+  it.live("goes on after --hook-timeout and prints the hook's id on standard error without the message", () =>
+    Effect.gen(function* () {
+      const started = Date.now()
+      const { exit, out, err } = yield* run(
+        ["stuck", "-m", "private words", "--script", "@text-reply.json", "--hook-timeout", "0.2"],
+        {},
+        "hooks",
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(Date.now() - started).toBeLessThan(5000)
+      expect(out).toEqual(["Hello! How can I help?"])
+      expect(err[0]).toBe(
+        "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. The hook may still be running, and Spindle cannot undo what it does after this point.",
+      )
+      expect(err.join("\n")).not.toContain("private words")
+      const zero = yield* run(["stuck", "-m", "hi", "--script", "@text-reply.json", "--hook-timeout", "0"], {}, "hooks")
+      expect(Exit.isFailure(zero.exit)).toBe(true)
+      expect(zero.err).toEqual(["spindle: --hook-timeout takes a number of seconds above 0"])
+    }),
+  )
+
   it.effect("stores the user message and the reply in the database that --db names", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem

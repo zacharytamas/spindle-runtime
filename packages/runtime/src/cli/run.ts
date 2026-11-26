@@ -1,13 +1,14 @@
 import type { LLMProviderInterface, Message } from "@standardagents/spec"
-import { Cause, Console, Data, Effect, FileSystem, Layer, Option, Path, Runtime } from "effect"
+import { Cause, Console, Data, Duration, Effect, FileSystem, Layer, Logger, Option, Path, Runtime } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { SqliteLive } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
 import { newSecrets } from "../execution/env.ts"
+import { HookTimeout } from "../execution/hooks.ts"
 import { redactor } from "../execution/redact.ts"
 import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
-import { sendMessage } from "../execution/trigger.ts"
+import { createThread, sendMessage } from "../execution/trigger.ts"
 import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
@@ -121,10 +122,20 @@ export const runCommand = Command.make(
       Flag.withDescription("The SQLite database file. Without it the thread lives in memory and ends with the run."),
       Flag.withDefault(":memory:"),
     ),
+    hookTimeout: Flag.Finite("hook-timeout").pipe(
+      Flag.withDescription("Seconds one hook call may run before the run goes on without it. The default is 30."),
+      Flag.optional,
+    ),
   },
   (args) =>
     Console.consoleWith((current) => {
       const secrets = new Set<string>()
+      const console = redacting(current, redactor(secrets))
+      // A log line, such as a hook that failed, goes to standard error with the other notes, through the redactor.
+      const logger = Logger.make((entry) => {
+        const parts: ReadonlyArray<unknown> = Array.isArray(entry.message) ? entry.message : [entry.message]
+        console.error(`spindle: ${parts.join(" ")}`)
+      })
       return Effect.gen(function* () {
         const path = yield* Path.Path
         const root = path.resolve(args.dir)
@@ -143,14 +154,15 @@ export const runCommand = Command.make(
             )
           if (errors.length > 0)
             return yield* fail(`${root} has ${errors.length} definition error${errors.length === 1 ? "" : "s"}`)
+          if (Option.isSome(args.hookTimeout) && !(args.hookTimeout.value > 0))
+            return yield* fail("--hook-timeout takes a number of seconds above 0")
           const sides = yield* sidesOf(args.agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
           const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
             ? yield* loadScript(path.resolve(args.script.value))
             : undefined
           const database = yield* openDatabase(args.db === ":memory:" ? args.db : path.resolve(args.db))
           yield* Effect.gen(function* () {
-            const store = yield* ThreadStore
-            const thread = yield* store.createThread({ agentId: args.agent })
+            const thread = yield* createThread(args.agent)
             const outcome = yield* sendMessage(thread.id, args.message, {
               ...(provider === undefined ? {} : { provider }),
               secrets,
@@ -169,7 +181,11 @@ export const runCommand = Command.make(
           if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
           return fail(describe(cause))
         }),
-        Effect.provideService(Console.Console, redacting(current, redactor(secrets))),
+        Effect.provide(Logger.layer([logger])),
+        Option.isSome(args.hookTimeout)
+          ? Effect.provideService(HookTimeout, Duration.millis(args.hookTimeout.value * 1000))
+          : (effect) => effect,
+        Effect.provideService(Console.Console, console),
       )
     }),
 ).pipe(Command.withDescription("Send one message to an agent and print the reply of its prompt side"))
