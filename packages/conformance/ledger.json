@@ -3654,7 +3654,8 @@
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
 			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > keeps the structured reasoning of a response and sends it back in the fields it arrived in"
 		],
 		"reason": ""
 	},
@@ -3662,7 +3663,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the reasoning text and details of an earlier response back through openaiCompatible"
 		],
 		"reason": ""
 	},
@@ -3678,7 +3680,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > keeps the structured reasoning of a response and sends it back in the fields it arrived in"
 		],
 		"reason": ""
 	},
@@ -5803,12 +5806,13 @@
 		"reason": ""
 	},
 	"specification:prompts:3f5e07ed": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns no reasoning from generate or stream when the request excludes it"
 		],
-		"reason": "The request carries exclude. openaiCompatible has no chat completions field for it, so whether reasoning stays internal depends on the provider."
+		"reason": ""
 	},
 	"specification:prompts:aea91179": {
 		"status": "covered",
@@ -5862,7 +5866,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns no reasoning from generate or stream when the request excludes it"
 		],
 		"reason": ""
 	},

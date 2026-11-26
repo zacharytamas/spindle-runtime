@@ -189,6 +189,44 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("sends the reasoning text and details of an earlier response back through openaiCompatible", () =>
+    Effect.gen(function* () {
+      const details = [
+        { type: "reasoning.text", text: "save first", signature: "sig-7", format: "anthropic-claude-v1" },
+      ]
+      const bodies: Array<{ messages: Array<Record<string, unknown>> }> = []
+      const answers = [
+        {
+          delta: {
+            content: "Saving.",
+            reasoning_content: "I should save.",
+            reasoning_details: details,
+            tool_calls: [
+              { index: 0, id: "c1", function: { name: "write_note", arguments: '{"key":"k","value":"v"}' } },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+        { delta: { content: "Saved." }, finish_reason: "stop" },
+      ]
+      const fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        const choice = answers[bodies.length - 1]
+        return new Response(`data: ${JSON.stringify({ choices: [choice] })}\n\ndata: [DONE]\n\n`)
+      }
+      const { exit } = yield* run(["assistant", "-m", "save"], {
+        SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
+      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(bodies[1]?.messages[2]).toMatchObject({
+        role: "assistant",
+        content: "Saving.",
+        reasoning_content: "I should save.",
+        reasoning_details: details,
+      })
+    }),
+  )
+
   it.effect("prints an HTTP 401 diagnostic without the key that the endpoint echoed", () =>
     Effect.gen(function* () {
       const key = "sk-test-5555555555"

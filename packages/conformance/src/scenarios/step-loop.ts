@@ -787,6 +787,12 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
                 reasoning_details: JSON.stringify([{ type: "encrypted", data: "foreign" }]),
                 prompt: "other",
               },
+              {
+                role: "assistant",
+                content: "same prompt, earlier model",
+                reasoning_details: JSON.stringify([{ type: "encrypted", data: "stale" }]),
+                prompt: "assistant",
+              },
             ])
             await send(session, thread, "q5")
             stored = await session.messages(thread)
@@ -808,7 +814,10 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ["t3", "r3", [{ type: "summary", text: "d3" }]],
         ["t4", null, null],
         ["from another model", "ro", null],
+        ["same prompt, earlier model", null, null],
       ])
+      const explicit = await run({ includeChat: true, reasoning: { include: true } })
+      expect(history(explicit.request)).toEqual(history(replayed.request))
       expect(
         replayed.stored.filter((m) => m.role === "assistant").map((m) => [m.reasoning_content, m.reasoning_details]),
       ).toEqual([
@@ -817,11 +826,13 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         ["r3", JSON.stringify([{ type: "summary", text: "d3" }])],
         [null, null],
         ["ro", JSON.stringify([{ type: "encrypted", data: "foreign" }])],
+        [null, JSON.stringify([{ type: "encrypted", data: "stale" }])],
         [null, null],
       ])
       const withheld = await run({ includeChat: true, reasoning: { include: false } })
       const text = JSON.stringify(withheld.request)
-      for (const marker of ['"r1"', '"d2"', '"r3"', '"d3"', '"ro"', "foreign"]) expect(text).not.toContain(marker)
+      for (const marker of ['"r1"', '"d2"', '"r3"', '"d3"', '"ro"', "foreign", "stale"])
+        expect(text).not.toContain(marker)
       expect(withheld.stored.filter((m) => m.role === "assistant")[0]?.reasoning_content).toBe("r1")
       const excluded = await run({})
       expect(history(excluded.request).map(sideOf)).toEqual([["user", "q5"]])

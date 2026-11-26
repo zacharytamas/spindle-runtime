@@ -3,6 +3,7 @@ import {
   type FetchLike,
   type LLMProviderInterface,
   mapReasoningLevel,
+  type ProviderAssistantMessage,
   type ProviderConfigSlots,
   ProviderError,
   type ProviderErrorCode,
@@ -10,6 +11,7 @@ import {
   type ProviderFactoryWithOptions,
   type ProviderFinishReason,
   type ProviderMessage,
+  type ProviderReasoningDetail,
   type ProviderRequest,
   type ProviderResponse,
   type ProviderStreamChunk,
@@ -46,6 +48,51 @@ const toolResultText = (content: ProviderToolResultContent): string => {
   return content.type === "text" ? content.text : content.error
 }
 
+const optional = (key: string, value: unknown) => (typeof value === "string" ? { [key]: value } : {})
+
+// Chat completions endpoints that return structured reasoning use the reasoning_details shape of OpenRouter, with
+// types reasoning.text, reasoning.summary, and reasoning.encrypted. A detail in the package's shape is read too.
+const TYPES: Readonly<Record<string, ProviderReasoningDetail["type"]>> = {
+  "reasoning.text": "text",
+  "reasoning.summary": "summary",
+  "reasoning.encrypted": "encrypted",
+  text: "text",
+  summary: "summary",
+  encrypted: "encrypted",
+}
+
+const detailOf = (value: unknown): ProviderReasoningDetail | undefined => {
+  const type = isRecord(value) && typeof value.type === "string" ? TYPES[value.type] : undefined
+  if (!isRecord(value) || type === undefined) return undefined
+  return {
+    type,
+    ...optional("id", value.id),
+    ...optional("text", value.text ?? value.summary),
+    ...optional("data", value.data ?? value.signature),
+    ...optional("format", value.format),
+  }
+}
+
+const nativeDetail = (detail: ProviderReasoningDetail): Json => ({
+  type: `reasoning.${detail.type}`,
+  ...optional("id", detail.id),
+  ...optional("format", detail.format),
+  ...(detail.type === "summary"
+    ? optional("summary", detail.text)
+    : detail.type === "encrypted"
+      ? optional("data", detail.data)
+      : { ...optional("text", detail.text), ...optional("signature", detail.data) }),
+})
+
+// Messages section 1.3: earlier reasoning goes back in the fields it arrived in. The runtime passes only the
+// details that the selected model accepts.
+const nativeReasoning = (message: ProviderAssistantMessage): Json => ({
+  ...optional("reasoning_content", message.reasoning),
+  ...(message.reasoningDetails === undefined || message.reasoningDetails.length === 0
+    ? {}
+    : { reasoning_details: message.reasoningDetails.map(nativeDetail) }),
+})
+
 const nativeMessage = (message: ProviderMessage): Json => {
   switch (message.role) {
     case "system":
@@ -54,12 +101,12 @@ const nativeMessage = (message: ProviderMessage): Json => {
       return { role: "user", content: nativeContent(message.content) }
     case "assistant": {
       const calls = message.toolCalls ?? []
-      // Chat completions has no field for reasoning on an earlier turn, so this provider does not send it.
       return calls.length === 0
-        ? { role: "assistant", content: message.content ?? "" }
+        ? { role: "assistant", content: message.content ?? "", ...nativeReasoning(message) }
         : {
             role: "assistant",
             content: message.content ?? null,
+            ...nativeReasoning(message),
             tool_calls: calls.map((call) => ({
               id: call.id,
               type: "function",
@@ -204,6 +251,29 @@ const parseArguments = (text: string): Json | undefined => {
   }
 }
 
+// A streamed detail arrives in fragments that share an index, so the fragments of one detail are joined.
+const addDetails = (
+  details: Array<ProviderReasoningDetail>,
+  indexed: Map<number, ProviderReasoningDetail>,
+  value: unknown,
+) => {
+  for (const part of Array.isArray(value) ? value : []) {
+    const detail = detailOf(part)
+    if (detail === undefined) continue
+    const index = isRecord(part) && typeof part.index === "number" ? part.index : undefined
+    const earlier = index === undefined ? undefined : indexed.get(index)
+    if (earlier === undefined) {
+      details.push(detail)
+      if (index !== undefined) indexed.set(index, detail)
+      continue
+    }
+    if (detail.text !== undefined) earlier.text = (earlier.text ?? "") + detail.text
+    if (detail.data !== undefined) earlier.data = (earlier.data ?? "") + detail.data
+    if (earlier.id === undefined && detail.id !== undefined) earlier.id = detail.id
+    if (earlier.format === undefined && detail.format !== undefined) earlier.format = detail.format
+  }
+}
+
 const reasoningText = (delta: Json): string | undefined => {
   if (typeof delta.reasoning_content === "string") return delta.reasoning_content
   if (typeof delta.reasoning === "string") return delta.reasoning
@@ -235,8 +305,11 @@ interface WireCall {
 
 // A call whose argument text is not a JSON object gets no tool-call-done, so the runtime never runs it. A stream
 // that ends before a choice names its finish reason was cut off, so it ends in a retryable error, not a finish.
-async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<ProviderStreamChunk> {
+// Prompts section 6.3: with exclude, reasoning is used by the model but not returned.
+async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean): AsyncGenerator<ProviderStreamChunk> {
   const calls = new Map<number, WireCall>()
+  const details: Array<ProviderReasoningDetail> = []
+  const indexed = new Map<number, ProviderReasoningDetail>()
   let finish: unknown
   let usage: unknown
   let sawContent = false
@@ -263,7 +336,8 @@ async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<P
     const choice = Array.isArray(event.choices) && isRecord(event.choices[0]) ? event.choices[0] : undefined
     if (choice === undefined) continue
     const delta = isRecord(choice.delta) ? choice.delta : {}
-    const reasoning = reasoningText(delta)
+    const reasoning = exclude ? undefined : reasoningText(delta)
+    if (!exclude) addDetails(details, indexed, delta.reasoning_details)
     if (reasoning !== undefined && reasoning !== "") {
       sawReasoning = true
       yield { type: "reasoning-delta", delta: reasoning }
@@ -309,7 +383,12 @@ async function* streamChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<P
     const parsed = parseArguments(call.arguments)
     if (parsed !== undefined) yield { type: "tool-call-done", id: call.id, arguments: parsed }
   }
-  yield { type: "finish", finishReason: finishReason(finish), usage: usageOf(usage) }
+  yield {
+    type: "finish",
+    finishReason: finishReason(finish),
+    usage: usageOf(usage),
+    ...(details.length === 0 ? {} : { reasoningDetails: details }),
+  }
 }
 
 async function* guarded(
@@ -323,7 +402,7 @@ async function* guarded(
   }
 }
 
-const responseOf = (body: unknown): ProviderResponse => {
+const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
   const choice = isRecord(body) && Array.isArray(body.choices) && isRecord(body.choices[0]) ? body.choices[0] : {}
   const message = isRecord(choice.message) ? choice.message : {}
   const toolCalls: Array<ProviderToolCallPart> = []
@@ -341,10 +420,13 @@ const responseOf = (body: unknown): ProviderResponse => {
       )
     toolCalls.push({ id: String(part.id), name: String(part.function.name), arguments: parsed })
   }
-  const reasoning = reasoningText(message)
+  const reasoning = exclude ? undefined : reasoningText(message)
+  const details: Array<ProviderReasoningDetail> = []
+  if (!exclude) addDetails(details, new Map(), message.reasoning_details)
   return {
     content: typeof message.content === "string" ? message.content : null,
     ...(reasoning === undefined ? {} : { reasoning }),
+    ...(details.length === 0 ? {} : { reasoningDetails: details }),
     ...(toolCalls.length === 0 ? {} : { toolCalls }),
     finishReason: finishReason(choice.finish_reason),
     usage: usageOf(isRecord(body) ? body.usage : undefined),
@@ -387,7 +469,8 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
       specificationVersion: "1",
       generate: async (request) => {
         const { response, fail } = await post(request, false)
-        return responseOf(await response.json().catch((cause: unknown) => Promise.reject(fail(cause))))
+        const body: unknown = await response.json().catch((cause: unknown) => Promise.reject(fail(cause)))
+        return responseOf(body, request.reasoning?.exclude === true)
       },
       stream: async (request) => {
         const { response, fail } = await post(request, true)
@@ -395,7 +478,7 @@ export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
           throw new ProviderError("The endpoint sent no response body", "server_error", response.status, undefined, {
             origin: ORIGIN,
           })
-        return guarded(streamChunks(response.body), fail)
+        return guarded(streamChunks(response.body, request.reasoning?.exclude === true), fail)
       },
     }
   },

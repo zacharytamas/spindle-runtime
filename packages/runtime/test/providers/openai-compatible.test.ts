@@ -4,6 +4,7 @@ import {
   defineProvider,
   type ProviderError,
   type ProviderFactoryWithOptions,
+  type ProviderReasoningDetail,
   type ProviderRequest,
   type ProviderStreamChunk,
   providerEnv,
@@ -186,6 +187,7 @@ describe("openaiCompatible", () => {
       {
         role: "assistant",
         content: null,
+        reasoning_content: "earlier thought",
         tool_calls: [{ id: "call_0", type: "function", function: { name: "lookup", arguments: '{"q":"sun"}' } }],
       },
       { role: "tool", tool_call_id: "call_0", content: "no data" },
@@ -245,6 +247,81 @@ describe("openaiCompatible", () => {
       expect(seen).not.toContain("tool-call-done")
       expect(seen).not.toContain("finish")
     }
+  })
+
+  it("keeps the structured reasoning of a response and sends it back in the fields it arrived in", async () => {
+    const wire = [
+      { type: "reasoning.text", text: "step one", signature: "sig-1", format: "anthropic-claude-v1" },
+      { type: "reasoning.encrypted", data: "blob" },
+    ]
+    const fragments = [
+      {
+        choices: [
+          {
+            delta: {
+              reasoning_content: "Think. ",
+              reasoning_details: [{ ...wire[0], text: "step ", signature: undefined, index: 0 }],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          { delta: { reasoning_details: [{ type: "reasoning.text", text: "one", signature: "sig-1", index: 0 }] } },
+        ],
+      },
+      {
+        choices: [
+          { delta: { content: "Done.", reasoning_details: [{ ...wire[1], index: 1 }] }, finish_reason: "stop" },
+        ],
+      },
+    ]
+    const message = { content: "Done.", reasoning_content: "Think. ", reasoning_details: wire }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true ? sse(fragments) : Response.json({ choices: [{ message, finish_reason: "stop" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    const standard: Array<ProviderReasoningDetail> = [
+      { type: "text", text: "step one", data: "sig-1", format: "anthropic-claude-v1" },
+      { type: "encrypted", data: "blob" },
+    ]
+    expect(await provider.generate(request)).toMatchObject({ reasoning: "Think. ", reasoningDetails: standard })
+    const chunks = await collect(await provider.stream(request))
+    expect(chunks.at(-1)).toMatchObject({ type: "finish", reasoningDetails: standard })
+    const replayed = requestBody(
+      {
+        model: "m",
+        messages: [{ role: "assistant", content: "Done.", reasoning: "Think. ", reasoningDetails: standard }],
+      },
+      false,
+    )
+    expect(replayed.messages).toEqual([
+      { role: "assistant", content: "Done.", reasoning_content: "Think. ", reasoning_details: wire },
+    ])
+  })
+
+  it("returns no reasoning from generate or stream when the request excludes it", async () => {
+    const message = {
+      content: "Done.",
+      reasoning_content: "hidden",
+      reasoning_details: [{ type: "reasoning.text", text: "hidden" }],
+    }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([{ choices: [{ delta: message, finish_reason: "stop" }] }])
+        : Response.json({ choices: [{ message, finish_reason: "stop" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    const excluding = { ...request, reasoning: { exclude: true } }
+    const generated = await provider.generate(excluding)
+    expect([generated.content, generated.reasoning, generated.reasoningDetails]).toEqual([
+      "Done.",
+      undefined,
+      undefined,
+    ])
+    const chunks = await collect(await provider.stream(excluding))
+    expect(JSON.stringify(chunks)).not.toContain("hidden")
+    expect(chunks.map((chunk) => chunk.type)).toEqual(["content-delta", "content-done", "finish"])
   })
 
   it("returns from generate the same text, reasoning, call, and finish that stream yields", async () => {

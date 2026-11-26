@@ -1,7 +1,6 @@
 import type {
   LLMProviderInterface,
   Message,
-  PromptDefinition,
   PromptToolConfig,
   ProviderRequest,
   ThreadState,
@@ -19,7 +18,7 @@ import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
 import { failed, invokeTool, runToolCall, scopeFor, storedResult, type ToolCall, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
-import { type FunctionTool, type Loaded, lookup, prepareTurn, roleOf, type Turn } from "./turn.ts"
+import { type FunctionTool, type Loaded, prepareTurn, roleOf, type Turn } from "./turn.ts"
 
 export type ExecutionEvent =
   | { readonly type: "trace"; readonly entry: TraceEntry }
@@ -90,6 +89,13 @@ const toolCallsOf = (response: ModelResponse): Array<ToolCall> =>
           : undefined,
   }))
 
+// Messages section 1.3: reasoning details go back only to the model that produced them, so the message records
+// which model definition and native model that was. A later model under the same prompt name gets none.
+const reasoningSource = (turn: Turn) => ({
+  definition: turn.model.definition.qualifiedName,
+  model: turn.model.value.model,
+})
+
 const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
@@ -113,7 +119,10 @@ const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArr
     reasoning_details: response.reasoningDetails === undefined ? null : JSON.stringify(response.reasoningDetails),
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
-    metadata: Object.keys(extra).length === 0 ? {} : { tool_call_extra: extra },
+    metadata: {
+      ...(Object.keys(extra).length === 0 ? {} : { tool_call_extra: extra }),
+      ...(response.reasoningDetails === undefined ? {} : { reasoning_source: reasoningSource(turn) }),
+    },
   }
 }
 
@@ -237,24 +246,14 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       yield* addDeclaredSecrets(turn, secrets)
       // A value a tool reads through env() joins secrets later and is redacted, but it may be a text variable.
       const barred = new Set(secrets)
-      const detailsAccepted = new Map<string, boolean>()
-      const acceptsDetails = (message: Message) => {
-        const name = message.prompt ?? ""
-        return detailsAccepted.get(name) ?? false
-      }
+      const source = JSON.stringify(reasoningSource(turn))
+      const acceptsDetails = (message: Message) => JSON.stringify(message.metadata?.reasoning_source) === source
       const prompt = turn.prompt.value
       const turnStart = turnStartOf(history, turn.side)
       while (true) {
         step += 1
         yield* record("drain", "no queue before M1-6")
         const system = yield* renderSystemPrompt(turn, barred)
-        for (const message of history)
-          if (message.prompt != null && !detailsAccepted.has(message.prompt)) {
-            const author = yield* lookup<PromptDefinition>("prompt", message.prompt, undefined)
-            const model =
-              author === undefined ? undefined : yield* lookup("model", author.value.model, author.definition)
-            detailsAccepted.set(message.prompt, model?.definition === turn.model.definition)
-          }
         const messages = toProviderMessages(history, {
           side: turn.side,
           turnStart,
