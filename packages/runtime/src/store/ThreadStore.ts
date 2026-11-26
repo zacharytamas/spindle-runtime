@@ -63,6 +63,17 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
 
 export type IdentifiedMessage = NewMessage & Pick<Message, "id" | "created_at">
 
+// The revision is null when the insert ran inside a caller's transaction, which may still roll it back.
+export interface Inserted {
+  readonly message: Message
+  readonly revision: number | null
+}
+
+export interface ThreadHistory {
+  readonly revision: number
+  readonly messages: ReadonlyArray<Message>
+}
+
 export class MessageIdTaken extends Data.TaggedError("MessageIdTaken")<{ readonly messageId: string }> {
   override get message() {
     return `a message with id ${JSON.stringify(this.messageId)} already exists`
@@ -110,7 +121,11 @@ export class ThreadStore extends Context.Service<
     readonly insertMessage: (
       threadId: string,
       message: IdentifiedMessage,
-    ) => Effect.Effect<Message, ThreadNotFound | ValueNotJson | MessageIdTaken | SqlError>
+    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | SqlError>
+    // Every insert, update, and delete of one of the thread's messages raises its revision by one, whoever writes.
+    readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
+    // Every message of the thread, oldest first and silent ones included, and the revision they match.
+    readonly history: (threadId: string) => Effect.Effect<ThreadHistory, ThreadNotFound | SqlError>
     readonly getMessages: (
       threadId: string,
       options?: GetMessagesOptions,

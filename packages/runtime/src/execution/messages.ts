@@ -134,7 +134,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
     original,
     essential ? { depth, essential, check: taken } : { depth },
   )
-  const stored = yield* store.insertMessage(
+  const { message: stored } = yield* store.insertMessage(
     write.threadId,
     redactWrite(writer, original, hooked, redactor(write.secrets.values)),
   )
