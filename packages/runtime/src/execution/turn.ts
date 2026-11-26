@@ -144,6 +144,19 @@ const exposedTools = Effect.fn("exposedTools")(function* (
   return tools
 })
 
+// The model calls a tool by the name the prompt offers it under, the short name of its definition. A stopTool may be
+// a qualified name such as pack/finish, so the stop rule compares calls with the offered name of the tool it resolves to.
+const exposedStopTool = Effect.fn("exposedStopTool")(function* (
+  config: PromptSide,
+  agent: Loaded<AgentDefinition>,
+  tools: ReadonlyMap<string, ExposedTool>,
+) {
+  if (config.stopTool === undefined) return config
+  const target = yield* lookup<unknown>("tool", config.stopTool, agent.definition)
+  const exposed = [...tools.values()].find((tool) => tool.tool.definition === target?.definition)
+  return exposed === undefined ? config : { ...config, stopTool: exposed.name }
+})
+
 export const prepareTurn = Effect.fn("prepareTurn")(function* (agentName: string) {
   const { agent, side, human, config } = yield* sidesOf(agentName)
   const prompt = yield* lookup<PromptDefinition>("prompt", config.prompt, agent.definition)
@@ -159,5 +172,13 @@ export const prepareTurn = Effect.fn("prepareTurn")(function* (agentName: string
     return yield* new SetupError({
       message: `Prompt ${prompt.definition.qualifiedName} sets toolChoice to required but lists no tools`,
     })
-  return { agent, side, human, config, prompt, model, tools } satisfies Turn
+  return {
+    agent,
+    side,
+    human,
+    config: yield* exposedStopTool(config, agent, tools),
+    prompt,
+    model,
+    tools,
+  } satisfies Turn
 })

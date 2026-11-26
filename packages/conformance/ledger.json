@@ -4856,7 +4856,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
-			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool matches a step that calls the side's stopTool, and no other step"
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool matches a step that calls the side's stopTool, and no other step",
+			"packages/runtime/test/cli/run.test.ts > spindle run > stops on a stop tool that the agent names with its package prefix"
 		],
 		"reason": ""
 	},

@@ -9,10 +9,10 @@ import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
 const spindle = Command.make("spindle").pipe(Command.withSubcommands([runCommand]))
 
-const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}) =>
+const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
   Effect.gen(function* () {
     const path = yield* Path.Path
-    const project = yield* path.fromFileUrl(new URL("../../../conformance/fixtures/step-loop", import.meta.url))
+    const project = yield* path.fromFileUrl(new URL(`../../../conformance/fixtures/${fixture}`, import.meta.url))
     const out: Array<string> = []
     const err: Array<string> = []
     const capture = {
@@ -115,6 +115,21 @@ describe("spindle run", () => {
       for (const result of [missingDb, missingScript])
         expect([...result.out, ...result.err].join("\n")).not.toContain(token)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.effect("stops on a stop tool that the agent names with its package prefix", () =>
+    Effect.gen(function* () {
+      const { exit, out, err } = yield* run(
+        ["standardagent-closer/closer", "-m", "go", "--script", "@stop.json", "--trace"],
+        {},
+        "packed-stop-tool",
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(out.filter((line) => line.startsWith("step 1 stop") || line.startsWith("step 2"))).toEqual([
+        "step 1 stop             stop_tool",
+      ])
+      expect(err).toEqual([expect.stringMatching(/^spindle: idle \(stop_tool\) after 1 step, thread /)])
+    }),
   )
 
   it.effect("prints each request as JSON with --dump-requests, with no abort signal and every secret redacted", () =>

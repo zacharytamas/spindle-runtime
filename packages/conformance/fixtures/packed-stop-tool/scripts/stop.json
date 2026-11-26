@@ -1,0 +1,6 @@
+{
+  "responses": [
+    { "toolCalls": [{ "name": "finish", "arguments": {} }] },
+    { "text": "This response is never requested." }
+  ]
+}
