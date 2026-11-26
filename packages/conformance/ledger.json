@@ -1980,7 +1980,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S26d fails before any request when a secret variable or a secret value reaches the finished system prompt",
 			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable"
 		],
-		"reason": "A system prompt interpolates only declared text variables, and a run fails before its first request when such a variable holds a value that the provider config or a declaration marks secret. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
+		"reason": "A system prompt interpolates only declared text variables. The run fails before its first request when a declaration or the provider config marks an interpolated name secret, or when the finished prompt holds a secret value resolved before that request. An instance value that nothing declares is not checked. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
 	},
 	"specification:prompts:97e0539c": {
 		"status": "covered",
@@ -2378,9 +2378,10 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
 			"packages/runtime/test/conformance.test.ts > step loop > S26b redacts a secret of any length from stored tool results, later requests, and run errors",
-			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database"
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database",
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included"
 		],
-		"reason": "A value from any source but the thread defaults to secret. Spindle redacts every secret value it resolved from stored tool results, every printed line, and run errors. Thread values marked text arrive with setEnv in M2."
+		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle redacts the string values of each stored tool result, every line spindle run prints, and run errors, and it stores the model's response as returned. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2."
 	},
 	"specification:threads:4e919532": {
 		"status": "planned",
@@ -4858,7 +4859,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome"
+			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
+			"packages/runtime/test/conformance.test.ts > step loop > S18b reads the stop property of a redacted result when a secret is part of its name or of its value"
 		],
 		"reason": ""
 	},
