@@ -41,12 +41,12 @@ Some sections record a point that the spec text leaves open. Spindle takes the s
 - **Disagreement.** The spec ties visibility to `entryAgents`. The package comment ties it to `exposeAsTool`.
 - **Spindle.** `resolve` passes `isEntryPoint` as true when the package's `__meta.entryAgents` lists the agent. `packages/runtime/test/registry/resolve.test.ts` shows it.
 
-## A definition's name and its file name
+## A definition's identifier and its file name
 
-- **Spec.** Effects section 1.3 says that effect names are file-based. Agents, prompts, and models carry a `name` field, and hooks carry an `id`. No page says how that field relates to the file name or to a packed export key.
+- **Spec.** Agents section 2.1 and Prompts section 1.1 call `name` the unique identifier of an agent and of a prompt. Models section 3.2 says a fallback names another model "by their `name` property", and Prompts section 8 says "Hook IDs reference the `id` property from `defineHook({ hook, id, execute })`". Effects section 1.3 says "Effect names are file-based". Tools and handlers have no identifier field, and the Packaging example names them by their export keys.
 - **Package.** No symbol covers it.
-- **Disagreement.** The spec leaves the point open.
-- **Spindle.** The file name, or the export key in a package, is the definition's name. A `name` or `id` field that differs gets `definition_name_mismatch`. Two files in one directory with the same base name get `definition_name_duplicate`. The `name-mismatch`, `hook-fields`, and `duplicate-name` cases in `packages/runtime/test/registry/validate.test.ts` show it.
+- **Disagreement.** The spec gives no rule for an identifier field that differs from the file name or from the packed export key.
+- **Spindle.** The registry finds an agent, a prompt, or a model by its `name` and a hook by its `id`. It finds a tool, a handler, or an effect by its file name, or by its export key in a package. A `name` or `id` that differs from the file name or export key is legal, so it gets the warning `definition_name_mismatch` and never an error. Two definitions of one kind that declare the same identifier in one namespace get `definition_name_duplicate`, whatever their file names. The first owner of M1-2 used the file name for every kind and made a differing field an error. That rule rejected a hook that a prompt named by its `id`, which Prompts section 8 allows. The `name-mismatch`, `hook-fields`, and `duplicate-name` cases in `packages/runtime/test/registry/validate.test.ts` show the current rule.
 
 ## An agent in a prompt's tools without exposeAsTool
 

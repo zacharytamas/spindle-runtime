@@ -44,25 +44,12 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         return Effect.succeed([])
       }),
     )
-    const byName = new Map<string, string>()
     for (const entry of entries.sort()) {
       const extension = path.extname(entry)
       if (!EXTENSIONS.includes(extension) || /\.d\.m?ts$/.test(entry) || entry.startsWith(".")) continue
       const name = path.basename(entry, extension)
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
-      const earlier = byName.get(name)
-      if (earlier !== undefined) {
-        issues.push({
-          code: "definition_name_duplicate",
-          severity: "error",
-          message: `${earlier} also defines the ${kind} ${name}`,
-          file,
-          path: "",
-        })
-        continue
-      }
-      byName.set(name, file)
       const load = importFile(file, path.toFileUrl(absolute)).pipe(
         Effect.flatMap((module) =>
           exportsNoDefinition(module.default)

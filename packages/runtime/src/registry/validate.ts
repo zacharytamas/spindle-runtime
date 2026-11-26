@@ -1,5 +1,5 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
-import { Effect, Result } from "effect"
+import { Effect } from "effect"
 import {
   type Definition,
   describeCause,
@@ -120,14 +120,7 @@ export interface Validation {
 export const validate = Effect.gen(function* () {
   const registry = yield* Registry
   const issues: Array<Issue> = [...registry.issues]
-  const loaded = new Map<Definition, unknown>()
-  const results = yield* Effect.forEach(registry.definitions, (d) => Effect.result(d.load), { concurrency: 16 })
-  registry.definitions.forEach((definition, index) => {
-    const result = results[index]
-    if (result === undefined) return
-    if (Result.isSuccess(result)) loaded.set(definition, result.success)
-    else issues.push(...result.failure.issues)
-  })
+  const loaded = registry.loaded
 
   const site = (definition: Definition) => {
     const report = (code: IssueCode, path: string, message: string, severity: Issue["severity"] = "error"): void => {
@@ -145,14 +138,6 @@ export const validate = Effect.gen(function* () {
       resolution._tag === "Hidden"
         ? `${kind} ${name} is internal to package ${resolution.definition.package?.signature.packageId}, so ${definition.kind} ${definition.qualifiedName} cannot see it`
         : `${kind} ${name} is not defined`
-    const nameMatches = (field: string, value: unknown) => {
-      if (isNonEmptyString(value) && value !== definition.name)
-        report(
-          "definition_name_mismatch",
-          field,
-          `${definition.kind} ${definition.name} has ${field} ${value}. The ${field} must match the ${definition.package === undefined ? "file name" : "export key"}.`,
-        )
-    }
     const snakeCase = () => {
       if (!SNAKE_CASE.test(definition.name))
         report(
@@ -177,7 +162,7 @@ export const validate = Effect.gen(function* () {
         else report("hook_undefined", `${field}[${index}]`, describe("hook", id, resolution))
       }
     }
-    return { report, resolve, describe, nameMatches, snakeCase, hookList }
+    return { report, resolve, describe, snakeCase, hookList }
   }
 
   const loadedFound = (resolution: Resolution) =>
@@ -195,7 +180,6 @@ export const validate = Effect.gen(function* () {
     const at = site(definition)
     for (const issue of validateAgentDefinition(agent)) at.report(issue.code, issue.path, issue.message, issue.severity)
     if (!isRecord(agent)) return
-    at.nameMatches("name", agent.name)
     at.snakeCase()
     for (const sideKey of ["sideA", "sideB"]) {
       const side = agent[sideKey]
@@ -263,7 +247,6 @@ export const validate = Effect.gen(function* () {
     const at = site(definition)
     if (!isRecord(prompt)) return at.report("prompt_content_invalid", "", "A prompt definition must be an object")
     if (!isNonEmptyString(prompt.name)) at.report("prompt_name_missing", "name", "name must be a non-empty string")
-    at.nameMatches("name", prompt.name)
     at.snakeCase()
     if (!isNonEmptyString(prompt.toolDescription))
       at.report("prompt_tool_description_missing", "toolDescription", "toolDescription must be a non-empty string")
@@ -371,7 +354,6 @@ export const validate = Effect.gen(function* () {
     if (!isRecord(model)) return at.report("model_property_invalid", "", "A model definition must be an object")
     if (!isNonEmptyString(model.name) || /\s/.test(model.name))
       at.report("model_name_invalid", "name", "name must be a non-empty string without spaces")
-    at.nameMatches("name", model.name)
     if (typeof model.provider !== "function")
       at.report("model_provider_invalid", "provider", "provider must be a provider factory function")
     if (!isNonEmptyString(model.model)) at.report("model_id_missing", "model", "model must be a non-empty string")
@@ -445,7 +427,6 @@ export const validate = Effect.gen(function* () {
       at.report("hook_type_invalid", "hook", `hook must be one of ${THREAD_HOOKS.join(", ")}`)
     if (!isNonEmptyString(hook.id) || !SNAKE_CASE.test(hook.id))
       at.report("hook_id_invalid", "id", "id must be a snake_case string")
-    at.nameMatches("id", hook.id)
     if (typeof hook.execute !== "function") at.report("hook_execute_missing", "execute", "execute must be a function")
   }
 

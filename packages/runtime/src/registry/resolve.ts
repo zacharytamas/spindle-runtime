@@ -9,7 +9,11 @@ export type Resolution =
 const key = (kind: Kind, packageId: string | undefined, name: string) => `${kind}\u0000${packageId ?? ""}\u0000${name}`
 
 export const resolver = (definitions: ReadonlyArray<Definition>) => {
-  const index = new Map(definitions.map((d) => [key(d.kind, d.package?.signature.packageId, d.name), d]))
+  const index = new Map<string, Definition>()
+  for (const d of definitions) {
+    const at = key(d.kind, d.package?.signature.packageId, d.name)
+    if (!index.has(at)) index.set(at, d)
+  }
   return (kind: Kind, name: string, from: NamespaceContext): Resolution => {
     const [packageId, shortName] = parseQualifiedName(name)
     const home = from.type === "packed" ? from.packageId : undefined

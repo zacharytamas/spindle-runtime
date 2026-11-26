@@ -221,10 +221,6 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
         })
       }
     }
-    for (const agent of entryAgents) {
-      if (!Object.hasOwn(isRecord(exports.agents) ? exports.agents : {}, agent))
-        issue("package_entry_agent_undefined", file, `${name} lists entry agent ${agent}, which it does not export`)
-    }
   })
 
   for (const dir of yield* packageDirs(path.join(root, "node_modules"))) yield* loadPackage(dir, "npm")
