@@ -1,0 +1,157 @@
+$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db
+spindle: thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07
+> My note is cobalt.
+Hello! How can I help?
+> 
+spindle: resume with spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop
+
+$ spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/text-reply.json --dump-requests
+spindle: thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07
+spindle: idle (stop_on_response)
+> Recall my note.
+{
+  "model": "claude-haiku-5-5",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a test assistant. Use the tools when the user asks you to."
+    },
+    {
+      "role": "user",
+      "content": "My note is cobalt."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How can I help?"
+    },
+    {
+      "role": "user",
+      "content": "Recall my note."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "write_note",
+        "description": "Save a note under a key",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "The name of the note"
+            },
+            "value": {
+              "type": "string",
+              "description": "The note"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_note",
+        "description": "Read the note saved under a key",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "The name of the note"
+            }
+          },
+          "required": [
+            "key"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "explode",
+        "description": "A tool that always throws",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "nap",
+        "description": "Wait for a number of milliseconds",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "How long to wait"
+            }
+          },
+          "required": [
+            "ms"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "finish",
+        "description": "End the turn with a summary",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "What was done"
+            }
+          },
+          "required": [
+            "summary"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "strict",
+        "description": "Record a count with a label",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "How many"
+            },
+            "label": {
+              "type": "string",
+              "description": "What they are"
+            }
+          },
+          "required": [
+            "count",
+            "label"
+          ]
+        }
+      }
+    }
+  ]
+}
+Hello! How can I help?
+> 
+spindle: resume with spindle chat assistant --thread 3d25e805-f6ee-4f5a-9488-f93df8d5cd07 --db /tmp/swarm-m1-7/review-rr3bz8w1/resume.db --dir packages/conformance/fixtures/step-loop

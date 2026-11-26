@@ -1,0 +1,29 @@
+$ SPINDLE_TEST_BASE_URL=http://localhost:8317/v1 SPINDLE_TEST_MODEL=claude-haiku-5-5 SPINDLE_TEST_API_KEY="$ANTHROPIC_API_KEY" node --conditions=spindle-source packages/runtime/src/cli/main.ts chat assistant --dir packages/conformance/fixtures/hello-world
+spindle: thread d0481da6-0d09-4d50-b29e-613c845dd136
+spindle: no --db, so the thread lives in memory and ends with this chat
+> (node:72523) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+The beacon is named Rook Fern. Remember its name and acknowledge briefly.
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> What is two plus three? Answer briefly.
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> What was the name of the beacon in my first message?
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> 
+
+$ SPINDLE_TEST_BASE_URL=http://localhost:8317/v1 SPINDLE_TEST_MODEL=claude-haiku-5-5 SPINDLE_TEST_API_KEY="$ANTHROPIC_API_KEY" bun --conditions=spindle-source packages/runtime/src/cli/main.ts chat assistant --dir packages/conformance/fixtures/hello-world
+spindle: thread 4c4ecda5-a099-4c06-a1ba-5eda472fd237
+spindle: no --db, so the thread lives in memory and ends with this chat
+> The beacon is named Rook Fern. Remember its name and acknowledge briefly.
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> What is two plus three? Answer briefly.
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> What was the name of the beacon in my first message?
+spindle: provider error: The endpoint answered 401: {"error":"Missing API key"}
+spindle: failed (step_error)
+> 

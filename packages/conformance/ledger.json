@@ -1194,7 +1194,8 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
-			"packages/runtime/test/conformance.test.ts > queue > Q25 leaves work queued when the step cap ends an execution, and the next send delivers it once and in order"
+			"packages/runtime/test/conformance.test.ts > queue > Q25 leaves work queued when the step cap ends an execution, and the next send delivers it once and in order",
+			"packages/runtime/test/cli/chat-interrupt.test.ts > spindle chat and Ctrl-C > Ctrl-C while a line waits exits 0 with the queued note, and the next chat delivers the line once (O13, F19)"
 		],
 		"reason": "Q25 delivers an undrained tool after the step cap. The crash tests cover pending messages. Delivery of an undrained tool after process loss still lacks a witness."
 	},
@@ -2532,7 +2533,8 @@
 			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database",
 			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included",
 			"packages/runtime/test/conformance.test.ts > hooks > H22 redacts the text a hook writes into the thread and fails a run whose system prompt a hook gives a secret",
-			"packages/runtime/test/conformance.test.ts > hooks > H22b redacts a write with the secrets that its hooks learned before the write was stored"
+			"packages/runtime/test/conformance.test.ts > hooks > H22b redacts a write with the secrets that its hooks learned before the write was stored",
+			"packages/runtime/test/cli/chat.test.ts > spindle chat > a secret prints as [redacted] in a typed line, a reply, call arguments, and a provider error, and the stored text keeps it (F12)"
 		],
 		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle replaces each secret wherever it appears in the text of a stored tool result, property names included, and in the content and metadata of each message a tool or a hook injects or edits, every line spindle run prints, and run errors, and it stores the model's response as returned. It redacts a write after its create or update hooks run, with every secret known by then. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2."
 	},
@@ -3916,9 +3918,10 @@
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage",
-			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
+			"packages/runtime/test/cli/chat.test.ts > spindle chat > a silent message never prints, and a human-side message the chat did not send prints as elsewhere (O4, O7)"
 		],
-		"reason": "ThreadState.getMessages and the store hide silent messages unless includeSilent is true, and M3 shows it for injected messages. M6 owes the ordinary lists of the client API."
+		"reason": "ThreadState.getMessages and the store hide silent messages unless includeSilent is true, and M3 shows it for injected messages. M6 owes the ordinary lists of the client API. The terminal client hides the stored silent injection."
 	},
 	"specification:threads/messages:b93f89a4": {
 		"status": "covered",
@@ -4643,7 +4646,8 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/conformance.test.ts > queue > Q08 runs a tool queued to an idle thread with no model call asking for it, then the model sees the call and result",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once",
+			"packages/runtime/test/cli/chat-shared.test.ts > spindle chat beside other processes > a chat started on a thread that another process runs says so, queues its line, and prints the reply that process made (O2, O11, F03)"
 		],
 		"reason": "Scheduled effects are planned."
 	},
@@ -5089,7 +5093,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records"
+			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
+			"packages/runtime/test/cli/chat.test.ts > spindle chat > an agent whose prompt is side B prints the reply and stores the line in the human side's role (O4)"
 		],
 		"reason": "Q05 shows the mapping with a prompt on either side and the human on the other. A handler-backed side arrives in M2, which owes the mapping for it."
 	},
@@ -6296,13 +6301,14 @@
 		"reason": "The active prompt is recorded for a programmatic queued call, even though it did not produce that call."
 	},
 	"specification:threads/messages:61c7bee3": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
-			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
+			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
+			"packages/runtime/test/cli/chat.test.ts > spindle chat > a silent message never prints, and a human-side message the chat did not send prints as elsewhere (O4, O7)"
 		],
-		"reason": "S04 and M3 show a silent message in model context, in the history snapshot, and in the request-context hooks. M6 owes the ordinary UI lists that hide it."
+		"reason": "S04 and M3 show a silent message in model context, in the history snapshot, and in request-context hooks. Chat stores both seeded messages and prints only the visible one."
 	},
 	"specification:threads/messages:1d6d311a": {
 		"status": "covered",

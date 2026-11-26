@@ -1,0 +1,10 @@
+$ node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/step-loop --script packages/conformance/fixtures/step-loop/scripts/tool-error-sibling.json --db /tmp/swarm-m1-7/review-rr3bz8w1/tools.db
+spindle: thread 30b06dca-a4f0-497c-8b60-9292ff91f9e6
+> go
+[tool call] explode {}
+[tool call] write_note {"key":"after","value":"still ran"}
+[tool result] explode error: Tool explode threw: The explode tool failed on purpose
+[tool result] write_note ok
+The first tool failed and the second one still ran.
+> 
+spindle: resume with spindle chat assistant --thread 30b06dca-a4f0-497c-8b60-9292ff91f9e6 --db /tmp/swarm-m1-7/review-rr3bz8w1/tools.db --dir packages/conformance/fixtures/step-loop
