@@ -451,13 +451,13 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
         const intake = definitions.find((d) => d.kind === "agent" && d.name === "intake")
-        expect(yield* intake?.load ?? Effect.succeed(undefined)).toMatchObject({
+        expect(yield* intake?.load ?? Effect.undefined).toMatchObject({
           maxSessionTurns: 4,
           sideA: { human: true },
           sideB: { handler: "relay_pipe" },
         })
         const relay = definitions.find((d) => d.kind === "agent" && d.name === "relay")
-        expect(yield* relay?.load ?? Effect.succeed(undefined)).not.toHaveProperty("maxSessionTurns")
+        expect(yield* relay?.load ?? Effect.undefined).not.toHaveProperty("maxSessionTurns")
         expect(issues.filter((issue) => issue.file.startsWith("agents/agents/"))).toEqual([])
       }).pipe(Effect.provide(PlatformLive)),
     )
@@ -479,7 +479,7 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
         const assistant = definitions.find((d) => d.kind === "agent" && d.name === "assistant")
-        expect(yield* assistant?.load ?? Effect.succeed(undefined)).toMatchObject({
+        expect(yield* assistant?.load ?? Effect.undefined).toMatchObject({
           packageName: "agents-basic",
           version: "1.0.0",
           author: "Spindle",
@@ -530,7 +530,7 @@ describe("validate", () => {
             ["standardagent-other-realm/inherited", "standardagent-other-realm"],
           ])
           const inherited = definitions.find((d) => d.qualifiedName === "standardagent-other-realm/inherited")
-          expect(yield* inherited?.load ?? Effect.succeed(undefined)).toMatchObject({
+          expect(yield* inherited?.load ?? Effect.undefined).toMatchObject({
             name: "inherited",
             model: "fixture-model",
             __package: { packageId: "standardagent-other-realm" },
