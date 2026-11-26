@@ -5041,5 +5041,83 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
 		],
 		"reason": ""
+	},
+	"specification:threads/execution-state:ce0b6d35": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads/execution-state:a46f561c": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:e1c56064": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:357c07d0": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:c2a80b35": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:d4e23481": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:b680018e": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:3a998922": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:1c6df0f5": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:e6726838": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:20b6e8c4": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:7373c989": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": ""
+	},
+	"specification:threads:318dc3fd": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": ""
 	}
 }

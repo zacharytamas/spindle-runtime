@@ -7351,5 +7351,135 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "Effect names are file-based (`agents/effects/send_digest.ts` => `send_digest`)"
+	},
+	{
+		"id": "specification:threads/execution-state:ce0b6d35",
+		"page": "specification:threads/execution-state",
+		"line": 95,
+		"section": "4.1 States",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `idle` | No execution is running and the last run did not fail — or the thread has never run (`since` is `0`, `reason` is `null`). |"
+	},
+	{
+		"id": "specification:threads/execution-state:a46f561c",
+		"page": "specification:threads/execution-state",
+		"line": 96,
+		"section": "4.1 States",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `running` | An execution is in flight. `reason` is `null`. |"
+	},
+	{
+		"id": "specification:threads:e1c56064",
+		"page": "specification:threads",
+		"line": 354,
+		"section": "6.1 Thread Arguments",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`arguments` is the read-only argument object supplied when the thread was created or invoked."
+	},
+	{
+		"id": "specification:threads:357c07d0",
+		"page": "specification:threads",
+		"line": 391,
+		"section": "6.2 Per-Execution Context",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "User code may mutate it during execution, and later participants in that same execution see those mutations."
+	},
+	{
+		"id": "specification:threads:c2a80b35",
+		"page": "specification:threads",
+		"line": 401,
+		"section": "6.3 Context Limitations",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Scope | Single execution only |"
+	},
+	{
+		"id": "specification:threads:d4e23481",
+		"page": "specification:threads",
+		"line": 402,
+		"section": "6.3 Context Limitations",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Persistence | Mutations are lost after execution ends |"
+	},
+	{
+		"id": "specification:threads:b680018e",
+		"page": "specification:threads",
+		"line": 410,
+		"section": "7. Durable Key-Value Store",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Values persist across executions, tool calls, hook invocations, and endpoint requests for the lifetime of the thread."
+	},
+	{
+		"id": "specification:threads:3a998922",
+		"page": "specification:threads",
+		"line": 428,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Scope | Per-thread; not shared with parent, child, or sibling threads |"
+	},
+	{
+		"id": "specification:threads:1c6df0f5",
+		"page": "specification:threads",
+		"line": 429,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Persistence | Durable across executions for the lifetime of the thread |"
+	},
+	{
+		"id": "specification:threads:e6726838",
+		"page": "specification:threads",
+		"line": 430,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Value type | Any JSON-serializable value (objects, arrays, strings, numbers, booleans, `null`) |"
+	},
+	{
+		"id": "specification:threads:20b6e8c4",
+		"page": "specification:threads",
+		"line": 431,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Missing keys | `getValue` returns `null` |"
+	},
+	{
+		"id": "specification:threads:7373c989",
+		"page": "specification:threads",
+		"line": 432,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Deletion | `setValue(key, null)` or `setValue(key, undefined)` deletes the key |"
+	},
+	{
+		"id": "specification:threads:318dc3fd",
+		"page": "specification:threads",
+		"line": 433,
+		"section": "7.2 Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| Subagents | Values are not automatically copied to spawned child threads |"
 	}
 ]
