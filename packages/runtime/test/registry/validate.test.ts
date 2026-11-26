@@ -69,6 +69,12 @@ const invalid: ReadonlyArray<Case> = [
     "rejects session bindings, maxSteps, and stop bindings on a non-prompt side",
     "options-on-handler",
     [
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideA.sessionFail"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideA.sessionStatus"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideA.stopTool"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideA.stopToolResponseProperty"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideB.maxSteps"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/bindings.ts:sideB.sessionStatus"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.maxSteps"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.sessionStop"),
       error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideB.stopOnResponse"),
@@ -92,6 +98,8 @@ const invalid: ReadonlyArray<Case> = [
     "relationship-collisions",
     [
       error("subagent_relationship_duplicate", "agents/agents/both_sides.ts:sideB.subagents[0].as"),
+      error("subagent_relationship_reserved_name", "agents/agents/reserved_names.ts:sideA.subagents[0].as"),
+      error("subagent_relationship_reserved_name", "agents/agents/reserved_names.ts:sideA.subagents[1].as"),
       error("subagent_relationship_tool_collision", "agents/agents/tool_name.ts:sideA.subagents[0].as"),
     ],
   ],
@@ -133,7 +141,10 @@ const invalid: ReadonlyArray<Case> = [
   [
     "rejects a tools entry that configures a subagent relationship",
     "tools-subagent-config",
-    [error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[0]")],
+    [
+      error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[0]"),
+      error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[1]"),
+    ],
   ],
   [
     "rejects an agent named in a prompt's tools that does not set exposeAsTool",
@@ -155,6 +166,7 @@ const invalid: ReadonlyArray<Case> = [
     "prompt-required-fields",
     [
       error("prompt_content_invalid", "agents/prompts/bad_content.ts:prompt[0]"),
+      error("prompt_name_missing", "agents/prompts/empty_name.ts:name"),
       error("prompt_include_undefined", "agents/prompts/missing_include.ts:prompt[0].prompt"),
       error("prompt_tool_description_missing", "agents/prompts/no_description.ts:toolDescription"),
       error("prompt_model_undefined", "agents/prompts/no_model.ts:model"),
@@ -177,6 +189,7 @@ const invalid: ReadonlyArray<Case> = [
     [
       error("model_fallback_undefined", "agents/models/bad_fallback.ts:fallbacks[1]"),
       error("model_property_invalid", "agents/models/bad_price.ts:inputPrice"),
+      error("model_name_invalid", "agents/models/empty_name.ts:name"),
       error("model_id_missing", "agents/models/no_model.ts:model"),
       error("model_provider_invalid", "agents/models/no_provider.ts:provider"),
       error("model_fallback_self", "agents/models/self_fallback.ts:fallbacks[0]"),
@@ -221,6 +234,7 @@ const invalid: ReadonlyArray<Case> = [
     "definition-shapes",
     [
       error("effect_invalid", "agents/effects/array_args.ts"),
+      error("definition_export_missing", "agents/effects/no_default.ts"),
       error("effect_invalid", "agents/effects/not_a_tuple.ts"),
       error("handler_invalid", "agents/handlers/no_execute.ts:execute"),
       error("tool_uses_undefined", "agents/tools/bad_uses.ts:uses[0]"),
@@ -240,6 +254,10 @@ const invalid: ReadonlyArray<Case> = [
       error("definition_name_duplicate", "agents/hooks/trim_copy.ts"),
       warning("definition_name_mismatch", "agents/hooks/trim_copy.ts:id"),
       error("definition_name_duplicate", "agents/hooks/trim.ts"),
+      error("definition_name_duplicate", "agents/models/quick.ts"),
+      warning("definition_name_mismatch", "agents/models/quick.ts:name"),
+      error("definition_name_duplicate", "agents/prompts/reply.ts"),
+      warning("definition_name_mismatch", "agents/prompts/reply.ts:name"),
       error("definition_name_duplicate", "agents/tools/lookup.ts"),
     ],
   ],
@@ -247,7 +265,9 @@ const invalid: ReadonlyArray<Case> = [
     "warns about names that are not snake_case",
     "naming-warnings",
     [
+      warning("definition_name_not_snake_case", "agents/agents/RelayAgent.ts"),
       warning("definition_name_not_snake_case", "agents/effects/SendDigest.ts"),
+      warning("definition_name_not_snake_case", "agents/prompts/MainPrompt.ts"),
       warning("definition_name_not_snake_case", "agents/tools/fetchPage.ts"),
     ],
   ],
@@ -382,6 +402,8 @@ describe("validate", () => {
           sideA: { human: true },
           sideB: { handler: "relay_pipe" },
         })
+        const relay = definitions.find((d) => d.kind === "agent" && d.name === "relay")
+        expect(yield* relay?.load ?? Effect.succeed(undefined)).not.toHaveProperty("maxSessionTurns")
         expect(issues.filter((issue) => issue.file.startsWith("agents/agents/"))).toEqual([])
       }).pipe(Effect.provide(PlatformLive)),
     )
@@ -466,8 +488,14 @@ describe("validate", () => {
         yield* fs.makeDirectory(path.join(root, "agents"), { recursive: true })
         yield* fs.makeDirectory(path.join(root, "node_modules", "plain"), { recursive: true })
         yield* fs.writeFileString(path.join(root, "node_modules", "plain", "package.json"), '{ "name": "plain" }')
+        yield* fs.writeFileString(
+          path.join(root, "node_modules", "plain", "index.js"),
+          "globalThis.spindleImportedPlainPackage = true\n",
+        )
         yield* fs.copy(yield* fixture("packed-a"), path.join(root, "node_modules", "packed-a"))
-        const { definitions } = yield* validateRoot(root)
+        const { definitions, issues } = yield* validateRoot(root)
+        expect(located(issues)).toEqual([warning("package_name_prefix", "node_modules/packed-a/package.json")])
+        expect(Reflect.get(globalThis, "spindleImportedPlainPackage")).toBeUndefined()
         expect(definitions.map((d) => [d.kind, d.qualifiedName, d.package?.signature.source])).toEqual([
           ["agent", "packed-a/researcher", "npm"],
           ["prompt", "packed-a/researcher", "npm"],
@@ -496,6 +524,10 @@ describe("validate", () => {
         expect(yield* search?.load ?? Effect.succeed(undefined)).toMatchObject({
           __package: { packageId: "packed-a", version: "1.0.0", source: "local", packedAt: 1764028800000 },
         })
+        const signatures = yield* Effect.forEach(definitions, (d) =>
+          d.load.pipe(Effect.map((value) => [d.qualifiedName, Reflect.get(Object(value), "__package")?.packageId])),
+        )
+        expect(signatures).toEqual(definitions.map((d) => [d.qualifiedName, d.package?.signature.packageId]))
       }).pipe(Effect.provide(PlatformLive)),
     )
   })

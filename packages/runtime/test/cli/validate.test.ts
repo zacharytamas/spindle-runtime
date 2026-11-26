@@ -71,7 +71,7 @@ describe("spindle validate", () => {
     Effect.gen(function* () {
       const { exit, lines } = yield* run("@invalid/naming-warnings")
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(lines.at(-1)).toBe("0 errors, 2 warnings")
+      expect(lines.at(-1)).toBe("0 errors, 4 warnings")
     }),
   )
 

@@ -32,6 +32,7 @@ const definitions = [
   definition("tool", "search", packedA),
   definition("agent", "researcher", packedA),
   definition("agent", "helper", packedA),
+  definition("prompt", "researcher", packedA),
   definition("tool", "search", packedB),
   definition("agent", "writer", packedB),
   definition("agent", "agent", scoped),
@@ -55,11 +56,13 @@ describe("resolve", () => {
 
     it("lets global code see a packed entry agent by its qualified name", () => {
       expect(found("agent", "packed-a/researcher", global)).toBe("packed-a/researcher")
+      expect(found("agent", "researcher", global)).toBe("Missing")
     })
 
     it("hides the internals of a package from global code", () => {
       expect(found("tool", "packed-a/search", global)).toBe("Hidden")
       expect(found("agent", "packed-a/helper", global)).toBe("Hidden")
+      expect(found("prompt", "packed-a/researcher", global)).toBe("Hidden")
     })
 
     it("hides unpacked definitions from packed code", () => {
