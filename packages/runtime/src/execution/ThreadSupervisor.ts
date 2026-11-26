@@ -61,7 +61,7 @@ export class ThreadSupervisor extends Context.Service<
     // Interrupts that execution. The run settles idle, and the thread stays open.
     readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<Execution["settlement"] | undefined>
     // The outcome of the execution that this process runs for the thread, once it settles.
-    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, SqlError>
+    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, SqlError | ThreadNotFound>
     readonly status: (threadId: string) => Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
   }
 >()("spindle/ThreadSupervisor") {}

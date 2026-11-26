@@ -1,7 +1,8 @@
 import { Cause, Deferred, Effect, Exit, type Fiber, Latch, type Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
-import { FlowEnded } from "../store/model.ts"
+import { FlowEnded, type ThreadNotFound } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import { ProviderFailure } from "./call.ts"
 import { CLOSING } from "./run-status.ts"
 import type { prepareSteps, RunOutcome } from "./step.ts"
@@ -49,12 +50,12 @@ export class Execution {
   readonly signal = this.#abort.signal
   readonly #pending = new Map<Promise<unknown>, string>()
   readonly #released = Latch.makeUnsafe()
-  readonly #done = Deferred.makeUnsafe<RunOutcome, SqlError>()
+  readonly #done = Deferred.makeUnsafe<RunOutcome, SqlError | ThreadNotFound>()
   readonly settlement = { await: Deferred.await(this.#done), isDone: () => Deferred.isDoneUnsafe(this.#done) }
   #phase: "running" | "stopping" | "holding" | "dropping" | "ended" = "running"
   #stop: Side | "user" | undefined
   #steps = 0
-  #fiber?: Fiber.Fiber<void>
+  #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
   #successor: Execution | undefined
 
   constructor(flowId: string) {
@@ -107,7 +108,7 @@ export class Execution {
     return this.settlement
   }
 
-  readonly lastOutcome: Effect.Effect<RunOutcome, SqlError> = Effect.flatMap(
+  readonly lastOutcome: Effect.Effect<RunOutcome, SqlError | ThreadNotFound> = Effect.flatMap(
     this.settlement.await,
     (outcome) => this.#successor?.lastOutcome ?? Effect.succeed(outcome),
   )
@@ -154,41 +155,52 @@ export class Execution {
         if (settlement === "continue") continue
         const restart = interrupted && settlement === "settled" && this.#phase === "holding"
         const result = settlement === "settled" ? end : settledAs[settlement]
-        const brief = {
-          threadId,
-          flowId: this.flowId,
-          steps: this.steps,
-          status: result.status,
-          reason: result.reason,
-          trace: [],
-          modelCalls: [],
-        }
-        return {
-          restart,
-          outcome: interrupted
-            ? Effect.succeed(brief)
-            : Effect.interruptible(report(result)).pipe(
-                Effect.catchCauseIf(Cause.hasInterruptsOnly, () => Effect.succeed(brief)),
-              ),
-        }
+        return { result, report, interrupted, restart }
       }
     })
     // Mask the driver before its first turn. Only the work between settlement boundaries is interruptible.
     const publish = Effect.gen({ self: this }, function* () {
       const settled = yield* Effect.exit(finish)
       this.#phase = "ended"
-      const exit = Exit.isFailure(settled)
-        ? Exit.failCause(settled.cause)
-        : yield* Effect.exit(
-            Effect.gen({ self: this }, function* () {
-              const outcome = yield* settled.value.outcome
-              if (settled.value.restart) this.#successor = yield* resume
-              return outcome
+      if (Exit.isFailure(settled)) return yield* Effect.failCause(settled.cause)
+      const { result, report, interrupted, restart } = settled.value
+      const brief = ({ status, reason }: End): RunOutcome => ({
+        threadId,
+        flowId: this.flowId,
+        steps: this.steps,
+        status,
+        reason,
+        trace: [],
+        modelCalls: [],
+      })
+      const outcome = interrupted
+        ? brief(result)
+        : yield* Effect.interruptible(report(result)).pipe(
+            Effect.catchCauseIf(Cause.hasInterruptsOnly, () => {
+              // The base reports the disposition at interrupt time if the claim was released before metadata returned.
+              this.#abort.abort()
+              return ThreadStore.use((threads) =>
+                Effect.map(threads.getThread(threadId), (thread) =>
+                  brief(
+                    thread.terminated === null
+                      ? settledAs.superseded
+                      : {
+                          status: thread.status.state === "failed" ? "failed" : "idle",
+                          reason: thread.status.reason ?? "aborted",
+                        },
+                  ),
+                ),
+              )
             }),
           )
-      remove()
-      yield* Deferred.done(this.#done, exit)
-    })
+      if (restart) this.#successor = yield* resume
+      return outcome
+    }).pipe(
+      Effect.onExit((exit) => {
+        remove()
+        return Deferred.done(this.#done, exit)
+      }),
+    )
     return Effect.map(Effect.forkIn(publish, scope, { uninterruptible: true }), (fiber) => {
       this.#fiber = fiber
       if (this.#phase === "holding" || this.#phase === "dropping") fiber.interruptUnsafe()

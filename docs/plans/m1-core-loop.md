@@ -937,8 +937,8 @@ The workspace type check runs `effect-tsgo tsc` from `@effect/tsgo@0.73.7` with 
 - The practice rules at warning are `effectTryWithoutCatch`, `globalDateInEffect`, `globalErrorInEffectCatch`, `missingConcurrencyOption`, `preferTypedSchemaDecoder`, and `unknownInEffectCatch`.
 - `unsafeEffectTypeAssertion` stays at suggestion for the cast on the hook runner's return type. The hooks split should remove the cast and raise the rule to error.
 - `tryCatchInEffectGen` stays at suggestion for five recovery paths. The hooks and execution splits own hook result validation and tool result access. The store split owns delivery of a malformed queue row. The registry split owns both checks that read user definitions and package disclosures. Raise the rule to warning once all five paths have moved.
-- `globalErrorInEffectFailure` stays at suggestion for two errors that reach user callbacks through `ThreadState`. A missing definition and an unset environment variable each reject with a plain JavaScript `Error`. The execution split should preserve those public rejections when it raises the rule to warning.
-- `returnEffectInGen` stays at suggestion for the two returns from `providerFor`. Setup builds a normal provider immediately and reuses it. A provider with `createFetch` builds again for every request. The execution split should preserve both lifetimes when it raises the rule to warning.
+- M1-11 raised `globalErrorInEffectFailure` to warning. A missing definition and an unset environment variable still reject at the promise boundary with a plain JavaScript `Error`.
+- M1-11 raised `returnEffectInGen` to warning. Provider setup resolves the configuration and transport once. It constructs an ordinary provider immediately and shares the instance. With `createFetch` it retains the factory operation and runs it once per request.
 - `schemaNumber` stays at suggestion for the script provider's `statusCode` and `retryAfter`. JSON exponents can overflow to infinity, which the current decoder accepts. The CLI split should settle that input contract before raising the rule to warning.
 - `unstableApiUsage` is off. Effect 4.1.5 marks the CLI, SQL, and platform packages unstable. Other rules keep their defaults, including the suggestions and the disabled `anyUnknownInErrorContext`. The execution split owns the supervisor's public `unknown` error channels.
 
@@ -973,6 +973,29 @@ Effect Schema checks stored attachment references, queue payloads and pagination
 Every store operation disables scheduler yields while it holds the shared connection. The guard stays on the typed methods, including the generic transaction. One test exercises every member of each service and reads the scheduler setting as its SQL runs. Adding a method requires adding its call to that test.
 
 The standalone store probe shares the store fixtures. Its crash lanes read the child's native exit code and signal to verify and report a SIGKILL. The Effect process API exposes a platform error for that exit.
+
+### Settled in M1-11
+
+Each successful claim gets one local `Execution`. It owns the interruptible fiber, signal, step count, callback registrations and read-only settlement handle. A synchronous stop records its first caller. The side and reason stay available to the public execution getters after the run ends.
+
+| Current state | Event | Next state |
+|---|---|---|
+| Running | A side or the operator requests a stop | Stopping |
+| Stopping | Another stop arrives | Stopping with the first caller |
+| Running or stopping | A local abort lets user code finish | Holding |
+| Running, stopping or holding | An exiting abort, termination, displacement or scope close arrives | Dropping |
+| Holding or dropping | A stop arrives | Same state and the caller gets false |
+| Holding | The last outstanding callback returns or expires | Holding with the latch open |
+| Running or stopping | The store finds more work at a turn boundary | Same execution with the prepared turn |
+| Any live state | Settlement finishes or fails | Ended |
+
+Only the step work and the metadata join accept interruption. The fiber starts masked so an abort on the admission turn reaches the settlement code. SQLite keeps its own scheduling guard. An interrupted execution fires its signal and yields so the abort caller can print the control notice. A holding execution then waits on one latch. Callback completion and forced release wake that same wait. The store closes calls and releases a matching claim in one transaction. Its result distinguishes a cap, termination and supersession. A refused write already carries the last two answers. A database error from settlement reaches the waiter directly.
+
+The driver marks the execution ended before joining outstanding model metadata. An ordinary abort that held callbacks may then claim queued work and save the successor. It removes its own entry and completes its deferred with the outcome or cause. A sender that queued behind the run can follow the successor. Chat can await or poll only the particular run it interrupted. The poll closes first on shutdown, then local executions finish, then the holder is released.
+
+One old behavior needs a separate read. A user abort can interrupt metadata after the claim has already been released. On an open thread the sender then receives `failed` with `execution_lost` while the database keeps its earlier result. On a terminated thread the sender sees the current stored status. The driver reads the thread only for this interrupted join. A normal metadata join keeps its original settlement.
+
+The step loop offers a reason at each boundary. Moving its queue check outside the settlement transaction would race admission. A timed-out hook leaves the callback tracker even if its promise never settles. The stop predicate is sampled before validation and again after asynchronous validation, since user code can stop the run between those points. A skipped tool has an absent result until the loop writes its prescribed error. Callback handles and their expiry remain synchronous for user code. The holder already uses scoped acquisition. Queue decoding, process identity, CLI setup and message hooks keep their existing owners.
 
 ## Appendix B. Alternatives rejected
 
