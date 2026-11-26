@@ -365,13 +365,19 @@ export const runHooks = <K extends Position>(
   position: K,
   lead: ReadonlyArray<unknown>,
   value: Values[K],
-  options: { readonly essential?: boolean } = {},
+  options: {
+    readonly essential?: boolean
+    // A check the return passes only against stored state, such as an id that no message holds yet. It gives the
+    // problem, or undefined when there is none.
+    readonly check?: (next: Values[K], current: Values[K]) => Effect.Effect<string | undefined>
+  } = {},
 ): Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never> =>
   Effect.gen(function* () {
     const hooks = scope.set.byPosition.get(position)
     if (hooks === undefined) return value
     const row = POSITIONS[position] as Row<Values[K]>
     const timeout = yield* HookTimeout
+    const check = options.check ?? (() => Effect.succeed(undefined))
     let current = value
     for (const hook of hooks) {
       const args = [
@@ -394,11 +400,12 @@ export const runHooks = <K extends Position>(
         } catch {
           next = INVALID
         }
-        if (next !== INVALID) {
-          current = next
+        const found = next === INVALID ? `returned a value that is not ${row.expects}` : yield* check(next, current)
+        if (found === undefined) {
+          current = next as Values[K]
           continue
         }
-        problem = `returned a value that is not ${row.expects}`
+        problem = found
       }
       const veto = row.failure === "veto" && options.essential !== true
       yield* Effect.logWarning(

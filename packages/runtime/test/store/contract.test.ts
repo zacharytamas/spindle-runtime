@@ -247,6 +247,16 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("messageIdTaken says whether any thread holds a message id", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [existing] = yield* store.appendMessages(thread.id, [user("original")])
+        expect(yield* store.messageIdTaken(existing?.id ?? "")).toBe(true)
+        expect(yield* store.messageIdTaken("fresh")).toBe(false)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("appendMessages keeps reasoning_content and reasoning_details independently of each other", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore

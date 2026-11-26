@@ -451,7 +451,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
             })
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
           const { redacted: result, stored } = yield* save(final).pipe(
-            Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
+            Effect.catchTag(["ValueNotJson", "ResultUnreadable", "MessageIdTaken"], (error) =>
               save(unstorableResult(final, error.message)),
             ),
           )

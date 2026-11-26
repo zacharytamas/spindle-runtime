@@ -185,6 +185,9 @@ export const layer = Layer.effect(
           rows[0] === undefined ? null : toMessage(rows[0]),
         ),
 
+      messageIdTaken: (messageId) =>
+        Effect.map(sql`SELECT 1 FROM messages WHERE id = ${messageId}`, (rows) => rows.length > 0),
+
       updateMessage: (threadId, messageId, updates) =>
         sql.withTransaction(
           Effect.gen(function* () {

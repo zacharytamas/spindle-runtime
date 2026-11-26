@@ -347,6 +347,55 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H9c fails the hook that gives the human's message, the model's response, or a tool result a taken id, and keeps the later hooks' changes",
+    requirements: ["41d77a88", "3d8dede1"],
+    run: async (driver) => {
+      let taken = ""
+      const given: Array<string> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "take_id",
+          execute: async (_state, message) => ({ ...message, id: taken }),
+        }),
+        defineHook({
+          hook: "before_create_message",
+          id: "stamp_after",
+          execute: async (_state, message) => {
+            given.push(message.id)
+            return { ...message, metadata: { ...message.metadata, stamped: true } }
+          },
+        }),
+      ]
+      const provider = new ScriptedProvider([
+        { text: "reply", toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools: noop, hooks, agent: { hooks: ["take_id", "stamp_after"] } },
+        async (session, thread) => {
+          await session.seed(thread, [{ role: "user", content: "first" }])
+          const [first] = await session.messages(thread)
+          taken = first?.id ?? ""
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          expect(stored[0]).toEqual(first)
+          const written = stored.slice(1)
+          expect(written.map((m) => [m.role, m.content, m.metadata])).toEqual([
+            ["user", "go", { stamped: true }],
+            ["assistant", "reply", { stamped: true }],
+            ["tool", "noop", { stamped: true }],
+            ["assistant", "done", { stamped: true }],
+          ])
+          expect(given).toEqual(written.map((m) => m.id))
+          expect(new Set(stored.map((m) => m.id)).size).toBe(stored.length)
+          expect(session.logs().join("\n")).toContain("Hook take_id (before_create_message")
+        },
+      )
+    },
+  },
+  {
     name: "H10 refuses a write whose before hook fails, keeps a write whose after hook fails, and finishes the turn",
     requirements: ["765e84ae", "9d7eaeac", "e1b53f31", "d7e8a202", "3d8dede1"],
     run: async (driver) => {

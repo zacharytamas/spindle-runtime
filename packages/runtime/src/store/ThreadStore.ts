@@ -116,6 +116,8 @@ export class ThreadStore extends Context.Service<
       options?: GetMessagesOptions,
     ) => Effect.Effect<MessagesResult, InvalidMessagesQuery | SqlError>
     readonly getMessage: (threadId: string, messageId: string) => Effect.Effect<Message | null, SqlError>
+    // Message ids are unique across threads, so this asks whether any thread holds the id.
+    readonly messageIdTaken: (messageId: string) => Effect.Effect<boolean, SqlError>
     readonly updateMessage: (
       threadId: string,
       messageId: string,

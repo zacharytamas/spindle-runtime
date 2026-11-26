@@ -95,7 +95,9 @@ const redactWrite = (writer: Writer, before: Message, after: Message, redact: (t
 }
 
 // Hooks section 4.1 and 4.2. A write that the caller may refuse, such as injectMessage, fails when a
-// before_create_message hook fails. A write the execution cannot go on without stores the last good message.
+// before_create_message hook fails, and fails with MessageIdTaken when the hooks chose an id that a message holds.
+// A write the execution cannot go on without fails only the hook that went wrong, a hook that chose a taken id
+// included: the next hook gets the message from before it, and the last good message is stored.
 // Redaction is the last step before the store, so that it uses every secret the hooks learned.
 export const createMessage = Effect.fn("createMessage")(function* (
   write: WriteContext,
@@ -105,21 +107,24 @@ export const createMessage = Effect.fn("createMessage")(function* (
   const store = yield* ThreadStore
   const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
-  const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { essential })
-  const insert = (message: Message) =>
-    store.insertMessage(write.threadId, redactWrite(writer, original, message, redactor(write.secrets.values)))
-  const stored =
-    hooked === original
-      ? yield* insert(original)
-      : yield* insert(hooked).pipe(
-          Effect.catchTag(["ValueNotJson", "MessageIdTaken"], (error) =>
-            essential
-              ? Effect.logWarning(
-                  `The before_create_message hooks returned a message that the store refused (${error._tag}). Spindle stored the message without their changes.`,
-                ).pipe(Effect.andThen(insert(original)))
-              : Effect.fail(error),
-          ),
+  const taken = (next: Message, current: Message) =>
+    next.id === current.id
+      ? Effect.succeed(undefined)
+      : store.messageIdTaken(next.id).pipe(
+          Effect.map((found) => (found ? "returned the id of a message that already exists" : undefined)),
+          Effect.orDie,
         )
+  const hooked = yield* runHooks(
+    write.hooks,
+    "before_create_message",
+    [],
+    original,
+    essential ? { essential, check: taken } : {},
+  )
+  const stored = yield* store.insertMessage(
+    write.threadId,
+    redactWrite(writer, original, hooked, redactor(write.secrets.values)),
+  )
   yield* runHooks(write.hooks, "after_create_message", [], stored)
   return stored
 })
