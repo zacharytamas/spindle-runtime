@@ -87,7 +87,7 @@ Each live lane runs in its own git worktree at the PR head. The `control-cli` sk
 
 ## Set up the workspace and the requirement ledger (M1-1)
 
-The ledger is a JSON map from requirement id to `{ status, milestone, tests, reason }`. The status is one of `covered`, `planned`, `deferred`, and `not-testable`. A requirement id is the page name plus a hash of the section and the statement text, so a spec edit shows up as one removed id and one added id.
+The ledger is a JSON map from requirement id to `{ status, milestone, tests, reason }`. The status is one of `covered`, `partial`, `planned`, `deferred`, and `not-testable`. A `partial` entry names a passing test for the part of a statement that its milestone implements, and its reason says what a later milestone still owes. A requirement id is the page name plus a hash of the section and the statement text, so a spec edit shows up as one removed id and one added id.
 
 **Depends on.** None.
 
@@ -118,8 +118,8 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 
 **You see.**
 
-- [x] `pnpm check` exits 0 and its last line reads `ledger ok, 766 requirements, 0 covered`.
-- [x] `node scripts/spec-requirements.mjs --check` prints `606 RFC 2119 statements, 61 lowercase must or should statements, 99 curated statements with no keyword, 24 pages`.
+- [x] `pnpm check` exits 0 and its last line reads `ledger ok, 777 requirements, 0 covered`.
+- [x] `node scripts/spec-requirements.mjs --check` prints `606 RFC 2119 statements, 61 lowercase must or should statements, 110 curated statements with no keyword, 24 pages`.
 - [x] `node packages/runtime/dist/cli/main.js --version` prints `platform node`, and `bun packages/runtime/dist/cli/main.js --version` prints `platform bun`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -558,7 +558,7 @@ Each row was run in this planning session on macOS with Node 22.22.3 and Bun 1.4
 
 | Question | Result | How it was checked |
 |---|---|---|
-| How many normative statements does spec 0.2.0 hold? | 606 statements with an RFC 2119 keyword, 61 with a lowercase "must" or "should", and 99 curated statements with no keyword, on 24 pages, with 766 unique ids. The first count was 458 and 54, because the script dropped each list item and table row under a line such as "The runtime MUST" that ends in a colon. The second count was 580 and 61, because the script read only the last sentence of a lead-in and skipped a table under a lead-in that ends in a period. | `node scripts/spec-requirements.mjs --refresh --check` at spec commit `f462a67`. |
+| How many normative statements does spec 0.2.0 hold? | 606 statements with an RFC 2119 keyword, 61 with a lowercase "must" or "should", and 110 curated statements with no keyword, on 24 pages, with 777 unique ids. The first count was 458 and 54, because the script dropped each list item and table row under a line such as "The runtime MUST" that ends in a colon. The second count was 580 and 61, because the script read only the last sentence of a lead-in and skipped a table under a lead-in that ends in a period. | `node scripts/spec-requirements.mjs --refresh --check` at spec commit `f462a67`. |
 | Is Effect v4 stable? | `effect@4.1.5` is the `latest` tag. Version 4.0.0 was published on 2026-10-01. | `npm view effect dist-tags time`. |
 | Do the Effect platform modules this plan names exist? | `@effect/platform-node@4.1.5` ships `NodeRuntime`, `NodeServices`, and `NodeHttpServer`. `@effect/platform-bun@4.1.5` ships `BunRuntime`, `BunServices`, and `BunHttpServer`. Both SQLite packages ship `SqliteClient` and `SqliteMigrator`. | The file index of each package on unpkg. |
 | Does the Node SQLite package need a native addon? | No. `@effect/sql-sqlite-node@4.1.5` imports `node:sqlite` and has `effect` as its only dependency. | The import list of its `dist/SqliteClient.js`. |
