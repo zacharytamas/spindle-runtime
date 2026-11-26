@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
@@ -10,8 +11,9 @@ import { layer as supervisorLayer } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../src/execution/trigger.ts"
 import { decodeScript, scriptedProvider } from "../src/providers/script.ts"
 import { Registry } from "../src/registry/Registry.ts"
+import { MessageStore } from "../src/store/MessageStore.ts"
 import { layer } from "../src/store/sqlite.ts"
-import { ThreadStore } from "../src/store/ThreadStore.ts"
+import { appendMessages } from "./store-fixtures.ts"
 
 const USAGE = `Usage: step-probe <command>
 
@@ -50,13 +52,13 @@ const run = async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const provider = scriptedProvider(yield* decodeScript(text))
-        const store = yield* ThreadStore
+        const store = yield* MessageStore
         const thread = yield* createThread(agent)
         const earlier = Array.from({ length: seed }, (_, index) => ({
           role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
           content: `Earlier message ${index}. ${"A sentence of ordinary length that pads the message. ".repeat(3)}`,
         }))
-        yield* store.appendMessages(thread.id, earlier)
+        yield* appendMessages(thread.id, earlier)
         const started = performance.now()
         const { outcome } = yield* sendMessage(thread.id, "go", { provider, stepCap: cap })
         if (outcome === undefined) return yield* Effect.die("the run had no outcome")

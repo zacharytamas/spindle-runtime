@@ -1,7 +1,9 @@
 import type { AgentDefinition, ToolResult } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Registry } from "../registry/Registry.ts"
-import { type Thread, ThreadStore } from "../store/ThreadStore.ts"
+import type { Thread } from "../store/model.ts"
+import type { Stores } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import { newSecrets } from "./env.ts"
 import { agentHooks, type HookScope, type HookSet, runHooks } from "./hooks.ts"
 import { type ExecutionOptions, learnSecrets } from "./step.ts"
@@ -13,7 +15,7 @@ import { lookup, prepareTurn } from "./turn.ts"
 // apply, and state.execution is null. A state that writes text for user code learns the turn's secrets first.
 const atRest = (thread: Thread, options: { readonly learn: boolean; readonly secrets?: Set<string> }) =>
   Effect.gen(function* () {
-    const services = yield* Effect.context<Registry | ThreadStore>()
+    const services = yield* Effect.context<Registry | Stores>()
     const supervisor = yield* ThreadSupervisor
     const agent = yield* lookup<AgentDefinition>("agent", thread.agentId, undefined)
     const set: HookSet =

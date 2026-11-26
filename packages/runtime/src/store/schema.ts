@@ -1,6 +1,6 @@
 import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
 import { Option, Schema } from "effect"
-import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
+import type { NewMessage, Queued, QueueEntry, Thread } from "./model.ts"
 
 type Text = string | Uint8Array
 

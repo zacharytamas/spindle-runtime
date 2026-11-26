@@ -9,14 +9,16 @@ import type {
   RuntimeSession,
   StoredThread,
 } from "../../conformance/src/RuntimeDriver.ts"
+import { appendMessages } from "../scripts/store-fixtures.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
 import { resolver } from "../src/registry/resolve.ts"
 import { validate } from "../src/registry/validate.ts"
+import { MessageStore } from "../src/store/MessageStore.ts"
+import { RunStore } from "../src/store/RunStore.ts"
 import { layer as storeLayer } from "../src/store/sqlite.ts"
-import { ThreadStore } from "../src/store/ThreadStore.ts"
 
 const definition = (kind: Kind, name: string, value: unknown): Definition => ({
   kind,
@@ -122,12 +124,6 @@ const openSession = (
         return yield* use(yield* SqlClient)
       }),
     )
-  const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
-    reader.runPromise(
-      Effect.gen(function* () {
-        return yield* use(yield* ThreadStore)
-      }),
-    )
   return {
     createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
     state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
@@ -158,10 +154,10 @@ const openSession = (
       ),
     peer: async () => openSession(registry, filename, options, async () => {}),
     messages: (threadId) =>
-      withStore((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })).then(
-        (result) => result.messages,
-      ),
-    seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
+      reader
+        .runPromise(MessageStore.use((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })))
+        .then((result) => result.messages),
+    seed: (threadId, messages) => reader.runPromise(appendMessages(threadId, messages)).then(() => undefined),
     abort: (threadId) =>
       runtime.runPromise(
         Effect.gen(function* () {
@@ -170,7 +166,8 @@ const openSession = (
         }),
       ),
     inspect: (threadId) => rows.runPromise(inspectThread(threadId)),
-    forceRecover: (threadId) => withStore((s) => s.recoverThread(threadId, true)).then(() => undefined),
+    forceRecover: (threadId) =>
+      reader.runPromise(RunStore.use((s) => s.recoverThread(threadId, true))).then(() => undefined),
     queueRaw: (threadId, kind, payload) =>
       withSql((sql) =>
         sql.unsafe("INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, ?, ?, 0)", [

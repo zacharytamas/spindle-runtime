@@ -3,6 +3,8 @@ import type { Message } from "@standardagents/spec"
 import { Effect, Layer } from "effect"
 import { PlatformLive, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
 import { layer as storeLayer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
@@ -62,7 +64,7 @@ describe("spindle across processes", () => {
             (name) => name.startsWith(`request-${owner.pid}-`) || name.startsWith(`request-${first.pid}-`),
           ),
         ).toBe(true)
-        const messages = yield* Effect.flatMap(ThreadStore, (store) =>
+        const messages = yield* Effect.flatMap(MessageStore, (store) =>
           Effect.map(store.getMessages(thread, { order: "asc", includeSilent: true }), (result) => result.messages),
         ).pipe(Effect.provide(storeAt(db)))
         const human = messages.filter((message) => message.role === "user").map((message) => message.content)
@@ -89,7 +91,9 @@ describe("spindle across processes", () => {
         )
         // An observer that opened the file before the crash, and two senders whose messages wait in the queue.
         const observer = yield* Layer.build(storeAt(db))
-        const store = yield* Effect.provide(ThreadStore, observer)
+        const runStore = yield* Effect.provide(RunStore, observer)
+        const threadStore = yield* Effect.provide(ThreadStore, observer)
+        const messageStore = yield* Effect.provide(MessageStore, observer)
         const x = yield* spindle(gate, ["send", thread, "-m", "x", ...project, "--db", db])
         yield* until(
           "x to queue",
@@ -105,12 +109,15 @@ describe("spindle across processes", () => {
         yield* until(
           "the observer to see the run lost",
           Effect.map(
-            Effect.andThen(store.recoverLost(thread), store.getThread(thread)),
+            Effect.andThen(runStore.recoverLost(thread), threadStore.getThread(thread)),
             (found) => found.status.state === "failed",
           ),
         )
-        expect((yield* store.getThread(thread)).status).toMatchObject({ state: "failed", reason: "execution_lost" })
-        expect((yield* store.getThread(otherThread)).status).toMatchObject({ state: "running", reason: null })
+        expect((yield* threadStore.getThread(thread)).status).toMatchObject({
+          state: "failed",
+          reason: "execution_lost",
+        })
+        expect((yield* threadStore.getThread(otherThread)).status).toMatchObject({ state: "running", reason: null })
         const status = yield* spindle(gate, ["status", thread, "--db", db])
         expect(yield* status.exit).toBe(0)
         expect(status.out).toEqual([expect.stringMatching(/^failed execution_lost since /), "queued 2"])
@@ -123,14 +130,19 @@ describe("spindle across processes", () => {
         const again = yield* spindle(gate, ["send", thread, "-m", "z", ...project, "--db", db])
         expect(yield* again.exit).toBe(0)
         expect(again.out).toEqual(["ack: first | x | y | z"])
-        expect(shape((yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages)).toEqual([
+        expect(
+          shape((yield* messageStore.getMessages(thread, { order: "asc", includeSilent: true })).messages),
+        ).toEqual([
           ["user", "first"],
           ["user", "x"],
           ["user", "y"],
           ["user", "z"],
           ["assistant", "ack: first | x | y | z"],
         ])
-        expect((yield* store.getThread(thread)).status).toMatchObject({ state: "idle", reason: "stop_on_response" })
+        expect((yield* threadStore.getThread(thread)).status).toMatchObject({
+          state: "idle",
+          reason: "stop_on_response",
+        })
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )
@@ -155,8 +167,11 @@ describe("spindle across processes", () => {
         yield* run.signal("SIGKILL")
         yield* run.exit
         expect(yield* token.exit).toBe(1)
-        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
-        const stored = (yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages
+        const services = yield* Layer.build(storeAt(db))
+        const messageStore = yield* Effect.provide(MessageStore, services)
+        const threadStore = yield* Effect.provide(ThreadStore, services)
+        const runStore = yield* Effect.provide(RunStore, services)
+        const stored = (yield* messageStore.getMessages(thread, { order: "asc", includeSilent: true })).messages
         expect(shape(stored)).toEqual([
           ["user", `call:${calls}`],
           ["assistant", null],
@@ -164,14 +179,17 @@ describe("spindle across processes", () => {
           ["tool", "error"],
         ])
         expect(stored[3]).toMatchObject({ name: "hold", content: CLOSING.lost, prompt: "assistant" })
-        expect((yield* store.getThread(thread)).status).toMatchObject({ state: "failed", reason: "execution_lost" })
-        expect(yield* store.queueLength(thread)).toBe(1)
+        expect((yield* threadStore.getThread(thread)).status).toMatchObject({
+          state: "failed",
+          reason: "execution_lost",
+        })
+        expect(yield* runStore.queueLength(thread)).toBe(1)
         const after = yield* spindle(gate, ["send", thread, "-m", "after", ...project, "--db", db])
         expect(yield* after.exit).toBe(0)
         expect(after.out).toEqual(["ack: token | after"])
         expect(yield* lines(at("tool-log"))).toEqual(["echo one", "b"])
         expect(
-          shape((yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages).slice(4),
+          shape((yield* messageStore.getMessages(thread, { order: "asc", includeSilent: true })).messages).slice(4),
         ).toEqual([
           ["user", "token"],
           ["user", "after"],
@@ -269,7 +287,7 @@ describe("spindle across processes", () => {
           "the sender to queue its message",
           Effect.sync(() => waiter.err.some((line) => line.includes("waits in its queue"))),
         )
-        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
+        const store = yield* Effect.provide(RunStore, yield* Layer.build(storeAt(db)))
         const claim = yield* store.holderOf(thread)
         const entry = yield* store.nextQueued(thread, {
           flowId: (yield* store.owned(claim?.id ?? "")).get(thread) ?? "",
@@ -338,10 +356,12 @@ describe("spindle across processes", () => {
           `spindle: aborting thread ${thread}`,
           `spindle: idle (aborted_by_user) after 1 step, thread ${thread}`,
         ])
-        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
-        const stored = (yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages
+        const services = yield* Layer.build(storeAt(db))
+        const messageStore = yield* Effect.provide(MessageStore, services)
+        const threadStore = yield* Effect.provide(ThreadStore, services)
+        const stored = (yield* messageStore.getMessages(thread, { order: "asc", includeSilent: true })).messages
         expect(stored.at(-1)).toMatchObject({ role: "tool", tool_status: "error", content: CLOSING.aborted })
-        expect((yield* store.getThread(thread)).terminated).toBeNull()
+        expect((yield* threadStore.getThread(thread)).terminated).toBeNull()
         const next = yield* spindle(gate, ["send", thread, "-m", "next", ...project, "--db", db])
         expect(yield* next.exit).toBe(0)
         expect(next.out).toEqual(["ack: next"])

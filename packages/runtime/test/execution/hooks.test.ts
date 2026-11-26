@@ -4,11 +4,14 @@ import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { project } from "../../../conformance/src/scenarios/harness.ts"
+import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { argumentWatcher } from "../../src/execution/call.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
+
 import { registryOf } from "../spindle-driver.ts"
 
 const feed = (key: string, deltas: ReadonlyArray<string>) => {
@@ -68,18 +71,19 @@ describe("an interrupted hook", () => {
       const registry = registryOf(project({ provider, hooks: [hang], prompt: { hooks: ["hang"] } }))
       const store = Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" }))))
       return yield* Effect.gen(function* () {
-        const threads = yield* ThreadStore
+        const threadStore = yield* ThreadStore
+        const messageStore = yield* MessageStore
         const supervisor = yield* ThreadSupervisor
         const thread = yield* createThread("assistant")
         const fiber = yield* Effect.forkChild(sendMessage(thread.id, "go"))
         yield* Effect.promise(() => inside)
         yield* supervisor.abort(thread.id)
-        expect((yield* threads.getThread(thread.id)).status.state).toBe("running")
+        expect((yield* threadStore.getThread(thread.id)).status.state).toBe("running")
         release()
         yield* Fiber.join(fiber)
-        const stored = (yield* threads.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
-        yield* threads.transaction(threads.appendMessages(thread.id, [{ role: "user", content: "later" }]))
-        const after = (yield* threads.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
+        const stored = (yield* messageStore.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
+        yield* threadStore.transaction(appendMessages(thread.id, [{ role: "user", content: "later" }]))
+        const after = (yield* messageStore.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
         return { stored: stored.map((m) => m.content), after: after.map((m) => m.content) }
       }).pipe(Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), store))))
     })

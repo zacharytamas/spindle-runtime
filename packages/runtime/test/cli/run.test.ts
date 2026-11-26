@@ -4,8 +4,8 @@ import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { PlatformLive, SqliteLive } from "#platform"
 import { spindle } from "../../src/cli/main.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
-import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
 const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
   Effect.gen(function* () {
@@ -30,7 +30,7 @@ const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixt
 const storedMessages = (filename: string, err: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const threadId = err.join("\n").match(/thread ([0-9a-f-]{36})/)?.[1] ?? ""
-    const store = yield* ThreadStore
+    const store = yield* MessageStore
     return (yield* store.getMessages(threadId, { order: "asc", includeSilent: true })).messages
   }).pipe(Effect.provide(Layer.provide(sqliteStore, SqliteLive({ filename }))))
 

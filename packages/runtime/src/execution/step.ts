@@ -12,7 +12,10 @@ import type {
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import { Registry } from "../registry/Registry.ts"
-import { type NewMessage, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
+import type { NewMessage, Queued, Settlement } from "../store/model.ts"
+import { RunStore } from "../store/RunStore.ts"
+import type { Stores } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -246,9 +249,10 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
 
 export const runExecution = (threadId: string, run: Run, control: ThreadControl, options: ExecutionOptions = {}) =>
   Effect.gen(function* () {
-    const store = yield* ThreadStore
+    const runStore = yield* RunStore
+    const threadStore = yield* ThreadStore
     const registry = yield* Registry
-    const services = yield* Effect.context<Registry | ThreadStore>()
+    const services = yield* Effect.context<Registry | Stores>()
     const retries = options.retries ?? DEFAULT_RETRIES
     const stepCap = options.stepCap ?? DEFAULT_STEP_CAP
     const flowId = run.flowId
@@ -286,7 +290,12 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     // Once the run settles, every ThreadState of the execution refuses its calls.
     const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
       Effect.tap(
-        store.settle(threadId, { flowId }, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }),
+        runStore.settle(
+          threadId,
+          { flowId },
+          { state, reason },
+          { continueIfQueued, closing, atCap: steps >= stepCap },
+        ),
         (settlement) =>
           Effect.sync(() => {
             if (settlement !== "continue") run.ended = true
@@ -328,7 +337,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       extra: { readonly error?: RunError; readonly stopTool?: StopToolOutcome } = {},
     ) =>
       settlement === "superseded"
-        ? Effect.flatMap(store.getThread(threadId), (thread) =>
+        ? Effect.flatMap(threadStore.getThread(threadId), (thread) =>
             thread.terminated === null ? settle("failed", "execution_lost") : settle("idle", "aborted"),
           )
         : settlement === "capped"
@@ -336,7 +345,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           : settle(status, reason, extra)
 
     const loop = Effect.gen(function* () {
-      const thread = yield* store.getThread(threadId)
+      const thread = yield* threadStore.getThread(threadId)
       const turn = yield* prepareTurn(thread.agentId)
       const hookSet = yield* turnHooks(turn)
       const history = makeHistory(threadId)
@@ -455,7 +464,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       const runCall = (
         callerSeq: number,
         call: ToolCall,
-        outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
+        outcome: Effect.Effect<ToolResult, never, Registry | Stores>,
       ) =>
         Effect.gen(function* () {
           const returned = run.stop !== undefined ? notRun : yield* outcome
@@ -555,7 +564,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         let prompted = false
         let count = 0
         while (run.stop === undefined) {
-          const entry = yield* store.nextQueued(threadId, { flowId })
+          const entry = yield* runStore.nextQueued(threadId, { flowId })
           if (entry === undefined) break
           count += 1
           if (entry.kind === "tool") {
@@ -748,7 +757,8 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           Effect.orDie(
             Effect.tap(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted), (settlement) =>
               Effect.gen(function* () {
-                if (settlement === "superseded") run.displaced = (yield* store.getThread(threadId)).terminated === null
+                if (settlement === "superseded")
+                  run.displaced = (yield* threadStore.getThread(threadId)).terminated === null
                 run.resumeQueued = settlement === "settled" && run.waitForCallbacks === true
               }),
             ),

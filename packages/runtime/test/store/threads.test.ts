@@ -4,7 +4,9 @@ import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
 import { platformName } from "#platform"
-import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
+import { external } from "../../src/store/model.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
 import { inMemory, storeAt, withDatabaseFile } from "./contract-fixtures.ts"
 
@@ -52,13 +54,14 @@ describe("ThreadStore", () => {
 
     it.effect("terminate sets the terminated time once and keeps it on a second call", () =>
       Effect.gen(function* () {
-        const store = yield* ThreadStore
-        const thread = yield* store.createThread({ agentId: "assistant" })
+        const threadStore = yield* ThreadStore
+        const runStore = yield* RunStore
+        const thread = yield* threadStore.createThread({ agentId: "assistant" })
         yield* TestClock.adjust("1 second")
-        const terminated = yield* store.terminate(thread.id, external)
+        const terminated = yield* runStore.terminate(thread.id, external)
         yield* TestClock.adjust("1 second")
-        expect(yield* store.terminate(thread.id, external)).toBe(terminated)
-        expect((yield* store.getThread(thread.id)).terminated).toBe(1_000_000)
+        expect(yield* runStore.terminate(thread.id, external)).toBe(terminated)
+        expect((yield* threadStore.getThread(thread.id)).terminated).toBe(1_000_000)
       }).pipe(Effect.provide(inMemory)),
     )
   })

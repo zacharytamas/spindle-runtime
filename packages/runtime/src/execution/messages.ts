@@ -1,6 +1,7 @@
 import type { Message, MessageUpdates } from "@standardagents/spec"
 import { Clock, Effect } from "effect"
-import { type NewMessage, ThreadStore, type WriteOrigin } from "../store/ThreadStore.ts"
+import { MessageStore } from "../store/MessageStore.ts"
+import type { NewMessage, WriteOrigin } from "../store/model.ts"
 import type { Secrets } from "./env.ts"
 import type { History } from "./history.ts"
 import {
@@ -145,7 +146,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   // The queue entry that this message delivers, removed when the message is stored.
   dequeue?: number,
 ) {
-  const store = yield* ThreadStore
+  const store = yield* MessageStore
   const depth = yield* depthOf(write)
   const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
@@ -223,7 +224,7 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   messageId: string,
   updates: MessageUpdates,
 ) {
-  const store = yield* ThreadStore
+  const store = yield* MessageStore
   const depth = yield* depthOf(write)
   const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))

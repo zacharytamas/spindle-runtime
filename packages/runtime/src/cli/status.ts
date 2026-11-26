@@ -1,6 +1,8 @@
 import { Cause, Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
+import { RunStore } from "../store/RunStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
+
 import { fail, openDatabase, RunFailed } from "./run.ts"
 
 const time = (micros: number) =>
@@ -19,16 +21,17 @@ export const statusCommand = Command.make(
       const filename = path.resolve(args.db)
       const database = yield* openDatabase(filename)
       yield* Effect.gen(function* () {
-        const store = yield* ThreadStore
-        yield* store.recoverLost(args.thread)
-        const thread = yield* store
+        const runStore = yield* RunStore
+        const threadStore = yield* ThreadStore
+        yield* runStore.recoverLost(args.thread)
+        const thread = yield* threadStore
           .getThread(args.thread)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${args.thread} in ${filename}`)))
         const { state, since, reason } = thread.status
         yield* Console.log(`${state} ${reason ?? "none"} since ${time(since)}`)
-        const holder = yield* store.holderOf(thread.id)
+        const holder = yield* runStore.holderOf(thread.id)
         if (holder !== null) yield* Console.log(`held by process ${holder.pid}`)
-        yield* Console.log(`queued ${yield* store.queueLength(thread.id)}`)
+        yield* Console.log(`queued ${yield* runStore.queueLength(thread.id)}`)
         if (thread.terminated !== null) yield* Console.log(`terminated ${time(thread.terminated)}`)
       }).pipe(Effect.provide(database))
     }).pipe(
@@ -55,7 +58,7 @@ export const recoverCommand = Command.make(
   ({ thread, db, force }) =>
     Effect.gen(function* () {
       const database = yield* openDatabase(db)
-      const result = yield* ThreadStore.use((store) => store.recoverThread(thread, force)).pipe(
+      const result = yield* RunStore.use((store) => store.recoverThread(thread, force)).pipe(
         Effect.provide(database),
         Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)),
       )

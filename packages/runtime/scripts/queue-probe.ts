@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -10,8 +11,9 @@ import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/Thr
 import { createThread, stateAtRest } from "../src/execution/trigger.ts"
 import { scriptedProvider } from "../src/providers/script.ts"
 import { Registry } from "../src/registry/Registry.ts"
+import { MessageStore } from "../src/store/MessageStore.ts"
+import { RunStore } from "../src/store/RunStore.ts"
 import { layer } from "../src/store/sqlite.ts"
-import { ThreadStore } from "../src/store/ThreadStore.ts"
 
 const USAGE = `Usage: queue-probe <command> --dir <project> --db <file>
 
@@ -66,7 +68,8 @@ const act = (state: ThreadState): Promise<unknown> => {
 const bench = Effect.gen(function* () {
   const threads = Number(option("threads") ?? 100)
   const messages = Number(option("messages") ?? 10)
-  const store = yield* ThreadStore
+  const messageStore = yield* MessageStore
+  const runStore = yield* RunStore
   const supervisor = yield* ThreadSupervisor
   const ids: Array<string> = []
   for (let index = 0; index < threads; index++) ids.push((yield* createThread("assistant")).id)
@@ -95,10 +98,10 @@ const bench = Effect.gen(function* () {
   let replies = 0
   let left = 0
   for (const id of ids) {
-    const listed = (yield* store.getMessages(id, { includeSilent: true, order: "asc" })).messages
+    const listed = (yield* messageStore.getMessages(id, { includeSilent: true, order: "asc" })).messages
     stored += listed.filter((message) => message.role === "user").length
     replies += listed.filter((message) => message.role === "assistant").length
-    left += yield* store.queueLength(id)
+    left += yield* runStore.queueLength(id)
   }
   const ok = stored === threads * messages && left === 0 && replies > 0
   console.log(

@@ -4,6 +4,7 @@ import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
@@ -11,8 +12,11 @@ import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
+import { external } from "../../src/store/model.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
-import { external, ThreadStore } from "../../src/store/ThreadStore.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
 
 const contents = (messages: ReadonlyArray<Message>) => messages.map((message) => message.content)
@@ -22,10 +26,10 @@ const inMemory = () => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filenam
 // A store that counts the reads of a thread's whole history that it serves.
 const countingStore = (reads: { count: number }) =>
   Layer.effect(
-    ThreadStore,
+    MessageStore,
     Effect.gen(function* () {
-      const store = yield* ThreadStore
-      return ThreadStore.of({
+      const store = yield* MessageStore
+      return MessageStore.of({
         ...store,
         history: (threadId) =>
           Effect.suspend(() => {
@@ -34,7 +38,7 @@ const countingStore = (reads: { count: number }) =>
           }),
       })
     }),
-  ).pipe(Layer.provide(inMemory()))
+  ).pipe(Layer.provideMerge(inMemory()))
 
 const runOnce = (setup: Setup, reads: { count: number }, outside?: (state: ThreadState) => void) =>
   Effect.gen(function* () {
@@ -218,7 +222,7 @@ describe("the history an execution keeps", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.appendMessages(thread.id, [{ role: "user", content: "first" }])
+      yield* appendMessages(thread.id, [{ role: "user", content: "first" }])
       const history = makeHistory(thread.id)
       expect(contents((yield* history.read).messages)).toEqual(["first"])
       const hooks: HookScope = {
@@ -230,7 +234,7 @@ describe("the history an execution keeps", () => {
       const write = { origin: external, threadId: thread.id, hooks, secrets: newSecrets(), call: undefined, history }
       const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
       expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
-      yield* store.appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
+      yield* appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
       expect(contents((yield* history.read).messages)).toEqual(["first", "from another writer"])
     }).pipe(Effect.provide(inMemory())),
   )
@@ -240,7 +244,7 @@ describe("the history an execution keeps", () => {
       const store = yield* ThreadStore
       for (const savepoint of [false, true]) {
         const thread = yield* store.createThread({ agentId: "assistant" })
-        const append = (content: string) => store.appendMessages(thread.id, [{ role: "user", content }])
+        const append = (content: string) => appendMessages(thread.id, [{ role: "user", content }])
         const history = makeHistory(thread.id)
         yield* append("first")
         expect(contents((yield* history.read).messages)).toEqual(["first"])
@@ -286,7 +290,7 @@ describe("the history an execution keeps", () => {
         const thread = yield* createThread("assistant")
         elsewhere = yield* stateAtRest(thread.id)
         yield* sendMessage(thread.id, "go", { observe })
-        return (yield* (yield* ThreadStore).history(thread.id)).messages
+        return (yield* (yield* MessageStore).history(thread.id)).messages
       }).pipe(
         Effect.provide(Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), inMemory()))),
       )
@@ -312,10 +316,10 @@ it.effect("runs the committed claim when its sender is interrupted before execut
   const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }])
   let cut = true
   const store = Layer.effect(
-    ThreadStore,
+    RunStore,
     Effect.gen(function* () {
-      const original = yield* ThreadStore
-      return ThreadStore.of({
+      const original = yield* RunStore
+      return RunStore.of({
         ...original,
         admit: (...args) =>
           original.admit(...args).pipe(
@@ -330,7 +334,7 @@ it.effect("runs the committed claim when its sender is interrupted before execut
           ),
       })
     }),
-  ).pipe(Layer.provide(inMemory()))
+  ).pipe(Layer.provideMerge(inMemory()))
   return Effect.gen(function* () {
     const thread = yield* createThread("assistant")
     const sender = yield* Effect.forkChild(sendMessage(thread.id, "one"))

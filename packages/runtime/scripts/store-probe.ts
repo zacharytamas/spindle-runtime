@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
@@ -9,9 +10,13 @@ import type { Message } from "@standardagents/spec"
 import { Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { platformName, SqliteLive } from "#platform"
+import { MessageStore } from "../src/store/MessageStore.ts"
+import { external, type NewMessage } from "../src/store/model.ts"
+import { RunStore } from "../src/store/RunStore.ts"
+import type { Stores } from "../src/store/sqlite.ts"
 import { layer } from "../src/store/sqlite.ts"
-import { external, type NewMessage, ThreadStore } from "../src/store/ThreadStore.ts"
-import { admitEntry, drainEntries } from "./store-fixtures.ts"
+import { ThreadStore } from "../src/store/ThreadStore.ts"
+import { admitEntry, appendMessages, drainEntries, settleRun, startRun } from "./store-fixtures.ts"
 
 const USAGE = `Usage: store-probe <command> --db <file> [options]
 
@@ -49,28 +54,8 @@ const fail = (message: string): never => {
 
 const print = (value: unknown) => console.log(JSON.stringify(value, (_, v) => (typeof v === "bigint" ? `${v}n` : v)))
 
-const startRun = (threadId: string) =>
-  ThreadStore.use((store) =>
-    Effect.gen(function* () {
-      if (!(yield* store.claim(threadId, claim)))
-        yield* store.admit(
-          threadId,
-          { kind: "message", message: { role: "user", content: "trigger" } },
-          claim,
-          external,
-        )
-      return (yield* store.getThread(threadId)).status
-    }),
-  )
-const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason: string }) =>
-  ThreadStore.use((store) =>
-    Effect.gen(function* () {
-      yield* store.settle(threadId, { flowId: claim.flowId }, outcome, { continueIfQueued: false, closing: "" })
-      return (yield* store.getThread(threadId)).status
-    }),
-  )
 const claim = { holder: crypto.randomUUID(), flowId: crypto.randomUUID() }
-const withStore = <A, E>(filename: string, use: Effect.Effect<A, E, ThreadStore | SqlClient>) =>
+const withStore = <A, E>(filename: string, use: Effect.Effect<A, E, Stores | SqlClient>) =>
   Effect.runPromise(Effect.provide(use, Layer.provideMerge(layer, SqliteLive({ filename }))))
 
 const runtimeCommand = (runtime: "node" | "bun") => (runtime === platformName ? process.execPath : runtime)
@@ -173,7 +158,7 @@ const createThread = (filename: string, agentId = "probe") =>
 
 const readThread = (threadId: string) =>
   Effect.gen(function* () {
-    const store = yield* ThreadStore
+    const store = yield* MessageStore
     return (yield* store.getMessages(threadId, { order: "asc", includeSilent: true })).messages
   })
 
@@ -203,7 +188,7 @@ const commands: Record<string, () => Promise<void>> = {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: `written-by-${platformName}` })
-        const messages = yield* store.appendMessages(thread.id, [
+        const messages = yield* appendMessages(thread.id, [
           { role: "user", content: `hello from ${platformName}` },
           {
             role: "assistant",
@@ -226,8 +211,8 @@ const commands: Record<string, () => Promise<void>> = {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "roundtrip" })
-        yield* store.appendMessages(thread.id, [{ role: "user", content: "What is 6 times 7?" }])
-        yield* store.appendMessages(thread.id, [
+        yield* appendMessages(thread.id, [{ role: "user", content: "What is 6 times 7?" }])
+        yield* appendMessages(thread.id, [
           { role: "assistant", content: null, tool_calls: toolCalls("multiply", "call-1") },
           { role: "tool", content: "42", name: "multiply", tool_call_id: "call-1", tool_status: "success" },
         ])
@@ -246,9 +231,7 @@ const commands: Record<string, () => Promise<void>> = {
   append: async () => {
     const [message] = await withStore(
       required("db"),
-      ThreadStore.use((store) =>
-        store.appendMessages(required("thread"), [{ role: "user", content: option("content") ?? "appended" }]),
-      ),
+      appendMessages(required("thread"), [{ role: "user", content: option("content") ?? "appended" }]),
     )
     print({ runtime: platformName, pid: process.pid, appended: message })
     if (has("hold")) stayAlive()
@@ -282,8 +265,8 @@ const commands: Record<string, () => Promise<void>> = {
           store.transaction(
             Effect.gen(function* () {
               const [assistant, ...results] = stepRecords(step)
-              yield* store.appendMessages(threadId, assistant === undefined ? [] : [assistant])
-              yield* store.appendMessages(threadId, results)
+              yield* appendMessages(threadId, assistant === undefined ? [] : [assistant])
+              yield* appendMessages(threadId, results)
               if (hold) {
                 stayAlive()
                 print({ runtime: platformName, pid: process.pid, insideTransaction: true, written: 3, step })
@@ -444,13 +427,13 @@ const commands: Record<string, () => Promise<void>> = {
   dequeue: async () => {
     const taken = await withStore(
       required("db"),
-      ThreadStore.use((store) =>
+      RunStore.use((store) =>
         Effect.gen(function* () {
           const threadId = required("thread")
           yield* store.recoverLost(threadId)
           if (!(yield* store.claim(threadId, claim))) return []
           const taken = yield* drainEntries(threadId, claim.flowId)
-          yield* settleRun(threadId, { state: "idle", reason: "awaiting_human" })
+          yield* settleRun(threadId, claim, { state: "idle", reason: "awaiting_human" })
           return taken
         }),
       ),
@@ -482,13 +465,13 @@ const commands: Record<string, () => Promise<void>> = {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "status" })
         const initial = (yield* store.getThread(thread.id)).status
-        yield* startRun(thread.id)
-        const first = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
+        yield* startRun(thread.id, claim)
+        const first = yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_on_response" })
         yield* Effect.sleep("5 millis")
-        const second = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
+        const second = yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_on_response" })
         yield* Effect.sleep("5 millis")
-        yield* startRun(thread.id)
-        const third = yield* settleRun(thread.id, { state: "idle", reason: "stop_tool" })
+        yield* startRun(thread.id, claim)
+        const third = yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_tool" })
         return { thread: thread.id, initial, first, second, third }
       }),
     )
@@ -503,12 +486,13 @@ const commands: Record<string, () => Promise<void>> = {
     const result = await withStore(
       required("db"),
       Effect.gen(function* () {
-        const store = yield* ThreadStore
-        const thread = yield* store.createThread({ agentId: "silent" })
-        yield* store.appendMessages(thread.id, [{ role: "user", content: "visible" }])
-        yield* store.appendMessages(thread.id, [{ role: "user", content: "silent", silent: true }])
-        const ordinary = yield* store.getMessages(thread.id)
-        const all = yield* store.getMessages(thread.id, { includeSilent: true })
+        const threadStore = yield* ThreadStore
+        const messageStore = yield* MessageStore
+        const thread = yield* threadStore.createThread({ agentId: "silent" })
+        yield* appendMessages(thread.id, [{ role: "user", content: "visible" }])
+        yield* appendMessages(thread.id, [{ role: "user", content: "silent", silent: true }])
+        const ordinary = yield* messageStore.getMessages(thread.id)
+        const all = yield* messageStore.getMessages(thread.id, { includeSilent: true })
         return {
           thread: thread.id,
           defaultRead: ordinary.messages.map((m) => m.content),
@@ -546,25 +530,26 @@ const commands: Record<string, () => Promise<void>> = {
     const result = await withStore(
       required("db"),
       Effect.gen(function* () {
-        const store = yield* ThreadStore
+        const threadStore = yield* ThreadStore
+        const messageStore = yield* MessageStore
         const sql = yield* SqlClient
         const [info] = yield* sql<{ version: string; journal: string; synchronous: number }>`
           SELECT sqlite_version() AS version,
             (SELECT journal_mode FROM pragma_journal_mode) AS journal,
             (SELECT synchronous FROM pragma_synchronous) AS synchronous`
-        const thread = yield* store.createThread({ agentId: "bench" })
+        const thread = yield* threadStore.createThread({ agentId: "bench" })
         const appendMs: Array<number> = []
         for (let n = 0; n < appends; n++) {
           const message: NewMessage = { role: n % 2 === 0 ? "user" : "assistant", content: `message ${n} `.repeat(8) }
           const start = performance.now()
-          yield* store.appendMessages(thread.id, [message])
+          yield* appendMessages(thread.id, [message])
           appendMs.push(performance.now() - start)
         }
         const readMs: Array<number> = []
         let returned = 0
         for (let n = 0; n < reads; n++) {
           const start = performance.now()
-          const page = yield* store.getMessages(thread.id, { limit: 1000, order: "asc" })
+          const page = yield* messageStore.getMessages(thread.id, { limit: 1000, order: "asc" })
           readMs.push(performance.now() - start)
           returned = page.messages.length
         }
