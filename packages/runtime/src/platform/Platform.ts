@@ -7,6 +7,7 @@ import type * as BunPlatform from "./bun.ts"
 import type * as NodePlatform from "./node.ts"
 
 export interface Platform {
+  readonly isMain: (meta: ImportMeta) => boolean
   readonly openChatTerminal: typeof import("./chat-terminal.ts").openChatTerminal
   readonly platformName: "node" | "bun"
   readonly PlatformLive: Layer.Layer<

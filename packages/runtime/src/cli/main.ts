@@ -2,7 +2,7 @@
 import { SPEC_VERSION } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Schema } from "effect"
 import { Command } from "effect/cli"
-import { PlatformLive, platformName, runMain } from "#platform"
+import { isMain, PlatformLive, platformName, runMain } from "#platform"
 import { chatCommand } from "./chat.ts"
 import { runCommand } from "./run.ts"
 import { sendCommand } from "./send.ts"
@@ -19,11 +19,13 @@ const packageVersion = Effect.gen(function* () {
   return version
 })
 
-const spindle = Command.make("spindle").pipe(
+export const spindle = Command.make("spindle").pipe(
   Command.withSubcommands([validateCommand, runCommand, chatCommand, sendCommand, statusCommand, recoverCommand]),
 )
 
-Effect.gen(function* () {
-  const version = yield* packageVersion
-  yield* Command.run(spindle, { version: `${version} (spec ${SPEC_VERSION}, platform ${platformName})` })
-}).pipe(Effect.provide(PlatformLive), runMain)
+if (isMain(import.meta)) {
+  Effect.gen(function* () {
+    const version = yield* packageVersion
+    yield* Command.run(spindle, { version: `${version} (spec ${SPEC_VERSION}, platform ${platformName})` })
+  }).pipe(Effect.provide(PlatformLive), runMain)
+}

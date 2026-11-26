@@ -3,11 +3,9 @@ import { Clock, ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path }
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { PlatformLive, SqliteLive } from "#platform"
-import { runCommand } from "../../src/cli/run.ts"
+import { spindle } from "../../src/cli/main.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
-
-const spindle = Command.make("spindle").pipe(Command.withSubcommands([runCommand]))
 
 const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
   Effect.gen(function* () {
