@@ -3,9 +3,11 @@ import {
   type FetchLike,
   type LLMProviderInterface,
   mapReasoningLevel,
+  type ProviderConfigSlots,
   ProviderError,
   type ProviderErrorCode,
   type ProviderFactoryConfig,
+  type ProviderFactoryWithOptions,
   type ProviderFinishReason,
   type ProviderMessage,
   type ProviderRequest,
@@ -326,7 +328,7 @@ const responseOf = (body: unknown): ProviderResponse => {
   }
 }
 
-export const openaiCompatible = Object.assign(
+export const openaiCompatible: ProviderFactoryWithOptions = Object.assign(
   (config: ProviderFactoryConfig): LLMProviderInterface => {
     const send: FetchLike = config.fetch ?? ((input, init) => fetch(input, init))
     const baseUrl = (typeof config.baseUrl === "string" ? config.baseUrl : "https://api.openai.com/v1").replace(
@@ -383,6 +385,6 @@ export const openaiCompatible = Object.assign(
         description: "Base URL of the chat completions API, without /chat/completions.",
       },
       timeout: { type: "number", required: false, description: "Request timeout in milliseconds." },
-    },
+    } satisfies ProviderConfigSlots,
   },
 )
