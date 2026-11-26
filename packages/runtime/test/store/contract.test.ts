@@ -205,6 +205,25 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect(
+      "appendMessages and updateMessage fail with ValueNotJson for a BigInt in metadata and write nothing",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          const appended = yield* Effect.flip(
+            store.appendMessages(thread.id, [user("first"), user("second", { metadata: { count: 10n } })]),
+          )
+          expect(appended).toMatchObject({ _tag: "ValueNotJson", path: "$.count", found: "a BigInt" })
+          expect(appended.message).toContain("metadata")
+          expect((yield* store.getMessages(thread.id)).total).toBe(0)
+          const [message] = yield* store.appendMessages(thread.id, [user("kept", { metadata: { n: 1 } })])
+          const updated = yield* Effect.flip(store.updateMessage(thread.id, message?.id ?? "", { metadata: { n: 2n } }))
+          expect(updated).toMatchObject({ _tag: "ValueNotJson", path: "$.n" })
+          expect(yield* store.getMessage(thread.id, message?.id ?? "")).toEqual(message)
+        }).pipe(Effect.provide(inMemory)),
+    )
+
     it.effect("appendMessages fails with ThreadNotFound and writes nothing for an unknown thread", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
@@ -514,6 +533,61 @@ describe("ThreadStore", () => {
           yield* store.setValue(thread.id, "kept", 1)
           yield* Effect.flip(store.setValue(thread.id, "kept", 10n))
           expect(yield* store.getValue(thread.id, "kept")).toBe(1)
+        }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("setValue accepts a plain object whose prototype is not this realm's Object.prototype", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const foreign = Object.assign(Object.create(Object.create(Object.prototype)), { x: 1, nested: [{ y: "z" }] })
+        const bare = Object.assign(Object.create(null), { x: 2 })
+        yield* store.setValue(thread.id, "foreign", foreign)
+        yield* store.setValue(thread.id, "bare", bare)
+        expect(yield* store.getValue(thread.id, "foreign")).toEqual({ x: 1, nested: [{ y: "z" }] })
+        expect(yield* store.getValue(thread.id, "bare")).toEqual({ x: 2 })
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("setValue stores the value it validated, even when the caller changes it before the write runs", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const value: { x: number } = { x: 1 }
+        const write = store.setValue(thread.id, "changed", value)
+        value.x = Number.POSITIVE_INFINITY
+        expect(yield* Effect.flip(write)).toMatchObject({ _tag: "ValueNotJson", path: "$.x", found: "Infinity" })
+        expect(yield* store.getValue(thread.id, "changed")).toBeNull()
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect(
+      "setValue fails with ValueNotJson, not a thrown error, for a getter that throws or a value nested too deep",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          const nest = (levels: number) => {
+            let value: unknown = "leaf"
+            for (let n = 0; n < levels; n++) value = { a: value }
+            return value
+          }
+          const throwing = {
+            get broken(): never {
+              throw new Error("boom")
+            },
+          }
+          const getter = yield* Effect.flip(store.setValue(thread.id, "getter", throwing))
+          expect(getter).toMatchObject({ _tag: "ValueNotJson", path: "$" })
+          expect(getter.message).toContain("boom")
+          const deep = yield* Effect.flip(store.setValue(thread.id, "deep", nest(20_000)))
+          expect(deep).toMatchObject({ _tag: "ValueNotJson" })
+          expect(deep.message).toContain("1000 levels")
+          yield* store.setValue(thread.id, "deepest", nest(1000))
+          expect(JSON.stringify(yield* store.getValue(thread.id, "deepest"))).toBe(JSON.stringify(nest(1000)))
+          expect(yield* Effect.flip(store.setValue(thread.id, "too deep", nest(1001)))).toMatchObject({
+            _tag: "ValueNotJson",
+          })
         }).pipe(Effect.provide(inMemory)),
     )
 

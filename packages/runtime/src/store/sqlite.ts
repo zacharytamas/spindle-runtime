@@ -3,7 +3,6 @@ import * as Migrator from "effect/sql/Migrator"
 import { SqlClient } from "effect/sql/SqlClient"
 import threads from "./migrations/0001_threads.ts"
 import {
-  findNotJson,
   type MessageRow,
   messageColumns,
   messageRow,
@@ -12,6 +11,7 @@ import {
   runReasonColumn,
   type ThreadRow,
   threadColumns,
+  toJson,
   toMessage,
   toQueued,
   toStatus,
@@ -27,6 +27,12 @@ const loneSurrogate = /[\uD800-\uDFFF]/u
 
 // SQLite stores a key as UTF-8, which has no encoding for a lone surrogate, so two such keys would collide.
 const isWellFormed = (key: string) => !loneSurrogate.test(key)
+
+const json = (field: string, value: unknown): Effect.Effect<string, ValueNotJson> =>
+  Effect.suspend(() => {
+    const text = toJson(value)
+    return typeof text === "string" ? Effect.succeed(text) : Effect.fail(new ValueNotJson({ field, ...text }))
+  })
 
 const first = <A, E>(rows: ReadonlyArray<A>, missing: () => E): Effect.Effect<A, E> =>
   rows[0] === undefined ? Effect.fail(missing()) : Effect.succeed(rows[0])
@@ -59,7 +65,7 @@ export const layer = Layer.effect(
               id: crypto.randomUUID(),
               agent_id: thread.agentId,
               parent_id: thread.parentId ?? null,
-              arguments: JSON.stringify(thread.arguments ?? {}),
+              arguments: yield* json("the thread arguments", thread.arguments ?? {}),
               created_at: yield* nowMicros,
             }
             const inserted =
@@ -108,7 +114,15 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             yield* requireThread(threadId)
             const createdAt = yield* nowMicros
-            const rows = messages.map((message) => messageRow(threadId, crypto.randomUUID(), createdAt, message))
+            const rows: Array<ReturnType<typeof messageRow>> = []
+            for (const message of messages)
+              rows.push(
+                messageRow(threadId, crypto.randomUUID(), createdAt, message, {
+                  attachments:
+                    message.attachments == null ? null : yield* json("the message attachments", message.attachments),
+                  metadata: yield* json("the message metadata", message.metadata ?? {}),
+                }),
+              )
             for (const row of rows) yield* sql`INSERT INTO messages ${sql.insert(row)}`
             return rows.map(toMessage)
           }),
@@ -146,7 +160,12 @@ export const layer = Layer.effect(
               ...(updates.content === undefined ? {} : { content: updates.content }),
               ...(updates.metadata === undefined
                 ? {}
-                : { metadata: JSON.stringify({ ...JSON.parse(current.metadata), ...updates.metadata }) }),
+                : {
+                    metadata: yield* json("the message metadata", {
+                      ...JSON.parse(current.metadata),
+                      ...updates.metadata,
+                    }),
+                  }),
             }
             if (Object.keys(changes).length > 0) yield* sql`UPDATE messages SET ${sql.update(changes)} WHERE ${where}`
             const updated = yield* selectMessages(where)
@@ -180,9 +199,10 @@ export const layer = Layer.effect(
         sql.withTransaction(
           Effect.gen(function* () {
             yield* requireThread(threadId)
+            const payload = yield* json("the queue entry", queuePayload(entry))
             const queuedAt = yield* nowMicros
             const rows = yield* sql<QueueRow>`
-              INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload: queuePayload(entry), queued_at: queuedAt })}
+              INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload, queued_at: queuedAt })}
               RETURNING seq, kind, payload, queued_at`
             return toQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
           }),
@@ -211,13 +231,12 @@ export const layer = Layer.effect(
         if (!isWellFormed(key)) return Effect.fail(new KeyNotWellFormed({ key }))
         if (value === null || value === undefined)
           return Effect.asVoid(sql`DELETE FROM kv WHERE thread_id = ${threadId} AND key = ${key}`)
-        const notJson = findNotJson(value)
-        if (notJson !== undefined) return Effect.fail(new ValueNotJson({ key, ...notJson }))
         return sql.withTransaction(
           Effect.gen(function* () {
+            const text = yield* json(`the value of key ${JSON.stringify(key)}`, value)
             yield* requireThread(threadId)
             yield* sql`
-              INSERT INTO kv ${sql.insert({ thread_id: threadId, key, value: JSON.stringify(value) })}
+              INSERT INTO kv ${sql.insert({ thread_id: threadId, key, value: text })}
               ON CONFLICT (thread_id, key) DO UPDATE SET value = excluded.value`
           }),
         )

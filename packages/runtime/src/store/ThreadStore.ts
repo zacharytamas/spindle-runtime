@@ -62,12 +62,12 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
 }> {}
 
 export class ValueNotJson extends Data.TaggedError("ValueNotJson")<{
-  readonly key: string
+  readonly field: string
   readonly path: string
   readonly found: string
 }> {
   override get message() {
-    return `setValue("${this.key}") got ${this.found} at ${this.path}, which JSON cannot represent`
+    return `${this.field} holds ${this.found} at ${this.path}, which JSON cannot represent`
   }
 }
 
@@ -80,7 +80,7 @@ export class KeyNotWellFormed extends Data.TaggedError("KeyNotWellFormed")<{ rea
 export class ThreadStore extends Context.Service<
   ThreadStore,
   {
-    readonly createThread: (thread: NewThread) => Effect.Effect<Thread, ThreadNotFound | SqlError>
+    readonly createThread: (thread: NewThread) => Effect.Effect<Thread, ThreadNotFound | ValueNotJson | SqlError>
     readonly getThread: (threadId: string) => Effect.Effect<Thread, ThreadNotFound | SqlError>
     readonly terminate: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
     readonly setStatus: (threadId: string, status: RunStatus) => Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
@@ -88,17 +88,20 @@ export class ThreadStore extends Context.Service<
     readonly appendMessages: (
       threadId: string,
       messages: ReadonlyArray<NewMessage>,
-    ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | SqlError>
+    ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ValueNotJson | SqlError>
     readonly getMessages: (threadId: string, options?: GetMessagesOptions) => Effect.Effect<MessagesResult, SqlError>
     readonly getMessage: (threadId: string, messageId: string) => Effect.Effect<Message | null, SqlError>
     readonly updateMessage: (
       threadId: string,
       messageId: string,
       updates: MessageUpdates,
-    ) => Effect.Effect<Message, MessageNotFound | SqlError>
+    ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | SqlError>
     readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, SqlError>
 
-    readonly enqueue: (threadId: string, entry: QueueEntry) => Effect.Effect<Queued, ThreadNotFound | SqlError>
+    readonly enqueue: (
+      threadId: string,
+      entry: QueueEntry,
+    ) => Effect.Effect<Queued, ThreadNotFound | ValueNotJson | SqlError>
     readonly takeQueue: (threadId: string) => Effect.Effect<ReadonlyArray<Queued>, SqlError>
 
     readonly getValue: (threadId: string, key: string) => Effect.Effect<unknown, KeyNotWellFormed | SqlError>

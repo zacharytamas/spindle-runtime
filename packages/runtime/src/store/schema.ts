@@ -121,6 +121,7 @@ export const messageRow = (
   id: string,
   createdAt: number,
   message: NewMessage,
+  json: Pick<MessageRow, "attachments" | "metadata">,
 ): MessageRow & { readonly thread_id: string } => ({
   thread_id: threadId,
   id,
@@ -131,7 +132,7 @@ export const messageRow = (
   tool_call_id: message.tool_call_id ?? null,
   tool_status: message.tool_status ?? null,
   status: message.status ?? null,
-  attachments: message.attachments == null ? null : JSON.stringify(message.attachments),
+  attachments: json.attachments,
   reasoning_content: message.reasoning_content ?? null,
   reasoning_details: message.reasoning_details ?? null,
   prompt: message.prompt ?? null,
@@ -139,7 +140,7 @@ export const messageRow = (
   parent_id: message.parent_id ?? null,
   depth: message.depth ?? 0,
   silent: message.silent === true ? 1 : 0,
-  metadata: JSON.stringify(message.metadata ?? {}),
+  metadata: json.metadata,
 })
 
 export interface QueueRow {
@@ -149,8 +150,8 @@ export interface QueueRow {
   readonly queued_at: number
 }
 
-export const queuePayload = (entry: QueueEntry): string =>
-  JSON.stringify(entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args })
+export const queuePayload = (entry: QueueEntry): unknown =>
+  entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args }
 
 export const toQueued = (row: QueueRow): Queued => {
   const payload = JSON.parse(row.payload)
@@ -166,38 +167,76 @@ export interface NotJson {
   readonly found: string
 }
 
-// JSON.stringify drops or rewrites these values instead of failing, so a stored value would not read back equal.
-export const findNotJson = (value: unknown, path = "$", ancestors: Array<object> = []): NotJson | undefined => {
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return undefined
-    case "number":
-      return Number.isFinite(value) ? undefined : { path, found: String(value) }
-    case "bigint":
-      return { path, found: "a BigInt" }
-    case "object": {
-      if (value === null) return undefined
-      if (ancestors.includes(value)) return { path, found: "a circular reference" }
-      const inner = [...ancestors, value]
-      if (Array.isArray(value)) {
-        for (let index = 0; index < value.length; index++) {
-          const found = findNotJson(value[index], `${path}[${index}]`, inner)
-          if (found !== undefined) return found
+export const maxJsonDepth = 1000
+
+class Found implements NotJson {
+  readonly path: string
+  readonly found: string
+  constructor(path: string, found: string) {
+    this.path = path
+    this.found = found
+  }
+}
+
+const read = <A>(path: string, get: () => A): A => {
+  try {
+    return get()
+  } catch (cause) {
+    throw new Found(path, `a property that threw ${String(cause)}`)
+  }
+}
+
+// Builds the text from the same reads that validate it, so a value that changes between the check and
+// the write cannot reach the database. JSON.stringify would drop or rewrite the values rejected here.
+export const toJson = (value: unknown): string | NotJson => {
+  const ancestors = new Set<object>()
+  const write = (value: unknown, path: string): string => {
+    switch (typeof value) {
+      case "string":
+        return JSON.stringify(value)
+      case "boolean":
+        return String(value)
+      case "number":
+        if (Number.isFinite(value)) return JSON.stringify(value)
+        throw new Found(path, String(value))
+      case "bigint":
+        throw new Found(path, "a BigInt")
+      case "object": {
+        if (value === null) return "null"
+        if (ancestors.has(value)) throw new Found(path, "a circular reference")
+        if (ancestors.size === maxJsonDepth) throw new Found(path, `nesting deeper than ${maxJsonDepth} levels`)
+        ancestors.add(value)
+        let text: string
+        if (Array.isArray(value)) {
+          const items: Array<string> = []
+          const length = read(path, () => value.length)
+          for (let index = 0; index < length; index++)
+            items.push(
+              write(
+                read(path, () => value[index]),
+                `${path}[${index}]`,
+              ),
+            )
+          text = `[${items.join(",")}]`
+        } else {
+          const tag = Object.prototype.toString.call(value).slice(8, -1)
+          if (tag !== "Object") throw new Found(path, `a ${tag}`)
+          const members: Array<string> = []
+          for (const [key, member] of read(path, () => Object.entries(value)))
+            if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)
+          text = `{${members.join(",")}}`
         }
-        return undefined
+        ancestors.delete(value)
+        return text
       }
-      const prototype = Object.getPrototypeOf(value)
-      if (prototype !== Object.prototype && prototype !== null)
-        return { path, found: `a ${value.constructor?.name ?? "class"} instance` }
-      for (const [key, entry] of Object.entries(value)) {
-        if (entry === undefined) continue
-        const found = findNotJson(entry, `${path}.${key}`, inner)
-        if (found !== undefined) return found
-      }
-      return undefined
+      default:
+        throw new Found(path, typeof value === "undefined" ? "undefined" : `a ${typeof value}`)
     }
-    default:
-      return { path, found: typeof value === "undefined" ? "undefined" : `a ${typeof value}` }
+  }
+  try {
+    return write(value, "$")
+  } catch (error) {
+    if (error instanceof Found) return { path: error.path, found: error.found }
+    throw error
   }
 }
