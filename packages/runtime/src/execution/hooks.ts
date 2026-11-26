@@ -8,6 +8,7 @@ import type {
 } from "@standardagents/spec"
 import { Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
+import { toJson } from "../store/schema.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -57,6 +58,13 @@ const ROLES: ReadonlyArray<unknown> = ["system", "user", "assistant", "tool"]
 
 const hasRole = (value: unknown) => isRecord(value) && ROLES.includes(value.role)
 
+// A hook's return is user data. Reading it once into plain JSON data runs every getter here, so a getter that throws
+// fails that hook, no later read can throw, and the store can hold what is left.
+const plain = (value: unknown): unknown => {
+  const text = toJson(value)
+  return typeof text === "string" ? JSON.parse(text) : INVALID
+}
+
 const observe = <V>(where: string): Row<V> => ({
   where,
   accept: (_returned, current) => current,
@@ -92,36 +100,58 @@ export const TEXT_FIELDS = [
 
 const isText = (value: unknown) => value === undefined || value === null || typeof value === "string"
 const oneOf = (value: unknown, allowed: ReadonlyArray<unknown>) => value === undefined || allowed.includes(value)
+const optional = (value: unknown, test: (value: unknown) => boolean) => value === undefined || test(value)
+const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+const isString = (value: unknown) => typeof value === "string"
 const loneSurrogate = /[\uD800-\uDFFF]/u
+
+// Messages section 1.2.
+const isAttachmentRef = (value: unknown) =>
+  isRecord(value) &&
+  value.type === "file" &&
+  isString(value.id) &&
+  isString(value.path) &&
+  isString(value.name) &&
+  isString(value.mimeType) &&
+  isCount(value.size) &&
+  optional(value.width, isCount) &&
+  optional(value.height, isCount) &&
+  optional(value.description, isString)
+
+// Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
+const isMessage = (value: unknown): value is Message =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isCount(value.created_at) &&
+  ROLES.includes(value.role) &&
+  (value.content === null || isString(value.content)) &&
+  TEXT_FIELDS.every((field) => isText(value[field])) &&
+  oneOf(value.tool_status, ["success", "error", null]) &&
+  oneOf(value.status, ["pending", "completed", "failed", null]) &&
+  optional(value.depth, isCount) &&
+  optional(value.silent, (silent) => typeof silent === "boolean") &&
+  optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
+  optional(value.metadata, isRecord)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold.
 const acceptMessage = (returned: unknown): Message | typeof INVALID => {
-  if (!isRecord(returned)) return INVALID
-  const metadata = metadataOf(returned.metadata)
-  const { id, created_at, depth } = returned
-  if (
-    metadata === INVALID ||
-    typeof id !== "string" ||
-    id === "" ||
-    loneSurrogate.test(id) ||
-    typeof created_at !== "number" ||
-    !Number.isSafeInteger(created_at) ||
-    created_at < 0 ||
-    !ROLES.includes(returned.role) ||
-    !TEXT_FIELDS.every((field) => isText(returned[field])) ||
-    !oneOf(returned.tool_status, ["success", "error", null]) ||
-    !oneOf(returned.status, ["pending", "completed", "failed", null]) ||
-    !(depth === undefined || (typeof depth === "number" && Number.isSafeInteger(depth) && depth >= 0)) ||
-    !(returned.silent === undefined || typeof returned.silent === "boolean") ||
-    !(returned.attachments === undefined || returned.attachments === null || Array.isArray(returned.attachments))
-  )
-    return INVALID
-  return { ...returned, metadata } as unknown as Message
+  const value = plain(returned)
+  if (!isRecord(value)) return INVALID
+  const metadata = metadataOf(value.metadata)
+  if (metadata === INVALID) return INVALID
+  const message = { ...value, metadata }
+  return isMessage(message) && message.id !== "" && !loneSurrogate.test(message.id) ? message : INVALID
+}
+
+const acceptMessages = (returned: unknown) => {
+  const value = plain(returned)
+  return Array.isArray(value) && value.every(isMessage) ? value : INVALID
 }
 
 // MessageUpdates holds content and metadata. A key the hook adds or changes beyond those has nowhere to go, so the
 // return is refused rather than stored in part. A key the caller passed and the hook kept is the caller's.
 const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
+  returned = plain(returned)
   if (!isRecord(returned)) return INVALID
   const metadata = metadataOf(returned.metadata)
   if (metadata === INVALID) return INVALID
@@ -135,7 +165,26 @@ const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
   return patch
 }
 
-const acceptResult = (returned: unknown) => readResult(returned) ?? INVALID
+const isNewFile = (value: unknown) =>
+  isRecord(value) &&
+  isString(value.name) &&
+  isString(value.mimeType) &&
+  isString(value.data) &&
+  optional(value.width, isCount) &&
+  optional(value.height, isCount)
+
+// Hooks section 6.3: each attachment is a new file or a reference to a stored one.
+const acceptResult = (returned: unknown) => {
+  const result = readResult(returned)
+  const value = result === undefined ? INVALID : plain(result)
+  return isRecord(value) &&
+    optional(
+      value.attachments,
+      (list) => Array.isArray(list) && list.every((item) => isAttachmentRef(item) || isNewFile(item)),
+    )
+    ? (value as unknown as ToolResult)
+    : INVALID
+}
 
 const branch = (where: string): Row<ToolResult> => ({
   where,
@@ -159,15 +208,17 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
   },
   filter_messages: {
     where: "once per context assembly, on the history snapshot",
-    accept: (returned) => (Array.isArray(returned) && returned.every(hasRole) ? (returned as Array<Message>) : INVALID),
+    accept: acceptMessages,
     expects: "an array of messages",
     failure: "keep",
     kept: "kept the history the hook was given",
   },
   prefilter_llm_history: {
     where: "after the history becomes provider messages, before the request",
-    accept: (returned) =>
-      Array.isArray(returned) && returned.every(hasRole) ? (returned as Array<LLMMessage>) : INVALID,
+    accept: (returned) => {
+      const value = plain(returned)
+      return Array.isArray(value) && value.every(hasRole) ? (value as Array<LLMMessage>) : INVALID
+    },
     expects: "an array of messages with the role system, user, assistant, or tool",
     failure: "keep",
     kept: "kept the provider messages the hook was given",
@@ -330,7 +381,12 @@ export const runHooks = <K extends Position>(
         problem = `did not settle within ${Duration.format(timeout)}`
         late = " The hook may still be running, and Spindle cannot undo what it does after this point."
       } else {
-        const next = row.accept(outcome.success.value, current)
+        let next: Values[K] | typeof INVALID
+        try {
+          next = row.accept(outcome.success.value, current)
+        } catch {
+          next = INVALID
+        }
         if (next !== INVALID) {
           current = next
           continue

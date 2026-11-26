@@ -1231,6 +1231,80 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H23 counts a return that does not fit the hook's type as a failure of that hook and finishes the turn",
+    requirements: ["3d8dede1"],
+    run: async (driver) => {
+      const runWith = async (hook: NonNullable<Setup["hooks"]>[number]) => {
+        const provider = new ScriptedProvider([
+          { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
+          { text: "done" },
+        ])
+        let outcome: unknown
+        let stored: ReadonlyArray<Message> = []
+        let logs = ""
+        await using(
+          driver,
+          { provider, tools: noop, hooks: [hook], prompt: { hooks: [hook.id] } },
+          async (session, thread) => {
+            outcome = await send(session, thread, "go")
+            stored = await session.messages(thread)
+            logs = session.logs().join("\n")
+          },
+        )
+        return { outcome, stored, logs, requests: provider.requests.map((request) => history(request).map(sideOf)) }
+      }
+      const kept = [
+        [["user", "go"]],
+        [
+          ["user", "go"],
+          ["assistant", null, ["c1"]],
+          ["tool", "c1"],
+        ],
+      ]
+      const filterReturning = (extra: Record<string, unknown>) =>
+        defineHook({
+          hook: "filter_messages",
+          id: "odd_filter",
+          execute: async (_state, messages) => [...messages, { id: "odd", created_at: 0, ...extra } as Message],
+        })
+      for (const extra of [
+        { role: "user", content: { text: "an object" } },
+        { role: "user" },
+        { role: "user", content: "x", attachments: { id: "not a list" } },
+        { role: "user", content: "x", attachments: [{ id: "a", type: "file" }] },
+      ]) {
+        const result = await runWith(filterReturning(extra))
+        expect(result.outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+        expect(result.requests).toEqual(kept)
+        expect(result.logs).toContain("Hook odd_filter (filter_messages")
+      }
+      const createReturning = (change: (message: Message) => Message) =>
+        defineHook({
+          hook: "before_create_message",
+          id: "odd_create",
+          execute: async (_state, message) => (message.role === "tool" ? change(message) : message),
+        })
+      for (const change of [
+        (message: Message) =>
+          Object.defineProperty({ ...message, content: "changed" }, "metadata", {
+            enumerable: true,
+            get: () => {
+              throw new Error("accessor")
+            },
+          }) as Message,
+        (message: Message) => ({ ...message, content: "changed", attachments: [null] as unknown as [] }),
+        (message: Message) => ({ ...message, content: "changed", metadata: { when: new Date(0) } }),
+      ]) {
+        const result = await runWith(createReturning(change))
+        expect(result.outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+        expect(toolRows(result.stored)).toEqual([["c1", "success", "noop"]])
+        expect(result.requests).toEqual(kept)
+        expect(result.logs).toContain("Hook odd_create (before_create_message")
+        expect(result.logs).not.toContain("accessor")
+      }
+    },
+  },
+  {
     name: "H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
     requirements: ["986689ca", "4b6bc420", "41bdae5c", "bf795e82", "04d1538b", "048a4525"],
     run: async (driver) => {
