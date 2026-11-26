@@ -32,7 +32,7 @@ it.effect("a refused idle settlement reaches the sender without a second settlem
   ),
 )
 
-it.effect("refuses a stop while the aborted tool still holds the thread", () => {
+it.effect("refuses a stop during an abort hold and runs queued work when the tool returns", () => {
   const entered = gate()
   const leave = gate()
   const tool = defineTool({
@@ -45,7 +45,7 @@ it.effect("refuses a stop while the aborted tool still holds the thread", () => 
   })
   const registry = registryOf(
     project({
-      provider: new ScriptedProvider([{ toolCalls: [{ id: "1", name: "wait", arguments: {} }] }]),
+      provider: new ScriptedProvider([{ toolCalls: [{ id: "1", name: "wait", arguments: {} }] }, { text: "resumed" }]),
       tools: { wait: tool },
     }),
   )
@@ -55,11 +55,14 @@ it.effect("refuses a stop while the aborted tool still holds the thread", () => 
     const sent = yield* Effect.forkChild(sendMessage(id, "go"))
     yield* Effect.promise(() => entered.opened)
     const settlement = yield* supervisor.abort(id)
+    yield* supervisor.control(id).queueMessage({ role: "user", content: "queued" }, newSecrets(), { kind: "external" })
     const stopped = yield* supervisor.stop(id)
     leave.release()
     expect(stopped).toBe(false)
     expect(settlement?.isDone()).toBe(false)
     expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    yield* supervisor.settled(id)
+    expect((yield* supervisor.status(id)).reason).toBe("stop_on_response")
   }).pipe(
     Effect.provide(
       Layer.merge(
