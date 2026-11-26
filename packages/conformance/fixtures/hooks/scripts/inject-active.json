@@ -1,0 +1,21 @@
+{
+  "responses": [
+    {
+      "toolCalls": [
+        {
+          "id": "c_inject",
+          "name": "inject_note",
+          "arguments": {}
+        },
+        {
+          "id": "c_read",
+          "name": "read_history",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    }
+  ]
+}

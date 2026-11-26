@@ -1,0 +1,13 @@
+{
+  "responses": [
+    {
+      "toolCalls": [
+        {
+          "name": "noop",
+          "arguments": {}
+        }
+      ]
+    }
+  ],
+  "repeat": true
+}

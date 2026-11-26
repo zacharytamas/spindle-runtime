@@ -1,0 +1,16 @@
+{
+  "responses": [
+    {
+      "toolCalls": [
+        {
+          "id": "c1",
+          "name": "note",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    }
+  ]
+}
