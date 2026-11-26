@@ -250,6 +250,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports every issue that the defineAgent helper throws",
+    "define-agent-helper",
+    [
+      error("definition_load_failed", "agents/agents/gate.ts:maxSessionTurns"),
+      error("definition_load_failed", "agents/agents/gate.ts:sideB"),
+    ],
+  ],
+  [
     "reports a kind directory or a package scope that is not a directory and goes on",
     "unreadable-kind",
     [

@@ -96,7 +96,7 @@ export interface Definition {
   readonly load: Effect.Effect<unknown, LoadError>
 }
 
-export class LoadError extends Data.TaggedError("LoadError")<{ readonly issue: Issue }> {}
+export class LoadError extends Data.TaggedError("LoadError")<{ readonly issues: ReadonlyArray<Issue> }> {}
 
 export const namespaceOf = (definition: Definition): NamespaceContext =>
   definition.package === undefined
@@ -145,6 +145,26 @@ export const describeImportFailure = (cause: unknown): string => {
   return `The file failed to load. ${describeCause(cause).split("\n")[0]}`
 }
 
+// The definition helpers in @standardagents/spec, such as defineAgent, throw one "<path>: <message>" line per issue.
+const FIELD_LINE = /^([A-Za-z_$][\w$]*(?:\.[\w$]+|\[\d+\])*): (.+)$/
+
+const importFailureIssues = (file: string, cause: unknown): ReadonlyArray<Issue> => {
+  const lines = describeCause(cause)
+    .split("\n")
+    .map((line) => FIELD_LINE.exec(line))
+  const fields = lines.flatMap((match) => (match === null ? [] : [match]))
+  const issue = (path: string, message: string): Issue => ({
+    code: "definition_load_failed",
+    severity: "error",
+    message,
+    file,
+    path,
+  })
+  return fields.length === lines.length
+    ? fields.map(([, path = "", message = ""]) => issue(path, `The file failed to load. ${message}`))
+    : [issue("", describeImportFailure(cause))]
+}
+
 export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
   url.pipe(
     Effect.flatMap((href) =>
@@ -153,16 +173,5 @@ export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
         catch: (cause) => cause,
       }),
     ),
-    Effect.mapError(
-      (cause) =>
-        new LoadError({
-          issue: {
-            code: "definition_load_failed",
-            severity: "error",
-            message: describeImportFailure(cause),
-            file,
-            path: "",
-          },
-        }),
-    ),
+    Effect.mapError((cause) => new LoadError({ issues: importFailureIssues(file, cause) })),
   )

@@ -139,7 +139,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
     const file = path.relative(root, entry)
     const loaded = yield* Effect.result(importFile(file, path.toFileUrl(entry)))
     if (Result.isFailure(loaded)) {
-      issues.push(loaded.failure.issue)
+      issues.push(...loaded.failure.issues)
       return
     }
     const exports = loaded.success
@@ -174,13 +174,15 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
           },
           catch: (cause) =>
             new LoadError({
-              issue: {
-                code: "definition_load_failed",
-                severity: "error",
-                message: `${name} ${at} failed to load: ${cause instanceof Error ? cause.message : String(cause)}`,
-                file,
-                path: at,
-              },
+              issues: [
+                {
+                  code: "definition_load_failed",
+                  severity: "error",
+                  message: `${name} ${at} failed to load: ${describeCause(cause)}`,
+                  file,
+                  path: at,
+                },
+              ],
             }),
         })
         definitions.push({

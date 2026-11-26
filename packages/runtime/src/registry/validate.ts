@@ -79,7 +79,7 @@ export const validate = Effect.gen(function* () {
     const result = results[index]
     if (result === undefined) return
     if (Result.isSuccess(result)) loaded.set(definition, result.success)
-    else issues.push(result.failure.issue)
+    else issues.push(...result.failure.issues)
   })
 
   const site = (definition: Definition) => {

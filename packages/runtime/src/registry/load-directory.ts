@@ -62,13 +62,15 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
           module.default === undefined
             ? Effect.fail(
                 new LoadError({
-                  issue: {
-                    code: "definition_export_missing",
-                    severity: "error",
-                    message: `The file has no default export. Export the ${kind} definition as the default export.`,
-                    file,
-                    path: "",
-                  },
+                  issues: [
+                    {
+                      code: "definition_export_missing",
+                      severity: "error",
+                      message: `The file has no default export. Export the ${kind} definition as the default export.`,
+                      file,
+                      path: "",
+                    },
+                  ],
                 }),
               )
             : Effect.succeed(module.default),
