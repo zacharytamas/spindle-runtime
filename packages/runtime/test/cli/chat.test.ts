@@ -40,6 +40,44 @@ const threadsIn = (db: string) =>
 
 describe("spindle chat", () => {
   it.live(
+    "a declared digit preserves identifiers in the printed commands",
+    () =>
+      Effect.gen(function* () {
+        const { gate, at } = yield* setup
+        const fs = yield* FileSystem.FileSystem
+        yield* fs.symlink(stepLoop, at("project"))
+        const env = { REGION_HINT: "4" }
+        const run = (words: string[]) => shell(gate, 'cd "$SPINDLE_GATE_DIR" && exec "$@"', words, env)
+        const session = yield* run(["chat", "shaded", "--db", "chat.db", "--dir", "project"])
+        yield* session.end
+        expect(yield* session.exit).toBe(0)
+        const thread = String((yield* threadsIn(at("chat.db")))[0]?.id)
+        const notes = linesOf(session.err())
+        expect(notes).toEqual([note.thread(thread), note.resume("shaded", thread, "chat.db", "project")])
+        const words = notes[1]?.slice("spindle: resume with spindle ".length).split(" ") ?? []
+        const resumed = yield* run([...words, "--script", "project/scripts/text-reply.json"])
+        yield* resumed.type("again\n")
+        yield* resumed.end
+        expect(yield* resumed.exit).toBe(0)
+        expect(yield* messagesOf(at("chat.db"), thread)).toContainEqual(["user", "again"])
+        for (const command of ["run", "send", "status", "recover"]) {
+          const words = command === "run" ? ["run", "shaded"] : [command, thread]
+          if (command === "run" || command === "send")
+            words.push("-m", "next", "--dir", "project", "--script", "project/scripts/text-reply.json")
+          const result = yield* run([...words, "--db", "chat.db"])
+          expect(yield* result.exit).toBe(0)
+          if (command === "recover") expect(result.out()).toContain(thread)
+          if (command === "send") expect(linesOf(result.err())[0]).toBe(note.thread(thread))
+          if (command === "run") {
+            const created = (yield* threadsIn(at("chat.db"))).find((row) => row.id !== thread)
+            expect(linesOf(result.err())[0]).toBe(note.thread(String(created?.id)))
+          }
+        }
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "three lines piped at once get one turn each, and end of input prints the resume line (lane 1, O1, O3, O4, O14, F05, F08)",
     () =>
       Effect.gen(function* () {

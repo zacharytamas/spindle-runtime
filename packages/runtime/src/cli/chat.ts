@@ -14,7 +14,7 @@ import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
 import { ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
-import { deliveryFlags, fail, openDatabase, RunFailed } from "./run.ts"
+import { deliveryFlags, fail, openDatabase, operatorNotes, RunFailed } from "./run.ts"
 
 const shellWord = (word: string) =>
   /^[a-zA-Z0-9_./:@%+=,-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
@@ -64,12 +64,19 @@ const readScript = (file: string) =>
     )
   })
 
-const openThread = (agent: string, filename: string, requested: Option.Option<string>, secrets: Set<string>) =>
+const openThread = (
+  agent: string,
+  filename: string,
+  requested: Option.Option<string>,
+  secrets: Set<string>,
+  identify: ReturnType<typeof operatorNotes>,
+  clean: (text: string) => string,
+) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore
     if (Option.isNone(requested)) {
       const { id } = yield* createThread(agent, secrets)
-      yield* note(`thread ${id}`)
+      yield* identify(`thread ${id}`)
       if (filename === ":memory:") yield* note("no --db, so the thread lives in memory and ends with this chat")
       return { id, cursor: 0 }
     }
@@ -80,16 +87,19 @@ const openThread = (agent: string, filename: string, requested: Option.Option<st
           .getThread(id)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
         if (thread.agentId !== agent)
-          return yield* fail(`thread ${id} belongs to agent ${thread.agentId}, not ${agent}`)
+          return yield* Effect.andThen(
+            identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
+            Effect.fail(new RunFailed({ message: "wrong agent" })),
+          )
         if (thread.terminated !== null)
-          return yield* fail(new ThreadTerminated({ threadId: id, terminated: thread.terminated }).message)
+          return yield* new ThreadTerminated({ threadId: id, terminated: thread.terminated })
         yield* store.recover(id)
         const { status } = yield* store.getThread(id)
         const holder = yield* store.holderOf(id)
         return { status, holder, cursor: yield* store.latestMessageSeq(id) }
       }),
     )
-    yield* note(`thread ${id}`)
+    yield* identify(`thread ${id}`)
     yield* note(
       opened.holder
         ? `running in process ${opened.holder.pid}, so a line you type waits in its queue`
@@ -105,6 +115,7 @@ interface Conversation {
   readonly id: string
   readonly cursor: number
   readonly role: Message["role"]
+  readonly identify: ReturnType<typeof operatorNotes>
   readonly clean: (text: string) => string
   readonly trace: boolean
   readonly dumpRequests: boolean
@@ -192,9 +203,9 @@ const converse = (chat: Conversation) =>
                 ),
               ),
             )
-            yield* note(
+            yield* chat.identify(
               holder.abortedTool
-                ? `tool ${holder.abortedTool} has not returned since the abort, so the line waits in the queue until it does`
+                ? `tool ${chat.clean(holder.abortedTool)} has not returned since the abort, so the line waits in the queue until it does`
                 : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
             )
           }),
@@ -215,7 +226,7 @@ const converse = (chat: Conversation) =>
             }
             const error = Cause.squash(event.exit.cause)
             if (error instanceof ThreadTerminated) {
-              yield* note(error.message)
+              yield* chat.identify(error.message)
               return "terminated" as const
             }
             yield* note(`the line was not sent: ${describe(error)}`)
@@ -282,6 +293,7 @@ export const chatCommand = Command.make(
   (args) =>
     Console.consoleWith((current) => {
       const secrets = new Set<string>()
+      const identify = operatorNotes(current)
       const redact = redactor(secrets)
       const clean = (text: string) => escapeControls(redact(text))
       const console = Object.assign(Object.create(current) as Console.Console, {
@@ -317,12 +329,13 @@ export const chatCommand = Command.make(
           // A second Ctrl-C or a SIGTERM that lands after the conversation ends must not cut off the exit lines.
           yield* Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
-              const thread = yield* restore(openThread(args.agent, filename, args.thread, secrets))
+              const thread = yield* restore(openThread(args.agent, filename, args.thread, secrets, identify, clean))
               const conversation = yield* Effect.exit(
                 restore(
                   converse({
                     ...thread,
                     role: roleOf(side),
+                    identify,
                     clean,
                     trace: args.trace,
                     dumpRequests: args.dumpRequests,
@@ -336,9 +349,9 @@ export const chatCommand = Command.make(
                 if (!(yield* fs.exists(filename))) return yield* fail(`the database ${db} is gone`)
                 const stored = yield* ThreadStore.use((store) => store.getThread(thread.id))
                 if (stored.terminated === null) {
-                  const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(args.dir.value)}` : ""
-                  yield* note(
-                    `resume with spindle chat ${shellWord(args.agent)} --thread ${shellWord(thread.id)} --db ${shellWord(db)}${dir}`,
+                  const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
+                  yield* identify(
+                    `resume with spindle chat ${shellWord(clean(args.agent))} --thread ${shellWord(thread.id)} --db ${shellWord(clean(db))}${dir}`,
                   )
                 }
               }
@@ -350,6 +363,8 @@ export const chatCommand = Command.make(
       }).pipe(
         Effect.catchCause((cause) => {
           const error = Cause.squash(cause)
+          if (error instanceof ThreadTerminated)
+            return Effect.andThen(identify(error.message), Effect.fail(new RunFailed({ message: error.message })))
           return error instanceof RunFailed || Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
             : fail(describe(error))
