@@ -66,6 +66,8 @@ const isRecord = (value: unknown): value is Shape =>
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === "string" && value !== ""
 
+const isOneOf = (allowed: ReadonlyArray<string>, value: unknown) => typeof value === "string" && allowed.includes(value)
+
 const isStringArray = (value: unknown): value is Array<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
 
@@ -259,7 +261,7 @@ export const validate = Effect.gen(function* () {
       }
     } else if (typeof prompt.prompt !== "string")
       at.report("prompt_content_invalid", "prompt", "prompt must be a string or an array of prompt parts")
-    if (prompt.toolChoice !== undefined && !["auto", "none", "required"].includes(String(prompt.toolChoice)))
+    if (prompt.toolChoice !== undefined && !isOneOf(["auto", "none", "required"], prompt.toolChoice))
       at.report("prompt_tool_choice_invalid", "toolChoice", "toolChoice must be one of auto, none, or required")
     if (prompt.reasoning !== undefined) {
       const level = isRecord(prompt.reasoning) ? prompt.reasoning.level : undefined
@@ -397,7 +399,7 @@ export const validate = Effect.gen(function* () {
     const at = site(definition)
     if (!isRecord(hook))
       return at.report("hook_type_invalid", "", "A hook definition must be an object from defineHook()")
-    if (!THREAD_HOOKS.includes(String(hook.hook)))
+    if (!isOneOf(THREAD_HOOKS, hook.hook))
       at.report("hook_type_invalid", "hook", `hook must be one of ${THREAD_HOOKS.join(", ")}`)
     if (!isNonEmptyString(hook.id) || !SNAKE_CASE.test(hook.id))
       at.report("hook_id_invalid", "id", "id must be a snake_case string")
@@ -421,7 +423,7 @@ export const validate = Effect.gen(function* () {
       Array.isArray(effect) &&
       effect.length === 3 &&
       typeof effect[0] === "string" &&
-      (effect[1] === null || typeof effect[1] === "object") &&
+      (effect[1] === null || isRecord(effect[1])) &&
       typeof effect[2] === "function"
     if (!valid)
       at.report(

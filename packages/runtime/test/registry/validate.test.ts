@@ -150,6 +150,7 @@ const invalid: ReadonlyArray<Case> = [
     "rejects an invalid toolChoice, reasoning level, or recentImageThreshold",
     "prompt-optional-fields",
     [
+      error("prompt_tool_choice_invalid", "agents/prompts/array_choice.ts:toolChoice"),
       error("prompt_tool_choice_invalid", "agents/prompts/bad_choice.ts:toolChoice"),
       error("prompt_reasoning_level_invalid", "agents/prompts/bad_reasoning.ts:reasoning.level"),
       error("prompt_recent_image_threshold_invalid", "agents/prompts/bad_threshold.ts:recentImageThreshold"),
@@ -176,6 +177,7 @@ const invalid: ReadonlyArray<Case> = [
     "rejects a hook with an unknown type, a bad id, or no execute",
     "hook-fields",
     [
+      error("hook_type_invalid", "agents/hooks/array_type.ts:hook"),
       error("hook_type_invalid", "agents/hooks/bad_type.ts:hook"),
       error("hook_id_invalid", "agents/hooks/BadId.ts:id"),
       error("hook_execute_missing", "agents/hooks/no_execute.ts:execute"),
@@ -192,6 +194,7 @@ const invalid: ReadonlyArray<Case> = [
     "rejects malformed tools, handlers, and effects",
     "definition-shapes",
     [
+      error("effect_invalid", "agents/effects/array_args.ts"),
       error("effect_invalid", "agents/effects/not_a_tuple.ts"),
       error("handler_invalid", "agents/handlers/no_execute.ts:execute"),
       error("tool_uses_undefined", "agents/tools/bad_uses.ts:uses[0]"),
