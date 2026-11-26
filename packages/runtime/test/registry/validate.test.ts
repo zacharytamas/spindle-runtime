@@ -13,6 +13,16 @@ const validateRoot = (root: string) => validate.pipe(Effect.provide(Registry.lay
 
 const validateFixture = (name: string) => fixture(name).pipe(Effect.flatMap(validateRoot))
 
+const brokenManifest = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const root = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-registry-" }), "project")
+  yield* fs.copy(yield* fixture("invalid/broken-manifest"), root)
+  yield* fs.makeDirectory(path.join(root, "agents", "packed", "sample"), { recursive: true })
+  yield* fs.writeFileString(path.join(root, "agents", "packed", "sample", "package.json"), "{")
+  return root
+})
+
 const located = (issues: ReadonlyArray<Issue>) =>
   issues.map((issue) => [issue.code, issue.path === "" ? issue.file : `${issue.file}:${issue.path}`, issue.severity])
 
@@ -240,6 +250,15 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports a kind directory or a package scope that is not a directory and goes on",
+    "unreadable-kind",
+    [
+      error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+      error("package_invalid", "agents/packed/@scope"),
+      error("definition_load_failed", "agents/tools"),
+    ],
+  ],
+  [
     "rejects a directory without an agents directory",
     "no-agents-directory",
     [error("agents_directory_missing", "agents")],
@@ -405,6 +424,16 @@ describe("validate", () => {
   })
 
   describe("load failures", () => {
+    it.effect("reports a package manifest that is not JSON and goes on to the other definitions", () =>
+      Effect.gen(function* () {
+        const { issues } = yield* validateRoot(yield* brokenManifest)
+        expect(located(issues)).toEqual([
+          error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+          error("package_invalid", "agents/packed/sample/package.json"),
+        ])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+
     it("explains in plain words that Node cannot strip an enum", () => {
       const cause = Object.assign(new SyntaxError("TypeScript enum is not supported in strip-only mode"), {
         code: "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX",

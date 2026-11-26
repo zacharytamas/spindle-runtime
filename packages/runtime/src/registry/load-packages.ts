@@ -1,6 +1,15 @@
 import type { PackageSignature } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Result } from "effect"
-import { type Definition, type Issue, importFile, KINDS, LoadError, type Package, PLURAL } from "./Registry.ts"
+import {
+  type Definition,
+  describeCause,
+  type Issue,
+  importFile,
+  KINDS,
+  LoadError,
+  type Package,
+  PLURAL,
+} from "./Registry.ts"
 
 type Source = PackageSignature["source"]
 
@@ -51,14 +60,30 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
   const issue = (code: Issue["code"], file: string, message: string, severity: Issue["severity"] = "error") =>
     issues.push({ code, severity, message, file, path: "" })
 
+  // A failed check counts as present, so the read that follows reports the cause as an issue.
+  const exists = (target: string) => fs.exists(target).pipe(Effect.orElseSucceed(() => true))
+
+  const entriesOf = (dir: string) =>
+    fs.readDirectory(dir).pipe(
+      Effect.map((entries) => entries.sort()),
+      Effect.catch((error) => {
+        issue(
+          "package_invalid",
+          path.relative(root, dir),
+          `Spindle cannot read ${path.relative(root, dir)} as a directory. ${error.message}`,
+        )
+        return Effect.succeed([])
+      }),
+    )
+
   const packageDirs = Effect.fn(function* (dir: string) {
-    if (!(yield* fs.exists(dir))) return []
+    if (!(yield* exists(dir))) return []
     const found: Array<string> = []
-    for (const entry of (yield* fs.readDirectory(dir)).sort()) {
+    for (const entry of yield* entriesOf(dir)) {
       if (entry.startsWith(".")) continue
       const full = path.join(dir, entry)
       if (entry.startsWith("@")) {
-        for (const scoped of (yield* fs.readDirectory(full)).sort()) found.push(path.join(full, scoped))
+        for (const scoped of yield* entriesOf(full)) found.push(path.join(full, scoped))
       } else found.push(full)
     }
     return found
@@ -67,18 +92,25 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
   const loadPackage = Effect.fn(function* (dir: string, source: Source) {
     const manifestFile = path.join(dir, "package.json")
     const relativeManifest = path.relative(root, manifestFile)
-    if (!(yield* fs.exists(manifestFile))) {
+    if (!(yield* exists(manifestFile))) {
       if (source === "local") issue("package_invalid", relativeManifest, `${relativeManifest} does not exist`)
       return
     }
-    const manifest = yield* fs.readFileString(manifestFile).pipe(
-      Effect.map((text): unknown => JSON.parse(text)),
-      Effect.orElseSucceed(() => undefined),
+    const read = yield* fs.readFileString(manifestFile).pipe(
+      Effect.flatMap((text) => Effect.try({ try: (): unknown => JSON.parse(text), catch: (cause) => cause })),
+      Effect.result,
     )
-    if (!isRecord(manifest)) {
-      issue("package_invalid", relativeManifest, `${relativeManifest} is not a JSON object`)
+    if (Result.isFailure(read) || !isRecord(read.success)) {
+      const reason = Result.isFailure(read) ? describeCause(read.failure) : "It holds JSON that is not an object."
+      issue(
+        "package_invalid",
+        relativeManifest,
+        `${relativeManifest} is not a JSON object. ${reason}`,
+        source === "local" ? "error" : "warning",
+      )
       return
     }
+    const manifest = read.success
     if (manifest.standardagent === undefined) {
       if (source === "local")
         issue("package_invalid", relativeManifest, `${relativeManifest} has no standardagent field`)
@@ -105,7 +137,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
     }
     const entry = path.join(dir, entryOf(manifest))
     const file = path.relative(root, entry)
-    const loaded = yield* Effect.result(importFile(file, yield* path.toFileUrl(entry)))
+    const loaded = yield* Effect.result(importFile(file, path.toFileUrl(entry)))
     if (Result.isFailure(loaded)) {
       issues.push(loaded.failure.issue)
       return

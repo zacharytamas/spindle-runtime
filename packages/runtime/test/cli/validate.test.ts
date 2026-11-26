@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Console, Effect, Exit, Path } from "effect"
+import { Console, Effect, Exit, FileSystem, Path } from "effect"
 import { Command } from "effect/cli"
 import { PlatformLive } from "#platform"
 import { validateCommand } from "../../src/cli/validate.ts"
@@ -19,6 +19,19 @@ const run = (...args: ReadonlyArray<string>) =>
     )
     return { exit, lines }
   }).pipe(Effect.provide(PlatformLive))
+
+const brokenManifest = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const fixture = yield* path.fromFileUrl(
+    new URL("../../../conformance/fixtures/invalid/broken-manifest", import.meta.url),
+  )
+  const root = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-cli-" }), "project")
+  yield* fs.copy(fixture, root)
+  yield* fs.makeDirectory(path.join(root, "agents", "packed", "sample"), { recursive: true })
+  yield* fs.writeFileString(path.join(root, "agents", "packed", "sample", "package.json"), "{")
+  return root
+})
 
 describe("spindle validate", () => {
   it.effect("prints the count of each kind and exits 0 for a valid directory", () =>
@@ -64,6 +77,17 @@ describe("spindle validate", () => {
       for (const issue of issues as Array<Record<string, unknown>>)
         expect(Object.keys(issue).sort()).toEqual(["code", "file", "message", "path", "severity"])
     }),
+  )
+
+  it.effect("prints JSON for every issue when a package manifest is not JSON", () =>
+    Effect.gen(function* () {
+      const { exit, lines } = yield* run("--json", yield* brokenManifest)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(JSON.parse(lines.join("\n"))).toEqual([
+        expect.objectContaining({ code: "agent_both_sides_human", file: "agents/agents/both_human.ts" }),
+        expect.objectContaining({ code: "package_invalid", file: "agents/packed/sample/package.json" }),
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.effect("lists every definition by kind, qualified name, package, and name with --list", () =>

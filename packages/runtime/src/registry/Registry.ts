@@ -1,5 +1,5 @@
 import { DEFINITION_ISSUE_CODES, type NamespaceContext, type PackageSignature } from "@standardagents/spec"
-import { Context, Data, Effect, Layer } from "effect"
+import { Context, Data, Effect, type FileSystem, Layer, type Path } from "effect"
 import { loadDirectory } from "./load-directory.ts"
 import { loadPackages } from "./load-packages.ts"
 import { type Resolution, resolver } from "./resolve.ts"
@@ -113,7 +113,7 @@ export class Registry extends Context.Service<
     readonly resolve: (kind: Kind, name: string, from: NamespaceContext) => Resolution
   }
 >()("spindle/Registry") {
-  static readonly layer = (root: string) =>
+  static readonly layer = (root: string): Layer.Layer<Registry, never, FileSystem.FileSystem | Path.Path> =>
     Layer.effect(
       Registry,
       Effect.gen(function* () {
@@ -136,25 +136,33 @@ const TYPESCRIPT_SYNTAX =
 const NODE_MODULES_TYPESCRIPT =
   "The file is a TypeScript file inside node_modules, and Node does not strip types from files there. Publish the package as JavaScript."
 
+export const describeCause = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
+
 export const describeImportFailure = (cause: unknown): string => {
   const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined
   if (code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") return TYPESCRIPT_SYNTAX
   if (code === "ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING") return NODE_MODULES_TYPESCRIPT
-  const message = cause instanceof Error ? cause.message : String(cause)
-  return `The file failed to load. ${message.split("\n")[0]}`
+  return `The file failed to load. ${describeCause(cause).split("\n")[0]}`
 }
 
-export const importFile = (file: string, url: URL) =>
-  Effect.tryPromise({
-    try: (): Promise<Record<string, unknown>> => import(url.href),
-    catch: (cause) =>
-      new LoadError({
-        issue: {
-          code: "definition_load_failed",
-          severity: "error",
-          message: describeImportFailure(cause),
-          file,
-          path: "",
-        },
+export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
+  url.pipe(
+    Effect.flatMap((href) =>
+      Effect.tryPromise({
+        try: (): Promise<Record<string, unknown>> => import(href.href),
+        catch: (cause) => cause,
       }),
-  })
+    ),
+    Effect.mapError(
+      (cause) =>
+        new LoadError({
+          issue: {
+            code: "definition_load_failed",
+            severity: "error",
+            message: describeImportFailure(cause),
+            file,
+            path: "",
+          },
+        }),
+    ),
+  )

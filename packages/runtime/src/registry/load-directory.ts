@@ -9,11 +9,13 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
   const definitions: Array<Definition> = []
   const issues: Array<Issue> = []
   const agentsDir = path.join(root, "agents")
-  if (!(yield* fs.exists(agentsDir))) {
+  // A failed check counts as present, so the read that follows reports the cause as an issue.
+  const exists = (target: string) => fs.exists(target).pipe(Effect.orElseSucceed(() => true))
+  if (!(yield* exists(agentsDir))) {
     issues.push({
       code: "agents_directory_missing",
       severity: "error",
-      message: (yield* fs.exists(root))
+      message: (yield* exists(root))
         ? `The directory ${root} has no agents directory. Run spindle validate on the project directory that holds agents/.`
         : `The directory ${root} does not exist`,
       file: "agents",
@@ -23,9 +25,21 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
   }
   for (const kind of KINDS) {
     const dir = path.join(agentsDir, PLURAL[kind])
-    if (!(yield* fs.exists(dir))) continue
+    if (!(yield* exists(dir))) continue
+    const entries = yield* fs.readDirectory(dir).pipe(
+      Effect.catch((error) => {
+        issues.push({
+          code: "definition_load_failed",
+          severity: "error",
+          message: `Spindle cannot read ${path.relative(root, dir)} as a directory. ${error.message}`,
+          file: path.relative(root, dir),
+          path: "",
+        })
+        return Effect.succeed([])
+      }),
+    )
     const byName = new Map<string, string>()
-    for (const entry of (yield* fs.readDirectory(dir)).sort()) {
+    for (const entry of entries.sort()) {
       const extension = path.extname(entry)
       if (!EXTENSIONS.includes(extension) || entry.endsWith(".d.ts") || entry.startsWith(".")) continue
       const name = path.basename(entry, extension)
@@ -43,8 +57,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         continue
       }
       byName.set(name, file)
-      const url = yield* path.toFileUrl(absolute)
-      const load = importFile(file, url).pipe(
+      const load = importFile(file, path.toFileUrl(absolute)).pipe(
         Effect.flatMap((module) =>
           module.default === undefined
             ? Effect.fail(
