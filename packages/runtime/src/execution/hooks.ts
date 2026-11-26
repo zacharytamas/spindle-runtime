@@ -105,7 +105,9 @@ const oneOf = (value: unknown, allowed: ReadonlyArray<unknown>) => value === und
 const optional = (value: unknown, test: (value: unknown) => boolean) => value === undefined || test(value)
 const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 const isString = (value: unknown) => typeof value === "string"
-const loneSurrogate = /[\uD800-\uDFFF]/u
+// An id is a key that the store, a log line, and every reader hold as it is. Node's SQLite driver ends a string at a
+// NUL character, and UTF-8 has no encoding for a lone surrogate.
+const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}\uD800-\uDFFF]/u.test(id)
 
 // Messages section 1.2.
 const isAttachmentRef = (value: unknown) =>
@@ -145,8 +147,7 @@ const acceptMessage = (returned: unknown, current: Message): Message | typeof IN
   if (metadata === INVALID) return INVALID
   const message = { ...value, metadata }
   return isMessage(message) &&
-    message.id !== "" &&
-    !loneSurrogate.test(message.id) &&
+    isSafeId(message.id) &&
     message.role === current.role &&
     (message.tool_calls ?? null) === current.tool_calls &&
     (current.role !== "tool" || message.tool_call_id === current.tool_call_id)

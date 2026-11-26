@@ -123,20 +123,20 @@ export const createMessage = Effect.fn("createMessage")(function* (
   const depth = yield* depthOf(write)
   const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
-  const taken = (next: Message, current: Message) =>
+  // An id is stored and printed as it is, so redaction cannot reach it, and a hook may not choose one that holds a
+  // secret value.
+  const check = (next: Message, current: Message) =>
     next.id === current.id
       ? Effect.succeed(undefined)
-      : store.messageIdTaken(next.id).pipe(
-          Effect.map((found) => (found ? "returned the id of a message that already exists" : undefined)),
-          Effect.orDie,
-        )
-  const hooked = yield* runHooks(
-    write.hooks,
-    "before_create_message",
-    [],
-    original,
-    essential ? { depth, essential, check: taken } : { depth },
-  )
+      : redactor(write.secrets.values)(next.id) !== next.id
+        ? Effect.succeed("returned an id that holds a secret value")
+        : !essential
+          ? Effect.succeed(undefined)
+          : store.messageIdTaken(next.id).pipe(
+              Effect.map((found) => (found ? "returned the id of a message that already exists" : undefined)),
+              Effect.orDie,
+            )
+  const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
   const redacted = redactWrite(writer, original, hooked, redactor(write.secrets.values))
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
   // stored once under an id from the runtime, and its hooks, which have already run, do not run again.

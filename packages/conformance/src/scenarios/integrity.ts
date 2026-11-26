@@ -1,7 +1,9 @@
-import { defineHook, defineTool, type Message } from "@standardagents/spec"
+import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { callsOf, history, ok, type Scenario, send, sideOf, using } from "./step-loop.ts"
+import { callsOf, history, holding, ok, type Scenario, send, sideOf, using } from "./step-loop.ts"
+
+const CANARY = "sk-canary-0042"
 
 const rows = (messages: ReadonlyArray<Message>) =>
   messages.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : m.content])
@@ -97,6 +99,85 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         expect(history(provider.requests[1]).map(sideOf)).toContainEqual(["tool", "c1"])
       })
       expect(calls).toBe(4)
+    },
+  },
+  {
+    name: "I4 fails a create hook that picks an id with a control character, over 255 characters, or holding a secret",
+    requirements: [],
+    run: async (driver) => {
+      const outcomes: Array<unknown> = []
+      const idFor = async (state: ThreadState, content: string | null) => {
+        switch (content) {
+          case "nul":
+            return "pre\u0000post"
+          case "delete":
+            return "pre\u007fpost"
+          case "long":
+            return "x".repeat(256)
+          case "longest":
+            return "y".repeat(255)
+          case "secret":
+          case "injected":
+            return `row-${await state.instanceEnv?.("CANARY")}`
+          default:
+            return undefined
+        }
+      }
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "pick_id",
+          execute: async (state, message) => {
+            const id = await idFor(state, message.content)
+            return id === undefined ? message : { ...message, id }
+          },
+        }),
+      ]
+      const tools = {
+        inject: defineTool({
+          description: "Inject one message per kind of id",
+          execute: async (state: ThreadState) => {
+            for (const content of ["nul", "delete", "long", "secret", "longest"])
+              outcomes.push(
+                await state.injectMessage({ role: "user", content }).then(
+                  async (message) => [content, (await state.getMessage(message.id))?.id === message.id],
+                  (error: Error) => [content, error.message],
+                ),
+              )
+            return ok("injected")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "inject", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { hooks: ["pick_id"] } },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          expect(holding(stored, CANARY)).toEqual([])
+          expect(stored.map((m) => m.id)).toContain("y".repeat(255))
+          expect(rows(stored).filter(([role]) => role === "tool")).toEqual([["tool", "c1"]])
+        },
+        { CANARY },
+      )
+      const refused = (content: string) => [
+        content,
+        expect.stringContaining("Hook pick_id (before_create_message) returned a value that is not"),
+      ]
+      expect(outcomes).toEqual([
+        refused("nul"),
+        refused("delete"),
+        refused("long"),
+        [
+          "secret",
+          expect.stringContaining("Hook pick_id (before_create_message) returned an id that holds a secret value"),
+        ],
+        ["longest", true],
+      ])
     },
   },
 ]
