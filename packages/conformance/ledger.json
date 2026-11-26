@@ -863,7 +863,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
 		],
 		"reason": ""
 	},
@@ -3408,7 +3408,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart, including a failed execution_lost status"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status"
 		],
 		"reason": ""
 	},
@@ -3416,7 +3416,7 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart, including a failed execution_lost status"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status"
 		],
 		"reason": "The store persists failed with reason execution_lost across a restart. M1-6 owes the lease that finds a lost executor and the recovery pass that settles the thread."
 	},
@@ -5155,7 +5155,7 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
 		],
 		"reason": "The store keeps values per thread across restarts. M1-4 owes one store behind tools and hooks, and M4 owes it behind endpoints."
 	},
@@ -5171,7 +5171,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive a restart of the store"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
 		],
 		"reason": ""
 	},

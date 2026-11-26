@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { GetMessagesOptions } from "@standardagents/spec"
 import { Effect, FileSystem, Layer } from "effect"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
-import { PlatformLive, SqliteLive } from "#platform"
+import { PlatformLive, platformName, SqliteLive } from "#platform"
 import { layer } from "../../src/store/sqlite.ts"
 import { type NewMessage, ThreadStore } from "../../src/store/ThreadStore.ts"
 
@@ -11,7 +13,7 @@ import { type NewMessage, ThreadStore } from "../../src/store/ThreadStore.ts"
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
 
-const withDatabaseFile = <A, E>(use: (filename: string) => Effect.Effect<A, E>) =>
+const withDatabaseFile = <A, E, R>(use: (filename: string) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-store-" })
@@ -98,21 +100,25 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
-    it.effect("the run status survives a restart, including a failed execution_lost status", () =>
+    it.effect("the run status survives a restart with its since time, including a failed execution_lost status", () =>
       withDatabaseFile((filename) =>
         Effect.gen(function* () {
-          const threadId = yield* Effect.gen(function* () {
+          const written = yield* Effect.gen(function* () {
             const store = yield* ThreadStore
             const thread = yield* store.createThread({ agentId: "assistant" })
+            yield* TestClock.adjust("1 second")
             yield* store.setStatus(thread.id, { state: "running" })
-            yield* store.setStatus(thread.id, { state: "failed", reason: "execution_lost" })
-            return thread.id
+            yield* TestClock.adjust("1 second")
+            const status = yield* store.setStatus(thread.id, { state: "failed", reason: "execution_lost" })
+            return { threadId: thread.id, status }
           }).pipe(Effect.provide(storeAt(filename)))
+          expect(written.status).toEqual({ state: "failed", since: 2_000_000, reason: "execution_lost" })
+          yield* TestClock.adjust("1 second")
           const status = yield* Effect.gen(function* () {
             const store = yield* ThreadStore
-            return (yield* store.getThread(threadId)).status
+            return (yield* store.getThread(written.threadId)).status
           }).pipe(Effect.provide(storeAt(filename)))
-          expect(status).toMatchObject({ state: "failed", reason: "execution_lost" })
+          expect(status).toEqual(written.status)
         }),
       ),
     )
@@ -168,19 +174,87 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("appendMessages gives each message a unique id and its creation time in microseconds", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* TestClock.adjust("1500 millis")
+        const first = yield* store.appendMessages(thread.id, [user("a"), user("b")])
+        yield* TestClock.adjust("1 second")
+        const second = yield* store.appendMessages(thread.id, [user("c")])
+        const read = (yield* store.getMessages(thread.id, { order: "asc" })).messages
+        expect(read.map((m) => m.created_at)).toEqual([1_500_000, 1_500_000, 2_500_000])
+        expect(new Set(read.map((m) => m.id)).size).toBe(3)
+        expect(read.map((m) => m.id)).toEqual([...first, ...second].map((m) => m.id))
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("appendMessages keeps reasoning_content and reasoning_details independently of each other", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const written = yield* store.appendMessages(thread.id, [
+          { role: "assistant", content: "a", reasoning_content: "text only" },
+          { role: "assistant", content: "b", reasoning_details: '[{"type":"encrypted"}]' },
+          { role: "assistant", content: "c" },
+        ])
+        const read = (yield* store.getMessages(thread.id, { order: "asc" })).messages
+        expect(read).toEqual(written)
+        expect(read.map((m) => [m.reasoning_content, m.reasoning_details])).toEqual([
+          ["text only", null],
+          [null, '[{"type":"encrypted"}]'],
+          [null, null],
+        ])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("appendMessages keeps each lifecycle status it receives", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* store.appendMessages(thread.id, [
+          user("queued", { status: "pending" }),
+          user("done", { status: "completed" }),
+          user("broken", { status: "failed" }),
+          user("plain"),
+        ])
+        const read = (yield* store.getMessages(thread.id, { order: "asc" })).messages
+        expect(read.map((m) => m.status)).toEqual(["pending", "completed", "failed", null])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("a silent message persists across a restart like a visible one", () =>
+      withDatabaseFile((filename) =>
+        Effect.gen(function* () {
+          const written = yield* Effect.gen(function* () {
+            const store = yield* ThreadStore
+            const thread = yield* store.createThread({ agentId: "assistant" })
+            const messages = yield* store.appendMessages(thread.id, [user("visible"), user("silent", { silent: true })])
+            return { threadId: thread.id, messages }
+          }).pipe(Effect.provide(storeAt(filename)))
+          const read = yield* Effect.gen(function* () {
+            const store = yield* ThreadStore
+            return yield* store.getMessages(written.threadId, { includeSilent: true, order: "asc" })
+          }).pipe(Effect.provide(storeAt(filename)))
+          expect(read.messages).toEqual(written.messages)
+          expect(read.messages.map((m) => m.silent)).toEqual([false, true])
+        }),
+      ),
+    )
+
     it.effect("appendMessages stores tool results with their name, call id, and status", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         const results = yield* store.appendMessages(thread.id, [
           { role: "tool", content: "42", name: "lookup", tool_call_id: "call-1", tool_status: "success" },
-          { role: "tool", content: "timeout", name: "lookup", tool_call_id: "call-2", tool_status: "error", depth: 1 },
+          { role: "tool", content: "timeout", name: "search", tool_call_id: "call-2", tool_status: "error", depth: 1 },
         ])
         const read = yield* store.getMessages(thread.id, { order: "asc" })
         expect(read.messages).toEqual(results)
         expect(read.messages.map((m) => [m.name, m.tool_call_id, m.tool_status, m.depth])).toEqual([
           ["lookup", "call-1", "success", 0],
-          ["lookup", "call-2", "error", 1],
+          ["search", "call-2", "error", 1],
         ])
       }).pipe(Effect.provide(inMemory)),
     )
@@ -284,6 +358,7 @@ describe("ThreadStore", () => {
           hasMore: true,
         })
         expect(yield* page({ limit: 2, offset: 4 })).toEqual({ contents: ["m1"], total: 5, hasMore: false })
+        expect(yield* page({ order: "desc", limit: 2 })).toEqual({ contents: ["m5", "m4"], total: 5, hasMore: true })
       }).pipe(Effect.provide(inMemory)),
     )
 
@@ -371,6 +446,14 @@ describe("ThreadStore", () => {
           Effect.map(store.getMessages(thread.id, { maxDepth, order: "asc" }), (r) => r.messages.map((m) => m.content))
         expect(yield* contents(0)).toEqual(["top"])
         expect(yield* contents(1)).toEqual(["top", "sub"])
+        const all = yield* store.getMessages(thread.id, { order: "asc" })
+        expect(all.messages.map((m) => m.content)).toEqual(["top", "sub", "subsub"])
+        const page = yield* store.getMessages(thread.id, { maxDepth: 1, limit: 1 })
+        expect({ contents: page.messages.map((m) => m.content), total: page.total, hasMore: page.hasMore }).toEqual({
+          contents: ["sub"],
+          total: 2,
+          hasMore: true,
+        })
       }).pipe(Effect.provide(inMemory)),
     )
 
@@ -651,20 +734,22 @@ describe("ThreadStore", () => {
         }).pipe(Effect.provide(inMemory)),
     )
 
-    it.effect("values survive a restart of the store", () =>
+    it.effect("values survive the exit of the process that wrote them", () =>
       withDatabaseFile((filename) =>
         Effect.gen(function* () {
-          const threadId = yield* Effect.gen(function* () {
-            const store = yield* ThreadStore
-            const thread = yield* store.createThread({ agentId: "assistant" })
-            yield* store.setValue(thread.id, "preferences", { theme: "dark", locale: "en-US" })
-            return thread.id
-          }).pipe(Effect.provide(storeAt(filename)))
+          const spawner = yield* ChildProcessSpawner
+          const probe = new URL("../../scripts/store-probe.ts", import.meta.url).pathname
+          const output = yield* spawner.lines(
+            ChildProcess.make(platformName, ["--conditions=spindle-source", probe, "kv-write", "--db", filename]),
+          )
+          const written = JSON.parse(output.at(-1) ?? "null")
+          expect(written).toMatchObject({ runtime: platformName, key: "preferences" })
           const value = yield* Effect.gen(function* () {
             const store = yield* ThreadStore
-            return yield* store.getValue(threadId, "preferences")
+            return yield* store.getValue(written.thread, written.key)
           }).pipe(Effect.provide(storeAt(filename)))
           expect(value).toEqual({ theme: "dark", locale: "en-US" })
+          expect(value).toEqual(written.value)
         }),
       ),
     )
