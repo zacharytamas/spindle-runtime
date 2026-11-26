@@ -165,29 +165,29 @@ The registry is a map from definition kind and qualified name to a lazy loader, 
 
 **Files.**
 
-- [ ] Create `packages/runtime/src/registry/Registry.ts`, `load-directory.ts`, `load-packages.ts`, `resolve.ts`, and `validate.ts`.
-- [ ] Create `packages/runtime/src/cli/validate.ts`.
-- [ ] Create `packages/conformance/fixtures/agents-basic/`, `packed-a/`, `packed-b/`, and `scoped-pkg/`, and one fixture directory per invalid case under `packages/conformance/fixtures/invalid/`.
+- [x] Create `packages/runtime/src/registry/Registry.ts`, `load-directory.ts`, `load-packages.ts`, `resolve.ts`, and `validate.ts`.
+- [x] Create `packages/runtime/src/cli/validate.ts`.
+- [x] Create `packages/conformance/fixtures/agents-basic/`, `packed-a/`, `packed-b/`, and `scoped-pkg/`, and one fixture directory per invalid case under `packages/conformance/fixtures/invalid/`.
 
 **Build.**
 
-- [ ] Define `Registry` as an Effect service. Its layer needs `FileSystem` and `Path` and nothing platform-specific.
-- [ ] Load unpacked definitions from the default exports of the files under `agents/agents`, `agents/prompts`, `agents/tools`, `agents/models`, `agents/hooks`, `agents/handlers`, and `agents/effects`. Import each `.ts` file directly. Node 22.22 and Bun both strip types on import.
-- [ ] Discover packed packages by the `standardagent` field in each `package.json` under `node_modules`, and under `agents/packed/`. Import each package, read `__meta`, and attach a `PackageSignature` to every definition at load time.
-- [ ] Implement `resolve` with `parseQualifiedName` and `isVisibleInNamespace` from `@standardagents/spec`, including scoped package ids.
-- [ ] Validate at load time. Call `validateAgentDefinition` from `@standardagents/spec`. Add the checks the spec text requires that the function does not cover, which the owner finds by reading Agents section 8, Handlers section 2, Subagents section 2.4, Prompts sections 2.4, 3.4, and 9, Models section 6, and Hooks section 1.2.
-- [ ] Add `spindle validate [dir]`. It prints one line per issue as code, severity, path, and message. It exits 1 when any issue has severity `error`. `--json` prints the issue list as JSON. `--list` prints every resolved qualified name by kind.
+- [x] Define `Registry` as an Effect service. Its layer needs `FileSystem` and `Path` and nothing platform-specific.
+- [x] Load unpacked definitions from the default exports of the files under `agents/agents`, `agents/prompts`, `agents/tools`, `agents/models`, `agents/hooks`, `agents/handlers`, and `agents/effects`. Import each `.ts` file directly. Node 22.22 and Bun both strip types on import.
+- [x] Discover packed packages by the `standardagent` field in each `package.json` under `node_modules`, and under `agents/packed/`. Import each package, read `__meta`, and attach a `PackageSignature` to every definition at load time.
+- [x] Implement `resolve` with `parseQualifiedName` and `isVisibleInNamespace` from `@standardagents/spec`, including scoped package ids.
+- [x] Validate at load time. Call `validateAgentDefinition` from `@standardagents/spec`. Add the checks the spec text requires that the function does not cover, which the owner finds by reading Agents section 8, Handlers section 2, Subagents section 2.4, Prompts sections 2.4, 3.4, and 9, Models section 6, and Hooks section 1.2.
+- [x] Add `spindle validate [dir]`. It prints one line per issue as code, severity, path, and message. It exits 1 when any issue has severity `error`. `--json` prints the issue list as JSON. `--list` prints every resolved qualified name by kind.
 
 **You see.**
 
-- [ ] `spindle validate packages/conformance/fixtures/agents-basic` exits 0 and prints the count of agents, prompts, tools, models, hooks, handlers, and effects.
-- [ ] `spindle validate packages/conformance/fixtures/invalid/both-sides-human` exits 1 and prints one issue line with a code from `DEFINITION_ISSUE_CODES`.
+- [x] `spindle validate packages/conformance/fixtures/agents-basic` exits 0 and prints the count of agents, prompts, tools, models, hooks, handlers, and effects.
+- [x] `spindle validate packages/conformance/fixtures/invalid/both-sides-human` exits 1 and prints one issue line with a code from `DEFINITION_ISSUE_CODES`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/runtime/test/registry/resolve.test.ts` gains one case per cell of the visibility table and one case per qualified-name form. Run `pnpm vitest run packages/runtime/test/registry`.
-- [ ] `packages/runtime/test/registry/validate.test.ts` gains one case per invalid fixture. Each case asserts the issue code and the path.
-- [ ] The ledger entries for `distribution:packaging` and for the definition-time statements in `specification:agents`, `specification:handlers`, `specification:prompts`, `specification:models`, and `specification:hooks` change to `covered`. Run `pnpm check`.
+- [x] `packages/runtime/test/registry/resolve.test.ts` gains one case per cell of the visibility table and one case per qualified-name form. Run `pnpm vitest run packages/runtime/test/registry`.
+- [x] `packages/runtime/test/registry/validate.test.ts` gains one case per invalid fixture. Each case asserts the issue code and the path.
+- [x] The ledger entries for `distribution:packaging` and for the definition-time statements in `specification:agents`, `specification:handlers`, `specification:prompts`, `specification:models`, and `specification:hooks` change to `covered`. Run `pnpm check`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
@@ -619,6 +619,48 @@ $ bun --bun run test            # after
 - Appendix E names pages for M2 through M7 only, so `scripts/seed-ledger.mjs` assigns milestones from a rule table. Its M1 rules follow the M1-2 through M1-7 sections. Its rules for the providers pages, most of the tools page, and a few sections of threads, hooks, and messages are judgment calls.
 - A ledger entry names a test the way Vitest prints it, `<file> > <describe> > <title>`. The ledger step reads the Vitest JSON report that `pnpm test` writes, so it also fails when a named test did not pass.
 - `pnpm check` runs the requirement check before the ledger check, so its last line is the ledger line.
+
+### Settled in M1-2
+
+The M1-2 owner ran each command below on 2026-11-25 on macOS, from the repository root, with Node 22.22.3, Node 22.19.0, and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-2/evidence/` on that machine.
+
+**The project directory.** `spindle validate [dir]` takes the project directory, which holds `agents/` and may hold `node_modules/`. The default is the current directory. A directory without `agents/` gets the issue `agents_directory_missing`.
+
+**Loading `.ts` files.** Node 22.19.0 and 22.22.3 import a definition file with a dynamic `import()` and print no warning. An `enum` fails with the code `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, and `spindle validate` turns that code into a sentence that names the cause and the fix. Bun transpiles the `enum` and loads the file. Node also refuses to strip types under `node_modules` and reports `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so a packed package must ship JavaScript. Vitest transforms TypeScript itself, so the enum case has a unit test of the message only. The fixture `packages/conformance/fixtures/typescript-enum` sits outside `invalid/` because it is valid on Bun.
+
+```text
+$ node packages/runtime/dist/cli/main.js validate packages/conformance/fixtures/typescript-enum
+definition_load_failed error agents/tools/lookup.ts The file uses TypeScript syntax that Node cannot strip, such as an enum, a namespace, or a constructor parameter property. ...
+exit 1
+$ bun packages/runtime/dist/cli/main.js validate packages/conformance/fixtures/typescript-enum
+0 errors, 0 warnings
+exit 0
+```
+
+**File names and `name` fields.** The spec says only that effect names are file-based. Spindle uses the file name, or the export key in a package, as the name of every definition. A `name` or hook `id` that differs gets `definition_name_mismatch`. `packages/conformance/DIVERGENCES.md` records this choice and five others.
+
+**Output.** Each issue line is `<code> <severity> <file>[:<field path>] <message>`. The issues are sorted by file, field path, and code. Two summary lines follow, the count of each kind and the count of errors and warnings. `--json` prints a list of objects with `code`, `severity`, `message`, `file`, and `path`. `--list` prints a table with the columns `KIND`, `QUALIFIED NAME`, `PACKAGE`, `NAME`, and `VISIBILITY`. The command exits 1 when any issue is an error, and 0 when every issue is a warning.
+
+**Effect v4 names.** These come from the `.d.ts` files under `node_modules/effect/dist`.
+
+- `Command.make("spindle").pipe(Command.withSubcommands([validateCommand]))` adds the subcommand. `Command.runWith(command, { version })(args)` runs it in a test.
+- `Flag.Boolean("json")` fails when the flag is absent, so each flag adds `Flag.withDefault(false)`. `Argument.String("dir").pipe(Argument.withDefault("."))` makes the directory optional.
+- `runMain` exits 1 on a failure and logs it unless the error sets `[Runtime.errorReported]` to `false`. `IssuesFound` sets it, so a failed validation prints no stack trace.
+- `Context.Service<Self, Shape>()("key")` declares the `Registry` service. `Effect.cached` makes each lazy loader run once.
+- `Console.Console` is a `Context.Reference`, so a test replaces it with `Effect.provideService` and reads the printed lines.
+
+**Package fixtures.** Git ignores every `node_modules/` directory, so no committed fixture can hold one. The fixtures that use a package link it from `agents/packed/` with a relative symlink, and lane 7 "installs" `packed-a` and `packed-b` that way. The unit test for `node_modules` discovery copies `packed-a` into a temporary directory. A package's `__meta.packageId` must equal its `package.json` name.
+
+**The ledger.** 81 entries are `covered` and 4 are `partial`. The partial entries are Agents section 6 (two entries, M3 composes), Handlers section 2 (M4 owns effect schedules), and Tools section 2.1 (M2 owns invocations outside `uses`). Five Packaging entries are `not-testable`, because they constrain package authors. The M1 entries on these pages that describe runtime behavior, such as tool choice, input schemas, hook timing, and tool annotations, stay `planned` for M1-4 and M1-5. 26 curated statements were added, which brings the count line to `606 RFC 2119 statements, 61 lowercase must or should statements, 136 curated statements with no keyword, 24 pages`.
+
+**Where M1-2 differs from this plan.**
+
+- The Build box names Node 22.22. Node 22.19.0, the `engines` floor, also strips types.
+- The visibility table has one empty cell, Global to Same Package, so `resolve.test.ts` has seven cell cases, not eight.
+- Subagents section 2.4 was assigned to M3. M1-2 checks it at load time, so the entry moved to M1.
+- The plan does not list the Effects page for M1-2. Its definition rules, `defineEffect` default exports and unique file-based names, are load-time checks, so three Effects entries moved from M4 to M1.
+- The file boundary names `src/registry`, `src/cli`, and `fixtures`. M1-2 also adds `test/registry`, `test/cli`, and edits `requirements.extra.json`, `requirements.json`, `ledger.json`, and `DIVERGENCES.md`, as the owner brief allows.
+- `packages/conformance/fixtures/generate-large.mjs <dir>` writes the 200-definition fixture for the perf lane. One unmeasured run took 0.37 seconds on Node and 0.13 seconds on Bun. The perf lane owns the real medians.
 
 ## Appendix B. Alternatives rejected
 
