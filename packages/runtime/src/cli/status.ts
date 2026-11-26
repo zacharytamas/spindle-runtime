@@ -63,18 +63,17 @@ export const recoverCommand = Command.make(
       )
       if (result.kind === "atRest")
         return yield* Console.log(
-          `thread ${thread} is not running (${result.status.state} ${result.status.reason ?? "none"}). Nothing changed.`,
+          `thread ${thread} is not running (${result.thread.status.state} ${result.thread.status.reason ?? "none"}). Nothing changed.`,
         )
-      const { pid } = result
       if (result.kind === "alive")
         return yield* Console.log(
-          `thread ${thread} is running in process ${pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`,
+          `thread ${thread} is running in process ${result.pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`,
         )
-      if (pid === null)
+      if (result.kind === "missingHolder")
         return yield* Console.log(`thread ${thread} had no recorded holder. Settled it as failed (execution_lost).`)
       const line = force
-        ? `thread ${thread} was running in process ${pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
-        : `thread ${thread} was running in process ${pid}, which is gone. Settled it as failed (execution_lost).`
+        ? `thread ${thread} was running in process ${result.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
+        : `thread ${thread} was running in process ${result.pid}, which is gone. Settled it as failed (execution_lost).`
       yield* Console.log(line)
     }),
 ).pipe(Command.withDescription("Settle a thread whose execution was lost"))

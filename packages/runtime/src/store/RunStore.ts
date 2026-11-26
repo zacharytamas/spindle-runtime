@@ -1,5 +1,6 @@
 import type { ThreadStatus } from "@standardagents/spec"
 import { Context, Effect } from "effect"
+import type { SqlError } from "effect/sql/SqlError"
 import { processAlive, processId } from "#platform"
 import { CLOSING, transition } from "../execution/run-status.ts"
 import {
@@ -14,7 +15,7 @@ import {
   runColumns,
   unyielding,
 } from "./database.ts"
-import type { Claim, Holder, QueueEntry, Thread, WriteOrigin } from "./model.ts"
+import type { Claim, Holder, QueueEntry, Thread, ThreadNotFound, WriteOrigin } from "./model.ts"
 import {
   decodeQueued,
   type MessageRow,
@@ -28,6 +29,11 @@ import {
   toStatus,
   toThread,
 } from "./schema.ts"
+
+type Recovery =
+  | { readonly kind: "atRest"; readonly thread: Thread }
+  | { readonly kind: "missingHolder"; readonly thread: Thread }
+  | { readonly kind: "alive" | "recovered"; readonly thread: Thread; readonly pid: number }
 
 // All connections in this process can observe claims held by its supervisors.
 const localHolders = new Set<string>()
@@ -237,23 +243,24 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         )
       }).pipe(Effect.withSpan("RunStore.recoverLost"), unyielding),
 
-    recoverThread: <E = never, R = never>(
-      threadId: string,
-      force: boolean,
-      check?: (thread: Thread) => Effect.Effect<void, E, R>,
-    ) =>
-      Effect.gen(function* () {
+    recoverThread: Effect.fn("RunStore.recoverThread")(
+      function* (threadId: string, force: boolean): Effect.fn.Return<Recovery, ThreadNotFound | SqlError> {
         const row = yield* requireThread(
           threadId,
           yield* heldRows<ThreadRow & RunRow>(`${threadColumns}, flow_id, revision`, sql`id = ${threadId}`),
         )
         const thread = toThread(row)
-        if (check) yield* check(thread)
-        if (row.run_state !== "running") return { kind: "atRest" as const, status: thread.status, pid: null }
-        if (!force && !(yield* lost(row))) return { kind: "alive" as const, status: thread.status, pid: row.pid }
+        if (row.run_state !== "running") return { kind: "atRest", thread }
+        if (row.pid !== null && !force && !(yield* lost(row))) return { kind: "alive", thread, pid: row.pid }
         const status = yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
-        return { kind: "recovered" as const, status, pid: row.pid }
-      }).pipe(sql.withTransaction, Effect.withSpan("RunStore.recoverThread"), unyielding),
+        const settled = { ...thread, status }
+        return row.pid === null
+          ? { kind: "missingHolder", thread: settled }
+          : { kind: "recovered", thread: settled, pid: row.pid }
+      },
+      sql.withTransaction,
+      unyielding,
+    ),
 
     acquireHolder: Effect.fn("RunStore.acquireHolder")(
       (holder: Holder) =>

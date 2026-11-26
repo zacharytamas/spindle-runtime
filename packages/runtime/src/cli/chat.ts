@@ -114,21 +114,19 @@ const openThread = (
     const id = requested.value
     const opened = yield* threadStore.transaction(
       Effect.gen(function* () {
-        const run = yield* runStore
-          .recoverThread(id, false, (thread) =>
-            Effect.gen(function* () {
-              if (thread.agentId !== agent)
-                return yield* Effect.andThen(
-                  identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
-                  Effect.fail(new RunFailed({ message: "wrong agent" })),
-                )
-              yield* requireOpen(thread)
-            }),
-          )
+        const thread = yield* threadStore
+          .getThread(id)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
+        if (thread.agentId !== agent)
+          return yield* Effect.andThen(
+            identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
+            Effect.fail(new RunFailed({ message: "wrong agent" })),
+          )
+        yield* requireOpen(thread)
+        const run = thread.status.state === "running" ? yield* runStore.recoverThread(id, false) : undefined
         return {
-          status: run.status,
-          pid: run.kind === "alive" ? run.pid : null,
+          status: run?.thread.status ?? thread.status,
+          pid: run?.kind === "alive" ? run.pid : null,
           cursor: yield* messageStore.latestMessageSeq(id),
         }
       }),
