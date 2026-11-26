@@ -270,7 +270,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds",
+    name: "H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds",
     requirements: ["41d77a88", "2fae890e", "7aa8424d", "1d6d311a"],
     run: async (driver) => {
       const outcomes: Array<unknown> = []
@@ -287,6 +287,12 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             return message
           },
         }),
+        defineHook({
+          hook: "before_update_message",
+          id: "stamp_update",
+          execute: async (_state, _id, updates) =>
+            updates.content === "stamped" ? { ...updates, updated_at: 1 } : { ...updates, silent: updates.silent },
+        }),
       ]
       const settle = <A>(promise: Promise<A>) =>
         promise.then(
@@ -302,6 +308,9 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
             outcomes.push((await state.injectMessage({ role: "user", content: "json metadata" })).metadata)
             outcomes.push(await settle(state.injectMessage({ role: "user", content: "taken id" })))
             outcomes.push(await settle(state.injectMessage({ role: "user", content: "bad shape" })))
+            outcomes.push(await settle(state.updateMessage(own.id, { content: "stamped" })))
+            const passed = { content: "kept key", silent: true } as { content: string }
+            outcomes.push(await settle(state.updateMessage(own.id, passed).then((message) => message.content)))
             return ok("probed")
           },
         }),
@@ -310,13 +319,17 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { toolCalls: [{ id: "c1", name: "probe", arguments: {} }] },
         { text: "reply" },
       ])
-      await using(driver, { provider, tools, hooks, prompt: { hooks: ["ident"] } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        const stored = await session.messages(thread)
-        expect(stored.map((m) => m.content)).toEqual(["go", null, "own id", "json metadata", "probed", "reply"])
-        expect(stored.filter((m) => m.id === "chosen_id").map((m) => m.content)).toEqual(["own id"])
-        expect(stored.at(-1)?.id).not.toBe("chosen_id")
-      })
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { hooks: ["ident", "stamp_update"] } },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => m.content)).toEqual(["go", null, "kept key", "json metadata", "probed", "reply"])
+          expect(stored.filter((m) => m.id === "chosen_id").map((m) => m.content)).toEqual(["kept key"])
+          expect(stored.at(-1)?.id).not.toBe("chosen_id")
+        },
+      )
       expect(outcomes).toEqual([
         ["chosen_id", 12345, "own id"],
         { flow: "x" },
@@ -325,6 +338,11 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           "rejected",
           "Hook ident (before_create_message) returned a value that is not a message the store can hold, so Spindle did not make the change",
         ],
+        [
+          "rejected",
+          "Hook stamp_update (before_update_message) returned a value that is not updates that change only content and metadata, so Spindle did not make the change",
+        ],
+        ["resolved", "kept key"],
       ])
     },
   },

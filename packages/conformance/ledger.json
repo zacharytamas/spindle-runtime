@@ -1649,7 +1649,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > hooks > H9 hands every create hook the full stored record and every update hook the id and the patch, at rest and in a run",
 			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
-			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
 	},
@@ -5676,7 +5676,7 @@
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
 	},
@@ -5686,7 +5686,7 @@
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
 	},
@@ -6165,7 +6165,7 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
-			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds"
+			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
 	},
