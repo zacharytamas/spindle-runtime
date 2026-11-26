@@ -33,7 +33,7 @@
           "missingConcurrencyOption": "warning",
           "preferTypedSchemaDecoder": "warning",
           "returnEffectInGen": "suggestion",
-          "schemaNumber": "warning",
+          "schemaNumber": "suggestion",
           "tryCatchInEffectGen": "suggestion",
           "unknownInEffectCatch": "warning",
           "unsafeEffectTypeAssertion": "suggestion",
