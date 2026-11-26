@@ -11,7 +11,14 @@ export const agents = {
 
 export const handlers = {}
 
-export const prompts = {}
+export const prompts = {
+  sync_prompt: () => ({
+    name: "sync_prompt",
+    toolDescription: "A prompt whose loader returns a value instead of a Promise",
+    model: "missing",
+    prompt: "Help the person.",
+  }),
+}
 
 export const tools = {
   fetch_page: async () => ({

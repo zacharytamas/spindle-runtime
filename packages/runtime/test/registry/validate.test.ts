@@ -247,6 +247,7 @@ const invalid: ReadonlyArray<Case> = [
       error("agent_handler_undefined", "agents/packed/broken/index.js:agents.relay.sideA.handler"),
       error("package_entry_agent_undefined", "agents/packed/broken/index.js"),
       error("package_parent_hooks_mismatch", "agents/packed/broken/index.js:parentHooks.relay"),
+      error("definition_load_failed", "agents/packed/broken/index.js:prompts.sync_prompt"),
       error("tool_uses_undefined", "agents/packed/broken/index.js:tools.fetch_page.uses[0]"),
       warning("package_keyword_missing", "agents/packed/broken/package.json"),
       error("package_parent_hooks_mismatch", "agents/packed/broken/package.json:standardagent.parentHooks.relay"),

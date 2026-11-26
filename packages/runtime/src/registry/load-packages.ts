@@ -179,7 +179,9 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
         const load = Effect.tryPromise({
           try: async () => {
             if (typeof loader !== "function") throw new TypeError(`${at} is not a loader function`)
-            return withSignature(await loader(), signature)
+            const pending: unknown = loader()
+            if (!(pending instanceof Promise)) throw new TypeError(`${at} returns a value, not a Promise`)
+            return withSignature(await pending, signature)
           },
           catch: (cause) =>
             new LoadError({
