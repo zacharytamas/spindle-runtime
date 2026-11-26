@@ -263,6 +263,8 @@ const invalid: ReadonlyArray<Case> = [
     "rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
     "package-problems",
     [
+      error("hook_undefined", "agents/packed/broken/index.js:agents.relay.parentHooks[1].hook"),
+      error("agent_parent_hooks_invalid", "agents/packed/broken/index.js:agents.relay.parentHooks[2].hook"),
       error("agent_handler_undefined", "agents/packed/broken/index.js:agents.relay.sideA.handler"),
       error("package_entry_agent_undefined", "agents/packed/broken/index.js"),
       error("package_parent_hooks_mismatch", "agents/packed/broken/index.js:parentHooks.relay"),

@@ -5,7 +5,11 @@ export const agents = {
     toolDescription: "Relays messages",
     sideA: { handler: "relay_pipe" },
     sideB: { human: true },
-    parentHooks: [{ hook: "share_context", reason: "Shows the relay context to the parent." }],
+    parentHooks: [
+      { hook: "share_context", reason: "Shows the relay context to the parent." },
+      { hook: "host_only", reason: "Names a hook that only the host project defines." },
+      { hook: "standardagent-broken/share_context", reason: "Names share_context again by its qualified name." },
+    ],
   }),
 }
 

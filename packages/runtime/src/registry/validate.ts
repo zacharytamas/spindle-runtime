@@ -232,11 +232,22 @@ export const validate = Effect.gen(function* () {
       })
     }
     at.hookList("hooks", agent.hooks)
+    // validateAgentDefinition reports two equal spellings, so this check reports only another spelling of one hook.
+    const spellings = new Map<Definition, string>()
     if (Array.isArray(agent.parentHooks))
       agent.parentHooks.forEach((requirement: unknown, index) => {
         if (!isRecord(requirement) || !isNonEmptyString(requirement.hook)) return
         const resolution = at.resolve("hook", requirement.hook)
-        if (resolution._tag !== "Found")
+        if (resolution._tag === "Found") {
+          const earlier = spellings.get(resolution.definition)
+          if (earlier === undefined) spellings.set(resolution.definition, requirement.hook)
+          else if (earlier !== requirement.hook)
+            at.report(
+              "agent_parent_hooks_invalid",
+              `parentHooks[${index}].hook`,
+              `parentHooks names hook ${earlier} again as ${requirement.hook}`,
+            )
+        } else
           at.report(
             "hook_undefined",
             `parentHooks[${index}].hook`,
