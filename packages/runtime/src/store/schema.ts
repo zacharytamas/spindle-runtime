@@ -211,8 +211,22 @@ const attachment = Schema.Struct({
   height: Schema.optional(Schema.Natural),
   description: Schema.optional(Schema.String),
 })
-const matchesAttachment = Schema.is(attachment)
-export const isAttachmentRef = (value: unknown): value is AttachmentRef => matchesAttachment(value)
+const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+const optionalCount = (value: unknown) => value === undefined || count(value)
+const optionalString = (value: unknown) => value === undefined || typeof value === "string"
+
+export const isAttachmentRef = (value: unknown): value is AttachmentRef =>
+  isRecord(value) &&
+  value.type === "file" &&
+  typeof value.id === "string" &&
+  typeof value.path === "string" &&
+  typeof value.name === "string" &&
+  typeof value.mimeType === "string" &&
+  count(value.size) &&
+  optionalCount(value.width) &&
+  optionalCount(value.height) &&
+  optionalString(value.description)
+
 const record = Schema.Record(Schema.String, Schema.Unknown)
 const matchesMessage = Schema.is(
   Schema.Struct({
