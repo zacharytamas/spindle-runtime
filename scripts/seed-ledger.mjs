@@ -9,8 +9,9 @@ const ledgerFile = path.join(conformance, "ledger.json");
 const DRAFT = "The Users page is a Draft in spec 0.2.0.";
 const EXAMPLE = "The statement is part of an example prompt for a coding agent, not a requirement.";
 
-// Milestone 1 owns the sections that the M1-2 to M1-7 sections of docs/plans/m1-core-loop.md name.
-// Later milestones own the pages and sections that Appendix E of that plan names.
+// The M1 rules follow the sections that docs/plans/m1-core-loop.md gives to M1-2 through M1-7, and the later
+// rules follow its Appendix E. The plan names no milestone for infrastructure:providers, specification:providers,
+// most of specification:tools, or some sections of threads, hooks, and messages, so those rules are judgment calls.
 const RULES = [
 	["specification:users", undefined, "later", "deferred", DRAFT],
 	["getting-started:examples", undefined, "none", "not-testable", EXAMPLE],
