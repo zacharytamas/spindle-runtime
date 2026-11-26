@@ -35,6 +35,32 @@ const toolRows = (db: string, thread: string) =>
 
 describe("spindle chat beside other processes", () => {
   it.live(
+    "a write failure after admission reports that the line was sent",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const session = yield* chat(gate, ["assistant", ...dir, "--db", db])
+        const line = call("hold", { name: "locked" })
+        yield* session.type(`${line}\n`)
+        yield* until("the tool to start", exists(at("tool-entered-locked")))
+        const thread = yield* threadOf(session)
+        const sql = yield* Effect.provide(SqlClient, yield* Layer.build(Layer.fresh(SqliteLive({ filename: db }))))
+        yield* sql.unsafe("BEGIN IMMEDIATE")
+        yield* touch(at("release-locked"))
+        yield* prompt(session, 2)
+        expect(yield* messagesOf(db, thread)).toContainEqual(["user", line])
+        expect(yield* toolRows(db, thread)).toEqual([])
+        yield* sql.unsafe("COMMIT")
+        expect(yield* lines(at("tool-log"))).toEqual(["locked"])
+        expect(session.err()).toContain("spindle: the line was sent, but the run could not finish: ")
+        expect(session.err()).not.toContain(note.notSent)
+        yield* session.end
+        expect(yield* session.exit).toBe(0)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "a message that spindle send delivers during the chat's run prints as elsewhere, and only the chat calls the model (O7, F22)",
     () =>
       Effect.gen(function* () {

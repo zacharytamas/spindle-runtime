@@ -184,10 +184,11 @@ const converse = (chat: Conversation) =>
         Effect.map(terminal.readLine, (line) => ({ kind: "line", line }) as const),
       ])
     })
-    const send = (line: string) =>
+    const send = (line: string, onAdmitted: () => void) =>
       supervisor.send(chat.id, line, {
         observe,
         onAdmitted: (seq) => {
+          onAdmitted()
           own.add(seq)
           chat.onAdmitted(seq)
         },
@@ -211,7 +212,7 @@ const converse = (chat: Conversation) =>
           }),
       })
 
-    const waitForTurn = (turn: Turn) =>
+    const waitForTurn = (turn: Turn, wasAdmitted: () => boolean) =>
       Effect.gen(function* () {
         let stopping = false
         const done = Effect.map(Fiber.await(turn), (exit) => ({ kind: "done", exit }) as const)
@@ -229,7 +230,8 @@ const converse = (chat: Conversation) =>
               yield* chat.identify(error.message)
               return "terminated" as const
             }
-            yield* note(`the line was not sent: ${describe(error)}`)
+            const problem = wasAdmitted() ? "the line was sent, but the run could not finish" : "the line was not sent"
+            yield* note(`${problem}: ${describe(error)}`)
             return "continue" as const
           }
           if (event.kind === "closed") {
@@ -263,8 +265,13 @@ const converse = (chat: Conversation) =>
       if (previous?.pollUnsafe()) yield* finishPrevious
       yield* flush
       waiting = false
-      const turn = yield* Effect.forkScoped(send(read.line))
-      const result = yield* waitForTurn(turn)
+      let admitted = false
+      const turn = yield* Effect.forkScoped(
+        send(read.line, () => {
+          admitted = true
+        }),
+      )
+      const result = yield* waitForTurn(turn, () => admitted)
       if (result !== "continue") {
         ending = result
         break
