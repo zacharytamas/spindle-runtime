@@ -4,6 +4,7 @@ import { type Definition, type Issue, KINDS, PLURAL, Registry } from "../registr
 import { counts, type Validation, validate } from "../registry/validate.ts"
 
 export class IssuesFound extends Data.TaggedError("IssuesFound")<{ readonly errors: number }> {
+  // runMain logs a failure and its stack unless this is false. The issue lines are already printed.
   override readonly [Runtime.errorReported] = false
 }
 
