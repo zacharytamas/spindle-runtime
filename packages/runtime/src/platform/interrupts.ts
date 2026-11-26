@@ -21,6 +21,7 @@ export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
   fiber.addObserver((exit) => {
     process.removeListener("SIGINT", onSignal)
     process.removeListener("SIGTERM", onSignal)
+    process.removeListener("SIGHUP", onSignal)
     teardown(exit, (code) => {
       // The main scope has closed. Flush both streams before exiting even if an abandoned tool still holds a timer.
       process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
@@ -28,4 +29,5 @@ export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
   })
   process.on("SIGINT", onSignal)
   process.on("SIGTERM", onSignal)
+  process.on("SIGHUP", onSignal)
 })
