@@ -160,6 +160,15 @@ describe("ThreadStore", () => {
           depth: 0,
           silent: false,
           metadata: { step: 1 },
+          subagent_id: null,
+          subagent_relationship: null,
+          subagent_name: null,
+          subagent_title: null,
+          subagent_description: null,
+          subagent_status: null,
+          subagent_blocking: null,
+          subagent_thread_name: null,
+          subagent_spawn_group_id: null,
         })
         expect(yield* store.getMessage(thread.id, "missing")).toBeNull()
         const [plain] = yield* store.appendMessages(thread.id, [user("no reasoning here")])

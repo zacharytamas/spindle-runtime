@@ -96,6 +96,19 @@ export const messageColumns = [
   "metadata",
 ].join(", ")
 
+// M3 adds the child registry that these fields project from. Until then no message has a subagent.
+const noSubagent = {
+  subagent_id: null,
+  subagent_relationship: null,
+  subagent_name: null,
+  subagent_title: null,
+  subagent_description: null,
+  subagent_status: null,
+  subagent_blocking: null,
+  subagent_thread_name: null,
+  subagent_spawn_group_id: null,
+} satisfies Partial<Message>
+
 export const toMessage = (row: MessageRow): Message => ({
   id: row.id,
   role: row.role,
@@ -114,6 +127,7 @@ export const toMessage = (row: MessageRow): Message => ({
   depth: row.depth,
   silent: row.silent === 1,
   metadata: JSON.parse(row.metadata),
+  ...noSubagent,
 })
 
 export const messageRow = (

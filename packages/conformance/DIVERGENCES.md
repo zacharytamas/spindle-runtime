@@ -57,10 +57,10 @@ Some sections record a point that the spec text leaves open. Spindle takes the s
 
 ## Message fields that the spec requires and the package marks optional
 
-- **Spec.** `specification/threads/messages.md`, section 1, Message Structure. The table types `name`, `tool_calls`, `tool_call_id`, `tool_status`, `status`, `attachments`, `reasoning_content`, `reasoning_details`, `prompt`, and `parent_id` as `T | null`, and `depth`, `silent`, and `metadata` as plain types, so each field is always present. Requirement ids include `specification:threads/messages:968989f2` (`name`), `specification:threads/messages:41278e5e` (`tool_call_id`), and `specification:threads/messages:e551bf33` (`depth`).
+- **Spec.** `specification/threads/messages.md`, section 1, Message Structure. The table types `name`, `tool_calls`, `tool_call_id`, `tool_status`, `status`, `attachments`, `reasoning_content`, `reasoning_details`, `prompt`, `parent_id`, and the nine `subagent_*` fields as `T | null`, and `depth`, `silent`, and `metadata` as plain types, so each field is always present. Requirement ids include `specification:threads/messages:968989f2` (`name`), `specification:threads/messages:41278e5e` (`tool_call_id`), and `specification:threads/messages:e551bf33` (`depth`).
 - **Package.** `Message` in `@standardagents/spec` 0.45.13 declares each of those fields optional, as in `name?: string | null` and `depth?: number`.
 - **Disagreement.** The spec says a reader can rely on each field. The package lets a runtime leave it out.
-- **Spindle.** The store returns every field on every message, with `null` for an absent value, `0` for `depth`, `false` for `silent`, and `{}` for `metadata`. That record satisfies both types. `packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back` asserts the full record.
+- **Spindle.** The store returns every field of the spec's table on every message, with `null` for an absent value, `0` for `depth`, `false` for `silent`, and `{}` for `metadata`. The nine `subagent_*` fields are always `null` until M3 adds the child registry they project from. That record satisfies both types. `packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back` asserts the full record.
 
 ## Limits that Spindle sets where the spec allows one
 
