@@ -1,0 +1,8 @@
+{
+	"name": "spindle-conformance",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The requirement ledger and conformance scenarios for Spindle",
+	"license": "MIT",
+	"type": "module"
+}
