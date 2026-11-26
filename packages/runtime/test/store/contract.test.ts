@@ -153,6 +153,15 @@ describe("ThreadStore", () => {
           metadata: { step: 1 },
         })
         expect(yield* store.getMessage(thread.id, "missing")).toBeNull()
+        const [plain] = yield* store.appendMessages(thread.id, [user("no reasoning here")])
+        expect(yield* store.getMessage(thread.id, plain?.id ?? "")).toMatchObject({
+          reasoning_content: null,
+          reasoning_details: null,
+        })
+        expect((yield* store.getMessages(thread.id, { order: "asc" })).messages).toEqual([
+          yield* store.getMessage(thread.id, assistant?.id ?? ""),
+          plain,
+        ])
       }).pipe(Effect.provide(inMemory)),
     )
 
@@ -490,6 +499,25 @@ describe("ThreadStore", () => {
           expect(value).toEqual({ theme: "dark", locale: "en-US" })
         }),
       ),
+    )
+
+    it.effect(
+      "a value is committed when setValue resolves, so a second connection reads it while the first stays open",
+      () =>
+        withDatabaseFile((filename) =>
+          Effect.gen(function* () {
+            const writer = yield* ThreadStore
+            const thread = yield* writer.createThread({ agentId: "assistant" })
+            yield* writer.setValue(thread.id, "count", 1)
+            const read = Effect.gen(function* () {
+              const reader = yield* ThreadStore
+              return yield* reader.getValue(thread.id, "count")
+            }).pipe(Effect.provide(storeAt(filename)))
+            expect(yield* read).toBe(1)
+            yield* writer.setValue(thread.id, "count", null)
+            expect(yield* read).toBeNull()
+          }).pipe(Effect.provide(storeAt(filename))),
+        ),
     )
 
     it.effect("setValue fails with ThreadNotFound for an unknown thread", () =>
