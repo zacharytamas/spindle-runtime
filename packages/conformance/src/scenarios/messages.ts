@@ -479,6 +479,41 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "M5b leaves a message that a failing filter_messages hook injected out of the request that hook was filtering",
+    requirements: ["41fe7364", "61b94fc9", "6d8b1d0c", "16606350"],
+    run: async (driver) => {
+      for (const humanOn of SIDES) {
+        const { human } = rolesFor(humanOn)
+        let injected = false
+        const hooks = [
+          defineHook({
+            hook: "filter_messages",
+            id: "inject_then_fail",
+            execute: async (state) => {
+              if (injected) return state.execution?.messageHistory ?? []
+              injected = true
+              await state.injectMessage({ role: human, content: "from a failing filter" })
+              throw new Error("the filter failed after it injected")
+            },
+          }),
+        ]
+        const provider = new ScriptedProvider([
+          { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
+          { text: "done" },
+        ])
+        await using(
+          driver,
+          { provider, tools: noop, hooks, humanOn, prompt: { hooks: ["inject_then_fail"] } },
+          async (session, thread) => {
+            await send(session, thread, "go")
+            expect(contents(history(provider.requests[0]))).toEqual(["go"])
+            expect(contents(history(provider.requests[1]))).toContain("from a failing filter")
+          },
+        )
+      }
+    },
+  },
+  {
     name: "M6 gives a message prefilter_llm_history injects the same snapshot rule and never restarts the assembly",
     requirements: ["8233eb0b", "b7d299a8", "22cf59fa", "000bf2b7", "73bce32e", "e0078c2e", "d57ad351"],
     run: async (driver) => {

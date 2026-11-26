@@ -20,19 +20,19 @@ export const copyMessage = (message: Message) =>
 // messages at that moment, whoever wrote them. The execution keeps a copy and the thread revision it matches, and
 // reads the whole history again only when the revision shows that someone else wrote.
 export interface History {
-  // The copy itself, which no tool or hook may get without copying it.
+  // The copy itself, which no tool or hook may get without copying it. No later write changes an array it returned, so
+  // a snapshot holds what the thread held when it was taken.
   readonly read: Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | SqlError, ThreadStore>
   readonly inserted: (inserted: Inserted) => void
 }
 
 export const makeHistory = (threadId: string): History => {
-  let copy: { revision: number; readonly messages: Array<Message> } | undefined
+  let copy: { readonly revision: number; readonly messages: ReadonlyArray<Message> } | undefined
   return {
     read: Effect.gen(function* () {
       const store = yield* ThreadStore
       if (copy !== undefined && copy.revision === (yield* store.revision(threadId))) return copy.messages
-      const fresh = yield* store.history(threadId)
-      copy = { revision: fresh.revision, messages: [...fresh.messages] }
+      copy = yield* store.history(threadId)
       return copy.messages
     }),
     // A revision at or below the copy's means a read after the insert already holds it. One past the copy's means
@@ -40,11 +40,8 @@ export const makeHistory = (threadId: string): History => {
     // leaves the copy stale.
     inserted: ({ message, revision }) => {
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
-      else if (revision === copy.revision + 1) {
-        // The writer gets the same object back, and injectMessage hands it to the tool or hook that wrote it.
-        copy.messages.push(copyMessage(message))
-        copy.revision = revision
-      }
+      // The writer gets the same message object back, and injectMessage hands it to the tool or hook that wrote it.
+      else if (revision === copy.revision + 1) copy = { revision, messages: [...copy.messages, copyMessage(message)] }
     },
   }
 }
