@@ -116,6 +116,11 @@ const invalid: ReadonlyArray<Case> = [
     [error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[0]")],
   ],
   [
+    "rejects an agent named in a prompt's tools that does not set exposeAsTool",
+    "agent-tool-not-exposed",
+    [error("prompt_tool_agent_not_exposed", "agents/prompts/coordinator.ts:tools[0]")],
+  ],
+  [
     "rejects two prompts that include each other",
     "circular-include",
     [error("prompt_include_circular", "agents/prompts/first.ts:prompt[0].prompt")],
