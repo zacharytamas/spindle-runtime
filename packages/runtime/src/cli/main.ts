@@ -15,7 +15,7 @@ const packageVersion = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const file = yield* path.fromFileUrl(new URL("../../package.json", import.meta.url))
-  const { version } = yield* Schema.decodeUnknownEffect(PackageJson)(yield* fs.readFileString(file))
+  const { version } = yield* Schema.decodeEffect(PackageJson)(yield* fs.readFileString(file))
   return version
 })
 
