@@ -10,18 +10,36 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 
 ## M1-6, queues and one execution per thread
 
+The owner built M1-6 at `9f8429a`, and the root merged M1-5 into it at `ad3578c`. The verifier and two audits are running. Each item below says whether the build claims it.
+
+Built, and waiting for the verifier or an audit to confirm.
+
+- The stored run state now settles to `idle` or `failed` after a failure, and a killed process's thread reads `failed execution_lost`.
+- An unanswered tool call gets an error result at recovery, and no tool is replayed.
+- `NaN` or `Infinity` as `retries` is rejected.
+- A thread state that a tool kept after its run ended refuses every call with a typed error.
+- A hook that a tool's `injectMessage` started ends when terminate aborts the run.
+
+For the fix round.
+
+- Dead-holder detection uses silence alone, a 15 second lease renewed five times per lease. The root's rule replaces it. A holder whose process is gone is dead at once. A live holder is never taken over for being slow. Silence past a threshold is the fallback, and every write from the stale holder is then refused.
+- Only message writes are fenced against a stale holder. A `setValue` can still land.
+- `store.setStatus` and `takeQueue` still exist and bypass the transition table and the claims. `takeQueue` deletes the batch it hands out.
+- `supervisor.abort` releases the thread while a tool that ignores the signal may still run. Only `spindle run` uses it today, and that command exits right after.
+
+Open, not for this round.
+
 - A tool that never returns has no deadline, and nothing can stop it.
 - A model stream that stalls waits forever when the model sets no timeout.
-- The stored run state stays `idle` after a run fails or the process is killed. The command line reports the failure, and the database does not.
-- A storage failure after a tool has run leaves an assistant tool call with no result. Recovery must give that call an error result.
-- The operator's open decision on a tool call that was running when the process died. The default is no replay. The next run stores an error result for that call.
-- Cleanup on interrupt is incomplete.
-- A caller of the runtime's API can pass `NaN` or `Infinity` as `retries`.
-- A thread state that a tool kept and used after its run ended fails with a database driver error. It needs a typed error, as a hook past its time limit already has.
-- Hooks that a tool's `injectMessage` started run on their own promise and survive an interrupt.
+- `invokeTool` on a thread at rest returns an error result. The brief suggested a minimal execution, which needs a decision on run status and claims.
+- The step is about 0.1 ms slower than its parent on Node, and 0.07 ms of that is not explained.
+- The planned threads rows still owe a test of each ThreadState member.
+- Cleanup on interrupt was incomplete before M1-6. The owner's report does not say whether it is complete now, so the audit has to.
+- Two sub-checks are not asserted. One is that a nested `invokeTool` starts no competing flow. The other is an execute alias after terminate.
 
 ## M1-7, chat, and a cleanup PR after it
 
+- `spindle send` prints only the status when another process ran the message. Its record stream must show the replies.
 - A definition file that throws from a timer, or that leaves a rejected promise unhandled, crashes the process after the report prints.
 - A definition file that calls `process.exit(0)` ends the run with exit code 0 and no report.
 - A definition file with a top-level `await` that never settles hangs `spindle validate`. A load timeout needs a number from the operator.
@@ -44,6 +62,7 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 - Untrusted text that is interpolated into a prompt is not sanitized. Thread arguments arrive in M2.
 - `envType` returns `secret` for every source. `setEnv` with a type arrives in M2.
 - A handoff target is not checked for a human side.
+- `forceTurn` is labelled as arriving in M2.
 
 ## Milestone 3
 
@@ -62,6 +81,7 @@ This file lists what the audits and verifiers of milestone 1 found and what the 
 ## Before the stack lands
 
 - The review bot left threads on PR 4, PR 5, and PR 6. The commits address them, and nobody has replied to them or resolved them.
+- For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
 
 ## Readings the operator can overrule
