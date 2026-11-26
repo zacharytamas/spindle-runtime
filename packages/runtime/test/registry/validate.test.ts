@@ -361,6 +361,14 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect("skips declaration files next to definitions", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("declaration-files")
+        expect(issues).toEqual([])
+        expect(definitions.map((d) => d.file)).toEqual(["agents/models/conversational.ts"])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("resolves a scoped package id and name", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("scoped-name")

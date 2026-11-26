@@ -41,7 +41,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
     const byName = new Map<string, string>()
     for (const entry of entries.sort()) {
       const extension = path.extname(entry)
-      if (!EXTENSIONS.includes(extension) || entry.endsWith(".d.ts") || entry.startsWith(".")) continue
+      if (!EXTENSIONS.includes(extension) || /\.d\.m?ts$/.test(entry) || entry.startsWith(".")) continue
       const name = path.basename(entry, extension)
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
