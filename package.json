@@ -1,29 +1,29 @@
 {
-	"name": "spindle-workspace",
-	"private": true,
-	"type": "module",
-	"license": "MIT",
-	"packageManager": "pnpm@10.34.1",
-	"engines": {
-		"node": ">=22.19.0"
-	},
-	"scripts": {
-		"build": "pnpm --filter spindle-runtime build",
-		"lint": "biome check",
-		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"test": "vitest run --reporter=verbose --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json",
-		"requirements": "node scripts/spec-requirements.mjs --check",
-		"ledger": "node packages/conformance/src/ledger.ts node_modules/.cache/spindle/vitest.json",
-		"check": "pnpm lint && pnpm typecheck && pnpm test && pnpm requirements && pnpm ledger"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.6.9",
-		"@effect/vitest": "4.1.5",
-		"@types/bun": "1.4.5",
-		"@types/node": "22.20.7",
-		"effect": "4.1.5",
-		"typescript": "7.0.2",
-		"vite": "8.3.8",
-		"vitest": "5.1.2"
-	}
+  "name": "spindle-workspace",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@10.34.1",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter spindle-runtime build",
+    "lint": "biome check",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --reporter=verbose --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json",
+    "requirements": "node scripts/spec-requirements.mjs --check",
+    "ledger": "node packages/conformance/src/ledger.ts node_modules/.cache/spindle/vitest.json",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm requirements && pnpm ledger"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.9",
+    "@effect/vitest": "4.1.5",
+    "@types/bun": "1.4.5",
+    "@types/node": "22.20.7",
+    "effect": "4.1.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.2"
+  }
 }

@@ -1,18 +1,18 @@
 {
-	"compilerOptions": {
-		"target": "es2023",
-		"lib": ["es2023"],
-		"module": "nodenext",
-		"moduleResolution": "nodenext",
-		"customConditions": ["spindle-source"],
-		"types": ["node", "bun"],
-		"strict": true,
-		"exactOptionalPropertyTypes": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"verbatimModuleSyntax": true,
-		"erasableSyntaxOnly": true,
-		"rewriteRelativeImportExtensions": true,
-		"skipLibCheck": true
-	}
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "customConditions": ["spindle-source"],
+    "types": ["node", "bun"],
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true
+  }
 }

@@ -1,37 +1,37 @@
 {
-	"name": "spindle-runtime",
-	"version": "0.0.0",
-	"description": "A self-hosted runtime for Standard Agent Specification 0.2.0",
-	"license": "MIT",
-	"type": "module",
-	"engines": {
-		"node": ">=22.19.0"
-	},
-	"bin": {
-		"spindle": "./dist/cli/main.js"
-	},
-	"files": [
-		"dist"
-	],
-	"imports": {
-		"#platform": {
-			"spindle-source": {
-				"bun": "./src/platform/bun.ts",
-				"default": "./src/platform/node.ts"
-			},
-			"bun": "./dist/platform/bun.js",
-			"default": "./dist/platform/node.js"
-		}
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json"
-	},
-	"dependencies": {
-		"@effect/platform-bun": "4.1.5",
-		"@effect/platform-node": "4.1.5",
-		"@effect/sql-sqlite-bun": "4.1.5",
-		"@effect/sql-sqlite-node": "4.1.5",
-		"@standardagents/spec": "0.45.13",
-		"effect": "4.1.5"
-	}
+  "name": "spindle-runtime",
+  "version": "0.0.0",
+  "description": "A self-hosted runtime for Standard Agent Specification 0.2.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "spindle": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "imports": {
+    "#platform": {
+      "spindle-source": {
+        "bun": "./src/platform/bun.ts",
+        "default": "./src/platform/node.ts"
+      },
+      "bun": "./dist/platform/bun.js",
+      "default": "./dist/platform/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.1.5",
+    "@effect/platform-node": "4.1.5",
+    "@effect/sql-sqlite-bun": "4.1.5",
+    "@effect/sql-sqlite-node": "4.1.5",
+    "@standardagents/spec": "0.45.13",
+    "effect": "4.1.5"
+  }
 }
