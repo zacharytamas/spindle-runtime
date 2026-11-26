@@ -162,13 +162,85 @@
 		"text": "<aside class=\"agent-prompt\" aria-label=\"Prompt for a coding agent\"><span class=\"agent-prompt-label\">Prompt</span><p>Build an agent that triages new GitHub issues without a person in its thread. A GitHub Actions workflow should run when an issue opens and send it to an authenticated thread endpoint using an API key. The agent should treat issue text as data, apply a category and priority label, post a one-sentence explanation on GitHub, and end each session while keeping the thread available for the next issue.</p></aside>"
 	},
 	{
-		"id": "infrastructure:providers:1939dbe3",
+		"id": "infrastructure:providers:3f84bf33",
 		"page": "infrastructure:providers",
-		"line": 12,
+		"line": 14,
 		"section": "Provider Packages",
 		"level": "MAY",
 		"rfc2119": true,
-		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include:"
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: OpenAI"
+	},
+	{
+		"id": "infrastructure:providers:5c3d58a6",
+		"page": "infrastructure:providers",
+		"line": 15,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: Anthropic"
+	},
+	{
+		"id": "infrastructure:providers:78a455ea",
+		"page": "infrastructure:providers",
+		"line": 16,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: Google"
+	},
+	{
+		"id": "infrastructure:providers:b003c14a",
+		"page": "infrastructure:providers",
+		"line": 17,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: OpenRouter"
+	},
+	{
+		"id": "infrastructure:providers:0da5f168",
+		"page": "infrastructure:providers",
+		"line": 18,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: Cerebras"
+	},
+	{
+		"id": "infrastructure:providers:d955706d",
+		"page": "infrastructure:providers",
+		"line": 19,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: DeepInfra"
+	},
+	{
+		"id": "infrastructure:providers:41c38e98",
+		"page": "infrastructure:providers",
+		"line": 20,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: Cloudflare"
+	},
+	{
+		"id": "infrastructure:providers:50cb89fd",
+		"page": "infrastructure:providers",
+		"line": 21,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: Groq"
+	},
+	{
+		"id": "infrastructure:providers:e85c2df6",
+		"page": "infrastructure:providers",
+		"line": 22,
+		"section": "Provider Packages",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "The specification does not require a fixed provider list. Implementations MAY ship any provider package that satisfies the [Provider specification](/0.2.0/specification/providers). Examples include: xAI"
 	},
 	{
 		"id": "infrastructure:providers:a7bed683",
@@ -2331,31 +2403,31 @@
 		"text": "Fallback model names MUST reference other defined models by their `name` property. Implementations SHOULD validate that all referenced fallback models exist at startup."
 	},
 	{
-		"id": "specification:models:24f418bc",
-		"page": "specification:models",
-		"line": 68,
-		"section": "4.2 Pricing Priority",
-		"level": "MAY",
-		"rfc2119": true,
-		"text": "Pricing configuration is optional. Providers MAY return pricing information per-request (e.g. in response headers or metadata). When provider-reported pricing is available:"
-	},
-	{
-		"id": "specification:models:8e186a9a",
+		"id": "specification:models:6c863b89",
 		"page": "specification:models",
 		"line": 70,
 		"section": "4.2 Pricing Priority",
 		"level": "SHOULD",
 		"rfc2119": true,
-		"text": "Provider-reported pricing SHOULD take priority over static model configuration."
+		"text": "Pricing configuration is optional. Providers MAY return pricing information per-request (e.g. in response headers or metadata). When provider-reported pricing is available: Provider-reported pricing SHOULD take priority over static model configuration."
 	},
 	{
-		"id": "specification:models:8c4f6857",
+		"id": "specification:models:774f9601",
+		"page": "specification:models",
+		"line": 71,
+		"section": "4.2 Pricing Priority",
+		"level": "MAY",
+		"rfc2119": true,
+		"text": "Pricing configuration is optional. Providers MAY return pricing information per-request (e.g. in response headers or metadata). When provider-reported pricing is available: Static pricing serves as a fallback when provider pricing is unavailable."
+	},
+	{
+		"id": "specification:models:b6ce7a54",
 		"page": "specification:models",
 		"line": 72,
 		"section": "4.2 Pricing Priority",
 		"level": "MUST",
 		"rfc2119": true,
-		"text": "Implementations MUST restrict cost information to authorized parties."
+		"text": "Pricing configuration is optional. Providers MAY return pricing information per-request (e.g. in response headers or metadata). When provider-reported pricing is available: Implementations MUST restrict cost information to authorized parties."
 	},
 	{
 		"id": "specification:models:debf8c4d",
@@ -2952,13 +3024,22 @@
 		"text": "if required arguments are missing, runtimes MUST reject creation with a structured `subagent_arguments_required` error rather than spawning the child."
 	},
 	{
-		"id": "specification:subagents:bf74a7d2",
+		"id": "specification:subagents:c300b4f1",
 		"page": "specification:subagents",
-		"line": 179,
+		"line": 181,
 		"section": "5.2 Scoped Variable Bootstrap",
 		"level": "SHOULD",
 		"rfc2119": true,
-		"text": "If `subagent_create` cannot proceed because required scoped variables for the child graph are missing, runtimes SHOULD return a structured error (e.g. `subagent_env_required`) with a request ID and expose a temporary bootstrap endpoint:"
+		"text": "If `subagent_create` cannot proceed because required scoped variables for the child graph are missing, runtimes SHOULD return a structured error (e.g. `subagent_env_required`) with a request ID and expose a temporary bootstrap endpoint: `GET /threads/{parent_thread_id}/variables/{request_id}` — returns required/missing variable names."
+	},
+	{
+		"id": "specification:subagents:1c066041",
+		"page": "specification:subagents",
+		"line": 182,
+		"section": "5.2 Scoped Variable Bootstrap",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "If `subagent_create` cannot proceed because required scoped variables for the child graph are missing, runtimes SHOULD return a structured error (e.g. `subagent_env_required`) with a request ID and expose a temporary bootstrap endpoint: `POST /threads/{parent_thread_id}/variables/{request_id}` — stores the provided values and immediately boots the deferred child using the original creation payload."
 	},
 	{
 		"id": "specification:subagents:33a03ae5",
@@ -2970,13 +3051,31 @@
 		"text": "Attachment paths MUST be copied from the parent filesystem to the child filesystem before queuing ([§7](#7-attachment-copying))."
 	},
 	{
-		"id": "specification:subagents:5ad9be05",
+		"id": "specification:subagents:ce7cb361",
 		"page": "specification:subagents",
-		"line": 213,
+		"line": 215,
 		"section": "6.4 Child → Parent: Explicit Escalation",
 		"level": "MUST NOT",
 		"rfc2119": true,
-		"text": "When the effective `parentCommunication` is `explicit`, runtimes MUST NOT auto-queue completion/failure to the parent. Because the auto-queued completion is what triggers a parent turn, `explicit` means a child's finish does not wake the parent at all. Tools, hooks, and handlers escalate deliberately:"
+		"text": "When the effective `parentCommunication` is `explicit`, runtimes MUST NOT auto-queue completion/failure to the parent. Because the auto-queued completion is what triggers a parent turn, `explicit` means a child's finish does not wake the parent at all. Tools, hooks, and handlers escalate deliberately: `state.notifyParent(content)`"
+	},
+	{
+		"id": "specification:subagents:5898017d",
+		"page": "specification:subagents",
+		"line": 216,
+		"section": "6.4 Child → Parent: Explicit Escalation",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "When the effective `parentCommunication` is `explicit`, runtimes MUST NOT auto-queue completion/failure to the parent. Because the auto-queued completion is what triggers a parent turn, `explicit` means a child's finish does not wake the parent at all. Tools, hooks, and handlers escalate deliberately: `state.setStatus(status)`"
+	},
+	{
+		"id": "specification:subagents:72d479f3",
+		"page": "specification:subagents",
+		"line": 217,
+		"section": "6.4 Child → Parent: Explicit Escalation",
+		"level": "MUST NOT",
+		"rfc2119": true,
+		"text": "When the effective `parentCommunication` is `explicit`, runtimes MUST NOT auto-queue completion/failure to the parent. Because the auto-queued completion is what triggers a parent turn, `explicit` means a child's finish does not wake the parent at all. Tools, hooks, and handlers escalate deliberately: `state.stopSession({ result, notifyParent, status })`"
 	},
 	{
 		"id": "specification:subagents:caab9448",
@@ -3105,22 +3204,22 @@
 		"text": "Runtimes should keep the durable copy with child thread metadata/properties. They should also expose top-level argument keys to prompt variable interpolation, for whichever child side is currently rendering, including included prompts, without requiring callers to put those values in `state.context`."
 	},
 	{
-		"id": "specification:threads:3aa13eec",
+		"id": "specification:threads:2ea40632",
 		"page": "specification:threads",
-		"line": 374,
+		"line": 378,
 		"section": "6.2 Per-Execution Context",
 		"level": "SHOULD",
 		"rfc2119": false,
-		"text": "The `context` property is mutable execution-scoped scratch storage for values that should be shared while the current agent run is being assembled and executed. It is used for:"
+		"text": "The `context` property is mutable execution-scoped scratch storage for values that should be shared while the current agent run is being assembled and executed. It is used for: sharing derived values between tools, hooks, effects, and runtime lifecycle code during one execution"
 	},
 	{
-		"id": "specification:threads:658d7beb",
+		"id": "specification:threads:c487ef3f",
 		"page": "specification:threads",
 		"line": 379,
 		"section": "6.2 Per-Execution Context",
 		"level": "SHOULD NOT",
 		"rfc2119": false,
-		"text": "runtime-internal coordination data that should not become a thread argument"
+		"text": "The `context` property is mutable execution-scoped scratch storage for values that should be shared while the current agent run is being assembled and executed. It is used for: runtime-internal coordination data that should not become a thread argument"
 	},
 	{
 		"id": "specification:threads:97affdf6",
@@ -3447,13 +3546,49 @@
 		"text": "For an internal failure or temporary unavailability, the runtime MUST return a `5xx` status. It MUST NOT report such a failure with a status from the table."
 	},
 	{
-		"id": "specification:threads/client-api:bfa87f9e",
+		"id": "specification:threads/client-api:b1e4959b",
 		"page": "specification:threads/client-api",
-		"line": 55,
+		"line": 59,
 		"section": "3.2 Bodies and errors",
 		"level": "MUST",
 		"rfc2119": true,
-		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread."
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread. | `400` | The request is malformed or fails validation |"
+	},
+	{
+		"id": "specification:threads/client-api:ed42eb87",
+		"page": "specification:threads/client-api",
+		"line": 60,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread. | `401` | The caller is not authenticated |"
+	},
+	{
+		"id": "specification:threads/client-api:d2541211",
+		"page": "specification:threads/client-api",
+		"line": 61,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread. | `403` | The caller is denied access to the thread |"
+	},
+	{
+		"id": "specification:threads/client-api:2a2f9fd1",
+		"page": "specification:threads/client-api",
+		"line": 62,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread. | `404` | The addressed thread, message, or file, or the agent named in a create request, does not exist |"
+	},
+	{
+		"id": "specification:threads/client-api:94aefc38",
+		"page": "specification:threads/client-api",
+		"line": 63,
+		"section": "3.2 Bodies and errors",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "Termination closes a thread to new work only. Every route other than message sending (§12) MUST behave on a terminated thread as it does on an open thread. | `423` | A message is sent (§12) to a terminated thread |"
 	},
 	{
 		"id": "specification:threads/client-api:cb8915ae",
@@ -4500,13 +4635,31 @@
 		"text": "| `context` | Explicit context shared by the questions. Structured values MUST retain their JSON structure. |"
 	},
 	{
-		"id": "specification:threads/decisions:648deff1",
+		"id": "specification:threads/decisions:826e27a3",
 		"page": "specification:threads/decisions",
-		"line": 89,
+		"line": 94,
 		"section": "3. Question Types",
 		"level": "MUST",
 		"rfc2119": true,
-		"text": "`instructions` defines the evaluation to perform. Structured instructions, option descriptions, levels, and criteria MUST retain their JSON structure."
+		"text": "`instructions` defines the evaluation to perform. Structured instructions, option descriptions, levels, and criteria MUST retain their JSON structure. | `choice` | Select an outcome from `options`. Each key identifies an outcome; its value describes that outcome. A `null` value supplies no additional description. |"
+	},
+	{
+		"id": "specification:threads/decisions:d6a8fa2c",
+		"page": "specification:threads/decisions",
+		"line": 95,
+		"section": "3. Question Types",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`instructions` defines the evaluation to perform. Structured instructions, option descriptions, levels, and criteria MUST retain their JSON structure. | `score` | Evaluate against the ordered `levels` rubric. Level indices start at zero; array order defines the scale. |"
+	},
+	{
+		"id": "specification:threads/decisions:b696acd6",
+		"page": "specification:threads/decisions",
+		"line": 96,
+		"section": "3. Question Types",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "`instructions` defines the evaluation to perform. Structured instructions, option descriptions, levels, and criteria MUST retain their JSON structure. | `boolean` | Estimate the probability that the condition in `instructions` is true. Optional `criteria.true` and `criteria.false` describe the two outcomes. |"
 	},
 	{
 		"id": "specification:threads/decisions:101d5668",
@@ -4716,13 +4869,22 @@
 		"text": "Synthetic or transformed messages produced by `filter_messages` or `prefilter_llm_history` MUST remain confined to the request context. They MUST NOT replace `execution.messageHistory`."
 	},
 	{
-		"id": "specification:threads/execution-state:75f6be1e",
+		"id": "specification:threads/execution-state:1a0354bc",
 		"page": "specification:threads/execution-state",
-		"line": 107,
+		"line": 113,
 		"section": "4.2 Reasons",
 		"level": "SHOULD",
 		"rfc2119": true,
-		"text": "`reason` is the run's stop reason code. Runtimes SHOULD use these codes where they apply and MAY add others; clients MUST treat unknown codes as opaque."
+		"text": "`reason` is the run's stop reason code. Runtimes SHOULD use these codes where they apply and MAY add others; clients MUST treat unknown codes as opaque. | `idle` | `stop_on_response`, `stop_tool`, `awaiting_human`, `forced_human_turn`, `hook_blocked`, `aborted`, `aborted_by_user`, `session_stop`, `state_stop_session`, `max_total_steps`, `max_side_steps`, `max_session_turns`, `handler_idle` |"
+	},
+	{
+		"id": "specification:threads/execution-state:7029c151",
+		"page": "specification:threads/execution-state",
+		"line": 114,
+		"section": "4.2 Reasons",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "`reason` is the run's stop reason code. Runtimes SHOULD use these codes where they apply and MAY add others; clients MUST treat unknown codes as opaque. | `failed` | `step_error`, `repeated_tool_error`, `session_fail`, `fatal_error`, `execution_lost` |"
 	},
 	{
 		"id": "specification:threads/execution-state:37e4432c",
@@ -4995,13 +5157,67 @@
 		"text": "Messages injected after the snapshot begins MUST become eligible for the following context assembly."
 	},
 	{
-		"id": "specification:threads/messages:12822287",
+		"id": "specification:threads/messages:4fcc1f95",
 		"page": "specification:threads/messages",
-		"line": 190,
+		"line": 194,
 		"section": "7. Conformance Scenarios",
 		"level": "MUST",
 		"rfc2119": true,
-		"text": "A conforming runtime MUST satisfy these portable scenarios."
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Inject during active execution | `before_create_message` and `after_create_message` each run once. `getMessage` returns the persisted record. Later tools and hooks in the same execution observe the message on `execution.messageHistory`. |"
+	},
+	{
+		"id": "specification:threads/messages:a63f8e52",
+		"page": "specification:threads/messages",
+		"line": 195,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Inject at rest | The same lifecycle hooks run. The message is available through thread message APIs before the next execution starts. |"
+	},
+	{
+		"id": "specification:threads/messages:35d60289",
+		"page": "specification:threads/messages",
+		"line": 196,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Silent and visible injection | Both records persist. Both appear on `execution.messageHistory`. Both are eligible for the next context snapshot. Ordinary UI queries omit the silent record unless `includeSilent` is true. |"
+	},
+	{
+		"id": "specification:threads/messages:77a09885",
+		"page": "specification:threads/messages",
+		"line": 197,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | `filter_messages` edits the request context | Trimming, compaction, redaction, and synthetic messages affect the provider request. `execution.messageHistory` continues to list the live persisted records. |"
+	},
+	{
+		"id": "specification:threads/messages:1ba43990",
+		"page": "specification:threads/messages",
+		"line": 198,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Inject from `filter_messages` | Lifecycle hooks run. Context assembly does not restart. The injected message is absent from the current provider request and eligible for the following assembly. |"
+	},
+	{
+		"id": "specification:threads/messages:e0078c2e",
+		"page": "specification:threads/messages",
+		"line": 199,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Inject from `prefilter_llm_history` | Same snapshot assignment as injection from `filter_messages`. |"
+	},
+	{
+		"id": "specification:threads/messages:b17aee6d",
+		"page": "specification:threads/messages",
+		"line": 200,
+		"section": "7. Conformance Scenarios",
+		"level": "MUST",
+		"rfc2119": true,
+		"text": "A conforming runtime MUST satisfy these portable scenarios. | Inject from `after_system_message` | The message is persisted before the history snapshot. It is eligible for the current assembly and passes through `filter_messages`. |"
 	},
 	{
 		"id": "specification:threads/runtime-streams:3a404735",
@@ -5526,13 +5742,31 @@
 		"text": "Deleting a grant MUST cause subsequent `fetch` calls to fail with an error distinguishable from a network failure."
 	},
 	{
-		"id": "specification:users:b1341adc",
+		"id": "specification:users:b2d4e599",
 		"page": "specification:users",
-		"line": 209,
+		"line": 213,
 		"section": "7. Lifecycle Hooks",
 		"level": "SHOULD",
 		"rfc2119": true,
-		"text": "A runtime SHOULD support the following user-scope hooks. They execute in the user scope, receive a `UserState`, are observational, and MUST NOT block the triggering operation."
+		"text": "A runtime SHOULD support the following user-scope hooks. They execute in the user scope, receive a `UserState`, are observational, and MUST NOT block the triggering operation. | `user_client_attached` | `(user: UserState, client: { id: string; kind?: string }) => void` |"
+	},
+	{
+		"id": "specification:users:f11baea7",
+		"page": "specification:users",
+		"line": 214,
+		"section": "7. Lifecycle Hooks",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD support the following user-scope hooks. They execute in the user scope, receive a `UserState`, are observational, and MUST NOT block the triggering operation. | `user_client_detached` | `(user: UserState, client: { id: string; kind?: string }) => void` |"
+	},
+	{
+		"id": "specification:users:cc4dd119",
+		"page": "specification:users",
+		"line": 215,
+		"section": "7. Lifecycle Hooks",
+		"level": "SHOULD",
+		"rfc2119": true,
+		"text": "A runtime SHOULD support the following user-scope hooks. They execute in the user scope, receive a `UserState`, are observational, and MUST NOT block the triggering operation. | `user_value_changed` | `(user: UserState, key: string) => void` |"
 	},
 	{
 		"id": "specification:users:55e49cd1",
