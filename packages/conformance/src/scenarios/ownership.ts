@@ -905,4 +905,51 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       })
     },
   },
+  {
+    name: "O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle",
+    requirements: ["dc7d7df0", "9090af10"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([{ text: "first reply" }])
+      await using(driver, { provider }, async (session, thread, peer) => {
+        expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
+        const older = await session.state(thread)
+        await older.setValue("kept", "before")
+        const target = (await session.messages(thread))[0]?.id ?? ""
+        await (await peer.state(thread)).terminate()
+        const before = await peer.inspect(thread)
+        const fresh = await peer.state(thread)
+        const outcomes = {
+          freshUpdate: await attempt(() => fresh.updateMessage(target, { content: "edited after the end" })),
+          freshDelete: await attempt(() => fresh.deleteMessage(target)),
+          freshSetValue: await attempt(() => fresh.setValue("late", "yes")),
+          freshDeleteValue: await attempt(() => fresh.setValue("kept", null)),
+          olderInject: await attempt(() => older.injectMessage({ role: "user", content: "from the older handle" })),
+          olderSetValue: await attempt(() => older.setValue("late", "yes")),
+        }
+        expect(outcomes).toEqual(all(Object.keys(outcomes), "ThreadTerminated"))
+        expect(await peer.inspect(thread)).toEqual(before)
+      })
+    },
+  },
+  {
+    name: "O20 stores a message that a new handle injects into a terminated thread, and lets it read the thread",
+    requirements: [],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([{ text: "first reply" }])
+      await using(driver, { provider }, async (session, thread, peer) => {
+        expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
+        await (await session.state(thread)).setValue("kept", "before")
+        await (await session.state(thread)).terminate()
+        const fresh = await peer.state(thread)
+        expect(await attempt(() => fresh.injectMessage({ role: "user", content: "a note" }))).toBe("done")
+        expect(await fresh.getValue("kept")).toBe("before")
+        expect((await fresh.getMessages({ order: "asc" })).messages.map((m) => m.content)).toEqual([
+          "first",
+          "first reply",
+          "a note",
+        ])
+        expect(provider.requests).toHaveLength(1)
+      })
+    },
+  },
 ]
