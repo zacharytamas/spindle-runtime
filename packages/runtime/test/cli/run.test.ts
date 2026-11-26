@@ -224,6 +224,28 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("redacts the instance value of a declared variable whose definition gives it a public default", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" }), "run.db")
+      const hint = "inst-hint-4821"
+      const { exit, out, err } = yield* run(
+        ["shaded", "-m", "hi", "--script", "@recite.json", "--trace", "--dump-requests", "--db", db],
+        { REGION_HINT: hint },
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      const dumps = out.join("\n").match(/^\{$[\s\S]*?^\}$/gm) ?? []
+      expect(JSON.parse(dumps[0] ?? "{}").messages[0]).toEqual({ role: "system", content: "Region: public-region" })
+      expect(out).toContain("[tool result] recite success: hint [redacted]")
+      const rows = yield* storedMessages(db, err)
+      expect(rows.filter((m) => m.role === "tool").map((m) => [m.tool_status, m.content])).toEqual([
+        ["success", "hint [redacted]"],
+      ])
+      expect([...out, ...err, JSON.stringify(rows)].join("\n")).not.toContain(hint)
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.effect("redacts a three-character common word from every line it prints, the summary line included", () =>
     Effect.gen(function* () {
       const secrets = { SPINDLE_TEST_API_KEY: "sk-test-1357913579", SHORT_TOKEN: "top" }

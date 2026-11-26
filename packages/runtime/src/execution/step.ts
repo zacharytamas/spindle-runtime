@@ -12,7 +12,7 @@ import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
-import { addSecret, lookupEnv, newSecrets, type Secrets } from "./env.ts"
+import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
@@ -180,6 +180,10 @@ export const learnSecrets = Effect.fn("learnSecrets")(function* (turn: Turn, sec
   for (const { name, scope } of lookups) {
     const found = yield* lookupEnv(scope, name)
     if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
+    // A definition default hides the instance value from the lookup, and that value is still the operator's secret.
+    // An instance value equal to the default is text the definition already shows.
+    const instance = yield* instanceEnv(name)
+    if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
   }
 })
 
