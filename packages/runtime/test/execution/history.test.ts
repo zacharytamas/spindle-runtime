@@ -8,6 +8,7 @@ import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
+import type { ExecutionEvent } from "../../src/execution/step.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -263,6 +264,43 @@ describe("the history an execution keeps", () => {
         expect(contents(yield* history.read)).toEqual(["first", "committed"])
       }
     }).pipe(Effect.provide(inMemory())),
+  )
+
+  it.effect("reads the snapshot as the last thing before the first filter_messages hook runs", () =>
+    Effect.gen(function* () {
+      let elsewhere: ThreadState | undefined
+      let wrote = false
+      const seen: Array<unknown> = []
+      const hooks = [
+        keepHandle((state) => {
+          elsewhere = state
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "compare",
+          execute: async (state, messages) => {
+            seen.push([contents(messages), contents(state.execution?.messageHistory ?? [])])
+            return messages
+          },
+        }),
+      ]
+      const observe = (event: ExecutionEvent) => {
+        if (wrote || event.type !== "trace" || !event.entry.detail.startsWith("snapshot")) return Effect.void
+        wrote = true
+        return Effect.promise(async () => {
+          await elsewhere?.injectMessage({ role: "user", content: "gap" })
+        })
+      }
+      const provider = new ScriptedProvider([{ text: "done" }])
+      const setup = { provider, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["compare"] } }
+      const stored = yield* Effect.gen(function* () {
+        const thread = yield* createThread("assistant")
+        yield* sendMessage(thread.id, "go", { observe })
+        return (yield* (yield* ThreadStore).history(thread.id)).messages
+      }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), inMemory())))
+      expect(seen).toEqual([[["go"], ["go"]]])
+      expect(contents(stored)).toEqual(["go", "gap", "done"])
+    }),
   )
 
   it("copies a message deeply, and keeps a __proto__ key of its metadata as an own key", () => {

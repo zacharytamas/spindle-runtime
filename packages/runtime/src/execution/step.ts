@@ -388,10 +388,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         yield* checkSystemPrompt(turn, system, secrets)
         yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
         // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
-        // wrote it. A message written later belongs to the next assembly.
+        // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
+        // the trace, runs between the read and the first hook.
         const snapshot = yield* history.read
-        yield* record("assemble", `snapshot, ${snapshot.length} messages`)
         const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
+        yield* record("assemble", `snapshot, ${snapshot.length} messages`)
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
         const transformed = toProviderMessages(filtered, view)
         yield* record("assemble", `transform, ${transformed.length} provider messages`)
