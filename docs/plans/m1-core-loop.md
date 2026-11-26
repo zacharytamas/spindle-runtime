@@ -425,7 +425,7 @@ The spec defines fourteen hooks, and this PR implements thirteen of them. The ho
 
 ## Queue work and keep one execution per thread (M1-6)
 
-Read `docs/plans/briefs/m1-6.md` before this section. A reviewer wrote it from the spec text before the build, and it corrects boxes and lanes below. Where the brief and this section differ, follow the brief. Where the brief and the spec differ, follow the spec and record the difference in Appendix A.
+Read `docs/plans/briefs/m1-6.md` and `docs/plans/briefs/m1-6-failures.md` before this section. The second lists what can go wrong at each operation and what must happen then, and it sorts each failure by whether it blocks the PR. A reviewer wrote it from the spec text before the build, and it corrects boxes and lanes below. Where the brief and this section differ, follow the brief. Where the brief and the spec differ, follow the spec and record the difference in Appendix A.
 
 A thread's run status is one state machine with the states `idle`, `running`, and `failed`, plus a reason. Each thread has one durable inbox, the `queue` table, and at most one fiber that drains it. A lease row in the store names the process that holds a thread, so a second process cannot start a second execution and a restart can find the executions that died.
 
