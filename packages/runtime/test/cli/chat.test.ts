@@ -40,6 +40,25 @@ const threadsIn = (db: string) =>
 
 describe("spindle chat", () => {
   it.live(
+    "a deleted database gets one plain diagnostic when the next line arrives",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        const fs = yield* FileSystem.FileSystem
+        const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
+        yield* session.type("first\n")
+        yield* prompt(session, 2)
+        const thread = yield* threadOf(session)
+        yield* fs.remove(db)
+        yield* session.type("second\n")
+        yield* session.end
+        expect(yield* session.exit).toBe(1)
+        expect(linesOf(session.err())).toEqual([note.thread(thread), `spindle: the database ${db} is gone`])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
     "direction controls are escaped on the terminal and preserved in history",
     () =>
       Effect.gen(function* () {

@@ -356,11 +356,12 @@ export const chatCommand = Command.make(
               // A conversation that a signal or an error ended still says how to resume the thread.
               const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
               if (ending === "terminated") return yield* new RunFailed({ message: ending })
+              if (filename !== ":memory:" && !(yield* fs.exists(filename)))
+                return yield* fail(`the database ${db} is gone`)
               const store = yield* ThreadStore
               if (lastAdmission !== undefined && (yield* store.isQueued(thread.id, lastAdmission)))
                 yield* note("your last line is still queued, and the next run of the thread delivers it")
               if (filename !== ":memory:") {
-                if (!(yield* fs.exists(filename))) return yield* fail(`the database ${db} is gone`)
                 const stored = yield* store.getThread(thread.id)
                 if (stored.terminated === null) {
                   const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
