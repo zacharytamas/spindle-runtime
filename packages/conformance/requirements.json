@@ -7481,5 +7481,35 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "| Subagents | Values are not automatically copied to spawned child threads |"
+	},
+	{
+		"id": "specification:threads/messages:2fae890e",
+		"page": "specification:threads/messages",
+		"line": 13,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `id` | `string` | Unique message ID |"
+	},
+	{
+		"id": "specification:threads/messages:7aa8424d",
+		"page": "specification:threads/messages",
+		"line": 25,
+		"section": "1. Message Structure",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `created_at` | `number` | Creation timestamp |"
+	},
+	{
+		"id": "specification:threads/execution-state:7c06a271",
+		"page": "specification:threads/execution-state",
+		"line": 97,
+		"section": "4.1 States",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `failed` | The last run ended in an error. |"
 	}
 ]

@@ -900,5 +900,23 @@
     "section": "7.2 Semantics",
     "level": "MUST",
     "text": "| **Subagents** | Values are **not** automatically copied to spawned child threads |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `id` | `string` | Unique message ID |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `created_at` | `number` | Creation timestamp |"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.1 States",
+    "level": "MUST",
+    "text": "| `failed` | The last run ended in an error. |"
   }
 ]
