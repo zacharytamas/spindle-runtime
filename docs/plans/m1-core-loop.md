@@ -92,38 +92,38 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 
 **Files.**
 
-- [ ] Create `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `biome.json`, `vitest.config.ts`, and `.github/workflows/ci.yml`.
-- [ ] Create `packages/runtime/package.json` with the `spindle` bin and an `imports` entry for `#platform` that has a `bun` condition and a `default` condition.
-- [ ] Create `packages/runtime/src/platform/node.ts`, `packages/runtime/src/platform/bun.ts`, and `packages/runtime/src/cli/main.ts`.
-- [ ] Create `packages/conformance/package.json`, `packages/conformance/spec.lock.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and `packages/conformance/src/ledger.ts`.
-- [ ] Edit `scripts/spec-requirements.mjs` so that it reads the spec commit from `spec.lock.json`, fetches the spec only under `--refresh`, and exits non-zero under `--check` when its output differs from `requirements.json`.
-- [ ] Create `AGENTS.md` with the three owner-brief rules, and symlink `CLAUDE.md` to it.
-- [ ] Create `LICENSE` with the MIT license text.
-- [ ] Edit `README.md`.
+- [x] Create `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `biome.json`, `vitest.config.ts`, and `.github/workflows/ci.yml`.
+- [x] Create `packages/runtime/package.json` with the `spindle` bin and an `imports` entry for `#platform` that has a `bun` condition and a `default` condition.
+- [x] Create `packages/runtime/src/platform/node.ts`, `packages/runtime/src/platform/bun.ts`, and `packages/runtime/src/cli/main.ts`.
+- [x] Create `packages/conformance/package.json`, `packages/conformance/spec.lock.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and `packages/conformance/src/ledger.ts`.
+- [x] Edit `scripts/spec-requirements.mjs` so that it reads the spec commit from `spec.lock.json`, fetches the spec only under `--refresh`, and exits non-zero under `--check` when its output differs from `requirements.json`.
+- [x] Create `AGENTS.md` with the three owner-brief rules, and symlink `CLAUDE.md` to it.
+- [x] Create `LICENSE` with the MIT license text.
+- [x] Edit `README.md`.
 
 **Build.**
 
-- [ ] Add `effect`, `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, and `@standardagents/spec` to `packages/runtime`. Add `vitest` and `@effect/vitest` as dev dependencies. Pin every Effect package to the same exact version.
-- [ ] Name the packages `spindle-runtime` and `spindle-conformance`, and set `license` to `MIT` in both. The npm registry returned 404 for both names on 2026-11-25.
+- [x] Add `effect`, `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, and `@standardagents/spec` to `packages/runtime`. Add `vitest` and `@effect/vitest` as dev dependencies. Pin every Effect package to the same exact version.
+- [x] Name the packages `spindle-runtime` and `spindle-conformance`, and set `license` to `MIT` in both. The npm registry returned 404 for both names on 2026-11-25.
 - [ ] Export one `PlatformLive` layer and one `runMain` function from each platform module. `node.ts` builds them from `NodeServices`, `NodeRuntime`, and the `SqliteClient` of `@effect/sql-sqlite-node`. `bun.ts` builds them from `BunServices`, `BunRuntime`, and the `SqliteClient` of `@effect/sql-sqlite-bun`.
-- [ ] Make `packages/runtime/src/cli/main.ts` import `PlatformLive` and `runMain` from `#platform` and print the package version, `SPEC_VERSION`, and the platform name for `spindle --version`.
-- [ ] Add a Biome `noRestrictedImports` rule. Only files under `packages/runtime/src/platform/` may import `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, a `node:` module, or a `bun:` module.
-- [ ] Settle how the test suite runs under Bun. Try `bun --bun vitest run` first. If the Vitest version that `@effect/vitest` requires does not run under Bun, run the platform contract tests with `bun test` and record the result in Appendix A.
-- [ ] Pin the spec at commit `f462a673297faed1f849ef1741ddda1e06b6c817` in `spec.lock.json` and generate `requirements.json`.
-- [ ] Write `packages/conformance/src/ledger.ts`. It fails when a requirement id has no ledger entry, when a `covered` entry names no test, when a named test does not exist, and when a ledger id is absent from `requirements.json`.
+- [x] Make `packages/runtime/src/cli/main.ts` import `PlatformLive` and `runMain` from `#platform` and print the package version, `SPEC_VERSION`, and the platform name for `spindle --version`.
+- [x] Add a Biome `noRestrictedImports` rule. Only files under `packages/runtime/src/platform/` may import `@effect/platform-node`, `@effect/platform-bun`, `@effect/sql-sqlite-node`, `@effect/sql-sqlite-bun`, a `node:` module, or a `bun:` module.
+- [x] Settle how the test suite runs under Bun. Try `bun --bun vitest run` first. If the Vitest version that `@effect/vitest` requires does not run under Bun, run the platform contract tests with `bun test` and record the result in Appendix A.
+- [x] Pin the spec at commit `f462a673297faed1f849ef1741ddda1e06b6c817` in `spec.lock.json` and generate `requirements.json`.
+- [x] Write `packages/conformance/src/ledger.ts`. It fails when a requirement id has no ledger entry, when a `covered` entry names no test, when a named test does not exist, and when a ledger id is absent from `requirements.json`.
 - [ ] Fill `ledger.json` with one entry per id. Mark every `specification:users` entry `deferred` with the reason that the page is a Draft. Mark every other entry `planned` with its milestone from Appendix E.
-- [ ] Add the `pnpm check` script. It runs Biome, `tsc --noEmit`, Vitest, the ledger check, and `scripts/spec-requirements.mjs --check`.
+- [x] Add the `pnpm check` script. It runs Biome, `tsc --noEmit`, Vitest, the ledger check, and `scripts/spec-requirements.mjs --check`.
 - [ ] Run `pnpm check` in CI on Node 22, on Node 24, and on Bun.
 
 **You see.**
 
-- [ ] `pnpm check` exits 0 and its last line reads `ledger ok, 512 requirements, 0 covered`.
-- [ ] `node scripts/spec-requirements.mjs --check` prints `458 RFC 2119 statements, 54 lowercase must or should statements, 24 pages`.
-- [ ] `node packages/runtime/dist/cli/main.js --version` prints `platform node`, and `bun packages/runtime/dist/cli/main.js --version` prints `platform bun`.
+- [x] `pnpm check` exits 0 and its last line reads `ledger ok, 512 requirements, 0 covered`.
+- [x] `node scripts/spec-requirements.mjs --check` prints `458 RFC 2119 statements, 54 lowercase must or should statements, 24 pages`.
+- [x] `node packages/runtime/dist/cli/main.js --version` prints `platform node`, and `bun packages/runtime/dist/cli/main.js --version` prints `platform bun`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/conformance/test/ledger.test.ts` gains one case for each of the four ledger failures. Run `pnpm vitest run packages/conformance/test/ledger.test.ts`.
+- [x] `packages/conformance/test/ledger.test.ts` gains one case for each of the four ledger failures. Run `pnpm vitest run packages/conformance/test/ledger.test.ts`.
 - [ ] `packages/runtime/test/platform.test.ts` gains a case that opens an in-memory SQLite database through `PlatformLive` and reads back one row. Run it on Node and on Bun.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
@@ -567,12 +567,48 @@ Each row was run in this planning session on macOS with Node 22.22.3 and Bun 1.4
 
 These questions stay unproven.
 
-- Whether the Vitest version that `@effect/vitest@4.1.5` requires runs under Bun. M1-1 settles it.
 - Whether the Bun store is faster than the Node store. M1-3 measures both. Until then "faster" is a guess.
 - Whether `@standardagents/openai` loads under plain Node. The permission classifier blocked the probe that installs and imports it.
 - Whether the official `@standardagents/client` works against Spindle. A later milestone builds the Thread Client API.
-- The exact names of the layers and functions inside the Effect v4 modules. This session read file names only.
-- The lowest Node 22 release that strips types without a flag. M1-1 lane 2 sets `engines` from a measured run.
+
+### Settled in M1-1
+
+The M1-1 owner ran each command below on 2026-11-25 on macOS, from the repository root, with Bun 1.4.5.
+
+**Vitest under Bun.** Vitest 5.1.2, which `@effect/vitest@4.1.5` requires, runs under Bun with `bun --bun vitest run`. Vite resolves imports with its own condition list, which lacks `bun`, so `#platform` first resolved to `node.ts` and the SQLite case failed inside Bun's `node:sqlite` shim. `vitest.config.ts` now adds the `bun` condition when Vitest runs on Bun, and it names the Vitest project after the runtime, so each result line shows which runtime ran it.
+
+```text
+$ bun --bun vitest run          # before the bun condition
+Caused by: Error: the loaded SQLite library was built with SQLITE_OMIT_LOAD_EXTENSION.
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+
+$ bun --bun run test            # after
+ ✓ |bun| packages/runtime/test/platform.test.ts > platform > resolves #platform to the module for the running runtime 1ms
+ ✓ |bun| packages/runtime/test/platform.test.ts > platform > reads back a row from an in-memory SQLite database 6ms
+      Tests  9 passed (9)
+```
+
+`bun --bun run check` runs every `pnpm check` step under Bun, including the nested `pnpm` calls. Its output held 9 `|bun|` result lines and no `|node|` line. The first platform case asserts that `#platform` resolved to `bun.ts` exactly when `process.versions.bun` is set.
+
+**The `engines` floor.** `engines.node` is `>=22.19.0`. `npm view @effect/platform-node@4.1.5 engines` prints `{ node: '>=22.19.0' }`, so no lower claim is honest. Node 22.19.0 was already installed through mise and Node 24.10.0 through nvm. `pnpm test`, `pnpm check`, and `spindle --version` pass on Node 22.19.0, 22.22.3, and 24.10.0. On 22.19.0, `pnpm test` printed 9 `|node|` result lines and `Tests  9 passed (9)`. `import.meta.main` and `import.meta.dirname` also work on 22.19.0.
+
+**Effect v4 names.** These come from the `.d.ts` files under `node_modules/@effect` and `node_modules/effect/dist`.
+
+- `NodeServices.layer` and `BunServices.layer` provide `ChildProcessSpawner`, `FileSystem`, `Path`, `Stdio`, and `Terminal`. That set is the `Environment` that `Command.run` in `effect/cli` requires.
+- `NodeRuntime.runMain` and `BunRuntime.runMain` take an `Effect` with no requirements.
+- `SqliteClient.layer({ filename })` in both SQLite packages provides the package's own `SqliteClient` and the shared `SqlClient` from `effect/sql/SqlClient`. Both default to a 5 second busy timeout and WAL mode.
+- `effect/cli` replaces `@effect/cli`. Its built-in `--version` flag prints `<name> v<version>`.
+
+**Where M1-1 differs from this plan.**
+
+- The platform modules export `PlatformLive` without a database, and `SqliteLive({ filename })` for the database. Importing `@effect/sql-sqlite-node` loads `node:sqlite`, which prints an `ExperimentalWarning` on Node 22, and `spindle --version` and `spindle validate` need no database. `node.ts` loads the SQLite package only when `SqliteLive` builds. The platform test opens its in-memory database through `SqliteLive`. The two boxes that say "through `PlatformLive`" stay unchecked until the root accepts or rejects the split.
+- The `#platform` entry has a third condition, `spindle-source`, that points at the `.ts` files. `tsc` and Vitest set it. Node and Bun do not, so the built CLI resolves to `dist`.
+- The Biome import rule covers `packages/runtime` only. `scripts/` and `packages/conformance` are tooling and import `node:` modules.
+- The 8 statements on `getting-started:examples` are `not-testable`, because they come from example prompts for coding agents. The box that asks for `planned` on every other entry stays unchecked for that reason.
+- Appendix E names pages for M2 through M7 only, so `scripts/seed-ledger.mjs` assigns milestones from a rule table. Its M1 rules follow the M1-2 through M1-7 sections. Its rules for the providers pages, most of the tools page, and a few sections of threads, hooks, and messages are judgment calls.
+- A ledger entry names a test the way Vitest prints it, `<file> > <describe> > <title>`. The ledger step reads the Vitest JSON report that `pnpm test` writes, so it also fails when a named test did not pass.
+- `pnpm check` runs the requirement check before the ledger check, so its last line is the ledger line.
 
 ## Appendix B. Alternatives rejected
 
