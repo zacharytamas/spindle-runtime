@@ -1684,6 +1684,50 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S26b redacts a secret of any length from stored tool results, later requests, and run errors",
+    requirements: ["287f2aef"],
+    run: async (driver) => {
+      const instance = { SHORT_TOKEN: "Q7z", QUOTED_TOKEN: 'a"b\\c' }
+      const tools = {
+        reveal: defineTool({
+          description: "Returns its tokens",
+          variables: [
+            { name: "SHORT_TOKEN", type: "secret", required: true, description: "A short token" },
+            { name: "QUOTED_TOKEN", type: "secret", required: true, description: "A token with JSON escapes" },
+          ],
+          execute: async (state: ThreadState) => ({
+            status: "error",
+            error: `short ${await state.env("SHORT_TOKEN")}`,
+            error_code: "Q7z",
+            error_data: { quoted: await state.env("QUOTED_TOKEN"), nested: ["Q7z"] },
+          }),
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ name: "reveal", arguments: {} }] },
+        { reject: new ProviderError('upstream echoed Q7z and a"b\\c', "invalid_request") },
+      ])
+      await using(
+        driver,
+        { provider, tools },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect(outcome.error?.message).toBe("upstream echoed [redacted] and [redacted]")
+          const stored = await session.messages(thread)
+          const result = stored.find((m) => m.role === "tool")
+          expect([result?.content, result?.metadata]).toEqual([
+            "short [redacted]",
+            { error_code: "[redacted]", error_data: { quoted: "[redacted]", nested: ["[redacted]"] } },
+          ])
+          for (const text of [JSON.stringify(stored), JSON.stringify(provider.requests), JSON.stringify(outcome)])
+            for (const secret of Object.values(instance))
+              expect(text).not.toContain(JSON.stringify(secret).slice(1, -1))
+        },
+        instance,
+      )
+    },
+  },
+  {
     name: "S27 treats provider-executed tools and generated images as parts of one response and runs nothing locally",
     requirements: [],
     run: async (driver) => {
@@ -1965,7 +2009,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }),
         other: defineTool({
           description: "Another tool",
-          execute: async (state: ThreadState) => ok(await state.env("LEVEL")),
+          execute: async (state: ThreadState) => ok(`prompt level: ${(await state.env("LEVEL")) === "prompt-level"}`),
         }),
       }
       const provider = new ScriptedProvider([
@@ -2005,7 +2049,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         invoked: { status: "success", result: "42" },
         invalid: { status: "error" },
       })
-      expect(otherLevel).toBe("prompt-level")
+      expect(otherLevel).toBe("prompt level: true")
     },
   },
   {

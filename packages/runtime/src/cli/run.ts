@@ -43,7 +43,7 @@ const printer =
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
       const { signal: _, ...request } = event.request
-      return Console.log(event.redact(JSON.stringify(request, null, 2)))
+      return Console.log(JSON.stringify(request, null, 2))
     }
     const message = event.message
     if (message.role === "tool")

@@ -86,7 +86,7 @@ describe("spindle run", () => {
     }),
   )
 
-  it.effect("sends the API key slot to the endpoint and redacts its value from --dump-requests", () =>
+  it.effect("sends the API key slot to the endpoint and prints no line that holds it", () =>
     Effect.gen(function* () {
       const key = "sk-test-0123456789"
       const seen: Array<string | null> = []
@@ -107,17 +107,54 @@ describe("spindle run", () => {
         return new Response(`${body}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } })
       }
       const fake = Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)
-      const { exit, out } = yield* run(["assistant", "-m", "hi", "--dump-requests"], {
+      const { exit, out, err } = yield* run(["assistant", "-m", "hi", "--dump-requests", "--trace"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
         SPINDLE_TEST_API_KEY: key,
       }).pipe(Effect.provide(fake))
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(seen).toEqual([`Bearer ${key}`, `Bearer ${key}`])
-      expect(out).toContain(`echo ${key}`)
+      expect(out).toContain("echo [redacted]")
       const dumps = out.join("\n").match(/^\{$[\s\S]*?^\}$/gm) ?? []
       expect(dumps).toHaveLength(2)
       expect(JSON.parse(dumps[1] ?? "{}").messages[2]).toMatchObject({ role: "assistant", content: "echo [redacted]" })
-      for (const dump of dumps) expect(dump).not.toContain(key)
+      expect([...out, ...err].join("\n")).not.toContain(key)
+    }),
+  )
+
+  it.effect("redacts the endpoint key and a three-character token from every printed line and the database", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" }), "run.db")
+      const secrets = { SPINDLE_TEST_API_KEY: "sk-test-9876543210", SHORT_TOKEN: "Q7z" }
+      const { exit, out, err } = yield* run(
+        ["leaky", "-m", "hi", "--script", "@reveal.json", "--trace", "--dump-requests", "--db", db],
+        secrets,
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(out).toContain("[tool result] reveal success: key [redacted] token [redacted]")
+      const files = (yield* fs.readDirectory(path.dirname(db))).map((name) => path.join(path.dirname(db), name))
+      const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file))).map((bytes) =>
+        new TextDecoder().decode(bytes),
+      )
+      expect(stored.join("")).toContain("key [redacted] token [redacted]")
+      for (const secret of Object.values(secrets))
+        for (const text of [...out, ...err, ...stored]) expect(text).not.toContain(secret)
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.effect("prints an HTTP 401 diagnostic without the key that the endpoint echoed", () =>
+    Effect.gen(function* () {
+      const key = "sk-test-5555555555"
+      const fetch = async (_input: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ error: { message: `Incorrect API key provided: ${key}` } }, { status: 401 })
+      const { exit, out, err } = yield* run(["assistant", "-m", "hi"], {
+        SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
+        SPINDLE_TEST_API_KEY: key,
+      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Incorrect API key provided: [redacted]")
+      expect([...out, ...err].join("\n")).not.toContain(key)
     }),
   )
 })

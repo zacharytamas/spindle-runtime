@@ -284,8 +284,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and redacts its value from --dump-requests",
-			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets"
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets",
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and prints no line that holds it"
 		],
 		"reason": ""
 	},
@@ -293,7 +293,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and redacts its value from --dump-requests"
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and prints no line that holds it",
+			"packages/runtime/test/cli/run.test.ts > spindle run > prints an HTTP 401 diagnostic without the key that the endpoint echoed"
 		],
 		"reason": ""
 	},
@@ -2373,9 +2374,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
-			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and redacts its value from --dump-requests"
+			"packages/runtime/test/conformance.test.ts > step loop > S26b redacts a secret of any length from stored tool results, later requests, and run errors",
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database"
 		],
-		"reason": "A value from any source but the thread defaults to secret, and Spindle redacts the secret values it resolved from --dump-requests. Thread values marked text arrive with setEnv in M2."
+		"reason": "A value from any source but the thread defaults to secret. Spindle redacts every secret value it resolved from stored tool results, every printed line, and run errors. Thread values marked text arrive with setEnv in M2."
 	},
 	"specification:threads:4e919532": {
 		"status": "planned",

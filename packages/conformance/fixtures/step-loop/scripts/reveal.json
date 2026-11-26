@@ -1,0 +1,1 @@
+{ "responses": [{ "toolCalls": [{ "name": "reveal", "arguments": {} }] }, { "text": "done" }] }

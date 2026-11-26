@@ -62,17 +62,15 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
 const isProvider = (value: unknown): value is LLMProviderInterface =>
   isRecord(value) && typeof value.stream === "function" && typeof value.generate === "function"
 
-// Returns the effect that yields the provider for one request. A missing required value fails here, before any
-// request. An extension that declares createFetch is built again for each request, with that request's transport.
-export const providerFor = Effect.fn("providerFor")(function* (
+// Adds every secret value of the model's provider config to secrets, and returns the config and the names of the
+// required values that are missing.
+export const resolveConfig = Effect.fn("resolveConfig")(function* (
   model: Loaded<ModelDefinition>,
-  state: ThreadState,
   secrets: Set<string>,
 ) {
   const factory = model.value.provider as ProviderFactoryWithOptions
   const slots = factory.configSlots ?? {}
-  const definition = factory.providerDefinition
-  const sources: Record<string, unknown> = definition?.config ?? {}
+  const sources: Record<string, unknown> = factory.providerDefinition?.config ?? {}
   const found: Resolution = { missing: [], secrets }
   const config: Record<string, unknown> = {}
   for (const key of new Set([...Object.keys(slots), ...Object.keys(sources)])) {
@@ -85,10 +83,23 @@ export const providerFor = Effect.fn("providerFor")(function* (
           : yield* fromSlot(key, slot, found)
     if (value !== undefined) config[key] = value
   }
+  return { config, missing: found.missing }
+})
+
+// Returns the effect that yields the provider for one request. A missing required value fails here, before any
+// request. An extension that declares createFetch is built again for each request, with that request's transport.
+export const providerFor = Effect.fn("providerFor")(function* (
+  model: Loaded<ModelDefinition>,
+  state: ThreadState,
+  secrets: Set<string>,
+) {
+  const factory = model.value.provider as ProviderFactoryWithOptions
+  const definition = factory.providerDefinition
+  const { config, missing } = yield* resolveConfig(model, secrets)
   const name = model.definition.qualifiedName
-  if (found.missing.length > 0)
+  if (missing.length > 0)
     return yield* new SetupError({
-      message: `The provider of model ${name} needs ${found.missing.join(", ")}, which ${found.missing.length === 1 ? "has" : "have"} no value`,
+      message: `The provider of model ${name} needs ${missing.join(", ")}, which ${missing.length === 1 ? "has" : "have"} no value`,
     })
   const transport = yield* FetchHttpClient.Fetch
   const resolved: ProviderFactoryConfig = {

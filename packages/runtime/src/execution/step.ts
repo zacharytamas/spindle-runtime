@@ -8,11 +8,13 @@ import type {
   ToolResult,
 } from "@standardagents/spec"
 import { Cause, Effect, Fiber } from "effect"
-import { providerFor } from "../providers/config.ts"
+import { providerFor, resolveConfig } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
+import { resolveEnv } from "./env.ts"
+import { redactDeep, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
 import { invokeTool, runToolCall, scopeFor, storedResult, type ToolCall, type ToolContext } from "./tools.ts"
@@ -22,7 +24,7 @@ import { type FunctionTool, type Loaded, lookup, prepareTurn, roleOf, type Turn 
 export type ExecutionEvent =
   | { readonly type: "trace"; readonly entry: TraceEntry }
   | { readonly type: "message"; readonly message: Message }
-  | { readonly type: "request"; readonly request: ProviderRequest; readonly redact: (text: string) => string }
+  | { readonly type: "request"; readonly request: ProviderRequest }
 
 export interface ExecutionOptions {
   readonly retries?: number
@@ -130,11 +132,21 @@ const stopToolOutcome = (turn: Turn, calls: ReadonlyArray<ToolCall>, results: Re
   return { tool: call.name, callId: call.id, status: result.status, value } satisfies StopToolOutcome
 }
 
-const redactor = (secrets: ReadonlySet<string>) => (text: string) => {
-  let redacted = text
-  for (const secret of secrets) if (secret.length >= 4) redacted = redacted.replaceAll(secret, "[redacted]")
-  return redacted
-}
+// A value that the prompt or one of its tools declares secret is known before the first request, so that its
+// redaction does not wait for a tool to read it.
+const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn, secrets: Set<string>) {
+  const declared = [
+    ...(turn.prompt.value.variables ?? []).map((variable) => ({ variable, scope: promptScope(turn) })),
+    ...[...turn.tools.values()].flatMap((exposed) =>
+      (exposed.tool.value.variables ?? []).map((variable) => ({ variable, scope: scopeFor(turn, exposed.entry) })),
+    ),
+  ]
+  for (const { variable, scope } of declared)
+    if (variable.type === "secret") {
+      const value = yield* resolveEnv(scope, variable.name)
+      if (value !== undefined) secrets.add(value)
+    }
+})
 
 const describe = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause)
@@ -145,7 +157,6 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
   Effect.gen(function* () {
     const store = yield* ThreadStore
     const services = yield* Effect.context<Registry | ThreadStore>()
-    const observe = options.observe ?? (() => Effect.void)
     const retries = options.retries ?? DEFAULT_RETRIES
     const stepCap = options.stepCap ?? DEFAULT_STEP_CAP
     const flowId = crypto.randomUUID()
@@ -153,12 +164,15 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const modelCalls: Array<ModelCall> = []
     const pending: Array<Fiber.Fiber<void>> = []
     const secrets = new Set<string>()
+    const redact = redactor(secrets)
+    const observe = (event: ExecutionEvent) =>
+      options.observe === undefined ? Effect.void : options.observe(redactDeep(redact, event))
     const abort = new AbortController()
     let step = 0
     let steps = 0
 
     const record = (phase: Phase, detail: string) => {
-      const entry: TraceEntry = { step, phase, detail }
+      const entry: TraceEntry = { step, phase, detail: redact(detail) }
       trace.push(entry)
       return observe({ type: "trace", entry })
     }
@@ -170,7 +184,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     ) =>
       Effect.gen(function* () {
         yield* Effect.forEach(pending, Fiber.join, { discard: true })
-        return { threadId, flowId, status, reason, steps, ...extra, trace, modelCalls } satisfies RunOutcome
+        const outcome = { threadId, flowId, status, reason, steps, ...extra, trace, modelCalls } satisfies RunOutcome
+        return redactDeep(redact, outcome)
       })
 
     const loop = Effect.gen(function* () {
@@ -212,10 +227,13 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         invoke: (name) =>
           Effect.succeed({ status: "error", error: `invokeTool(${name}) needs a calling tool and its uses list` }),
       })
+      // A scripted run still learns the secret values of the model's real provider config.
+      if (options.provider !== undefined) yield* resolveConfig(turn.model, secrets)
       const provider =
         options.provider === undefined
           ? yield* providerFor(turn.model, promptState, secrets)
           : Effect.succeed(options.provider)
+      yield* addDeclaredSecrets(turn, secrets)
       const detailsAccepted = new Map<string, boolean>()
       const acceptsDetails = (message: Message) => {
         const name = message.prompt ?? ""
@@ -244,7 +262,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         })
         const request = buildRequest(turn, system, messages, abort.signal)
         yield* record("assemble", `${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
-        yield* observe({ type: "request", request, redact: redactor(secrets) })
+        yield* observe({ type: "request", request })
         const response = yield* callModel(
           {
             step,
@@ -275,7 +293,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const results: Array<ToolResult> = []
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
-          const result = yield* runToolCall(toolContext, call)
+          const result = redactDeep(redact, yield* runToolCall(toolContext, call))
           results.push(result)
           const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)])
           if (stored !== undefined) {
