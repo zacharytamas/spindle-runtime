@@ -86,12 +86,13 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         }),
       ]
       const agent = { kind: "agent", agentName: "assistant" }
-      const prompt = { kind: "prompt", promptName: "assistant" }
+      const prompt = { kind: "prompt", promptName: "helper" }
       const run = async (humanOn: "a" | "b", lists: Pick<Setup, "agent" | "prompt">) => {
         events.length = 0
         const provider = new ScriptedProvider([{ text: "answer" }])
         const created: Array<unknown> = []
-        await using(driver, { provider, hooks, humanOn, ...lists }, async (session, thread) => {
+        const named = { ...lists, side: { prompt: "helper" }, prompt: { name: "helper", ...lists.prompt } }
+        await using(driver, { provider, hooks, humanOn, ...named }, async (session, thread) => {
           created.push(...events)
           events.length = 0
           await send(session, thread, "go")
@@ -266,6 +267,65 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
           },
         )
       }
+    },
+  },
+  {
+    name: "H9b stores a hook's own id, time, and JSON metadata text, and refuses an id that another message holds",
+    requirements: ["41d77a88", "2fae890e", "7aa8424d", "1d6d311a"],
+    run: async (driver) => {
+      const outcomes: Array<unknown> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "ident",
+          execute: async (_state, message) => {
+            if (message.content === "own id") return { ...message, id: "chosen_id", created_at: 12345 }
+            if (message.content === "json metadata")
+              return { ...message, metadata: JSON.stringify({ flow: "x" }) as unknown as Record<string, unknown> }
+            if (message.content === "taken id" || message.content === "reply") return { ...message, id: "chosen_id" }
+            if (message.content === "bad shape") return { ...message, id: 42 as unknown as string }
+            return message
+          },
+        }),
+      ]
+      const settle = <A>(promise: Promise<A>) =>
+        promise.then(
+          (value) => ["resolved", value],
+          (error: unknown) => ["rejected", error instanceof Error ? error.message : String(error)],
+        )
+      const tools = {
+        probe: defineTool({
+          description: "Inject with chosen identities",
+          execute: async (state: ThreadState) => {
+            const own = await state.injectMessage({ role: "user", content: "own id" })
+            outcomes.push([own.id, own.created_at, (await state.getMessage("chosen_id"))?.content])
+            outcomes.push((await state.injectMessage({ role: "user", content: "json metadata" })).metadata)
+            outcomes.push(await settle(state.injectMessage({ role: "user", content: "taken id" })))
+            outcomes.push(await settle(state.injectMessage({ role: "user", content: "bad shape" })))
+            return ok("probed")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "probe", arguments: {} }] },
+        { text: "reply" },
+      ])
+      await using(driver, { provider, tools, hooks, prompt: { hooks: ["ident"] } }, async (session, thread) => {
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        const stored = await session.messages(thread)
+        expect(stored.map((m) => m.content)).toEqual(["go", null, "own id", "json metadata", "probed", "reply"])
+        expect(stored.filter((m) => m.id === "chosen_id").map((m) => m.content)).toEqual(["own id"])
+        expect(stored.at(-1)?.id).not.toBe("chosen_id")
+      })
+      expect(outcomes).toEqual([
+        ["chosen_id", 12345, "own id"],
+        { flow: "x" },
+        ["rejected", 'a message with id "chosen_id" already exists'],
+        [
+          "rejected",
+          "Hook ident (before_create_message) returned a value that is not a message the store can hold, so Spindle did not make the change",
+        ],
+      ])
     },
   },
   {
@@ -989,6 +1049,103 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ["tool", 2],
         ["filter", "tool wrote this"],
       ])
+    },
+  },
+  {
+    name: "H22 redacts the text a hook writes into the thread and fails a run whose system prompt a hook gives a secret",
+    requirements: ["d263e879", "287f2aef"],
+    run: async (driver) => {
+      const marker = "HOOK-SECRET-51c"
+      const variables = [{ name: "MARK", type: "secret" as const, required: true, description: "A secret" }]
+      let injected = false
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "tag_reply",
+          execute: async (state, message) =>
+            message.content === "reply"
+              ? { ...message, content: `reply ${await state.env("MARK")}`, metadata: { by: await state.env("MARK") } }
+              : message,
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "note_secret",
+          execute: async (state, messages) => {
+            if (!injected) {
+              injected = true
+              const mark = await state.env("MARK")
+              await state.injectMessage({ role: "user", content: `filter ${mark}`, metadata: { m: mark } })
+            }
+            return messages
+          },
+        }),
+        defineHook({
+          hook: "before_update_message",
+          id: "secret_patch",
+          execute: async (state, _id, updates) => ({
+            ...updates,
+            content: `${updates.content} ${await state.env("MARK")}`,
+          }),
+        }),
+        defineHook({
+          hook: "before_store_tool_result",
+          id: "stamp_result",
+          execute: async (state, _call, result) => ({
+            ...result,
+            result: `${result.result} ${await state.env("MARK")}`,
+          }),
+        }),
+      ]
+      const tools = {
+        edit: defineTool({
+          description: "Edit the injected note",
+          execute: async (state: ThreadState) => {
+            const note = state.execution?.messageHistory.find((m) => m.content?.startsWith("filter"))
+            await state.updateMessage(note?.id ?? "", { content: "edited" })
+            return ok("edited")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { text: "reply", toolCalls: [{ id: "c1", name: "edit", arguments: {} }] },
+        { text: `done ${marker}` },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { variables, hooks: hookIds(hooks) } },
+        async (session, thread) => {
+          await send(session, thread, `hello ${marker}`)
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => [m.role, m.content])).toEqual([
+            ["user", `hello ${marker}`],
+            ["user", "edited [redacted]"],
+            ["assistant", "reply [redacted]"],
+            ["tool", "edited [redacted]"],
+            ["assistant", `done ${marker}`],
+          ])
+          expect(stored[1]?.metadata).toEqual({ m: "[redacted]" })
+          expect(stored[2]?.metadata).toEqual({ by: "[redacted]" })
+        },
+        { MARK: marker },
+      )
+      const leak = defineHook({
+        hook: "after_system_message",
+        id: "leak_system",
+        execute: async (state, system) => `${system} ${await state.env("MARK")}`,
+      })
+      const never = new ScriptedProvider([{ text: "never" }])
+      await using(
+        driver,
+        { provider: never, hooks: [leak], prompt: { variables, hooks: ["leak_system"] } },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error" })
+          expect(outcome.error?.message).toMatch(/holds a secret value/)
+          expect(JSON.stringify(outcome)).not.toContain(marker)
+        },
+        { MARK: marker },
+      )
+      expect(never.requests).toHaveLength(0)
     },
   },
   {

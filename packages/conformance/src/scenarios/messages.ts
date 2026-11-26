@@ -140,7 +140,8 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             hooks,
             humanOn,
             agent: { hooks: ["agent_before", "agent_after"] },
-            prompt: { hooks: ["prompt_before"], includeChat: true },
+            side: { prompt: "helper" },
+            prompt: { name: "helper", hooks: ["prompt_before"], includeChat: true },
           },
           async (session, thread) => {
             const state = await session.state(thread)
@@ -163,7 +164,7 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             expect(calls).toEqual([
               ["agent_before", "go", agent, true],
               ["agent_after", "go", agent, true],
-              ["prompt_before", "answer", { kind: "prompt", promptName: "assistant" }, false],
+              ["prompt_before", "answer", { kind: "prompt", promptName: "helper" }, false],
             ])
           },
         )
