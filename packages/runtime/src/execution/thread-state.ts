@@ -66,7 +66,7 @@ export interface ThreadControl {
     args: Record<string, unknown>,
   ) => Effect.Effect<void, unknown, Registry | ThreadStore>
   readonly status: Effect.Effect<ThreadStatus, unknown>
-  readonly terminate: Effect.Effect<void, unknown>
+  readonly terminate: Effect.Effect<number, unknown>
 }
 
 export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
@@ -246,13 +246,14 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     else state.secrets.values.add(value)
     return value
   }
+  let terminated = state.thread.terminated
   return {
     threadId,
     agentId: state.thread.agentId,
     userId: null,
     createdAt: state.thread.createdAt,
     children: [],
-    terminated: state.thread.terminated,
+    get terminated() { return terminated },
     arguments: structuredClone(state.thread.arguments) as Record<string, unknown>,
     context: state.context,
     execution:
@@ -341,7 +342,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: () => {
       const refused = expired()
-      return refused === undefined ? runPromise(state.control.terminate) : Promise.reject(refused)
+      return refused === undefined ? runPromise(state.control.terminate).then(time => { terminated = time }) : Promise.reject(refused)
     },
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,

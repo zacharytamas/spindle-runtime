@@ -1,8 +1,8 @@
 import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
+import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
-import { type Holder, type QueueEntry, ThreadStore, WritingHandle } from "../store/ThreadStore.ts"
+import { type Holder, type QueueEntry, ThreadStore, ThreadTerminated, WritingHandle } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
@@ -28,7 +28,7 @@ export interface Delivery {
 interface Live {
   readonly run: Run
   successor?: Live
-  readonly done: Deferred.Deferred<RunOutcome>
+  readonly done: Deferred.Deferred<RunOutcome, unknown>
   fiber: Fiber.Fiber<void, unknown> | undefined
 }
 
@@ -48,7 +48,7 @@ export class ThreadSupervisor extends Context.Service<
     // Interrupts that execution. The run settles idle, and the thread stays open.
     readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<boolean>
     // The outcome of the execution that this process runs for the thread, once it settles.
-    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined>
+    readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, unknown>
     readonly status: (threadId: string) => Effect.Effect<ThreadStatus, unknown>
   }
 >()("spindle/ThreadSupervisor") {}
@@ -138,7 +138,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         options: ExecutionOptions,
       ): Effect.Effect<Live, never, ThreadStore | Registry> =>
         Effect.gen(function* () {
-          const entry: Live = { run, done: yield* Deferred.make<RunOutcome>(), fiber: undefined }
+          const entry: Live = { run, done: yield* Deferred.make<RunOutcome, unknown>(), fiber: undefined }
           const previous = live.get(threadId)
           if (previous && !previous.run.ended) {
             previous.run.displaced = true
@@ -156,6 +156,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 flows.delete(run.flowId)
                 if (live.get(threadId) === entry) live.delete(threadId)
                 // An interrupted run settled itself. Its outcome is the status the store holds.
+                if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Deferred.failCause(entry.done, exit.cause)
                 const outcome: RunOutcome = Exit.isSuccess(exit)
                   ? exit.value
                   : yield* store.getThread(threadId).pipe(
@@ -241,12 +242,13 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // here is interrupted, and one in another process stops at its next write or its next control poll.
       const terminate = (threadId: string) =>
         Effect.gen(function* () {
-          yield* store.terminate(threadId)
+          const time = yield* store.terminate(threadId)
           const local = live.get(threadId)
           if (local?.fiber !== undefined) {
             local.run.releaseWait.abort()
             yield* Fiber.interrupt(local.fiber)
           }
+          return time
         })
 
       const control = (threadId: string): ThreadControl => ({
@@ -342,9 +344,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               }
               const status = yield* awaitRest(threadId)
               const current = yield* store.getThread(threadId)
+              if (current.terminated !== null) return yield* new ThreadTerminated({threadId, terminated: current.terminated})
               if (
                 status.reason === "execution_lost" ||
-                current.terminated !== null ||
                 !(yield* store.isQueued(threadId, admitted.seq))
               ) {
                 const delivery = { status, ...(elsewhere === undefined ? {} : { elsewhere }) }

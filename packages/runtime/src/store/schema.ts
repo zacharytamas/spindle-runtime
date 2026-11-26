@@ -1,4 +1,4 @@
-import type { Message, ThreadStatus } from "@standardagents/spec"
+import type { Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 import { positions } from "./ThreadStore.ts"
 
