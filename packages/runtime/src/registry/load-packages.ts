@@ -141,11 +141,12 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
       return
     }
     const read = yield* fs.readFileString(manifestFile).pipe(
-      Effect.flatMap((text) => Effect.try({ try: (): unknown => JSON.parse(text), catch: (cause) => cause })),
+      Effect.mapError(describeCause),
+      Effect.flatMap((text) => Effect.try({ try: (): unknown => JSON.parse(text), catch: describeCause })),
       Effect.result,
     )
     if (Result.isFailure(read) || !isRecord(read.success)) {
-      const reason = Result.isFailure(read) ? describeCause(read.failure) : "It holds JSON that is not an object."
+      const reason = Result.isFailure(read) ? read.failure : "It holds JSON that is not an object."
       issue(
         "package_invalid",
         relativeManifest,
