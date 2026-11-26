@@ -3,6 +3,7 @@ import { SPEC_VERSION } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Schema } from "effect"
 import { Command } from "effect/cli"
 import { PlatformLive, platformName, runMain } from "#platform"
+import { chatCommand } from "./chat.ts"
 import { runCommand } from "./run.ts"
 import { sendCommand } from "./send.ts"
 import { recoverCommand, statusCommand } from "./status.ts"
@@ -19,7 +20,7 @@ const packageVersion = Effect.gen(function* () {
 })
 
 const spindle = Command.make("spindle").pipe(
-  Command.withSubcommands([validateCommand, runCommand, sendCommand, statusCommand, recoverCommand]),
+  Command.withSubcommands([validateCommand, runCommand, chatCommand, sendCommand, statusCommand, recoverCommand]),
 )
 
 Effect.gen(function* () {
