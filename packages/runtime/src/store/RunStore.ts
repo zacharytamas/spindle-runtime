@@ -3,9 +3,20 @@ import { Context, Effect } from "effect"
 
 import { processAlive, processId } from "#platform"
 import { CLOSING, transition } from "../execution/run-status.ts"
-import { authorize, type Database, first, json, nowMicros, type RunRow, runColumns, unyielding } from "./database.ts"
-import type { Holder, QueueEntry } from "./model.ts"
-import { type Claim, external, ThreadNotFound, type WriteOrigin } from "./model.ts"
+import {
+  authorize,
+  type Database,
+  json,
+  nowMicros,
+  pending,
+  queueHead,
+  type RunRow,
+  requireThread,
+  runColumns,
+  unyielding,
+} from "./database.ts"
+import type { Holder, QueueEntry, Thread } from "./model.ts"
+import { type Claim, external, type WriteOrigin } from "./model.ts"
 import {
   decodeQueued,
   type MessageRow,
@@ -13,16 +24,19 @@ import {
   type QueueRow,
   queuePayload,
   stored,
+  type ThreadRow,
   text,
+  threadColumns,
   toStatus,
+  toThread,
 } from "./schema.ts"
 
 // All connections in this process can observe claims held by its supervisors.
 const localHolders = new Set<string>()
 
-export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Database) => {
+export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
   const hasPending = (threadId: string) =>
-    Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(threadId)} LIMIT 1`, (rows) => rows.length > 0)
+    Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} LIMIT 1`, (rows) => rows.length > 0)
   const closeCalls = (threadId: string, flowId: string | null, closing: string, now: number) =>
     Effect.gen(function* () {
       const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
@@ -77,13 +91,15 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
       if (next === undefined)
         return yield* Effect.die(new Error(`run status ${row.run_state} cannot take ${event.type}`))
       yield* release(threadId, next)
+      return next
     })
 
-  type HeldRow = RunRow & { id: string; holder_id: string | null; pid: number | null }
-  const heldRows = (where: ReturnType<typeof sql.and>) => sql<HeldRow>`
-      SELECT t.id, ${sql.literal(runColumns)}, t.holder_id, h.pid
-      FROM threads t LEFT JOIN holders h ON h.id = t.holder_id WHERE ${where}`
-  const lost = ({ pid, holder_id }: HeldRow) =>
+  type HolderRow = { holder_id: string | null; pid: number | null }
+  const running = sql`run_state = 'running'`
+  const heldRows = <A extends object>(columns: string, where: ReturnType<typeof sql.and>) => sql<A & HolderRow>`
+    SELECT t.*, h.pid FROM (SELECT ${sql.literal(columns)}, holder_id FROM threads WHERE ${where}) t
+    LEFT JOIN holders h ON h.id = t.holder_id`
+  const lost = ({ pid, holder_id }: HolderRow) =>
     pid === null || pid <= 0 || (pid === processId && (holder_id === null || !localHolders.has(holder_id)))
       ? Effect.succeed(true)
       : Effect.map(processAlive(pid), (alive) => !alive)
@@ -115,7 +131,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
         const rows = yield* sql<QueueRow>`
               INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload, queued_at: now })}
               RETURNING seq, kind, payload, queued_at`
-        const queued = decodeQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
+        const queued = decodeQueued(yield* requireThread(threadId, rows))
         if (!queued) return yield* Effect.die(new Error("Invalid queued payload"))
         return { queued, claimed: yield* claimRun(threadId, row, claim, now) }
       },
@@ -135,22 +151,24 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
 
     isQueued: Effect.fn("RunStore.isQueued")(
       (threadId: string, seq: number) =>
-        Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(threadId)} AND seq = ${seq}`, (rows) => rows.length > 0),
+        Effect.map(
+          sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} AND seq = ${seq}`,
+          (rows) => rows.length > 0,
+        ),
       unyielding,
     ),
 
     nextQueued: Effect.fn("RunStore.nextQueued")(function* (threadId: string, origin: { readonly flowId: string }) {
       while (true) {
-        const [row] =
-          yield* sql<QueueRow>`SELECT seq, kind, payload, queued_at FROM queue WHERE ${pending(threadId)} ORDER BY seq LIMIT 1`
+        const [row] = yield* queueHead(sql, threadId)
         if (!row) return undefined
         const entry = decodeQueued(row)
         if (entry) return entry
         const changed = yield* sql.withTransaction(
           Effect.gen(function* () {
             const [run] = yield* runRows(threadId)
-            if (!run || authorize(threadId, run, origin, "settle")) return []
-            return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(threadId)} AND seq = ${row.seq} RETURNING seq`
+            if (!run || authorize(threadId, run, origin, "owner")) return []
+            return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(sql, threadId)} AND seq = ${row.seq} RETURNING seq`
           }),
         )
         if (!changed.length) return undefined
@@ -162,7 +180,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
         Effect.map(
           sql<{
             count: number
-          }>`SELECT count(*) AS count FROM queue WHERE ${pending(threadId)}`,
+          }>`SELECT count(*) AS count FROM queue WHERE ${pending(sql, threadId)}`,
           (rows) => rows[0]?.count ?? 0,
         ),
       unyielding,
@@ -176,7 +194,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
         options: { readonly continueIfQueued: boolean; readonly atCap?: boolean; readonly closing: string },
       ) {
         const [row] = yield* runRows(threadId)
-        if (row === undefined || authorize(threadId, row, origin, "settle") || row.run_state !== "running")
+        if (row === undefined || authorize(threadId, row, origin, "owner") || row.run_state !== "running")
           return "superseded" as const
         // The check and the release share one transaction, so work queued after the last drain either keeps this
         // run going or finds the thread released and starts the next one.
@@ -202,17 +220,18 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
     recoverLost: (threadId?: string) =>
       unyielding(
         Effect.gen(function* () {
-          const candidates = heldRows(
-            sql.and([sql`t.run_state = 'running'`, ...(threadId === undefined ? [] : [sql`t.id = ${threadId}`])]),
+          const candidates = heldRows<RunRow & { id: string }>(
+            `id, ${runColumns}`,
+            sql.and([running, ...(threadId === undefined ? [] : [sql`id = ${threadId}`])]),
           )
-          const ids = new Map<string, string | null>()
-          for (const row of yield* candidates) if (yield* lost(row)) ids.set(row.id, row.flow_id)
+          const ids = new Set<string | null>()
+          for (const row of yield* candidates) if (yield* lost(row)) ids.add(row.flow_id)
           if (!ids.size) return []
           return yield* sql.withTransaction(
             Effect.gen(function* () {
               const recovered = []
               for (const row of yield* candidates) {
-                if (ids.get(row.id) !== row.flow_id || !(yield* lost(row))) continue
+                if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
                 yield* settleWith(row.id, row, { type: "lose" }, CLOSING.lost)
                 recovered.push(row.id)
               }
@@ -222,17 +241,23 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
         }),
       ),
 
-    recoverThread: Effect.fn("RunStore.recoverThread")(
-      function* (threadId: string, force: boolean) {
-        const row = yield* first(yield* heldRows(sql`t.id = ${threadId}`), () => new ThreadNotFound({ threadId }))
-        if (row.run_state !== "running") return { kind: "atRest" as const, status: toStatus(row) }
-        if (!force && !(yield* lost(row))) return { kind: "alive" as const, pid: row.pid }
-        yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
-        return { kind: "recovered" as const, pid: row.pid }
-      },
-      sql.withTransaction,
-      unyielding,
-    ),
+    recoverThread: <E = never, R = never>(
+      threadId: string,
+      force: boolean,
+      check?: (thread: Thread) => Effect.Effect<void, E, R>,
+    ) =>
+      Effect.gen(function* () {
+        const row = yield* requireThread(
+          threadId,
+          yield* heldRows<ThreadRow & RunRow>(`${threadColumns}, flow_id, revision`, sql`id = ${threadId}`),
+        )
+        const thread = toThread(row)
+        if (check) yield* check(thread)
+        if (row.run_state !== "running") return { kind: "atRest" as const, status: thread.status, pid: null }
+        if (!force && !(yield* lost(row))) return { kind: "alive" as const, status: thread.status, pid: row.pid }
+        const status = yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
+        return { kind: "recovered" as const, status, pid: row.pid }
+      }).pipe(sql.withTransaction, unyielding),
 
     acquireHolder: Effect.fn("RunStore.acquireHolder")(
       (holder: Holder) =>
@@ -250,22 +275,16 @@ export const makeRunStore = ({ sql, selectRun, runRows, pending, openCalls }: Da
       unyielding,
     ),
 
-    holderOf: Effect.fn("RunStore.holderOf")(
-      (threadId: string) =>
-        Effect.map(
-          sql<{ id: string; pid: number }>`
-            SELECT h.id, h.pid FROM threads AS t JOIN holders AS h ON h.id = t.holder_id
-            WHERE t.id = ${threadId} AND t.run_state = 'running'`,
-          (rows) => (rows[0] === undefined ? null : rows[0]),
-        ),
-      unyielding,
-    ),
+    holderOf: Effect.fn("RunStore.holderOf")(function* (threadId: string) {
+      const [row] = yield* heldRows("id", sql`id = ${threadId} AND ${running}`)
+      return row?.pid == null || row.holder_id === null ? null : { id: row.holder_id, pid: row.pid }
+    }, unyielding),
 
     owned: Effect.fn("RunStore.owned")(
       (holderId: string) =>
         Effect.map(
           sql<{ id: string; flow_id: string }>`
-            SELECT id, flow_id FROM threads WHERE run_state = 'running' AND holder_id = ${holderId}`,
+            SELECT id, flow_id FROM threads WHERE ${running} AND holder_id = ${holderId}`,
           (rows) => new Map(rows.map((row) => [row.id, row.flow_id])),
         ),
       unyielding,

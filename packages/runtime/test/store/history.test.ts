@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { GetMessagesOptions } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, HashMap } from "effect"
 import * as Statement from "effect/sql/Statement"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
@@ -77,7 +77,7 @@ describe("ThreadStore", () => {
         expect(yield* messageStore.history(thread.id)).toEqual({
           revision: 1,
           messages: [kept],
-          positions: new Map([[id, { seq: 1, callerSeq: null }]]),
+          positions: HashMap.make([id, { seq: 1, callerSeq: null }]),
         })
       }).pipe(Effect.provide(inMemory)),
     )

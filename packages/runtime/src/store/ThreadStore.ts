@@ -1,8 +1,8 @@
 import { Context, Effect } from "effect"
-import { authorize, type Database, first, json, nowMicros, unyielding } from "./database.ts"
+import { authorize, type Database, json, nowMicros, requireThread, unyielding } from "./database.ts"
 import type { NewThread } from "./model.ts"
-import { KeyNotWellFormed, ThreadNotFound, type WriteOrigin } from "./model.ts"
-import { stored, type ThreadRow, text, threadColumns, toThread } from "./schema.ts"
+import { KeyNotWellFormed, type WriteOrigin } from "./model.ts"
+import { stored, type ThreadRow, threadColumns, toThread } from "./schema.ts"
 
 const loneSurrogate = /[\uD800-\uDFFF]/u
 
@@ -25,22 +25,15 @@ export const makeThreadStore = ({ sql, threadRows, selectRun }: Database) => {
         }
         const inserted =
           yield* sql<ThreadRow>`INSERT INTO threads ${sql.insert(row)} RETURNING ${sql.literal(threadColumns)}`
-        return toThread(yield* first(inserted, () => new ThreadNotFound({ threadId: row.id })))
+        return toThread(yield* requireThread(row.id, inserted))
       },
       sql.withTransaction,
       unyielding,
     ),
 
-    getThread: Effect.fn("ThreadStore.getThread")(
-      (threadId: string) =>
-        Effect.flatMap(threadRows<ThreadRow>(threadId, threadColumns), (rows) =>
-          Effect.map(
-            first(rows, () => new ThreadNotFound({ threadId })),
-            toThread,
-          ),
-        ),
-      unyielding,
-    ),
+    getThread: Effect.fn("ThreadStore.getThread")(function* (threadId: string) {
+      return toThread(yield* requireThread(threadId, yield* threadRows<ThreadRow>(threadId, threadColumns)))
+    }, unyielding),
 
     getValue: Effect.fn("ThreadStore.getValue")(function* (threadId: string, key: string) {
       if (!isWellFormed(key)) return yield* new KeyNotWellFormed({ key })

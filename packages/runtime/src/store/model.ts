@@ -1,5 +1,5 @@
 import type { Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Data } from "effect"
+import { Data, type HashMap } from "effect"
 
 export interface Thread {
   readonly id: string
@@ -61,7 +61,7 @@ export interface Inserted extends MessagePosition {
 
 // The revision is null when the read ran inside a caller's transaction, which may still roll back what it read.
 export interface ThreadHistory {
-  readonly positions: ReadonlyMap<string, MessagePosition>
+  readonly positions: HashMap.HashMap<string, MessagePosition>
   readonly revision: number | null
   readonly messages: ReadonlyArray<Message>
 }
@@ -160,6 +160,6 @@ export interface MessagePosition {
 }
 export type InsertOptions = WriteOrigin &
   (
-    | { readonly flowId: string; readonly callerSeq?: number; readonly dequeue?: number }
+    | { readonly flowId: string; readonly callerSeq?: number | undefined; readonly dequeue?: number | undefined }
     | { readonly callerSeq?: never; readonly dequeue?: never }
   )

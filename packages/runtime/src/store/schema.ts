@@ -70,8 +70,6 @@ export const toThread = (row: ThreadRow): Thread => ({
 })
 
 export type MessageRow = {
-  readonly seq?: number
-  readonly caller_seq?: number | null
   readonly id: string
   readonly role: Message["role"]
   readonly content: Text | null

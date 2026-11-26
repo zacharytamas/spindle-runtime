@@ -1,8 +1,7 @@
 import type { GetMessagesOptions, MessageUpdates } from "@standardagents/spec"
-import { Context, Effect, Option, Schema } from "effect"
+import { Context, Effect, HashMap, Option, Schema } from "effect"
 import { BeginTransaction } from "effect/sql/SqlClient"
-import { authorize, type Database, first, json, unyielding } from "./database.ts"
-import admission from "./migrations/0004_message_admission.ts"
+import { authorize, type Database, first, json, pending, unyielding } from "./database.ts"
 import type { IdentifiedMessage, InsertOptions } from "./model.ts"
 import {
   CallerHasOpenCalls,
@@ -17,7 +16,7 @@ import { type MessageRow, messageColumns, messageRow, stored, toMessage } from "
 
 const isCount = Schema.is(Schema.Natural)
 
-export const makeMessageStore = ({ sql, selectRun, runRows, pending, openCalls }: Database) => {
+export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
   const messageIdTaken = (id: string) =>
     Effect.map(sql`SELECT 1 FROM messages WHERE id = ${id}`, (rows) => rows.length > 0)
   const revision = (threadId: string) => Effect.map(selectRun(threadId), (row) => row.revision)
@@ -49,7 +48,8 @@ export const makeMessageStore = ({ sql, selectRun, runRows, pending, openCalls }
           const refusal = authorize(threadId, thread, origin, "insert")
           if (refusal) return yield* refusal
           if (dequeue !== undefined) {
-            const removed = yield* sql`DELETE FROM queue WHERE ${pending(threadId)} AND seq = ${dequeue} RETURNING seq`
+            const removed =
+              yield* sql`DELETE FROM queue WHERE ${pending(sql, threadId)} AND seq = ${dequeue} RETURNING seq`
             if (removed.length === 0) return yield* new QueueEntryGone({ seq: dequeue })
           }
           // Message ids are unique across threads, so an id that another thread holds is taken too.
@@ -88,7 +88,7 @@ export const makeMessageStore = ({ sql, selectRun, runRows, pending, openCalls }
           return {
             revision: current,
             messages: rows.map(toMessage),
-            positions: new Map(rows.map((row) => [row.id, { seq: row.seq, callerSeq: row.caller_seq }])),
+            positions: HashMap.fromIterable(rows.map((row) => [row.id, { seq: row.seq, callerSeq: row.caller_seq }])),
           }
         }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
           Effect.zipWith(

@@ -114,25 +114,29 @@ const openThread = (
     const id = requested.value
     const opened = yield* threadStore.transaction(
       Effect.gen(function* () {
-        const thread = yield* threadStore
-          .getThread(id)
-          .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
-        if (thread.agentId !== agent)
-          return yield* Effect.andThen(
-            identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
-            Effect.fail(new RunFailed({ message: "wrong agent" })),
+        const run = yield* runStore
+          .recoverThread(id, false, (thread) =>
+            Effect.gen(function* () {
+              if (thread.agentId !== agent)
+                return yield* Effect.andThen(
+                  identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
+                  Effect.fail(new RunFailed({ message: "wrong agent" })),
+                )
+              yield* requireOpen(thread)
+            }),
           )
-        yield* requireOpen(thread)
-        yield* runStore.recoverLost(id)
-        const { status } = yield* threadStore.getThread(id)
-        const holder = yield* runStore.holderOf(id)
-        return { status, holder, cursor: yield* messageStore.latestMessageSeq(id) }
+          .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
+        return {
+          status: run.status,
+          pid: run.kind === "alive" ? run.pid : null,
+          cursor: yield* messageStore.latestMessageSeq(id),
+        }
       }),
     )
     yield* identify(`thread ${id}`)
     yield* note(
-      opened.holder
-        ? `running in process ${opened.holder.pid}, so a line you type waits in its queue`
+      opened.pid !== null
+        ? `running in process ${opened.pid}, so a line you type waits in its queue`
         : `${opened.status.state} (${opened.status.reason ?? "none"})`,
     )
     return { id, cursor: opened.cursor }

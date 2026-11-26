@@ -1,5 +1,5 @@
 import type { Message } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, HashMap } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { MessageStore } from "../store/MessageStore.ts"
 import type { Inserted, ThreadHistory, ThreadNotFound } from "../store/model.ts"
@@ -48,7 +48,7 @@ export const makeHistory = (threadId: string): History => {
         copy = {
           revision,
           messages: copy.messages.concat(copyMessage(message)),
-          positions: new Map(copy.positions).set(message.id, { seq, callerSeq }),
+          positions: HashMap.set(copy.positions, message.id, { seq, callerSeq }),
         }
       }
     },

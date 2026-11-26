@@ -1,5 +1,6 @@
 import type { Message, MessageUpdates } from "@standardagents/spec"
-import { Clock, Effect } from "effect"
+import { Effect } from "effect"
+import { nowMicros } from "../store/database.ts"
 import { MessageStore } from "../store/MessageStore.ts"
 import type { NewMessage, WriteOrigin } from "../store/model.ts"
 import type { Secrets } from "./env.ts"
@@ -24,7 +25,6 @@ export interface WriteContext {
   readonly call: HookCall | undefined
   // The history of the execution that writes, when an execution writes.
   readonly history: History | undefined
-  // The flow of the execution that writes. Its writes fail once that flow no longer holds the thread.
   readonly callerSeq?: number
   readonly origin: WriteOrigin
 }
@@ -42,8 +42,6 @@ const depthOf = Effect.fnUntraced(function* (write: WriteContext) {
   }
   return call.depth
 })
-
-const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -188,10 +186,10 @@ export const createMessage = Effect.fn("createMessage")(function* (
     write.origin.flowId === undefined
       ? write.origin
       : {
-          ...(write.callerSeq === undefined ? {} : { callerSeq: write.callerSeq }),
+          callerSeq: write.callerSeq,
           ...write.origin,
           flowId: write.origin.flowId,
-          ...(dequeue === undefined ? {} : { dequeue }),
+          dequeue,
         }
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
   // stored once under an id from the runtime, and its hooks, which have already run, do not run again.

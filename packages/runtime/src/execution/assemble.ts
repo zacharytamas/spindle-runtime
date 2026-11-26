@@ -10,7 +10,7 @@ import type {
   ProviderToolCallPart,
   ProviderUserMessage,
 } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, HashMap, Option } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { ThreadHistory } from "../store/model.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
@@ -190,7 +190,7 @@ const requestOrder = (
   const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
   const holderOf = (message: Message, index: number) => {
-    const position = positions.get(message.id)
+    const position = Option.getOrUndefined(HashMap.get(positions, message.id))
     if (message.role === "tool")
       return position?.callerSeq != null ? bySeq.get(position.callerSeq) : holder.get(message.tool_call_id ?? "")
     if (position) bySeq.set(position.seq, index)
@@ -253,7 +253,7 @@ export const toProviderMessages = (
   const visit = (message: Message, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
-      const seq = positions.get(message.id)?.callerSeq
+      const seq = Option.getOrUndefined(HashMap.get(positions, message.id))?.callerSeq
       const visible =
         seq == null
           ? shownCalls.get(message.tool_call_id ?? "")
@@ -274,7 +274,7 @@ export const toProviderMessages = (
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
-      const position = positions.get(message.id)
+      const position = Option.getOrUndefined(HashMap.get(positions, message.id))
       if (position && showCalls) shownBySeq.set(position.seq, calls)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null

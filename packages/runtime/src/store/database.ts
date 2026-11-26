@@ -4,7 +4,7 @@ import type { SqlClient } from "effect/sql/SqlClient"
 
 import { toJson } from "./json.ts"
 import { FlowEnded, HandleExpired, ThreadNotFound, ThreadTerminated, ValueNotJson, type WriteOrigin } from "./model.ts"
-import { callsIn, type MessageRow, runReasonColumn, type ThreadRow, text } from "./schema.ts"
+import { callsIn, type MessageRow, type QueueRow, runReasonColumn, type ThreadRow, text } from "./schema.ts"
 
 export type RunRow = Pick<ThreadRow, "run_state" | "run_since" | "run_reason"> & {
   readonly flow_id: string | null
@@ -33,7 +33,7 @@ export const authorize = (
   threadId: string,
   row: { flow_id: string | null; terminated_at: number | null },
   origin: WriteOrigin,
-  operation?: "insert" | "settle",
+  operation?: "insert" | "owner",
 ) => {
   if (origin.flowId !== undefined && row.flow_id !== origin.flowId)
     return new FlowEnded({
@@ -44,19 +44,23 @@ export const authorize = (
   if (origin.handle?.expired()) return new HandleExpired()
   if (
     row.terminated_at !== null &&
-    operation !== "settle" &&
+    operation !== "owner" &&
     !(operation === "insert" && origin.handle?.terminated === row.terminated_at)
   )
     return new ThreadTerminated({ threadId, terminated: row.terminated_at })
 }
+export const requireThread = <A>(threadId: string, rows: ReadonlyArray<A>) =>
+  first(rows, () => new ThreadNotFound({ threadId }))
+
+export const pending = (sql: SqlClient, threadId: string) => sql`disposition = 'pending' AND thread_id = ${threadId}`
+export const queueHead = (sql: SqlClient, threadId: string) =>
+  sql<QueueRow>`SELECT seq, kind, payload, queued_at FROM queue WHERE ${pending(sql, threadId)} ORDER BY seq LIMIT 1`
+
 export const database = (sql: SqlClient) => {
   const threadRows = <A extends object>(threadId: string, columns: string) =>
     sql<A>`SELECT ${sql.literal(columns)} FROM threads WHERE id = ${threadId}`
   const runRows = (threadId: string) => threadRows<RunRow>(threadId, runColumns)
-  const requireRow = <A>(threadId: string, rows: ReadonlyArray<A>) =>
-    first(rows, () => new ThreadNotFound({ threadId }))
-  const selectRun = (threadId: string) => Effect.flatMap(runRows(threadId), (rows) => requireRow(threadId, rows))
-  const pending = (threadId: string) => sql`disposition = 'pending' AND thread_id = ${threadId}`
+  const selectRun = (threadId: string) => Effect.flatMap(runRows(threadId), (rows) => requireThread(threadId, rows))
   // Node truncates TEXT at a NUL. Compare the complete stored identifiers on both drivers.
   const openCalls = (caller: { seq: number; tool_calls: MessageRow["tool_calls"] }) =>
     Effect.gen(function* () {
@@ -66,6 +70,6 @@ export const database = (sql: SqlClient) => {
       const ids = new Set(answered.map((row) => text(row.id)))
       return callsIn(caller.tool_calls ?? "[]").filter((call) => !ids.has(call.id))
     })
-  return { sql, threadRows, runRows, selectRun, pending, openCalls }
+  return { sql, threadRows, runRows, selectRun, openCalls }
 }
 export type Database = ReturnType<typeof database>

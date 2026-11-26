@@ -1,10 +1,13 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Message } from "@standardagents/spec"
 import { Effect, Layer } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { PlatformLive, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
+import { queueHead } from "../../src/store/database.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
+import { decodeQueued } from "../../src/store/schema.ts"
 import { layer as storeLayer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
@@ -23,7 +26,7 @@ import {
   until,
 } from "./processes.ts"
 
-const storeAt = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
+const storeAt = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provideMerge(SqliteLive({ filename }))))
 
 const shape = (messages: ReadonlyArray<Message>) =>
   messages.map((message) => [message.role, message.role === "tool" ? message.tool_status : message.content])
@@ -287,11 +290,12 @@ describe("spindle across processes", () => {
           "the sender to queue its message",
           Effect.sync(() => waiter.err.some((line) => line.includes("waits in its queue"))),
         )
-        const store = yield* Effect.provide(RunStore, yield* Layer.build(storeAt(db)))
+        const services = yield* Layer.build(storeAt(db))
+        const store = yield* Effect.provide(RunStore, services)
+        const sql = yield* Effect.provide(SqlClient, services)
+        const peek = Effect.map(queueHead(sql, thread), ([row]) => row && decodeQueued(row))
         const claim = yield* store.holderOf(thread)
-        const entry = yield* store.nextQueued(thread, {
-          flowId: (yield* store.owned(claim?.id ?? "")).get(thread) ?? "",
-        })
+        const entry = yield* peek
         expect(claim?.pid).toBe(owner.pid)
         expect(entry).toMatchObject({ kind: "message", message: { content: "waiting" } })
         yield* waiter.signal("SIGINT")
@@ -300,9 +304,7 @@ describe("spindle across processes", () => {
           "spindle: Your message is still queued and the next run of this thread will deliver it.",
         )
         expect(yield* store.holderOf(thread)).toEqual(claim)
-        expect(
-          yield* store.nextQueued(thread, { flowId: (yield* store.owned(claim?.id ?? "")).get(thread) ?? "" }),
-        ).toEqual(entry)
+        expect(yield* peek).toEqual(entry)
         yield* touch(at("release-owner"))
         expect(yield* owner.exit).toBe(0)
         expect(owner.out.at(-1)).toBe("ack: waiting")
