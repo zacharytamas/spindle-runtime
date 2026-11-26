@@ -305,7 +305,7 @@ An execution moves through one ordered list of phases per step, which are drain,
 - [ ] Generate each tool's JSON Schema from its Zod arguments, validate the model's arguments against the schema, and run the tool calls one at a time in the order the model returned them.
 - [ ] Persist a tool error as a tool result and continue the loop.
 - [ ] Evaluate `stopTool`, then `stopOnResponse`, then `maxSteps`, from the one stop-rule table. Pass `toolChoice` through, including `none` with the tool definitions.
-- [ ] Write `openai-compatible.ts` against `LLMProviderInterface` for the chat completions wire format. It reads the base URL and the key from provider config slots.
+- [ ] Write `openai-compatible.ts` against `LLMProviderInterface` for the chat completions wire format. It reads the base URL and the key from provider config slots. The real-model lanes set those slots from `SPINDLE_TEST_BASE_URL`, `SPINDLE_TEST_API_KEY`, and `SPINDLE_TEST_MODEL`. The key is optional, because a local server needs none. The model must support tool calls and streaming.
 - [ ] Export the provider from `packages/runtime` as a factory named `openaiCompatible`, so that a file under `agents/models/` can import it and pass it as `provider`.
 - [ ] Copy the Hello, World example from the spec's Examples page into `packages/conformance/fixtures/hello-world/`. Change only the provider import in `agents/models/conversational.ts`.
 - [ ] Add `spindle run <agent> -m <text>`. It loads the `agents/` folder of the current directory, and `--dir <path>` names a different project directory. `--script <file>` selects the scripted provider. `--trace` prints the phase trace. `--dump-requests` prints each provider request as JSON. `--db <file>` selects the database.
