@@ -149,7 +149,11 @@ export interface Holder {
 // superseded: the flow no longer holds the thread, and nothing was written.
 export type Settlement = "settled" | "capped" | "continue" | "superseded"
 
-export class HandleExpired extends Data.TaggedError("HandleExpired") {}
+export class HandleExpired extends Data.TaggedError("HandleExpired") {
+  override get message() {
+    return "This handle has expired. Use a current thread handle."
+  }
+}
 
 export interface HandleOwner {
   readonly flowId: string | undefined
@@ -163,7 +167,11 @@ export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle
 
 export type WriteRefused = FlowEnded | ThreadTerminated | HandleExpired
 
-export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{ readonly messageId: string }> {}
+export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{ readonly messageId: string }> {
+  override get message() {
+    return `Message ${this.messageId} has open tool calls. Wait for the run to settle before deleting it.`
+  }
+}
 export interface MessagePosition {
   readonly seq: number
   readonly callerSeq: number | null

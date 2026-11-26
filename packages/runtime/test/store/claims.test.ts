@@ -5,7 +5,14 @@ import { TestClock } from "effect/testing"
 import { PlatformLive, processId, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
-import { callerSequence, type NewMessage, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
+import {
+  CallerHasOpenCalls,
+  callerSequence,
+  HandleExpired,
+  type NewMessage,
+  type QueueEntry,
+  ThreadStore,
+} from "../../src/store/ThreadStore.ts"
 
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
@@ -59,6 +66,10 @@ const rows = (threadId: string) =>
   )
 
 describe("ThreadStore claims", () => {
+  it("explains expired handles and refusals to delete open calls", () => {
+    expect(new HandleExpired().message).toMatch(/handle.*expired.*current/i)
+    expect(new CallerHasOpenCalls({ messageId: "m1" }).message).toMatch(/m1.*open.*settle/i)
+  })
   it.effect("recovers unregistered holders with this process id or a nonpositive pid", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
