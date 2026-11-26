@@ -61,7 +61,7 @@ describe("ThreadStore", () => {
         ]
         for (const write of writes)
           expect(yield* Effect.flip(store.transaction(Effect.andThen(write, Effect.fail("crash"))))).toBe("crash")
-        expect(yield* store.history(thread.id)).toEqual({ revision: 1, messages: [kept] })
+        expect(yield* store.history(thread.id)).toEqual({ revision: 1, messages: [kept], positions: new Map([[id, {seq: 1, callerSeq: null}]]) })
       }).pipe(Effect.provide(inMemory)),
     )
 

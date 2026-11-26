@@ -62,13 +62,14 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
 export type IdentifiedMessage = NewMessage & Pick<Message, "id" | "created_at">
 
 // The revision is null when the insert ran inside a caller's transaction, which may still roll it back.
-export interface Inserted {
+export interface Inserted extends MessagePosition {
   readonly message: Message
   readonly revision: number | null
 }
 
 // The revision is null when the read ran inside a caller's transaction, which may still roll back what it read.
 export interface ThreadHistory {
+  readonly positions: ReadonlyMap<string, MessagePosition>
   readonly revision: number | null
   readonly messages: ReadonlyArray<Message>
 }
@@ -175,13 +176,6 @@ export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{
 export interface MessagePosition {
   readonly seq: number
   readonly callerSeq: number | null
-}
-export const positions = new WeakMap<Message, MessagePosition>()
-
-export const callerSequence = (caller: Message) => {
-  const position = positions.get(caller)
-  if (!position) throw new Error("Stored caller has no sequence")
-  return position.seq
 }
 export type InsertOptions =
   | { readonly flowId: string; readonly callerSeq?: number; readonly dequeue?: number }

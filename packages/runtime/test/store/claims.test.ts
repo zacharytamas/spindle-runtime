@@ -7,7 +7,6 @@ import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import {
   CallerHasOpenCalls,
-  callerSequence,
   HandleExpired,
   type NewMessage,
   type QueueEntry,
@@ -50,7 +49,7 @@ const insertCalls = (threadId: string, flowId: string, caller: NewMessage, resul
       yield* store.insertMessage(
         threadId,
         { ...result, id: crypto.randomUUID(), created_at: 0 },
-        { flowId, callerSeq: callerSequence(inserted.message) },
+        { flowId, callerSeq: inserted.seq },
       )
   })
 

@@ -217,7 +217,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const readHistory = (history: History) => () => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    return Effect.runSyncWith(state.services)(history.read).map(copyMessage)
+    return Effect.runSyncWith(state.services)(history.read).messages.map(copyMessage)
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
@@ -277,7 +277,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
             ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
           },
           "injection",
-        ),
+        ).pipe(Effect.map(inserted => inserted.message)),
       ),
     updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
     deleteMessage: (messageId) => run(store.deleteMessage(threadId, messageId)),

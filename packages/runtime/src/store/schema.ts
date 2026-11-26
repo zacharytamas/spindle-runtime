@@ -1,6 +1,5 @@
 import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
-import { positions } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
 
@@ -126,8 +125,7 @@ const noSubagent = {
   subagent_spawn_group_id: null,
 } satisfies Partial<Message>
 
-export const toMessage = (row: MessageRow): Message => {
-  const message: Message = {
+export const toMessage = (row: MessageRow): Message => ({
     id: row.id,
     role: row.role,
     content: text(row.content),
@@ -146,11 +144,7 @@ export const toMessage = (row: MessageRow): Message => {
     silent: row.silent === 1,
     metadata: JSON.parse(row.metadata),
     ...noSubagent,
-  }
-  if (row.seq !== undefined && (row.tool_calls !== null || row.caller_seq != null))
-    positions.set(message, { seq: row.seq, callerSeq: row.caller_seq ?? null })
-  return message
-}
+})
 
 export const messageRow = (
   threadId: string,

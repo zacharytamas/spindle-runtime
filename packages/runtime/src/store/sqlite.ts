@@ -331,14 +331,11 @@ export const layer = Layer.effect(
                 caller_seq: options.callerSeq ?? null,
               }
               const values = { ...row, ...facts }
-              let seq: number | undefined
-              if (row.tool_calls !== null || facts.caller_seq !== null) {
-                const [inserted] = yield* sql<{ seq: number }>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`
-                seq = inserted?.seq
-              } else yield* sql`INSERT INTO messages ${sql.insert(values)}`
+              const [inserted] = yield* sql<{ seq: number }>`INSERT INTO messages ${sql.insert(values)} RETURNING seq`
+              if (!inserted) return yield* Effect.die("Message insert returned no sequence")
               // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
               return {
-                message: toMessage(seq === undefined ? row : { ...values, seq }),
+                message: toMessage(row), seq: inserted.seq, callerSeq: facts.caller_seq,
                 revision: nested ? null : thread.revision + 1,
               }
             }),
@@ -359,8 +356,8 @@ export const layer = Layer.effect(
             yield* sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`,
             () => new ThreadNotFound({ threadId }),
           )
-          const rows = yield* sql<MessageRow>`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
-          return { revision: thread.revision, messages: rows.map(toMessage) }
+          const rows = yield* sql<MessageRow & {seq: number, caller_seq: number | null}>`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
+          return { revision: thread.revision, messages: rows.map(toMessage), positions: new Map(rows.map(row => [row.id, {seq: row.seq, callerSeq: row.caller_seq}])) }
         }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
           Effect.zipWith(
             Effect.serviceOption(sql.transactionService),

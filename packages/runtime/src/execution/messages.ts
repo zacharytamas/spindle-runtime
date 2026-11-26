@@ -205,7 +205,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   write.history?.inserted(inserted)
   const stored = inserted.message
   yield* runHooks(write.hooks, "after_create_message", [], stored, { depth })
-  return stored
+  return inserted
 })
 
 // Threads section 2.3: text that user code writes is redacted before it is stored, as tool output is.

@@ -220,7 +220,7 @@ describe("the history an execution keeps", () => {
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.appendMessages(thread.id, [{ role: "user", content: "first" }])
       const history = makeHistory(thread.id)
-      expect(contents(yield* history.read)).toEqual(["first"])
+      expect(contents((yield* history.read).messages)).toEqual(["first"])
       const hooks: HookScope = {
         set: { source: { kind: "agent", agentName: "assistant" }, byPosition: new Map() },
         stateFor: () => {
@@ -231,7 +231,7 @@ describe("the history an execution keeps", () => {
       const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
       expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
       yield* store.appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
-      expect(contents(yield* history.read)).toEqual(["first", "from another writer"])
+      expect(contents((yield* history.read).messages)).toEqual(["first", "from another writer"])
     }).pipe(Effect.provide(inMemory())),
   )
 
@@ -243,17 +243,17 @@ describe("the history an execution keeps", () => {
         const append = (content: string) => store.appendMessages(thread.id, [{ role: "user", content }])
         const history = makeHistory(thread.id)
         yield* append("first")
-        expect(contents(yield* history.read)).toEqual(["first"])
+        expect(contents((yield* history.read).messages)).toEqual(["first"])
         const inner = store.transaction(
           Effect.gen(function* () {
             yield* append("rolled back")
-            expect(contents(yield* history.read)).toEqual(["first", "rolled back"])
+            expect(contents((yield* history.read).messages)).toEqual(["first", "rolled back"])
             return yield* Effect.fail("crash")
           }),
         )
         expect(yield* savepoint ? store.transaction(Effect.flip(inner)) : Effect.flip(inner)).toBe("crash")
         yield* append("committed")
-        expect(contents(yield* history.read)).toEqual(["first", "committed"])
+        expect(contents((yield* history.read).messages)).toEqual(["first", "committed"])
       }
     }).pipe(Effect.provide(inMemory())),
   )
