@@ -372,7 +372,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
               save(unstorableResult(returned, error.message)),
             ),
           )
-          results.push(result)
+          // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
+          results.push(stored?.tool_status == null ? result : { ...result, status: stored.tool_status })
           if (stored !== undefined) {
             history.push(stored)
             yield* record("persist-results", `${call.id} ${stored.tool_status}`)

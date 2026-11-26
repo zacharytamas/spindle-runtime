@@ -1531,6 +1531,29 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S18c reports the stored stop tool status when an attachment is dropped",
+    requirements: ["e70c9393"],
+    run: async (driver) => {
+      const tools = {
+        finish: defineTool({
+          description: "Finish",
+          execute: async () => ({ status: "success", result: '{"summary":"done"}', attachments: [null] }) as never,
+        }),
+      }
+      const provider = new ScriptedProvider([{ toolCalls: [{ name: "finish", arguments: {} }] }])
+      await using(
+        driver,
+        { provider, tools, side: { stopTool: "finish", stopToolResponseProperty: "summary" } },
+        async (session, thread) => {
+          const outcome = await send(session, thread, "go")
+          const stored = (await session.messages(thread)).find((message) => message.role === "tool")
+          expect(stored?.tool_status).toBe("error")
+          expect(outcome.stopTool).toMatchObject({ status: stored?.tool_status, value: "done" })
+        },
+      )
+    },
+  },
+  {
     name: "S19 counts maxSteps per side and per turn and exposes the counters to tools",
     requirements: ["d80e4c71", "bc5ba253", "c5ab8a06", "ffcb95d1", "77517ef7", "5c3c3e89", "0700c380", "903da2e2"],
     run: async (driver) => {
