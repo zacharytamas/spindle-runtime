@@ -48,6 +48,17 @@ After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of t
 - The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
 - The temporary branch `m1/int-base` is still on origin, and nothing uses it.
 
+From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm-m1-6/audit-c/report.md`.
+
+- Fifteen behaviours of the fix round have no test. The audit found them by breaking each fix and running the suite. Among them are the commit-time check of an expired handle, the three ways an abort's hold is released, and three of the filters on pending queue entries.
+- Nothing reads or removes a queue entry marked `failed_delivery`, and nothing removes the holder row of a killed process.
+- Deleting a tool result reopens its call, and settlement then stores an error result for it.
+- The refusal of a secret in queued arguments has no minimum length, does not name the variable, and misses a secret passed as a number.
+- `appendMessages` and an `insertMessage` without a flow are unfenced. Only scripts and tests call them.
+- A nested hook's handle does not inherit its parent's expiry.
+- A database from an earlier build of PR 8 fails with "Failed to prepare statement" and no hint.
+- For the structure review, ten points. The decision that a run lost its thread is made in four places. `Run` is six mutable signals shared by two files. The exit handler of `start` does four jobs. The ownership check is spelled three ways in the store. The stop check and the queued-call redaction each exist twice. Pairing rides on a `WeakMap` exported from the store's interface file. `recover` serves three callers through one optional id and one flag.
+
 ## M1-7, chat, and a cleanup PR after it
 
 - `spindle send` prints only the status when another process ran the message. Its record stream must show the replies.
