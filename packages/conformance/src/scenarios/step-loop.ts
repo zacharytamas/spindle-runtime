@@ -1409,6 +1409,39 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S18b reads the stop property of a redacted result when a secret is part of its name or of its value",
+    requirements: ["e70c9393"],
+    run: async (driver) => {
+      const stopWith = async (summary: string) => {
+        const tools = {
+          finish: defineTool({
+            description: "Finish",
+            variables: [{ name: "MARK", type: "secret", required: true, description: "A short secret" }],
+            execute: async () => ok(JSON.stringify({ summary, count: 2 })),
+          }),
+        }
+        const provider = new ScriptedProvider([{ toolCalls: [{ id: "c_finish", name: "finish", arguments: {} }] }])
+        let outcome: RunOutcome | undefined
+        let stored: Message | undefined
+        await using(
+          driver,
+          { provider, tools, side: { stopTool: "finish", stopToolResponseProperty: "summary" } },
+          async (session, thread) => {
+            outcome = await send(session, thread, "go")
+            stored = (await session.messages(thread)).find((m) => m.role === "tool")
+          },
+          { MARK: "sum" },
+        )
+        return { value: outcome?.stopTool?.value, content: stored?.content }
+      }
+      expect(await stopWith("valid")).toEqual({ value: "valid", content: '{"summary":"valid","count":2}' })
+      expect(await stopWith("the sum is 4")).toEqual({
+        value: "the [redacted] is 4",
+        content: '{"summary":"the [redacted] is 4","count":2}',
+      })
+    },
+  },
+  {
     name: "S19 counts maxSteps per side and per turn and exposes the counters to tools",
     requirements: ["d80e4c71", "bc5ba253", "c5ab8a06", "ffcb95d1", "77517ef7", "5c3c3e89", "0700c380", "903da2e2"],
     run: async (driver) => {
@@ -1809,8 +1842,8 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           execute: async (state: ThreadState) => ({
             status: "error",
             error: `short ${await state.env("SHORT_TOKEN")}`,
-            error_code: "Q7z",
-            error_data: { quoted: await state.env("QUOTED_TOKEN"), nested: ["Q7z"] },
+            error_code: "denied",
+            error_data: { quoted: await state.env("QUOTED_TOKEN"), nested: ["Q7z"], count: 7 },
           }),
         }),
         attach: defineTool({
@@ -1843,7 +1876,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           const result = stored.find((m) => m.role === "tool")
           expect([result?.content, result?.metadata]).toEqual([
             "short [redacted]",
-            { error_code: "[redacted]", error_data: { quoted: "[redacted]", nested: ["[redacted]"] } },
+            { error_code: "denied", error_data: { quoted: "[redacted]", nested: ["[redacted]"], count: 7 } },
           ])
           for (const text of [JSON.stringify(stored), JSON.stringify(provider.requests), JSON.stringify(outcome)])
             for (const secret of Object.values(instance))
@@ -1871,7 +1904,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           expect([result?.tool_status, result?.content, result?.metadata]).toEqual([
             "error",
             "r[redacted]j[redacted]ct[redacted]d",
-            { error_data: { "k[redacted]y [redacted]": "k[redacted]pt" } },
+            { error_data: { "key e": "k[redacted]pt" } },
           ])
         },
         { ONE_CHAR: "e" },

@@ -2,6 +2,7 @@ import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@
 import { Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
+import { mapStrings } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -139,6 +140,28 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   const tool = target as Loaded<FunctionTool>
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
   return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))
+})
+
+const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
+  ...item,
+  ...(typeof item.name === "string" ? { name: redact(item.name) } : {}),
+  ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),
+})
+
+// Threads section 2.3: a result is redacted in its string values only. The status, the error code, every property
+// name, and the parts of an attachment that the runtime reads back keep their values.
+export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
+  ...result,
+  ...(result.result === undefined ? {} : { result: redact(result.result) }),
+  ...(result.error === undefined ? {} : { error: redact(result.error) }),
+  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact) }),
+  ...(result.attachments === undefined
+    ? {}
+    : {
+        attachments: result.attachments.map((item: unknown) =>
+          isRecord(item) ? redactAttachment(item, redact) : item,
+        ) as NonNullable<ToolResult["attachments"]>,
+      }),
 })
 
 const contentOf = (result: ToolResult) =>

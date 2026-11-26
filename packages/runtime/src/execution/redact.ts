@@ -13,27 +13,54 @@ export const redactor = (secrets: ReadonlySet<string>) => (text: string) => {
   return redacted
 }
 
+const STRING = /"(?:[^"\\]|\\.)*"/g
+const KEY = /\s*:/y
+
+const holdsJson = (text: string) => {
+  try {
+    const value: unknown = JSON.parse(text)
+    return typeof value === "object" && value !== null
+  } catch {
+    return false
+  }
+}
+
+// Text that holds a JSON object or array keeps its property names, numbers, and layout, and only its string
+// values are redacted. A string value that changes is written as JSON again, so the text stays valid JSON.
+export const redactText =
+  (redact: (text: string) => string) =>
+  (text: string): string => {
+    if (!holdsJson(text)) return redact(text)
+    return text.replace(STRING, (token: string, offset: number) => {
+      KEY.lastIndex = offset + token.length
+      if (KEY.test(text)) return token
+      const value = JSON.parse(token) as string
+      const redacted = redact(value)
+      return redacted === value ? token : JSON.stringify(redacted)
+    })
+  }
+
 const isPlain = (value: object) => {
   const prototype = Object.getPrototypeOf(value)
   return Array.isArray(value) || prototype === null || Object.getPrototypeOf(prototype) === null
 }
 
-// For a payload that user code or a provider controls, so keys are redacted too. Anything but plain data, a cycle
+// Rewrites every string in plain data. Keys change only when mapKey is given. Anything but plain data, a cycle
 // included, is kept as it is, so that the store still rejects what JSON cannot represent.
-export const redactDeep = <A>(redact: (text: string) => string, value: A): A => {
+export const mapStrings = <A>(
+  value: A,
+  map: (text: string) => string,
+  mapKey: (key: string) => string = (key) => key,
+): A => {
   const walk = (item: unknown, ancestors: Set<object>): unknown => {
-    if (typeof item === "string") return redact(item)
+    if (typeof item === "string") return map(item)
     if (typeof item !== "object" || item === null || ancestors.has(item) || !isPlain(item)) return item
     ancestors.add(item)
     const copy = Array.isArray(item)
       ? item.map((member) => walk(member, ancestors))
-      : Object.fromEntries(Object.entries(item).map(([key, member]) => [redact(key), walk(member, ancestors)]))
+      : Object.fromEntries(Object.entries(item).map(([key, member]) => [mapKey(key), walk(member, ancestors)]))
     ancestors.delete(item)
     return copy
   }
-  try {
-    return walk(value, new Set()) as A
-  } catch {
-    return value
-  }
+  return walk(value, new Set()) as A
 }

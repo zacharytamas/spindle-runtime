@@ -13,10 +13,19 @@ import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { resolveEnv } from "./env.ts"
-import { redactDeep, redactor } from "./redact.ts"
+import { mapStrings, redactor, redactText } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
-import { failed, invokeTool, runToolCall, scopeFor, storedResult, type ToolCall, type ToolContext } from "./tools.ts"
+import {
+  failed,
+  invokeTool,
+  redactResult,
+  runToolCall,
+  scopeFor,
+  storedResult,
+  type ToolCall,
+  type ToolContext,
+} from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
 import { type FunctionTool, type Loaded, prepareTurn, roleOf, type Turn } from "./turn.ts"
 
@@ -125,7 +134,7 @@ const responseMessage = (
                 arguments: JSON.stringify(
                   call.arguments === undefined
                     ? { invalid_json: redact(call.argumentsText) }
-                    : redactDeep(redact, call.arguments),
+                    : mapStrings(call.arguments, redact, redact),
                 ),
               },
             })),
@@ -198,24 +207,15 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       message: redact(error.message),
       ...(error.upstream === undefined ? {} : { upstream: redact(error.upstream) }),
     })
-    const redactResult = (result: ToolResult): ToolResult => ({
-      ...result,
-      ...(result.result === undefined ? {} : { result: redact(result.result) }),
-      ...(result.error === undefined ? {} : { error: redact(result.error) }),
-      ...(result.error_code === undefined ? {} : { error_code: redact(result.error_code) }),
-      ...(result.error_data === undefined ? {} : { error_data: redactDeep(redact, result.error_data) }),
-      ...(result.attachments === undefined
-        ? {}
-        : {
-            attachments: result.attachments.map((attachment) => ({
-              ...attachment,
-              ...(typeof attachment.name === "string" ? { name: redact(attachment.name) } : {}),
-              ...("description" in attachment && typeof attachment.description === "string"
-                ? { description: redact(attachment.description) }
-                : {}),
-            })),
-          }),
-    })
+    const redactString = redactText(redact)
+    // A log keeps no secret in its keys either, and data that cannot be walked is left out.
+    const redactLog = (data: Record<string, unknown>) => {
+      try {
+        return mapStrings(data, redact, redact)
+      } catch {
+        return null
+      }
+    }
     const abort = new AbortController()
     let step = 0
     let steps = 0
@@ -237,7 +237,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           ...call,
           ...(call.error === undefined ? {} : { error: redactError(call.error) }),
           ...(call.metadataError === undefined ? {} : { metadataError: redact(call.metadataError) }),
-          ...(call.metadata == null ? {} : { metadata: redactDeep(redact, call.metadata) }),
+          ...(call.metadata == null ? {} : { metadata: redactLog(call.metadata) }),
         }))
         const { error, ...rest } = extra
         return {
@@ -350,7 +350,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const results: Array<ToolResult> = []
         for (const call of calls) {
           yield* record("tools", `${call.name} ${call.id}`)
-          let result = redactResult(yield* runToolCall(toolContext, call))
+          let result = redactResult(yield* runToolCall(toolContext, call), redactString)
           // Runtime section 5.2: data that JSON cannot represent fails this one call, not the step.
           const [stored] = yield* store.appendMessages(threadId, [storedResult(turn, call, result)]).pipe(
             Effect.catchTag("ValueNotJson", (error) => {
