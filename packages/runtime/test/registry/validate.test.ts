@@ -1,0 +1,365 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Effect, FileSystem, Path } from "effect"
+import { PlatformLive } from "#platform"
+import { describeImportFailure, type Issue, Registry } from "../../src/registry/Registry.ts"
+import { counts, validate } from "../../src/registry/validate.ts"
+
+const fixture = (name: string) =>
+  Path.Path.pipe(
+    Effect.flatMap((path) => path.fromFileUrl(new URL(`../../../conformance/fixtures/${name}`, import.meta.url))),
+  )
+
+const validateRoot = (root: string) => validate.pipe(Effect.provide(Registry.layer(root)))
+
+const validateFixture = (name: string) => fixture(name).pipe(Effect.flatMap(validateRoot))
+
+const located = (issues: ReadonlyArray<Issue>) =>
+  issues.map((issue) => [issue.code, issue.path === "" ? issue.file : `${issue.file}:${issue.path}`, issue.severity])
+
+const error = (code: string, location: string) => [code, location, "error"]
+const warning = (code: string, location: string) => [code, location, "warning"]
+
+type Case = readonly [title: string, fixture: string, expected: ReadonlyArray<ReadonlyArray<string>>]
+
+const invalid: ReadonlyArray<Case> = [
+  [
+    "rejects an agent whose two sides are both human",
+    "both-sides-human",
+    [error("agent_both_sides_human", "agents/agents/both_human.ts:sideB")],
+  ],
+  [
+    "rejects a side that sets both prompt and handler",
+    "two-backings",
+    [error("agent_side_backing_conflict", "agents/agents/two_backings.ts:sideA")],
+  ],
+  [
+    "rejects a side with no backing",
+    "no-backing",
+    [error("agent_side_backing_missing", "agents/agents/no_backing.ts:sideA")],
+  ],
+  [
+    "rejects subagents on a human side",
+    "subagents-on-human",
+    [error("agent_subagents_on_human_side", "agents/agents/coordinator.ts:sideB.subagents")],
+  ],
+  [
+    "rejects a property other than human and label on a human side",
+    "human-side-option",
+    [error("agent_side_option_invalid_for_backing", "agents/agents/greeter.ts:sideB.greeting")],
+  ],
+  [
+    "rejects session bindings, maxSteps, and stop bindings on a non-prompt side",
+    "options-on-handler",
+    [
+      error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.maxSteps"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideA.sessionStop"),
+      error("agent_side_option_invalid_for_backing", "agents/agents/relay.ts:sideB.stopOnResponse"),
+    ],
+  ],
+  [
+    "rejects a session binding in string form",
+    "session-binding-string",
+    [error("agent_session_binding_legacy_string", "agents/agents/assistant.ts:sideA.sessionStop")],
+  ],
+  [
+    "rejects a side that names an undefined prompt or handler",
+    "undefined-backings",
+    [
+      error("agent_handler_undefined", "agents/agents/missing_handler.ts:sideA.handler"),
+      error("agent_prompt_undefined", "agents/agents/missing_prompt.ts:sideA.prompt"),
+    ],
+  ],
+  [
+    "rejects a relationship name on both sides or equal to a tool name",
+    "relationship-collisions",
+    [
+      error("subagent_relationship_duplicate", "agents/agents/both_sides.ts:sideB.subagents[0].as"),
+      error("subagent_relationship_tool_collision", "agents/agents/tool_name.ts:sideA.subagents[0].as"),
+    ],
+  ],
+  [
+    "rejects a relationship named after a reserved lifecycle tool",
+    "reserved-relationship",
+    [error("subagent_relationship_reserved_name", "agents/agents/coordinator.ts:sideA.subagents[0].as")],
+  ],
+  [
+    "rejects duplicate and undefined required parent hooks",
+    "parent-hooks",
+    [
+      error("agent_parent_hooks_invalid", "agents/agents/child.ts:parentHooks[1].hook"),
+      error("hook_undefined", "agents/agents/child.ts:parentHooks[2].hook"),
+    ],
+  ],
+  [
+    "rejects a handler named in a prompt's tools",
+    "handler-as-tool",
+    [error("prompt_tool_is_handler", "agents/prompts/assistant.ts:tools[0]")],
+  ],
+  [
+    "rejects a handler named in a hook list and an undefined hook",
+    "hook-references",
+    [
+      error("hook_reference_is_handler", "agents/agents/assistant.ts:hooks[0]"),
+      error("hook_undefined", "agents/prompts/assistant.ts:hooks[0]"),
+      error("hook_reference_is_handler", "agents/prompts/assistant.ts:hooks[1]"),
+    ],
+  ],
+  [
+    "rejects a tools entry that configures a subagent relationship",
+    "tools-subagent-config",
+    [error("prompt_tool_subagent_relationship", "agents/prompts/coordinator.ts:tools[0]")],
+  ],
+  [
+    "rejects two prompts that include each other",
+    "circular-include",
+    [error("prompt_include_circular", "agents/prompts/first.ts:prompt[0].prompt")],
+  ],
+  [
+    "rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include",
+    "prompt-required-fields",
+    [
+      error("prompt_content_invalid", "agents/prompts/bad_content.ts:prompt[0]"),
+      error("prompt_include_undefined", "agents/prompts/missing_include.ts:prompt[0].prompt"),
+      error("prompt_tool_description_missing", "agents/prompts/no_description.ts:toolDescription"),
+      error("prompt_model_undefined", "agents/prompts/no_model.ts:model"),
+      error("prompt_name_missing", "agents/prompts/no_name.ts:name"),
+    ],
+  ],
+  [
+    "rejects an invalid toolChoice, reasoning level, or recentImageThreshold",
+    "prompt-optional-fields",
+    [
+      error("prompt_tool_choice_invalid", "agents/prompts/bad_choice.ts:toolChoice"),
+      error("prompt_reasoning_level_invalid", "agents/prompts/bad_reasoning.ts:reasoning.level"),
+      error("prompt_recent_image_threshold_invalid", "agents/prompts/bad_threshold.ts:recentImageThreshold"),
+    ],
+  ],
+  [
+    "rejects a model with a bad name, provider, model id, price, fallback, or provider options",
+    "model-fields",
+    [
+      error("model_fallback_undefined", "agents/models/bad_fallback.ts:fallbacks[1]"),
+      error("model_provider_options_invalid", "agents/models/bad_options.ts:providerOptions"),
+      error("model_property_invalid", "agents/models/bad_price.ts:inputPrice"),
+      error("model_id_missing", "agents/models/no_model.ts:model"),
+      error("model_provider_invalid", "agents/models/no_provider.ts:provider"),
+      error("definition_name_mismatch", "agents/models/spaced_name.ts:name"),
+      error("model_name_invalid", "agents/models/spaced_name.ts:name"),
+    ],
+  ],
+  [
+    "rejects a hook with an unknown type, a bad id, or no execute",
+    "hook-fields",
+    [
+      error("hook_type_invalid", "agents/hooks/bad_type.ts:hook"),
+      error("hook_id_invalid", "agents/hooks/BadId.ts:id"),
+      error("hook_execute_missing", "agents/hooks/no_execute.ts:execute"),
+      error("definition_name_mismatch", "agents/hooks/other_id.ts:id"),
+      error("hook_type_invalid", "agents/hooks/user_value.ts:hook"),
+    ],
+  ],
+  [
+    "rejects a definition whose name differs from its file name",
+    "name-mismatch",
+    [error("definition_name_mismatch", "agents/prompts/greeter.ts:name")],
+  ],
+  [
+    "rejects malformed tools, handlers, and effects",
+    "definition-shapes",
+    [
+      error("effect_invalid", "agents/effects/not_a_tuple.ts"),
+      error("handler_invalid", "agents/handlers/no_execute.ts:execute"),
+      error("tool_uses_undefined", "agents/tools/bad_uses.ts:uses[0]"),
+      error("definition_export_missing", "agents/tools/no_default.ts"),
+      error("tool_invalid", "agents/tools/no_execute.ts:execute"),
+      error("tool_name_reserved", "agents/tools/subagent_create.ts"),
+    ],
+  ],
+  [
+    "rejects two files that define the same name",
+    "duplicate-name",
+    [error("definition_name_duplicate", "agents/tools/lookup.ts")],
+  ],
+  [
+    "warns about names that are not snake_case",
+    "naming-warnings",
+    [
+      warning("definition_name_not_snake_case", "agents/effects/SendDigest.ts"),
+      warning("definition_name_not_snake_case", "agents/tools/fetchPage.ts"),
+    ],
+  ],
+  [
+    "rejects a global prompt that names an internal tool of a package",
+    "packed-internal-tool",
+    [
+      warning("package_name_prefix", "agents/packed/packed-a/package.json"),
+      error("prompt_tool_undefined", "agents/prompts/coordinator.ts:tools[0]"),
+    ],
+  ],
+  [
+    "rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
+    "package-problems",
+    [
+      error("agent_handler_undefined", "agents/packed/broken/index.js:agents.relay.sideA.handler"),
+      error("package_entry_agent_undefined", "agents/packed/broken/index.js"),
+      error("package_parent_hooks_mismatch", "agents/packed/broken/index.js:parentHooks.relay"),
+      error("tool_uses_undefined", "agents/packed/broken/index.js:tools.fetch_page.uses[0]"),
+      warning("package_keyword_missing", "agents/packed/broken/package.json"),
+      error("package_parent_hooks_mismatch", "agents/packed/broken/package.json:standardagent.parentHooks.relay"),
+      error("package_invalid", "agents/packed/no-manifest/package.json"),
+      error("package_meta_invalid", "agents/packed/no-meta/index.js"),
+    ],
+  ],
+  [
+    "rejects three different errors in one pass",
+    "three-errors",
+    [
+      error("agent_both_sides_human", "agents/agents/both_human.ts:sideB"),
+      error("model_id_missing", "agents/models/conversational.ts:model"),
+      error("prompt_tool_choice_invalid", "agents/prompts/assistant.ts:toolChoice"),
+    ],
+  ],
+  [
+    "rejects a directory without an agents directory",
+    "no-agents-directory",
+    [error("agents_directory_missing", "agents")],
+  ],
+]
+
+describe("validate", () => {
+  describe("invalid fixtures", () => {
+    for (const [title, name, expected] of invalid)
+      it.effect(title, () =>
+        Effect.gen(function* () {
+          const { issues } = yield* validateFixture(`invalid/${name}`)
+          expect(located(issues)).toEqual(expected)
+        }).pipe(Effect.provide(PlatformLive)),
+      )
+  })
+
+  describe("valid fixtures", () => {
+    it.effect("loads one definition of every kind from agents-basic with no issues", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("agents-basic")
+        expect(issues).toEqual([])
+        expect(counts(definitions)).toEqual({
+          agent: 3,
+          prompt: 3,
+          tool: 1,
+          model: 1,
+          hook: 2,
+          handler: 1,
+          effect: 1,
+        })
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("accepts a human on side A and maxSessionTurns on every agent shape", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("agents-basic")
+        const intake = definitions.find((d) => d.kind === "agent" && d.name === "intake")
+        expect(yield* intake?.load ?? Effect.succeed(undefined)).toMatchObject({
+          maxSessionTurns: 4,
+          sideA: { human: true },
+          sideB: { handler: "relay_pipe" },
+        })
+        expect(issues.filter((issue) => issue.file.startsWith("agents/agents/"))).toEqual([])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("accepts packaging metadata on an agent", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("agents-basic")
+        const assistant = definitions.find((d) => d.kind === "agent" && d.name === "assistant")
+        expect(yield* assistant?.load ?? Effect.succeed(undefined)).toMatchObject({
+          packageName: "agents-basic",
+          version: "1.0.0",
+          author: "Spindle",
+          license: "MIT",
+        })
+        expect(issues).toEqual([])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("accepts several hooks of one type with distinct ids", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("agents-basic")
+        const hooks = yield* Effect.forEach(
+          definitions.filter((d) => d.kind === "hook"),
+          (d) => d.load,
+        )
+        expect(hooks.map((hook) => (hook as { hook: string }).hook)).toEqual(["filter_messages", "filter_messages"])
+        expect(issues).toEqual([])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("accepts a prompt that names a packed entry agent", () =>
+      Effect.gen(function* () {
+        const { issues } = yield* validateFixture("packed-entry-agent")
+        expect(located(issues)).toEqual([warning("package_name_prefix", "agents/packed/packed-a/package.json")])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("resolves a scoped package id and name", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("scoped-name")
+        expect(issues.filter((issue) => issue.severity === "error")).toEqual([])
+        const agent = definitions.find((d) => d.qualifiedName === "@scope/pkg/agent")
+        expect(agent?.package?.signature.packageId).toBe("@scope/pkg")
+        expect(agent?.name).toBe("agent")
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+  })
+
+  describe("packages", () => {
+    it.effect("discovers packages in agents/packed and keeps their names apart", () =>
+      Effect.gen(function* () {
+        const { definitions, issues } = yield* validateFixture("namespace-isolation")
+        expect(issues.filter((issue) => issue.severity === "error")).toEqual([])
+        const tools = definitions.filter((d) => d.kind === "tool")
+        expect(tools.map((d) => [d.qualifiedName, d.package?.signature.source])).toEqual([
+          ["packed-a/search", "local"],
+          ["packed-b/search", "local"],
+        ])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
+    it.effect("discovers packages in node_modules by their standardagent field", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-registry-" })
+        yield* fs.makeDirectory(path.join(root, "agents"), { recursive: true })
+        yield* fs.makeDirectory(path.join(root, "node_modules", "plain"), { recursive: true })
+        yield* fs.writeFileString(path.join(root, "node_modules", "plain", "package.json"), '{ "name": "plain" }')
+        yield* fs.copy(yield* fixture("packed-a"), path.join(root, "node_modules", "packed-a"))
+        const { definitions } = yield* validateRoot(root)
+        expect(definitions.map((d) => [d.kind, d.qualifiedName, d.package?.signature.source])).toEqual([
+          ["agent", "packed-a/researcher", "npm"],
+          ["prompt", "packed-a/researcher", "npm"],
+          ["tool", "packed-a/search", "npm"],
+          ["model", "packed-a/fast", "npm"],
+        ])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+
+    it.effect("attaches a package signature to each packed definition at load time", () =>
+      Effect.gen(function* () {
+        const { definitions } = yield* validateFixture("namespace-isolation")
+        const search = definitions.find((d) => d.qualifiedName === "packed-a/search")
+        expect(yield* search?.load ?? Effect.succeed(undefined)).toMatchObject({
+          __package: { packageId: "packed-a", version: "1.0.0", source: "local", packedAt: 1764028800000 },
+        })
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+  })
+
+  describe("load failures", () => {
+    it("explains in plain words that Node cannot strip an enum", () => {
+      const cause = Object.assign(new SyntaxError("TypeScript enum is not supported in strip-only mode"), {
+        code: "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX",
+      })
+      expect(describeImportFailure(cause)).toMatch(/TypeScript syntax that Node cannot strip, such as an enum/)
+    })
+  })
+})
