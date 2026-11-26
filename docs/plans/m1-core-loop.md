@@ -66,6 +66,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 - [ ] Apply `<pstack>/skills/unslop/SKILL.md` to every prose file and `<pstack>/skills/no-comments/SKILL.md` to the diff before review. The `cursor-team-kit` plugin is not installed, so `/deslop` is skipped in Claude Code.
 - [ ] Triage every automated review comment per `<pstack>/skills/poteto-mode/references/bugbot-triage.md`. This repository has no Bugbot check today.
 - [ ] Keep the merge base that the root assigned. Only the root rebases or retargets a link in the stack.
+- [ ] Add an entry to `packages/conformance/requirements.extra.json` for each requirement with no keyword that you find in the sections your PR implements. Quote the spec text verbatim, then run `node scripts/spec-requirements.mjs --refresh` and `node scripts/seed-ledger.mjs`.
 
 ### Verdict and merge, for every PR
 
@@ -117,8 +118,8 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 
 **You see.**
 
-- [x] `pnpm check` exits 0 and its last line reads `ledger ok, 641 requirements, 0 covered`.
-- [x] `node scripts/spec-requirements.mjs --check` prints `580 RFC 2119 statements, 61 lowercase must or should statements, 24 pages`.
+- [x] `pnpm check` exits 0 and its last line reads `ledger ok, 766 requirements, 0 covered`.
+- [x] `node scripts/spec-requirements.mjs --check` prints `606 RFC 2119 statements, 61 lowercase must or should statements, 99 curated statements with no keyword, 24 pages`.
 - [x] `node packages/runtime/dist/cli/main.js --version` prints `platform node`, and `bun packages/runtime/dist/cli/main.js --version` prints `platform bun`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -557,7 +558,7 @@ Each row was run in this planning session on macOS with Node 22.22.3 and Bun 1.4
 
 | Question | Result | How it was checked |
 |---|---|---|
-| How many normative statements does spec 0.2.0 hold? | 580 statements with an RFC 2119 keyword and 61 with a lowercase "must" or "should", on 24 pages, with 641 unique ids. The first count was 458 and 54, because the script dropped each list item and table row under a line such as "The runtime MUST" that ends in a colon. | `node scripts/spec-requirements.mjs <spec>/content/0.2.0` at spec commit `f462a67`. |
+| How many normative statements does spec 0.2.0 hold? | 606 statements with an RFC 2119 keyword, 61 with a lowercase "must" or "should", and 99 curated statements with no keyword, on 24 pages, with 766 unique ids. The first count was 458 and 54, because the script dropped each list item and table row under a line such as "The runtime MUST" that ends in a colon. The second count was 580 and 61, because the script read only the last sentence of a lead-in and skipped a table under a lead-in that ends in a period. | `node scripts/spec-requirements.mjs --refresh --check` at spec commit `f462a67`. |
 | Is Effect v4 stable? | `effect@4.1.5` is the `latest` tag. Version 4.0.0 was published on 2026-10-01. | `npm view effect dist-tags time`. |
 | Do the Effect platform modules this plan names exist? | `@effect/platform-node@4.1.5` ships `NodeRuntime`, `NodeServices`, and `NodeHttpServer`. `@effect/platform-bun@4.1.5` ships `BunRuntime`, `BunServices`, and `BunHttpServer`. Both SQLite packages ship `SqliteClient` and `SqliteMigrator`. | The file index of each package on unpkg. |
 | Does the Node SQLite package need a native addon? | No. `@effect/sql-sqlite-node@4.1.5` imports `node:sqlite` and has `effect` as its only dependency. | The import list of its `dist/SqliteClient.js`. |
@@ -585,13 +586,14 @@ Caused by: Error: the loaded SQLite library was built with SQLITE_OMIT_LOAD_EXTE
 
 $ bun --bun run test            # after
  ✓ |bun| packages/runtime/test/platform.test.ts > platform > resolves #platform to the module for the running runtime 1ms
- ✓ |bun| packages/runtime/test/platform.test.ts > platform > reads back a row from an in-memory SQLite database 6ms
-      Tests  9 passed (9)
+ ✓ |bun| packages/runtime/test/platform.test.ts > platform > loads the SQLite package only when SqliteLive builds 7ms
+ ✓ |bun| packages/runtime/test/platform.test.ts > platform > reads back a row from an in-memory SQLite database 2ms
+      Tests  18 passed (18)
 ```
 
-`bun --bun run check` runs every `pnpm check` step under Bun, including the nested `pnpm` calls. Its output held 9 `|bun|` result lines and no `|node|` line. The first platform case asserts that `#platform` resolved to `bun.ts` exactly when `process.versions.bun` is set.
+`bun --bun run check` runs every `pnpm check` step under Bun, including the nested `pnpm` calls. Its output held 18 `|bun|` result lines and no `|node|` line. The first platform case asserts that `#platform` resolved to `bun.ts` exactly when `process.versions.bun` is set.
 
-**The `engines` floor.** `engines.node` is `>=22.19.0`. `npm view @effect/platform-node@4.1.5 engines` prints `{ node: '>=22.19.0' }`, so no lower claim is honest. Node 22.19.0 was already installed through mise and Node 24.10.0 through nvm. `pnpm test`, `pnpm check`, and `spindle --version` pass on Node 22.19.0, 22.22.3, and 24.10.0. On 22.19.0, `pnpm test` printed 9 `|node|` result lines and `Tests  9 passed (9)`. `import.meta.main` and `import.meta.dirname` also work on 22.19.0.
+**The `engines` floor.** `engines.node` is `>=22.19.0`. `npm view @effect/platform-node@4.1.5 engines` prints `{ node: '>=22.19.0' }`, so no lower claim is honest. Node 22.19.0 was already installed through mise and Node 24.10.0 through nvm. `pnpm test`, `pnpm check`, and `spindle --version` pass on Node 22.19.0, 22.22.3, and 24.10.0. On 22.19.0, `pnpm test` printed 18 `|node|` result lines and `Tests  18 passed (18)`. `import.meta.main` and `import.meta.dirname` also work on 22.19.0.
 
 **Effect v4 names.** These come from the `.d.ts` files under `node_modules/@effect` and `node_modules/effect/dist`.
 
@@ -632,6 +634,7 @@ $ bun --bun run test            # after
 - **The Promise edge is wide.** `ThreadState` has more than fifty members, and every one crosses from user code into Effect. M1-4 carries the risk. The owner builds `ThreadState` in one file and watches that no other file calls `Effect.runPromise`.
 - **`node:sqlite` is experimental on Node 22.** M1-3 carries the risk. The owner watches for the warning in CLI output and for API changes on Node 24.
 - **The types package and the spec text can disagree.** `@standardagents/spec` is at 0.45.13 and already has members the 0.2.0 text does not require. Every PR carries the risk. `DIVERGENCES.md` records each case, and the operator decides which cases to file upstream.
+- **The requirement count is a floor.** A keyword search misses a requirement with no keyword, and only the Runtime, Hooks, Messages, and Agents pages have been read for such requirements. Every PR carries the risk. Each owner adds a curated entry for each such requirement in the sections the PR implements, so the count grows with each PR.
 - **The spec moves.** A new spec commit changes requirement ids. M1-1 carries the risk. The `--check` flag fails until someone reviews the added and removed ids.
 - **The spec assumes Durable Objects in places.** M1-6 carries the risk. The lease and the recovery pass give the same guarantee, and lanes 5, 7, and 8 test it.
 - **No control skill drives the command line.** Every live block carries the risk. Lanes use the shell, and each transcript holds the command and the exit code.
