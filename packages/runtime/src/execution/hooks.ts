@@ -136,7 +136,8 @@ const isMessage = (value: unknown): value is Message =>
   optional(value.metadata, isRecord)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
-// change which message a record is, so the role and a tool result's call id stay as the hook was given them.
+// change which message a record is, so the role, the tool calls, and a tool result's call id stay as the hook was
+// given them. The loop runs the calls the model returned, and each result must answer a call that the record lists.
 const acceptMessage = (returned: unknown, current: Message): Message | typeof INVALID => {
   const value = plain(returned)
   if (!isRecord(value)) return INVALID
@@ -147,6 +148,7 @@ const acceptMessage = (returned: unknown, current: Message): Message | typeof IN
     message.id !== "" &&
     !loneSurrogate.test(message.id) &&
     message.role === current.role &&
+    (message.tool_calls ?? null) === current.tool_calls &&
     (current.role !== "tool" || message.tool_call_id === current.tool_call_id)
     ? message
     : INVALID
@@ -303,7 +305,7 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
   before_create_message: {
     where: "before a message is stored",
     accept: acceptMessage,
-    expects: "a message the store can hold, with the role and the call id it was given",
+    expects: "a message the store can hold, with the role, the tool calls, and the call id it was given",
     failure: "veto",
     kept: "kept the message the hook was given",
   },

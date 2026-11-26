@@ -351,7 +351,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         ["rejected", 'a message with id "chosen_id" already exists'],
         [
           "rejected",
-          "Hook ident (before_create_message) returned a value that is not a message the store can hold, with the role and the call id it was given, so Spindle did not make the change",
+          "Hook ident (before_create_message) returned a value that is not a message the store can hold, with the role, the tool calls, and the call id it was given, so Spindle did not make the change",
         ],
         [
           "rejected",
@@ -1794,7 +1794,7 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         },
       )
       expect(outcomes).toEqual([
-        "Hook reidentify (before_create_message) returned a value that is not a message the store can hold, with the role and the call id it was given, so Spindle did not make the change",
+        "Hook reidentify (before_create_message) returned a value that is not a message the store can hold, with the role, the tool calls, and the call id it was given, so Spindle did not make the change",
       ])
     },
   },
