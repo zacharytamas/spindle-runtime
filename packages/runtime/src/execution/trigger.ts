@@ -74,7 +74,7 @@ export const sendMessage = (threadId: string, content: string, options: Executio
     const message = yield* createMessage(
       { threadId, hooks: rest.hooks, secrets: rest.secrets, history: undefined },
       { role: roleOf(human), content, status: "completed" },
-      true,
+      "turn",
     )
     if (options.observe !== undefined) yield* options.observe({ type: "message", message })
     return yield* runExecution(threadId, options)

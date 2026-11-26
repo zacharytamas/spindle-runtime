@@ -413,7 +413,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
         const calls = toolCallsOf(response)
-        const assistant = yield* createMessage(write, responseMessage(turn, response, calls), true)
+        const assistant = yield* createMessage(write, responseMessage(turn, response, calls), "turn")
         yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
         yield* observe({ type: "message", message: assistant })
         if (calls.length === 0) {
@@ -439,11 +439,11 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
               const { redacted, message } = yield* Effect.try({
                 try: () => ({
                   redacted: redactResult(result, redact),
-                  message: storedResult(turn, call, result, redact),
+                  message: storedResult(turn, call, result),
                 }),
                 catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
               })
-              return { redacted, stored: yield* createMessage(write, message, true) }
+              return { redacted, stored: yield* createMessage(write, message, "result") }
             })
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
           const { redacted: result, stored } = yield* save(final).pipe(

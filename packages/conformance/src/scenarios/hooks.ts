@@ -12,7 +12,7 @@ import { expect } from "vitest"
 import { z } from "zod"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
 import { rolesFor, SIDES } from "./messages.ts"
-import { history, ok, project, type Scenario, type Setup, send, sideOf, using } from "./step-loop.ts"
+import { history, holding, ok, project, type Scenario, type Setup, send, sideOf, using } from "./step-loop.ts"
 
 const noop = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
 
@@ -1169,6 +1169,65 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
         { MARK: marker },
       )
       expect(never.requests).toHaveLength(0)
+    },
+  },
+  {
+    name: "H22b redacts a write with the secrets that its hooks learned before the write was stored",
+    requirements: ["287f2aef"],
+    run: async (driver) => {
+      const instance = { LATE_A: "late-injected-71", LATE_B: "late-edited-72", LATE_C: "late-result-73" }
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "learn_on_create",
+          execute: async (state, message) => {
+            if (message.content?.startsWith("note")) await state.env("LATE_A")
+            if (message.role === "tool") await state.env("LATE_C")
+            return message
+          },
+        }),
+        defineHook({
+          hook: "before_update_message",
+          id: "learn_on_update",
+          execute: async (state, _id, updates) => {
+            await state.env("LATE_B")
+            return updates
+          },
+        }),
+      ]
+      const tools = {
+        write: defineTool({
+          description: "Writes three values it does not know are secret",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: `note ${instance.LATE_A}` })
+            const blank = await state.injectMessage({ role: "user", content: "blank" })
+            await state.updateMessage(blank.id, { content: `edit ${instance.LATE_B}` })
+            return ok(`result ${instance.LATE_C}`)
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "write", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, prompt: { hooks: hookIds(hooks) } },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const stored = await session.messages(thread)
+          expect(stored.map((m) => m.content)).toEqual([
+            "go",
+            null,
+            "note [redacted]",
+            "edit [redacted]",
+            "result [redacted]",
+            "done",
+          ])
+        },
+        instance,
+      )
+      for (const secret of Object.values(instance)) expect(holding(provider.requests, secret)).toEqual([])
     },
   },
   {

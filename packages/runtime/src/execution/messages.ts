@@ -57,38 +57,63 @@ const sameJson = (a: unknown, b: unknown) => {
   }
 }
 
-// A hook is code the developer wrote, so a field it changed is redacted like tool output, as the last step before
-// the store. A field that the human, the model, or the runtime wrote keeps its value.
-const redactChanged = (before: Message, after: Message, redact: (text: string) => string): Message => {
-  const changed: Record<string, unknown> = {}
-  for (const field of TEXT_FIELDS) {
-    const value = after[field]
-    if (typeof value === "string" && value !== before[field]) changed[field] = redact(value)
-  }
-  if (!sameJson(before.metadata, after.metadata) && isRecord(after.metadata))
-    changed.metadata = mapStrings(after.metadata, redact, redact)
-  if (!sameJson(before.attachments, after.attachments) && Array.isArray(after.attachments))
-    changed.attachments = after.attachments.map((item: unknown) =>
-      isRecord(item) ? redactAttachment(item, redact) : item,
-    )
-  return { ...after, ...changed }
+// Who wrote a message decides what redaction changes. Text that a tool or a hook wrote loses each secret, and the
+// human's message and the model's response keep theirs. A field that a hook changes is the hook's text either way.
+// An injection is a write its caller may refuse. A tool result and a turn are writes the execution needs.
+export type Writer = "injection" | "result" | "turn"
+
+const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
+  injection: ["content", "metadata"],
+  result: ["content", "metadata", "attachments"],
+  turn: [],
+}
+
+const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
+
+// Threads section 2.3. error_code and error_data are the keys Spindle stores a tool result's error under, so they keep
+// their names, and the error code is an identifier that the runtime reads back, so it keeps its value too.
+const redactMetadata = (metadata: Record<string, unknown>, redact: (text: string) => string) =>
+  Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) =>
+      key === "error_code"
+        ? [key, value]
+        : [key === "error_data" ? key : redact(key), mapStrings(value, redact, redact)],
+    ),
+  )
+
+const redactField = (field: (typeof FIELDS)[number], value: unknown, redact: (text: string) => string) => {
+  if (field === "metadata") return isRecord(value) ? redactMetadata(value, redact) : value
+  if (field === "attachments")
+    return Array.isArray(value) ? value.map((item) => (isRecord(item) ? redactAttachment(item, redact) : item)) : value
+  return typeof value === "string" ? redact(value) : value
+}
+
+const redactWrite = (writer: Writer, before: Message, after: Message, redact: (text: string) => string): Message => {
+  const redacted: Record<string, unknown> = {}
+  for (const field of FIELDS)
+    if (WRITTEN[writer].includes(field) || !sameJson(before[field], after[field]))
+      redacted[field] = redactField(field, after[field], redact)
+  return { ...after, ...redacted }
 }
 
 // Hooks section 4.1 and 4.2. A write that the caller may refuse, such as injectMessage, fails when a
 // before_create_message hook fails. A write the execution cannot go on without stores the last good message.
+// Redaction is the last step before the store, so that it uses every secret the hooks learned.
 export const createMessage = Effect.fn("createMessage")(function* (
   write: WriteContext,
   draft: NewMessage,
-  essential: boolean,
+  writer: Writer,
 ) {
   const store = yield* ThreadStore
+  const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { essential })
-  const insert = (message: Message) => store.insertMessage(write.threadId, message)
+  const insert = (message: Message) =>
+    store.insertMessage(write.threadId, redactWrite(writer, original, message, redactor(write.secrets.values)))
   const stored =
     hooked === original
       ? yield* insert(original)
-      : yield* insert(redactChanged(original, hooked, redactor(write.secrets.values))).pipe(
+      : yield* insert(hooked).pipe(
           Effect.catchTag(["ValueNotJson", "MessageIdTaken"], (error) =>
             essential
               ? Effect.logWarning(
@@ -106,24 +131,20 @@ export const createMessage = Effect.fn("createMessage")(function* (
 const redactUpdates = (updates: Record<string, unknown>, redact: (text: string) => string) => ({
   ...updates,
   ...(typeof updates.content === "string" ? { content: redact(updates.content) } : {}),
-  ...(isRecord(updates.metadata) ? { metadata: mapStrings(updates.metadata, redact, redact) } : {}),
+  ...(isRecord(updates.metadata) ? { metadata: redactMetadata(updates.metadata, redact) } : {}),
 })
 
-// Hooks sections 4.3 and 4.4. A failed before_update_message hook refuses the update.
+// Hooks sections 4.3 and 4.4. A failed before_update_message hook refuses the update. The patch is redacted once,
+// after the hooks.
 export const updateMessage = Effect.fn("updateMessage")(function* (
   write: WriteContext,
   messageId: string,
   updates: MessageUpdates,
 ) {
   const store = yield* ThreadStore
-  const redact = redactor(write.secrets.values)
-  const patch = yield* runHooks(
-    write.hooks,
-    "before_update_message",
-    [messageId],
-    redactUpdates({ ...updates }, redact),
-  )
-  const message = yield* store.updateMessage(write.threadId, messageId, redactUpdates(patch, redact) as MessageUpdates)
+  const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates })
+  const redacted = redactUpdates(patch, redactor(write.secrets.values))
+  const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates)
   const index = write.history?.findIndex((candidate) => candidate.id === messageId) ?? -1
   if (write.history !== undefined && index !== -1) write.history[index] = message
   yield* runHooks(write.hooks, "after_update_message", [], message)
