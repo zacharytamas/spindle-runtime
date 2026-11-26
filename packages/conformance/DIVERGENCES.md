@@ -54,3 +54,10 @@ Some sections record a point that the spec text leaves open. Spindle takes the s
 - **Package.** No symbol covers it.
 - **Disagreement.** The spec leaves the point open.
 - **Spindle.** A prompt `tools` entry that resolves to an agent without `exposeAsTool: true` gets `prompt_tool_agent_not_exposed`. The `agent-tool-not-exposed` case in `packages/runtime/test/registry/validate.test.ts` shows it.
+
+## Message fields that the spec requires and the package marks optional
+
+- **Spec.** `specification/threads/messages.md`, section 1, Message Structure. The table types `name`, `tool_calls`, `tool_call_id`, `tool_status`, `status`, `attachments`, `reasoning_content`, `reasoning_details`, `prompt`, and `parent_id` as `T | null`, and `depth`, `silent`, and `metadata` as plain types, so each field is always present. Requirement ids include `specification:threads/messages:968989f2` (`name`), `specification:threads/messages:41278e5e` (`tool_call_id`), and `specification:threads/messages:e551bf33` (`depth`).
+- **Package.** `Message` in `@standardagents/spec` 0.45.13 declares each of those fields optional, as in `name?: string | null` and `depth?: number`.
+- **Disagreement.** The spec says a reader can rely on each field. The package lets a runtime leave it out.
+- **Spindle.** The store returns every field on every message, with `null` for an absent value, `0` for `depth`, `false` for `silent`, and `{}` for `metadata`. That record satisfies both types. `packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back` asserts the full record.
