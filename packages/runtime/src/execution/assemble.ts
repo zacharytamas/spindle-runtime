@@ -31,8 +31,9 @@ export const promptScope = (turn: Turn): EnvScope => ({
 })
 
 // Prompts section 2.4: only the prompt field of an included prompt is inserted, so every env part resolves
-// against the variables and env of the prompt being rendered, never those of the included one.
-export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn) {
+// against the variables and env of the prompt being rendered, never those of the included one. Prompts section
+// 2.1: a declared text variable whose value holds a known secret still never enters the system prompt.
+export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: ReadonlySet<string>) {
   const root = turn.prompt
   const variables = root.value.variables ?? []
   const scope = promptScope(turn)
@@ -67,7 +68,12 @@ export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (tur
             return yield* new SetupError({
               message: `Prompt ${root.definition.qualifiedName} interpolates ${part.property}, which it does not declare as a text variable. A system prompt holds only declared text variables, never a secret.`,
             })
-          text += (yield* resolveEnv(scope, part.property)) ?? ""
+          const value = (yield* resolveEnv(scope, part.property)) ?? ""
+          if ([...secrets].some((secret) => secret !== "" && value.includes(secret)))
+            return yield* new SetupError({
+              message: `Prompt ${root.definition.qualifiedName} interpolates variable ${part.property}, whose value is a secret. A system prompt never holds a secret.`,
+            })
+          text += value
         }
       }
       return text

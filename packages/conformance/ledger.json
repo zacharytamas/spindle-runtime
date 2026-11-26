@@ -1975,9 +1975,10 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks"
+			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
+			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable"
 		],
-		"reason": "A system prompt interpolates only declared text variables, so a secret cannot enter it. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
+		"reason": "A system prompt interpolates only declared text variables, and a run fails before its first request when such a variable holds a value that the provider config or a declaration marks secret. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
 	},
 	"specification:prompts:97e0539c": {
 		"status": "covered",

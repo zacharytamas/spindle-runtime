@@ -143,6 +143,21 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("fails before any request when a prompt declares the endpoint key as a text variable", () =>
+    Effect.gen(function* () {
+      const key = "sk-test-2468024680"
+      const { exit, out, err } = yield* run(["keyed", "-m", "hi", "--script", "@text-reply.json", "--dump-requests"], {
+        SPINDLE_TEST_API_KEY: key,
+      })
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(out).toEqual([])
+      expect(err.at(-1)).toBe(
+        "spindle: Prompt keyed interpolates variable SPINDLE_TEST_API_KEY, whose value is a secret. A system prompt never holds a secret.",
+      )
+      expect(err.join("\n")).not.toContain(key)
+    }),
+  )
+
   it.effect("prints an HTTP 401 diagnostic without the key that the endpoint echoed", () =>
     Effect.gen(function* () {
       const key = "sk-test-5555555555"

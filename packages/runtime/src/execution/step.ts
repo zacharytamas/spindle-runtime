@@ -234,6 +234,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           ? yield* providerFor(turn.model, promptState, secrets)
           : Effect.succeed(options.provider)
       yield* addDeclaredSecrets(turn, secrets)
+      // A value a tool reads through env() joins secrets later and is redacted, but it may be a text variable.
+      const barred = new Set(secrets)
       const detailsAccepted = new Map<string, boolean>()
       const acceptsDetails = (message: Message) => {
         const name = message.prompt ?? ""
@@ -244,7 +246,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
       while (true) {
         step += 1
         yield* record("drain", "no queue before M1-6")
-        const system = yield* renderSystemPrompt(turn)
+        const system = yield* renderSystemPrompt(turn, barred)
         for (const message of history)
           if (message.prompt != null && !detailsAccepted.has(message.prompt)) {
             const author = yield* lookup<PromptDefinition>("prompt", message.prompt, undefined)

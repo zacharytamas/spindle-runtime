@@ -1615,18 +1615,28 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
           ],
           ...(variables === undefined ? {} : { variables }),
         }) as Partial<PromptDefinition>
-      for (const variables of [
-        [{ name: "API_TOKEN", type: "secret" as const, required: true, description: "Token" }],
-        undefined,
-      ]) {
+      const declaresSecret = {
+        reads_token: defineTool({
+          description: "Declares the token secret",
+          variables: [{ name: "API_TOKEN", type: "secret", required: true, description: "Token" }],
+          execute: async () => ok("unused"),
+        }),
+      }
+      const cases: Array<[PromptDefinition["variables"], Tools]> = [
+        [[{ name: "API_TOKEN", type: "secret", required: true, description: "Token" }], {}],
+        [undefined, {}],
+        [[{ name: "API_TOKEN", type: "text", required: true, description: "Token" }], declaresSecret],
+      ]
+      for (const [variables, tools] of cases) {
         const provider = new ScriptedProvider([{ text: "never" }])
         await using(
           driver,
-          { provider, prompt: interpolating(variables) },
+          { provider, tools, prompt: interpolating(variables) },
           async (session, thread) => {
             const outcome = await send(session, thread, "go")
             expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error" })
             expect(outcome.error?.message).toContain("API_TOKEN")
+            expect(outcome.error?.message).toContain("Prompt assistant ")
             expect(outcome.error?.message).not.toContain(marker)
           },
           instance,
