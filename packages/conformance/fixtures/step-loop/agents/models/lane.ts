@@ -6,7 +6,7 @@ const local = defineProvider({
   baseProvider: openaiCompatible,
   config: {
     baseUrl: providerEnv("SPINDLE_TEST_BASE_URL", { valueType: "url", required: true }),
-    apiKey: providerEnv("SPINDLE_TEST_API_KEY", { valueType: "secret" }),
+    apiKey: providerEnv("SPINDLE_TEST_API_KEY", { valueType: "text" }),
   },
 })
 

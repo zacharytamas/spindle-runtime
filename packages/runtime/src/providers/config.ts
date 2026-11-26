@@ -55,7 +55,7 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
       const required = typeof source.required === "boolean" ? source.required : slot?.required === true
       if (value === undefined && required) found.missing.push(name)
       const type = source.valueType ?? slot?.type
-      if (type === "secret") learn(found, name, value)
+      if (source.valueType === "secret" || slot?.type === "secret") learn(found, name, value)
       return coerce(value, type)
     }
     if (!isRecord(source)) {

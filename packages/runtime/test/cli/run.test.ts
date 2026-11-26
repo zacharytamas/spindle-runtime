@@ -368,14 +368,16 @@ describe("spindle run", () => {
   it.effect("prints an HTTP 401 diagnostic without the key that the endpoint echoed", () =>
     Effect.gen(function* () {
       const key = "sk-test-5555555555"
-      const fetch = async (_input: string | URL | Request, _init?: RequestInit) =>
-        Response.json({ error: { message: `Incorrect API key provided: ${key}` } }, { status: 401 })
+      const fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+        const auth = new Headers(init?.headers).get("authorization")
+        return Response.json({ error: { message: `Rejected ${auth} and fixture-default-key` } }, { status: 401 })
+      }
       const { exit, out, err } = yield* run(["assistant", "-m", "hi"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
         SPINDLE_TEST_API_KEY: key,
       }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Incorrect API key provided: [redacted]")
+      expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Rejected Bearer [redacted] and [redacted]")
       expect([...out, ...err].join("\n")).not.toContain(key)
     }),
   )
