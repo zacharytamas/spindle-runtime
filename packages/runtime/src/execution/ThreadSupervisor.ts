@@ -2,6 +2,7 @@ import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardag
 import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
+import { isAttachmentRef } from "../store/schema.ts"
 import { type Holder, type QueueEntry, ThreadStore, ThreadTerminated, WritingHandle } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
@@ -67,15 +68,6 @@ const checkOptions = (options: ExecutionOptions) => {
     return new InvalidOption({ message: `stepCap must be a whole number above 0, got ${options.stepCap}` })
   return undefined
 }
-
-const isAttachmentRef = (value: unknown): value is AttachmentRef =>
-  isRecord(value) &&
-  value.type === "file" &&
-  typeof value.id === "string" &&
-  typeof value.path === "string" &&
-  typeof value.name === "string" &&
-  typeof value.mimeType === "string" &&
-  isCount(value.size)
 
 // Messages section 4. A queued message is user code's text, so it is redacted before the queue stores it. A new file
 // needs the thread file system, which arrives in M3.

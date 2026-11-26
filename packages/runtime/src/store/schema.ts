@@ -1,4 +1,4 @@
-import type { Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
+import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
 import { positions } from "./ThreadStore.ts"
 
@@ -212,20 +212,35 @@ export interface QueueRow {
 export const queuePayload = (entry: QueueEntry): unknown =>
   entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args }
 
+const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+
+export const isAttachmentRef = (value: unknown): value is AttachmentRef =>
+  isRecord(value) &&
+  value.type === "file" &&
+  typeof value.id === "string" &&
+  typeof value.path === "string" &&
+  typeof value.name === "string" &&
+  typeof value.mimeType === "string" &&
+  isCount(value.size) &&
+  (value.width === undefined || isCount(value.width)) &&
+  (value.height === undefined || isCount(value.height)) &&
+  (value.description === undefined || typeof value.description === "string")
+
+const isQueueMessage = (value: unknown): value is QueueMessageInput =>
+  isRecord(value) &&
+  (value.role === "user" || value.role === "assistant") &&
+  typeof value.content === "string" &&
+  (value.silent === undefined || typeof value.silent === "boolean") &&
+  (value.metadata === undefined || isRecord(value.metadata)) &&
+  (value.attachments === undefined || (Array.isArray(value.attachments) && value.attachments.every(isAttachmentRef)))
+
 export const toQueued = (row: QueueRow): Queued => {
-  const payload = JSON.parse(row.payload)
-  if (
-    !isRecord(payload) ||
-    (row.kind === "tool"
-      ? typeof payload.toolName !== "string" || !isRecord(payload.args)
-      : !["user", "assistant"].includes(payload.role as string) || typeof payload.content !== "string")
-  )
-    throw new Error("Invalid queued payload")
-  const entry: QueueEntry =
-    row.kind === "message"
-      ? { kind: "message", message: payload as unknown as QueueMessageInput }
-      : { kind: "tool", toolName: payload.toolName as string, args: payload.args as Record<string, unknown> }
-  return { ...entry, seq: row.seq, queuedAt: row.queued_at }
+  const payload: unknown = JSON.parse(row.payload)
+  const position = { seq: row.seq, queuedAt: row.queued_at }
+  if (row.kind === "message" && isQueueMessage(payload)) return { ...position, kind: "message", message: payload }
+  if (row.kind === "tool" && isRecord(payload) && typeof payload.toolName === "string" && isRecord(payload.args))
+    return { ...position, kind: "tool", toolName: payload.toolName, args: payload.args }
+  throw new Error("Invalid queued payload")
 }
 
 export interface NotJson {

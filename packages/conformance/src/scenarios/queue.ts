@@ -1603,6 +1603,43 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "Q42 skips queued messages with malformed optional fields and keeps later chat history usable",
+    requirements: ["f2cb78f1"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([acknowledge, acknowledge])
+      await using(driver, { provider, prompt: { includeChat: true } }, async (session, thread) => {
+        const seed = (content: string, fields = {}) =>
+          session.queueRaw(thread, "message", JSON.stringify({ role: "user", content, ...fields }))
+        await seed("before")
+        for (const fields of [
+          { attachments: "bad" },
+          { attachments: [null] },
+          { attachments: [{ ...ref, width: -1 }] },
+          { metadata: [] },
+          { silent: "yes" },
+        ])
+          await seed("damaged", fields)
+        await seed("after")
+        const damaged = (await session.inspect(thread)).queue.slice(1, -1)
+        const first = await session.send(thread, "deliver")
+        const later = await session.send(thread, "later")
+        expect([first, later].map(({ status, reason }) => [status, reason])).toEqual([
+          ["idle", "stop_on_response"],
+          ["idle", "stop_on_response"],
+        ])
+        expect((await session.messages(thread)).map((message) => message.content)).toEqual([
+          "before",
+          "after",
+          "deliver",
+          "ack: before | after | deliver",
+          "later",
+          "ack: later",
+        ])
+        expect((await session.inspect(thread)).queue).toEqual(damaged.map((row) => ({ ...row, failed: true })))
+      })
+    },
+  },
+  {
     name: "Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
     requirements: ["dc7d7df0", "9090af10"],
     run: async (driver) => {

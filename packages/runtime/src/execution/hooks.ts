@@ -8,7 +8,7 @@ import type {
 } from "@standardagents/spec"
 import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import { toJson } from "../store/schema.ts"
+import { isAttachmentRef, toJson } from "../store/schema.ts"
 import { type Callback, invokeCallback } from "./callback.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
@@ -109,19 +109,6 @@ const isString = (value: unknown) => typeof value === "string"
 // An id is a key that the store, a log line, and every reader hold as it is. Node's SQLite driver ends a string at a
 // NUL character, and UTF-8 has no encoding for a lone surrogate.
 const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}\uD800-\uDFFF]/u.test(id)
-
-// Messages section 1.2.
-const isAttachmentRef = (value: unknown) =>
-  isRecord(value) &&
-  value.type === "file" &&
-  isString(value.id) &&
-  isString(value.path) &&
-  isString(value.name) &&
-  isString(value.mimeType) &&
-  isCount(value.size) &&
-  optional(value.width, isCount) &&
-  optional(value.height, isCount) &&
-  optional(value.description, isString)
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
 const isMessage = (value: unknown): value is Message =>
