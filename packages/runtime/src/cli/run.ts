@@ -56,6 +56,28 @@ const printer =
     })
   }
 
+// SQLite says only that it cannot open the file, so the command names a missing directory or a directory first.
+const openDatabase = (filename: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const problem = (cause: string) => fail(`cannot open the database ${filename}: ${cause}`)
+    if (filename !== ":memory:") {
+      const info = yield* Effect.option(fs.stat(filename))
+      if (Option.isSome(info) && info.value.type === "Directory") return yield* problem("it is a directory")
+      const directory = path.dirname(filename)
+      if (!(yield* fs.exists(directory))) return yield* problem(`the directory ${directory} does not exist`)
+    }
+    return Layer.provide(sqliteStore, SqliteLive({ filename })).pipe(
+      Layer.catchTag("SqlError", (error) =>
+        Layer.effect(
+          ThreadStore,
+          problem(error.cause.cause instanceof Error ? error.cause.cause.message : error.message),
+        ),
+      ),
+    )
+  })
+
 const describe = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause)
   return error instanceof Error ? error.message : String(error)
@@ -104,7 +126,7 @@ export const runCommand = Command.make(
         if (errors.length > 0)
           return yield* fail(`${root} has ${errors.length} definition error${errors.length === 1 ? "" : "s"}`)
         const sides = yield* sidesOf(args.agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
-        const filename = args.db === ":memory:" ? args.db : path.resolve(args.db)
+        const database = yield* openDatabase(args.db === ":memory:" ? args.db : path.resolve(args.db))
         yield* Effect.gen(function* () {
           const store = yield* ThreadStore
           const thread = yield* store.createThread({ agentId: args.agent })
@@ -116,7 +138,7 @@ export const runCommand = Command.make(
             `spindle: ${outcome.status} (${outcome.reason}) after ${outcome.steps} step${outcome.steps === 1 ? "" : "s"}, thread ${thread.id}`,
           )
           if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
-        }).pipe(Effect.provide(Layer.provide(sqliteStore, SqliteLive({ filename }))))
+        }).pipe(Effect.provide(database))
       }).pipe(Effect.provide(Registry.layer(root)))
     }).pipe(
       Effect.catchCause((cause) => {

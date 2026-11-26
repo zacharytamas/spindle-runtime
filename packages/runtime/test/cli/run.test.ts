@@ -66,6 +66,28 @@ describe("spindle run", () => {
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
+  it.effect("names the path and the cause when the --db file cannot be opened", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" })
+      const notDb = path.join(dir, "notes.txt")
+      yield* fs.writeFileString(notDb, "this is not a SQLite database, it is a plain text file of some length")
+      const missing = path.join(dir, "no", "such", "x.db")
+      const errors: Array<string | undefined> = []
+      for (const db of [missing, dir, notDb]) {
+        const { exit, err } = yield* run(["assistant", "-m", "hi", "--script", "@text-reply.json", "--db", db])
+        expect(Exit.isFailure(exit)).toBe(true)
+        errors.push(err.at(-1))
+      }
+      expect(errors).toEqual([
+        `spindle: cannot open the database ${missing}: the directory ${path.dirname(missing)} does not exist`,
+        `spindle: cannot open the database ${dir}: it is a directory`,
+        `spindle: cannot open the database ${notDb}: file is not a database`,
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.effect("prints each request as JSON with --dump-requests, with no abort signal and every secret redacted", () =>
     Effect.gen(function* () {
       const { out } = yield* run(["quiet", "-m", "hi", "--script", "@no-tools.json", "--dump-requests"])
