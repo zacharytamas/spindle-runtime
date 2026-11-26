@@ -252,7 +252,7 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] `packages/runtime/test/store/contract.test.ts` gains one case per `ThreadStore` method and one case per key-value rule. Run `pnpm vitest run packages/runtime/test/store` on Node and on Bun.
-- [ ] The ledger entries for the second section 14 of `infrastructure:runtime` and for the persistence statements in `specification:threads/execution-state` section 4.3 change to `covered`. Run `pnpm check`.
+- [ ] The ledger entries that `ledger.json` assigns to M1 in the second section 14 of `infrastructure:runtime`, and the entries for the persistence statements in `specification:threads/execution-state` section 4.3 change to `covered`. Run `pnpm check`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
@@ -635,6 +635,12 @@ $ bun --bun run test            # after
 - **`node:sqlite` is experimental on Node 22.** M1-3 carries the risk. The owner watches for the warning in CLI output and for API changes on Node 24.
 - **The types package and the spec text can disagree.** `@standardagents/spec` is at 0.45.13 and already has members the 0.2.0 text does not require. Every PR carries the risk. `DIVERGENCES.md` records each case, and the operator decides which cases to file upstream.
 - **The requirement count is a floor.** A keyword search misses a requirement with no keyword, and only the Runtime, Hooks, Messages, and Agents pages have been read for such requirements. Every PR carries the risk. Each owner adds a curated entry for each such requirement in the sections the PR implements, so the count grows with each PR.
+- **The requirement list has known gaps.** Two audits of M1-1 left these open, because none of them affects a milestone 1 test. M3 carries the first one and the milestone that implements each page carries the rest.
+  - The curated quotes for Runtime lines 124, 177, and 200 leave out the condition that the spec puts in front of them.
+  - Execution State lines 113 and 114 each repeat a client duty from the sentence above their table.
+  - The nine example provider names on the Providers page are MAY entries. On the Client API page and the Decisions page, one sentence became the lead-in for a table that it does not introduce.
+  - The extractor drops the step number of a numbered list item and the column names of a table row.
+  - One test may back 8 requirement ids, so 9 unrelated ids can still pass with two tests. The spec audit of each PR is the control for relevance.
 - **The spec moves.** A new spec commit changes requirement ids. M1-1 carries the risk. The `--check` flag fails until someone reviews the added and removed ids.
 - **The spec assumes Durable Objects in places.** M1-6 carries the risk. The lease and the recovery pass give the same guarantee, and lanes 5, 7, and 8 test it.
 - **No control skill drives the command line.** Every live block carries the risk. Lanes use the shell, and each transcript holds the command and the exit code.
