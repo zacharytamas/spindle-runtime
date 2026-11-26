@@ -9,6 +9,7 @@ import type {
   ResponseSummary,
 } from "@standardagents/spec"
 import { Data, Effect, type Fiber, Result } from "effect"
+import type { SetupError } from "./turn.ts"
 
 const CODES: ReadonlyArray<ProviderErrorCode> = [
   "rate_limit",
@@ -192,7 +193,9 @@ export interface ModelCall {
 
 export interface CallContext {
   readonly step: number
-  readonly provider: LLMProviderInterface
+  // Yields the provider for one backend request. Infrastructure Providers, Per-request Transport: an extension
+  // with createFetch is built again for every request, and a retry is a request.
+  readonly provider: Effect.Effect<LLMProviderInterface, SetupError>
   readonly retries: number
   readonly toolChoice: "auto" | "none" | "required" | undefined
   readonly calls: Array<ModelCall>
@@ -234,10 +237,11 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
 
 export const callModel = Effect.fn("callModel")(function* (context: CallContext, request: ProviderRequest) {
   for (let attempt = 1; ; attempt++) {
-    yield* context.record(`${context.provider.name} ${request.model} attempt ${attempt}`)
+    const provider = yield* context.provider
+    yield* context.record(`${provider.name} ${request.model} attempt ${attempt}`)
     const log: ModelCall = { step: context.step, attempt, model: request.model }
     context.calls.push(log)
-    const result = yield* Effect.result(streamResponse(context.provider, request))
+    const result = yield* Effect.result(streamResponse(provider, request))
     if (Result.isFailure(result)) {
       const failure = result.failure
       log.error = { message: failure.message, code: failure.code }
@@ -263,7 +267,7 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
         totalTokens: finish.usage.totalTokens,
       },
     }
-    context.pending.push(yield* Effect.forkChild(fetchMetadata(context.provider, summary, log)))
+    context.pending.push(yield* Effect.forkChild(fetchMetadata(provider, summary, log)))
     const rejected = violation(response, context.toolChoice)
     if (rejected === undefined) return response
     log.rejected = rejected

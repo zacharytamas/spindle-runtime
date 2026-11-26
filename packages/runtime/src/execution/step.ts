@@ -268,7 +268,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         const response = yield* callModel(
           {
             step,
-            provider: yield* provider,
+            provider,
             retries,
             toolChoice: prompt.toolChoice,
             calls: modelCalls,

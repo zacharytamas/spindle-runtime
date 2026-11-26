@@ -3,11 +3,13 @@ import {
   defineAgent,
   defineModel,
   definePrompt,
+  defineProvider,
   defineTool,
   type Message,
   type ModelDefinition,
   type PromptDefinition,
   ProviderError,
+  type ProviderFactoryWithOptions,
   type ProviderMessage,
   type ProviderStreamChunk,
   type ResponseSummary,
@@ -1735,6 +1737,52 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         },
         instance,
       )
+    },
+  },
+  {
+    name: "S36 builds a createFetch transport for every backend request, a retry included",
+    requirements: ["34cea831"],
+    run: async (driver) => {
+      const log: Array<string> = []
+      let builds = 0
+      const base: ProviderFactoryWithOptions = (config) => ({
+        name: "transported",
+        specificationVersion: "1",
+        generate: async () => {
+          throw new Error("unused")
+        },
+        stream: async () => {
+          const response = await config.fetch?.("http://backend.test/v1", {})
+          if (response?.status === 429) throw new ProviderError("slow down", "rate_limit", 429, 0)
+          return (async function* (): AsyncGenerator<ProviderStreamChunk> {
+            yield { type: "content-delta", delta: "after the retry" }
+            yield {
+              type: "finish",
+              finishReason: "stop",
+              usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+            }
+          })()
+        },
+      })
+      const extension = defineProvider({
+        name: "per_request",
+        baseProvider: base,
+        createFetch: () => {
+          builds += 1
+          const transport = builds
+          log.push(`build ${transport}`)
+          return async () => {
+            log.push(`send ${transport}`)
+            return new Response("", { status: log.length < 3 ? 429 : 200 })
+          }
+        },
+      })
+      const provider = new ScriptedProvider([])
+      await using(driver, { provider, model: { provider: extension } }, async (session, thread) => {
+        const outcome = await send(session, thread, "go")
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
+      })
+      expect(log).toEqual(["build 1", "send 1", "build 2", "send 2"])
     },
   },
   {

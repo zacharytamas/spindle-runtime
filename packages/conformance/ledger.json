@@ -5709,7 +5709,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > builds an extension with createFetch again for each request, with the thread state"
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > builds an extension with createFetch again for each request, with the thread state",
+			"packages/runtime/test/conformance.test.ts > step loop > S36 builds a createFetch transport for every backend request, a retry included"
 		],
 		"reason": ""
 	},
