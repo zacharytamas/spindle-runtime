@@ -21,3 +21,5 @@ Core code imports Effect services only. Only files under `packages/runtime/src/p
 ## Keep the ledger true
 
 A requirement counts as implemented only when `packages/conformance/ledger.json` maps it to a passing test. Name a test the way Vitest prints it, `<file> > <describe> > <title>`. Edit only the entries for the requirement ids that your change covers.
+
+One test may back at most 8 requirement ids, and a test under `packages/conformance/test/` cannot back a `covered` entry. The ledger check proves that each named test exists and passed, but it cannot prove that the test exercises the requirement. Each PR's spec audit is the control for that.
