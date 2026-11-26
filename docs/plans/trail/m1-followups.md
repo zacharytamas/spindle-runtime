@@ -46,7 +46,6 @@ After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of t
 - Recovery cannot tell whether a call without a result had started, because the runtime keeps no durable record of dispatch. Every such call gets one text that is true for both cases.
 - For an optimization pass after spec conformance. The step runs 13 SQL statements where M1-5 runs 11. The two extra are a read of the queue and a lookup of tool results by `caller_seq`, both at every step, and both look avoidable when the queue is empty and the step's own calls were all stored. Measured overhead per step is between 15 and 19 percent above M1-5, depending on machine load.
 - The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
-- The temporary branch `m1/int-base` is still on origin, and nothing uses it.
 
 From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm-m1-6/audit-c/report.md`.
 
@@ -108,6 +107,27 @@ From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
 
+## Decided by the operator on 2026-11-26
+
+- A live process is never taken over. `spindle recover <thread> --force` settles a thread whose holder is frozen. To be looked at again in M4, when there is a long-lived server.
+- A handle given to a tool or a hook stops working when it returns.
+- A terminated thread accepts only an explicit injected message from outside.
+- A tool call whose arguments hold a known secret is refused at `queueTool`.
+- `spindle chat` with no `--db` keeps the thread in memory, says so, and prints no resume line.
+- `spindle chat` prints what a successful tool returned, shortened on one line, with a flag for the whole of it. The build prints `ok`, so this is a change for the round after the M1-7 audit.
+- A tool has no default deadline. A `--tool-timeout` flag and a per-tool setting are added, in a cleanup PR after M1-7. A tool past its limit gets an error result that says it timed out, its handle stops working, and the run goes on.
+- The milestone list for M2 to M7 is revised after the operator's review of the code, not before.
+- Performance is reported and not gated until the runtime conforms to the spec.
+
+## Questions that wait for the milestone revision
+
+- How a value is classified as secret once thread values carry a type, and whether a definition default follows the spec's default of secret. M2.
+- Whether every request to a model gets one final check after all hooks, in every role. M2.
+- Whether a create hook may change `parent_id` and `depth` when a nested prompt starts, and what deleting a parent call does to its nested conversation. M2.
+- Whether a prefilter hook may send a request with an incomplete group of tool calls and results. M2.
+- Where trusted access inside the process ends, and what a client may receive through an endpoint or a stream. M4 and M6.
+- A total budget of time or writes for one operation and everything its hooks start. M2.
+
 ## Readings the operator can overrule
 
 - A failing create hook cannot stop a write the loop must make, which is the human's message, the model's response, or a tool result. The loop stores the last good version. A hook that fails on an optional injected message does prevent it.
@@ -120,10 +140,4 @@ From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm
 - The key-value store accepts plain JSON data only.
 - A tool call whose arguments are not valid JSON is stored as `{"invalid_json": "<raw text>"}` and never runs.
 - A secret has no minimum length for redaction.
-- `spindle chat` with no `--db` keeps the thread in memory, says so, and prints no resume line. The plan's example implied a default database file.
-- `spindle chat` prints `ok` for a successful tool result and not what the tool returned. A flag to show the content can follow.
-- A live process is never taken over. `spindle recover <thread> --force` settles a thread whose holder is frozen.
-- A handle given to a tool or a hook stops working when it returns.
-- A terminated thread accepts only an explicit injected message from outside.
-- A tool call whose arguments hold a known secret is refused at `queueTool`.
 - An execution that reaches the step cap ends, and work left in the queue waits for the next trigger.
