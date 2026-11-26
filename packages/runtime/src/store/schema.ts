@@ -169,6 +169,30 @@ export const messageRow = (
   metadata: json.metadata,
 })
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+// The id and the function name of each call that a stored tool_calls text lists.
+export const callsIn = (toolCalls: Text): Array<{ readonly id: string; readonly name: string }> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text(toolCalls))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap((entry: unknown) =>
+    isRecord(entry) && typeof entry.id === "string"
+      ? [
+          {
+            id: entry.id,
+            name: isRecord(entry.function) && typeof entry.function.name === "string" ? entry.function.name : "",
+          },
+        ]
+      : [],
+  )
+}
+
 export interface QueueRow {
   readonly seq: number
   readonly kind: QueueEntry["kind"]

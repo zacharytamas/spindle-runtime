@@ -106,6 +106,61 @@ export class KeyNotWellFormed extends Data.TaggedError("KeyNotWellFormed")<{ rea
   }
 }
 
+export class ThreadTerminated extends Data.TaggedError("ThreadTerminated")<{
+  readonly threadId: string
+  readonly terminated: number
+}> {
+  override get message() {
+    return `thread ${this.threadId} is terminated, so it takes no new message, queued work, or execution`
+  }
+}
+
+// A write of an execution whose flow no longer holds the thread: another process settled it as lost, or terminate
+// settled it.
+export class FlowEnded extends Data.TaggedError("FlowEnded")<{
+  readonly threadId: string
+  readonly flowId: string
+  readonly why: "terminated" | "superseded"
+}> {
+  override get message() {
+    return this.why === "terminated"
+      ? `thread ${this.threadId} was terminated, so execution ${this.flowId} may not write to it`
+      : `execution ${this.flowId} no longer holds thread ${this.threadId}, so it may not write to it`
+  }
+}
+
+export class QueueEntryGone extends Data.TaggedError("QueueEntryGone")<{ readonly seq: number }> {}
+
+// The process that runs an execution and the execution itself.
+export interface Claim {
+  readonly holder: string
+  readonly flowId: string
+}
+
+export interface Admitted {
+  readonly queued: Queued
+  // True when no execution held the thread, so this admission started a run that the caller now executes.
+  readonly claimed: boolean
+}
+
+export interface Holder {
+  readonly id: string
+  readonly pid: number
+  readonly beatAt: number
+  readonly expiresAt: number
+}
+
+// settled: the run ended and released the thread. continue: the queue holds work, so the run goes on.
+// superseded: the flow no longer holds the thread, and nothing was written.
+export type Settlement = "settled" | "continue" | "superseded"
+
+export interface InsertOptions {
+  // The execution that writes. The insert fails with FlowEnded when that flow no longer holds the thread.
+  readonly flowId?: string
+  // The queue entry that this message delivers, removed in the transaction of the insert.
+  readonly dequeue?: number
+}
+
 export class ThreadStore extends Context.Service<
   ThreadStore,
   {
@@ -122,7 +177,8 @@ export class ThreadStore extends Context.Service<
     readonly insertMessage: (
       threadId: string,
       message: IdentifiedMessage,
-    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | SqlError>
+      options?: InsertOptions,
+    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | FlowEnded | QueueEntryGone | SqlError>
     // Every insert, update, and delete of one of the thread's messages raises its revision by one, whoever writes.
     readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
     // Every message of the thread, oldest first and silent ones included, and the revision they match.
@@ -146,6 +202,36 @@ export class ThreadStore extends Context.Service<
       entry: QueueEntry,
     ) => Effect.Effect<Queued, ThreadNotFound | ValueNotJson | SqlError>
     readonly takeQueue: (threadId: string) => Effect.Effect<ReadonlyArray<Queued>, SqlError>
+
+    // Runtime sections 2 and 9 in one transaction: refuses a terminated thread, queues the entry, and claims the
+    // thread for the caller when no execution holds it.
+    readonly admit: (
+      threadId: string,
+      entry: QueueEntry,
+      claim: Claim,
+    ) => Effect.Effect<Admitted, ThreadNotFound | ThreadTerminated | ValueNotJson | SqlError>
+    // The oldest entry, which stays queued until the message that delivers it is inserted.
+    readonly nextQueued: (threadId: string) => Effect.Effect<Queued | undefined, SqlError>
+    readonly queueLength: (threadId: string) => Effect.Effect<number, SqlError>
+    // Ends the flow's run. Every call of the run that has no result gets an error result with the closing text.
+    readonly settle: (
+      threadId: string,
+      flowId: string,
+      outcome: { readonly state: "idle" | "failed"; readonly reason: string },
+      options: { readonly continueIfQueued: boolean; readonly closing: string },
+    ) => Effect.Effect<Settlement, SqlError>
+    // Settles each running thread whose holder's lease has expired, or only the given thread, as failed with
+    // execution_lost, and returns their ids.
+    readonly recover: (threadId?: string) => Effect.Effect<ReadonlyArray<string>, SqlError>
+    // Renews the holder's lease until leaseMicros from now, and records the holder when it is new.
+    readonly beat: (
+      holder: { readonly id: string; readonly pid: number },
+      leaseMicros: number,
+    ) => Effect.Effect<void, SqlError>
+    readonly dropHolder: (holderId: string) => Effect.Effect<void, SqlError>
+    readonly holderOf: (threadId: string) => Effect.Effect<Holder | null, SqlError>
+    // The runs this holder holds, by thread.
+    readonly owned: (holderId: string) => Effect.Effect<ReadonlyMap<string, string>, SqlError>
 
     readonly getValue: (threadId: string, key: string) => Effect.Effect<unknown, KeyNotWellFormed | SqlError>
     readonly setValue: (

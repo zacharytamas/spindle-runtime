@@ -1,9 +1,13 @@
-import { Clock, Effect, Layer, Option } from "effect"
+import type { ThreadStatus } from "@standardagents/spec"
+import { Clock, Effect, Layer, Option, Scheduler } from "effect"
 import * as Migrator from "effect/sql/Migrator"
 import { BeginTransaction, SqlClient } from "effect/sql/SqlClient"
+import { CLOSING, transition } from "../execution/run-status.ts"
 import threads from "./migrations/0001_threads.ts"
 import revisions from "./migrations/0002_revision.ts"
+import claims from "./migrations/0003_claims.ts"
 import {
+  callsIn,
   type MessageRow,
   messageColumns,
   messageRow,
@@ -20,19 +24,44 @@ import {
   toThread,
 } from "./schema.ts"
 import {
+  FlowEnded,
   InvalidMessagesQuery,
   KeyNotWellFormed,
   MessageIdTaken,
   MessageNotFound,
   type ThreadHistory,
+  QueueEntryGone,
   ThreadNotFound,
   ThreadStore,
+  ThreadTerminated,
   ValueNotJson,
 } from "./ThreadStore.ts"
 
 const migrate = Migrator.make({})({
-  loader: Migrator.fromRecord({ "0001_threads": threads, "0002_revision": revisions }),
+  loader: Migrator.fromRecord({ "0001_threads": threads, "0002_revision": revisions, "0003_claims": claims }),
 })
+
+type RunRow = Pick<ThreadRow, "run_state" | "run_since" | "run_reason"> & {
+  readonly flow_id: string | null
+  readonly claim_seq: number | null
+  readonly terminated_at: number | null
+}
+
+const runColumns = `run_state, run_since, ${runReasonColumn}, flow_id, claim_seq, terminated_at`
+
+// A store call never yields to another fiber while it holds the one connection. Code outside Effect, such as a tool
+// that calls queueTool, runs only between fibers, so it always finds the connection free and its synchronous call
+// completes before it returns.
+const unyielding = <S extends object>(service: S): S =>
+  Object.fromEntries(
+    Object.entries(service).map(([key, member]) => [
+      key,
+      typeof member === "function"
+        ? (...args: ReadonlyArray<unknown>) =>
+            Effect.provideService(member(...args), Scheduler.PreventSchedulerYield, true)
+        : member,
+    ]),
+  ) as S
 
 const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
 
@@ -69,7 +98,62 @@ export const layer = Layer.effect(
     const selectMessages = (where: ReturnType<typeof sql.and>) =>
       sql<MessageRow>`SELECT ${sql.literal(messageColumns)} FROM messages WHERE ${where}`
 
-    return ThreadStore.of({
+    const selectRun = (threadId: string) =>
+      Effect.flatMap(sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`, (rows) =>
+        first(rows, () => new ThreadNotFound({ threadId })),
+      )
+
+    // Every call that the run stored with no result after it gets an error result, so that each call the next request
+    // shows has its result. A result belongs to a later tool message with the same parent and call id.
+    const closeCalls = (threadId: string, claimSeq: number, closing: string, now: number) =>
+      Effect.gen(function* () {
+        const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
+          SELECT seq, tool_calls, parent_id, prompt FROM messages
+          WHERE thread_id = ${threadId} AND seq > ${claimSeq} AND tool_calls IS NOT NULL AND prompt IS NOT NULL
+          ORDER BY seq`
+        for (const caller of callers) {
+          const answered = yield* sql<{ tool_call_id: string }>`
+            SELECT tool_call_id FROM messages WHERE thread_id = ${threadId} AND role = 'tool' AND seq > ${caller.seq}
+            AND parent_id IS ${caller.parent_id}`
+          const ids = new Set(answered.map((row) => row.tool_call_id))
+          for (const call of callsIn(caller.tool_calls ?? "[]"))
+            if (!ids.has(call.id))
+              yield* sql`INSERT INTO messages ${sql.insert(
+                messageRow(
+                  threadId,
+                  crypto.randomUUID(),
+                  now,
+                  {
+                    role: "tool",
+                    name: call.name,
+                    tool_call_id: call.id,
+                    tool_status: "error",
+                    status: "completed",
+                    content: closing,
+                    prompt: typeof caller.prompt === "string" ? caller.prompt : null,
+                    parent_id: typeof caller.parent_id === "string" ? caller.parent_id : null,
+                  },
+                  { attachments: null, metadata: "{}" },
+                ),
+              )}`
+        }
+      })
+
+    const release = (threadId: string, status: ThreadStatus) =>
+      sql`UPDATE threads SET run_state = ${status.state}, run_reason = ${stored(status.reason ?? null)},
+        run_since = ${status.since}, holder_id = NULL, flow_id = NULL, claim_seq = NULL WHERE id = ${threadId}`
+
+    const settleWith = (threadId: string, row: RunRow, event: Parameters<typeof transition>[1], closing: string) =>
+      Effect.gen(function* () {
+        const now = yield* nowMicros
+        yield* closeCalls(threadId, row.claim_seq ?? 0, closing, now)
+        const next = transition(toStatus(row), event, now)
+        if (next === undefined)
+          return yield* Effect.die(new Error(`run status ${row.run_state} cannot take ${event.type}`))
+        yield* release(threadId, next)
+      })
+
+    const store = ThreadStore.of({
       transaction: sql.withTransaction,
 
       createThread: (thread) =>
@@ -99,15 +183,22 @@ export const layer = Layer.effect(
             ),
         ),
 
+      // Runtime section 10: the first termination time stays. A running run settles idle with aborted in the same
+      // transaction, so the execution that ran it can write nothing more.
       terminate: (threadId) =>
-        Effect.gen(function* () {
-          const now = yield* nowMicros
-          const rows = yield* sql<{ terminated_at: number }>`
-            UPDATE threads SET terminated_at = coalesce(terminated_at, ${now})
-            WHERE id = ${threadId} RETURNING terminated_at`
-          const row = yield* first(rows, () => new ThreadNotFound({ threadId }))
-          return row.terminated_at
-        }),
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const now = yield* nowMicros
+            const rows = yield* sql<{ terminated_at: number }>`
+              UPDATE threads SET terminated_at = coalesce(terminated_at, ${now})
+              WHERE id = ${threadId} RETURNING terminated_at`
+            const row = yield* first(rows, () => new ThreadNotFound({ threadId }))
+            const run = yield* selectRun(threadId)
+            if (run.run_state === "running")
+              yield* settleWith(threadId, run, { type: "settle", state: "idle", reason: "aborted" }, CLOSING.terminated)
+            return row.terminated_at
+          }),
+        ),
 
       setStatus: (threadId, status) =>
         Effect.gen(function* () {
@@ -143,15 +234,28 @@ export const layer = Layer.effect(
           }),
         ),
 
-      insertMessage: (threadId, message) =>
+      insertMessage: (threadId, message, options = {}) =>
         Effect.gen(function* () {
           const nested = Option.isSome(yield* Effect.serviceOption(sql.transactionService))
           return yield* sql.withTransaction(
             Effect.gen(function* () {
               const thread = yield* first(
-                yield* sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`,
+                yield* sql<{ revision: number; flow_id: string | null; terminated_at: number | null }>`
+                  SELECT revision, flow_id, terminated_at FROM threads WHERE id = ${threadId}`,
                 () => new ThreadNotFound({ threadId }),
               )
+              const { flowId, dequeue } = options
+              if (flowId !== undefined && thread.flow_id !== flowId)
+                return yield* new FlowEnded({
+                  threadId,
+                  flowId,
+                  why: thread.terminated_at === null ? "superseded" : "terminated",
+                })
+              if (dequeue !== undefined) {
+                const removed =
+                  yield* sql`DELETE FROM queue WHERE thread_id = ${threadId} AND seq = ${dequeue} RETURNING seq`
+                if (removed.length === 0) return yield* new QueueEntryGone({ seq: dequeue })
+              }
               // Message ids are unique across threads, so an id that another thread holds is taken too.
               const taken = yield* sql`SELECT 1 FROM messages WHERE id = ${message.id}`
               if (taken.length > 0) return yield* new MessageIdTaken({ messageId: message.id })
@@ -330,6 +434,111 @@ export const layer = Layer.effect(
           }),
         )
       },
+
+      admit: (threadId, entry, claim) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const row = yield* selectRun(threadId)
+            if (row.terminated_at !== null)
+              return yield* new ThreadTerminated({ threadId, terminated: row.terminated_at })
+            const payload = yield* json("the queue entry", queuePayload(entry))
+            const now = yield* nowMicros
+            const rows = yield* sql<QueueRow>`
+              INSERT INTO queue ${sql.insert({ thread_id: threadId, kind: entry.kind, payload, queued_at: now })}
+              RETURNING seq, kind, payload, queued_at`
+            const queued = toQueued(yield* first(rows, () => new ThreadNotFound({ threadId })))
+            const next = transition(toStatus(row), { type: "start" }, now)
+            if (next === undefined) return { queued, claimed: false }
+            const [last] = yield* sql<{ seq: number }>`
+              SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ${threadId}`
+            yield* sql`UPDATE threads SET run_state = ${next.state}, run_reason = NULL, run_since = ${next.since},
+              holder_id = ${claim.holder}, flow_id = ${claim.flowId}, claim_seq = ${last?.seq ?? 0}
+              WHERE id = ${threadId}`
+            return { queued, claimed: true }
+          }),
+        ),
+
+      nextQueued: (threadId) =>
+        Effect.map(
+          sql<QueueRow>`
+            SELECT seq, kind, payload, queued_at FROM queue WHERE thread_id = ${threadId} ORDER BY seq LIMIT 1`,
+          (rows) => (rows[0] === undefined ? undefined : toQueued(rows[0])),
+        ),
+
+      queueLength: (threadId) =>
+        Effect.map(
+          sql<{ count: number }>`SELECT count(*) AS count FROM queue WHERE thread_id = ${threadId}`,
+          (rows) => rows[0]?.count ?? 0,
+        ),
+
+      settle: (threadId, flowId, outcome, options) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const [row] = yield* sql<RunRow>`SELECT ${sql.literal(runColumns)} FROM threads WHERE id = ${threadId}`
+            if (row === undefined || row.flow_id !== flowId || row.run_state !== "running") return "superseded"
+            // The check and the release share one transaction, so work queued after the last drain either keeps this
+            // run going or finds the thread released and starts the next one.
+            if (options.continueIfQueued && row.terminated_at === null) {
+              const head = yield* sql`SELECT 1 FROM queue WHERE thread_id = ${threadId} LIMIT 1`
+              if (head.length > 0) return "continue"
+            }
+            yield* settleWith(threadId, row, { type: "settle", ...outcome }, options.closing)
+            return "settled"
+          }),
+        ),
+
+      recover: (threadId) =>
+        Effect.gen(function* () {
+          const now = yield* nowMicros
+          const lost = sql<{ id: string }>`
+            SELECT t.id FROM threads AS t LEFT JOIN holders AS h ON h.id = t.holder_id
+            WHERE ${sql.and([
+              sql`t.run_state = 'running'`,
+              sql`(h.id IS NULL OR h.expires_at < ${now})`,
+              ...(threadId === undefined ? [] : [sql`t.id = ${threadId}`]),
+            ])}`
+          // A read first, so that a status read of a live thread takes no write lock.
+          if ((yield* lost).length === 0) return []
+          return yield* sql.withTransaction(
+            Effect.gen(function* () {
+              const recovered: Array<string> = []
+              for (const { id } of yield* lost) {
+                yield* settleWith(id, yield* Effect.orDie(selectRun(id)), { type: "lose" }, CLOSING.lost)
+                recovered.push(id)
+              }
+              return recovered
+            }),
+          )
+        }),
+
+      beat: (holder, leaseMicros) =>
+        Effect.gen(function* () {
+          const now = yield* nowMicros
+          yield* sql`
+            INSERT INTO holders ${sql.insert({ id: holder.id, pid: holder.pid, started_at: now, beat_at: now, expires_at: now + leaseMicros })}
+            ON CONFLICT (id) DO UPDATE SET beat_at = excluded.beat_at, expires_at = excluded.expires_at`
+        }),
+
+      dropHolder: (holderId) => Effect.asVoid(sql`DELETE FROM holders WHERE id = ${holderId}`),
+
+      holderOf: (threadId) =>
+        Effect.map(
+          sql<{ id: string; pid: number; beat_at: number; expires_at: number }>`
+            SELECT h.id, h.pid, h.beat_at, h.expires_at FROM threads AS t JOIN holders AS h ON h.id = t.holder_id
+            WHERE t.id = ${threadId} AND t.run_state = 'running'`,
+          (rows) =>
+            rows[0] === undefined
+              ? null
+              : { id: rows[0].id, pid: rows[0].pid, beatAt: rows[0].beat_at, expiresAt: rows[0].expires_at },
+        ),
+
+      owned: (holderId) =>
+        Effect.map(
+          sql<{ id: string; flow_id: string }>`
+            SELECT id, flow_id FROM threads WHERE run_state = 'running' AND holder_id = ${holderId}`,
+          (rows) => new Map(rows.map((row) => [row.id, row.flow_id])),
+        ),
     })
+    return unyielding(store)
   }),
 )
