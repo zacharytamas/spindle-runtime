@@ -1185,6 +1185,51 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "Q43 gives a send waiting at the step cap a new execution with its own cap",
+    requirements: ["3b19a524"],
+    run: async (driver) => {
+      const held = gate()
+      const release = gate()
+      const provider = new ScriptedProvider([
+        async () => {
+          held.release()
+          await release.opened
+          return { text: "first reply" }
+        },
+        { toolCalls: [{ id: "c_one", name: "noop", arguments: {} }] },
+        { toolCalls: [{ id: "c_two", name: "noop", arguments: {} }] },
+      ])
+      await using(driver, { provider, tools: { noop } }, async (session, thread) => {
+        const peer = await session.peer()
+        try {
+          const first = quiet(session.send(thread, "first", { stepCap: 1 }))
+          await held.opened
+          const second = quiet(peer.send(thread, "second", { stepCap: 2 }))
+          await expect.poll(async () => (await peer.inspect(thread)).queue.length).toBe(1)
+          release.release()
+          expect(await first).toMatchObject({ status: "idle", reason: "max_total_steps", steps: 1 })
+          expect(await second).toMatchObject({ status: "idle", reason: "max_total_steps", steps: 2 })
+          const stored = await peer.inspect(thread)
+          const replies = stored.messages.filter((row) => row.role === "assistant")
+          const firstFlow = replies[0]?.flowId
+          const secondFlow = replies[1]?.flowId
+          expect(firstFlow).toEqual(expect.any(String))
+          expect(secondFlow).toEqual(expect.any(String))
+          expect(secondFlow).not.toBe(firstFlow)
+          expect(replies.map((row) => row.flowId)).toEqual([firstFlow, secondFlow, secondFlow])
+          expect(stored.messages.filter((row) => row.role === "user").map((row) => row.content)).toEqual([
+            "first",
+            "second",
+          ])
+          expect(stored.queue).toEqual([])
+        } finally {
+          release.release()
+          await peer.close()
+        }
+      })
+    },
+  },
+  {
     name: "Q26 commits nothing for a queueTool that throws, and runs each accepted call once when its arguments queue another",
     requirements: ["304b015d"],
     run: async (driver) => {
