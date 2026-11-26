@@ -53,6 +53,20 @@ const isToolResult = (value: unknown): value is ToolResult =>
   (value.error_data === undefined || isRecord(value.error_data)) &&
   (value.attachments === undefined || Array.isArray(value.attachments))
 
+const FIELDS = ["status", "result", "error", "error_code", "error_data", "stack", "attachments"] as const
+
+// Reads each field of a returned result once into a plain object, so that a getter on the result runs here and
+// later reads cannot throw.
+const fieldsOf = (value: unknown) => {
+  if (!isRecord(value)) return value
+  const fields: Record<string, unknown> = {}
+  for (const key of FIELDS) {
+    const field = value[key]
+    if (field !== undefined) fields[key] = field
+  }
+  return fields
+}
+
 const isAttachmentRef = (value: unknown): value is AttachmentRef =>
   isRecord(value) && value.type === "file" && typeof value.id === "string" && typeof value.path === "string"
 
@@ -94,11 +108,17 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }),
   )
   if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${describe(returned.failure)}`)
-  if (!isToolResult(returned.success))
+  let result: unknown
+  try {
+    result = fieldsOf(returned.success)
+  } catch (cause) {
+    return failed(`Reading the result of tool ${name} threw: ${describe(cause)}`)
+  }
+  if (!isToolResult(result))
     return failed(
       `Tool ${name} returned a value that is not a ToolResult. A tool returns an object with status "success" or "error".`,
     )
-  return returned.success
+  return result
 })
 
 export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {

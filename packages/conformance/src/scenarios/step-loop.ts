@@ -1161,6 +1161,16 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             },
           }),
         }),
+        prickly: defineTool({
+          description: "Returns a result whose getter throws",
+          execute: async () =>
+            ({
+              status: "success",
+              get result() {
+                throw new Error("no result")
+              },
+            }) as never,
+        }),
         thrower: defineTool({
           description: "Throws a plain object",
           execute: async () => {
@@ -1169,7 +1179,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         }),
         fine: defineTool({ description: "Returns at once", execute: async () => ok("fine") }),
       }
-      const names = ["tangled", "hollow", "guarded", "thrower", "fine"]
+      const names = ["tangled", "hollow", "guarded", "prickly", "thrower", "fine"]
       const provider = new ScriptedProvider([
         { toolCalls: names.map((name) => ({ id: `c_${name}`, name, arguments: {} })) },
         { text: "recovered" },
@@ -1205,6 +1215,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
             null,
             {},
           ],
+          ["c_prickly", "prickly", "error", "Reading the result of tool prickly threw: no result", null, {}],
           ["c_thrower", "thrower", "error", 'Tool thrower threw: {"reason":"quota","retry":false}', null, {}],
           ["c_fine", "fine", "success", "fine", null, {}],
         ])
