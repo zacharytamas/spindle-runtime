@@ -10,6 +10,13 @@ export interface EnvScope {
   readonly prompt: EnvRecord
 }
 
+// What an execution knows to be secret. A variable that a declaration or the provider config marks secret is
+// secret whatever source its value comes from, and each secret value resolved so far is redacted.
+export interface Secrets {
+  readonly names: Set<string>
+  readonly values: Set<string>
+}
+
 const own = (record: EnvRecord, name: string) =>
   record !== undefined && Object.hasOwn(record, name) && typeof record[name] === "string" ? record[name] : undefined
 

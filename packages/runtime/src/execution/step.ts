@@ -12,7 +12,7 @@ import type { Registry } from "../registry/Registry.ts"
 import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
 import { buildRequest, promptScope, renderSystemPrompt, toProviderMessages, turnStartOf } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
-import { resolveEnv } from "./env.ts"
+import { resolveEnv, type Secrets } from "./env.ts"
 import { mapStrings, redactor, redactText } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { type ExecutionRecord, makeThreadState } from "./thread-state.ts"
@@ -160,9 +160,9 @@ const stopToolOutcome = (turn: Turn, calls: ReadonlyArray<ToolCall>, results: Re
   return { tool: call.name, callId: call.id, status: result.status, value } satisfies StopToolOutcome
 }
 
-// A value that the prompt or one of its tools declares secret is known before the first request, so that its
-// redaction does not wait for a tool to read it.
-const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn, secrets: Set<string>) {
+// A variable that the prompt or one of its tools declares secret is known before the first request, so that the
+// system prompt check and redaction do not wait for a tool to read it.
+const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn, secrets: Secrets) {
   const declared = [
     ...(turn.prompt.value.variables ?? []).map((variable) => ({ variable, scope: promptScope(turn) })),
     ...[...turn.tools.values()].flatMap((exposed) =>
@@ -171,8 +171,9 @@ const addDeclaredSecrets = Effect.fn("addDeclaredSecrets")(function* (turn: Turn
   ]
   for (const { variable, scope } of declared)
     if (variable.type === "secret") {
+      secrets.names.add(variable.name)
       const value = yield* resolveEnv(scope, variable.name)
-      if (value !== undefined) secrets.add(value)
+      if (value !== undefined) secrets.values.add(value)
     }
 })
 
@@ -191,8 +192,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
     const trace: Array<TraceEntry> = []
     const modelCalls: Array<ModelCall> = []
     const pending: Array<Fiber.Fiber<void>> = []
-    const secrets = options.secrets ?? new Set<string>()
-    const redact = redactor(secrets)
+    const secrets: Secrets = { names: new Set(), values: options.secrets ?? new Set() }
+    const redact = redactor(secrets.values)
     const observe = (event: ExecutionEvent) => (options.observe === undefined ? Effect.void : options.observe(event))
     // Only the text a tool, a provider, or a model wrote is redacted, never a field that the runtime reads back.
     const redactError = <E extends { readonly message: string; readonly upstream?: string }>(error: E): E => ({
@@ -266,7 +267,7 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
         services,
         execution,
         context,
-        secrets,
+        secrets: secrets.values,
       }
       const toolContext: ToolContext = {
         turn,
@@ -292,8 +293,8 @@ export const runExecution = (threadId: string, options: ExecutionOptions = {}) =
           ? yield* providerFor(turn.model, promptState, secrets)
           : Effect.succeed(options.provider)
       yield* addDeclaredSecrets(turn, secrets)
-      // A value a tool reads through env() joins secrets later and is redacted, but it may be a text variable.
-      const barred = new Set(secrets)
+      // A value a tool reads through env() joins the values later and is redacted, but it may be a text variable.
+      const barred: Secrets = { names: secrets.names, values: new Set(secrets.values) }
       const source = JSON.stringify(reasoningSource(turn))
       const acceptsDetails = (message: Message) => JSON.stringify(message.metadata?.reasoning_source) === source
       const prompt = turn.prompt.value

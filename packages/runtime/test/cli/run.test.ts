@@ -206,7 +206,7 @@ describe("spindle run", () => {
       expect(Exit.isFailure(exit)).toBe(true)
       expect(out).toEqual([])
       expect(err.at(-1)).toBe(
-        "spindle: Prompt keyed interpolates variable SPINDLE_TEST_API_KEY, whose value is a secret. A system prompt never holds a secret.",
+        "spindle: Prompt keyed interpolates variable SPINDLE_TEST_API_KEY, which a declaration or the provider config marks secret. A system prompt never holds a secret.",
       )
       expect(err.join("\n")).not.toContain(key)
     }),

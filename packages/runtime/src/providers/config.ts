@@ -8,7 +8,7 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { instanceEnv } from "../execution/env.ts"
+import { instanceEnv, type Secrets } from "../execution/env.ts"
 import { type Loaded, SetupError } from "../execution/turn.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -26,13 +26,18 @@ const coerce = (value: unknown, type: unknown) => {
 
 interface Resolution {
   readonly missing: Array<string>
-  readonly secrets: Set<string>
+  readonly secrets: Secrets
+}
+
+const learn = (found: Resolution, name: string | undefined, value: unknown) => {
+  if (name !== undefined) found.secrets.names.add(name)
+  if (typeof value === "string") found.secrets.values.add(value)
 }
 
 const fromSlot = Effect.fn("fromSlot")(function* (key: string, slot: ProviderConfigSlot, found: Resolution) {
   const value = (slot.defaultEnv === undefined ? undefined : yield* instanceEnv(slot.defaultEnv)) ?? slot.default
   if (value === undefined && slot.required === true) found.missing.push(slot.defaultEnv ?? key)
-  if (slot.type === "secret" && typeof value === "string") found.secrets.add(value)
+  if (slot.type === "secret") learn(found, slot.defaultEnv, value)
   return coerce(value, slot.type)
 })
 
@@ -42,7 +47,7 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
   Effect.gen(function* () {
     if (isSource(source)) {
       if (source.type === "const") {
-        if (slot?.type === "secret" && typeof source.value === "string") found.secrets.add(source.value)
+        if (slot?.type === "secret") learn(found, undefined, source.value)
         return source.value
       }
       const name = String(source.name)
@@ -50,11 +55,11 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
       const required = typeof source.required === "boolean" ? source.required : slot?.required === true
       if (value === undefined && required) found.missing.push(name)
       const type = source.valueType ?? slot?.type
-      if (type === "secret" && typeof value === "string") found.secrets.add(value)
+      if (type === "secret") learn(found, name, value)
       return coerce(value, type)
     }
     if (!isRecord(source)) {
-      if (slot?.type === "secret" && typeof source === "string") found.secrets.add(source)
+      if (slot?.type === "secret") learn(found, undefined, source)
       return source
     }
     const map: Record<string, unknown> = {}
@@ -68,10 +73,7 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
 const isProvider = (value: unknown): value is LLMProviderInterface =>
   isRecord(value) && typeof value.stream === "function" && typeof value.generate === "function"
 
-export const resolveConfig = Effect.fn("resolveConfig")(function* (
-  model: Loaded<ModelDefinition>,
-  secrets: Set<string>,
-) {
+export const resolveConfig = Effect.fn("resolveConfig")(function* (model: Loaded<ModelDefinition>, secrets: Secrets) {
   const factory = model.value.provider as ProviderFactoryWithOptions
   const slots = factory.configSlots ?? {}
   const sources: Record<string, unknown> = factory.providerDefinition?.config ?? {}
@@ -95,7 +97,7 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
 export const providerFor = Effect.fn("providerFor")(function* (
   model: Loaded<ModelDefinition>,
   state: ThreadState,
-  secrets: Set<string>,
+  secrets: Secrets,
 ) {
   const factory = model.value.provider as ProviderFactoryWithOptions
   const definition = factory.providerDefinition

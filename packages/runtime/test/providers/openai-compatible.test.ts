@@ -400,7 +400,7 @@ describe("provider config slots", () => {
   })
   const build = (provider: ProviderFactoryWithOptions, env: Record<string, string>) => {
     const { sent, fetch } = transport(() => Response.json(generated))
-    const secrets = new Set<string>()
+    const secrets = { names: new Set<string>(), values: new Set<string>() }
     return Effect.gen(function* () {
       const instance = yield* yield* providerFor(loaded(provider), {} as never, secrets)
       yield* Effect.promise(() => instance.generate(request))
@@ -423,7 +423,7 @@ describe("provider config slots", () => {
       expect(sent[0]?.headers.get("x-account")).toBe("acct-9")
       expect(sent[0]?.headers.get("x-beta")).toBe("on")
       expect(sent[0]?.headers.has("x-unset")).toBe(false)
-      expect([...secrets]).toEqual(["lane-key"])
+      expect([[...secrets.names], [...secrets.values]]).toEqual([["LANE_API_KEY"], ["lane-key"]])
     }),
   )
 
@@ -436,7 +436,7 @@ describe("provider config slots", () => {
         const fixed = defineProvider({ name: "fixed_key", baseProvider: openaiCompatible, config: { apiKey } })
         const { sent, secrets } = yield* build(fixed, {})
         expect(sent[0]?.headers.get("authorization")).toBe(`Bearer ${value}`)
-        expect([...secrets]).toEqual([value])
+        expect([[...secrets.names], [...secrets.values]]).toEqual([[], [value]])
       }
     }),
   )
@@ -453,7 +453,7 @@ describe("provider config slots", () => {
       expect(bare.sent[0]?.url).toBe("https://api.openai.com/v1/chat/completions")
       expect(bare.sent[0]?.headers.has("authorization")).toBe(false)
       expect(openaiCompatible.configSlots?.apiKey).toMatchObject({ type: "secret", defaultEnv: "OPENAI_API_KEY" })
-      expect([...withEnv.secrets]).toEqual(["env-key"])
+      expect([[...withEnv.secrets.names], [...withEnv.secrets.values]]).toEqual([["OPENAI_API_KEY"], ["env-key"]])
     }),
   )
 
@@ -484,7 +484,7 @@ describe("provider config slots", () => {
         },
       })
       const state = { threadId: "thread-1" }
-      const next = yield* providerFor(loaded(perRequest), state as never, new Set())
+      const next = yield* providerFor(loaded(perRequest), state as never, { names: new Set(), values: new Set() })
       for (const _ of [1, 2]) {
         const instance = yield* next
         yield* Effect.promise(() => instance.generate(request))
@@ -516,9 +516,10 @@ describe("provider config slots", () => {
       })
       const { fetch } = transport((entry) => (entry.body.stream === true ? sse(streamed) : Response.json(generated)))
       const state = { threadId: "thread-2" }
-      const instance = yield* yield* providerFor(loaded(overridden), state as never, new Set()).pipe(
-        Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch),
-      )
+      const instance = yield* yield* providerFor(loaded(overridden), state as never, {
+        names: new Set(),
+        values: new Set(),
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       yield* Effect.promise(() => instance.generate(request))
       yield* Effect.promise(async () => collect(await instance.stream(request)))
       expect(seen).toEqual([
@@ -537,7 +538,9 @@ describe("provider config slots", () => {
           throw new Error("no credentials")
         },
       ]) {
-        const exit = yield* Effect.exit(providerFor(loaded(factory as never), {} as never, new Set()))
+        const exit = yield* Effect.exit(
+          providerFor(loaded(factory as never), {} as never, { names: new Set(), values: new Set() }),
+        )
         const reason = Exit.isFailure(exit) ? exit.cause.reasons.find((r) => r._tag === "Fail") : undefined
         failures.push(reason?._tag === "Fail" ? (reason.error as SetupError).message : "succeeded")
       }

@@ -12,6 +12,7 @@ import {
   type ProviderFactoryWithOptions,
   type ProviderMessage,
   type ProviderStreamChunk,
+  providerEnv,
   type ResponseSummary,
   type ThreadState,
 } from "@standardagents/spec"
@@ -1870,6 +1871,93 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "S26d fails before any request when a secret variable or a secret value reaches the finished system prompt",
+    requirements: ["d263e879"],
+    run: async (driver) => {
+      const marker = "SECRET-MARKER-9c2e"
+      const declaresSecret = {
+        reads_token: defineTool({
+          description: "Declares the token secret",
+          variables: [{ name: "API_TOKEN", type: "secret", required: true, description: "Token" }],
+          execute: async () => ok("unused"),
+        }),
+      }
+      const keyed = new ScriptedProvider([{ text: "never" }])
+      const cases: Array<[string, Setup, RegExp]> = [
+        [
+          "a tool entry gives the secret variable another value",
+          {
+            provider: new ScriptedProvider([{ text: "never" }]),
+            tools: declaresSecret,
+            prompt: {
+              prompt: [
+                { type: "text", content: "Token: " },
+                { type: "env", property: "API_TOKEN" },
+              ],
+              variables: [{ name: "API_TOKEN", type: "text", required: true, description: "Token" }],
+              tools: [{ name: "reads_token", env: { API_TOKEN: "decoy" } }],
+            } as Partial<PromptDefinition>,
+          },
+          /^Prompt assistant interpolates variable API_TOKEN, which a declaration or the provider config marks secret/,
+        ],
+        [
+          "an included prompt holds the secret value as text",
+          {
+            provider: new ScriptedProvider([{ text: "never" }]),
+            tools: declaresSecret,
+            prompt: { prompt: [{ type: "include", prompt: "house" }] } as Partial<PromptDefinition>,
+            prompts: [
+              definePrompt({
+                name: "house",
+                toolDescription: "House rules",
+                model: "scripted",
+                prompt: `Use ${marker}.`,
+              }),
+            ],
+          },
+          /^The system prompt that prompt assistant renders holds a secret value/,
+        ],
+        [
+          "the provider config reads the variable as a secret and the agent gives it a value",
+          {
+            provider: keyed,
+            model: {
+              provider: defineProvider({
+                name: "keyed_script",
+                baseProvider: keyed.factory,
+                config: { apiKey: providerEnv("SERVICE_KEY", { valueType: "secret" }) },
+              }),
+            },
+            agent: { env: { SERVICE_KEY: "agent-value" } },
+            prompt: {
+              prompt: [{ type: "env", property: "SERVICE_KEY" }],
+              variables: [{ name: "SERVICE_KEY", type: "text", required: true, description: "Key" }],
+            } as Partial<PromptDefinition>,
+          },
+          /^Prompt assistant interpolates variable SERVICE_KEY, which a declaration or the provider config marks secret/,
+        ],
+      ]
+      for (const [label, setup, message] of cases) {
+        await using(
+          driver,
+          setup,
+          async (session, thread) => {
+            const outcome = await send(session, thread, "go")
+            expect([label, outcome.status, outcome.reason, outcome.error?.message]).toEqual([
+              label,
+              "failed",
+              "fatal_error",
+              expect.stringMatching(message),
+            ])
+            expect(outcome.error?.message).not.toContain(marker)
+          },
+          { API_TOKEN: marker, SERVICE_KEY: marker },
+        )
+        expect([label, setup.provider.requests.length]).toEqual([label, 0])
+      }
+    },
+  },
+  {
     name: "S26b redacts a secret of any length from stored tool results, later requests, and run errors",
     requirements: ["287f2aef"],
     run: async (driver) => {
@@ -1939,7 +2027,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       const statusCheck = new ScriptedProvider([{ toolCalls: [{ name: "status", arguments: {} }] }, { text: "done" }])
       await using(
         driver,
-        { provider: statusCheck, tools: tiny },
+        { provider: statusCheck, tools: tiny, prompt: { prompt: "Act now." } },
         async (session, thread) => {
           expect(await send(session, thread, "go")).toMatchObject({ status: "idle", reason: "stop_on_response" })
           const result = (await session.messages(thread)).find((m) => m.role === "tool")
