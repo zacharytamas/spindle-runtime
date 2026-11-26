@@ -162,7 +162,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                   ? exit.value
                   : yield* store.getThread(threadId).pipe(
                       Effect.map((stored) => stored.status),
-                      Effect.orElseSucceed(() => ({ state: "idle" as const, since: 0, reason: "aborted" })),
+                      Effect.onError((cause) => Deferred.failCause(entry.done, cause)),
                       Effect.map((status) => ({
                         threadId,
                         flowId: run.flowId,

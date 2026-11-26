@@ -162,6 +162,12 @@ export const createMessage = Effect.fn("createMessage")(function* (
   })
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
   let redacted = redactWrite(writer, original, hooked, redact)
+  if (writer === "queued" && original.tool_calls) {
+    const calls = JSON.parse(original.tool_calls) as Array<{ function: { arguments: string } }>
+    for (const call of calls)
+      call.function.arguments = JSON.stringify(mapStrings(JSON.parse(call.function.arguments), redact, redact))
+    redacted.tool_calls = JSON.stringify(calls)
+  }
   if (writer === "skipped")
     redacted = {
       ...redacted,

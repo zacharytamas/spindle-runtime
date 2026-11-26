@@ -290,10 +290,14 @@ export const toJson = (value: unknown): string | NotJson => {
           const prototype = read(path, () => Object.getPrototypeOf(value))
           if (prototype !== null && read(path, () => Object.getPrototypeOf(prototype)) !== null)
             throw new Found(path, `a ${read(path, () => prototype.constructor?.name) ?? "non-plain"} object`)
-          if (typeof read(path, () => (value as { toJSON?: unknown }).toJSON) === "function")
+          const entries = read(path, () => Object.entries(value))
+          const ownToJson = entries.find(([key]) => key === "toJSON")
+          if (
+            typeof (ownToJson ? ownToJson[1] : read(path, () => (value as { toJSON?: unknown }).toJSON)) === "function"
+          )
             throw new Found(path, "an object with a toJSON method")
           const members: Array<string> = []
-          for (const [key, member] of read(path, () => Object.entries(value)))
+          for (const [key, member] of entries)
             if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)
           text = `{${members.join(",")}}`
         }

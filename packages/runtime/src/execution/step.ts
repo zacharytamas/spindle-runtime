@@ -47,6 +47,7 @@ import {
   executeTool,
   failed,
   invokeTool,
+  notRun,
   ResultUnreadable,
   resultOf,
   runToolCall,
@@ -248,8 +249,6 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
   ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
   ...((input.attachments ?? []).length === 0 ? {} : { attachments: input.attachments as Array<AttachmentRef> }),
 })
-
-const NOT_RUN = "Spindle did not run this call, because the execution was stopped before the call started."
 
 export const runExecution = (threadId: string, run: Run, control: ThreadControl, options: ExecutionOptions = {}) =>
   Effect.gen(function* () {
@@ -465,15 +464,17 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
       ) =>
         Effect.gen(function* () {
-          const skipped = run.stop !== undefined
-          const returned = skipped ? failed(NOT_RUN) : yield* outcome
+          const returned = run.stop !== undefined ? notRun : yield* outcome
+          const skipped = returned === notRun
           const toolCall = hookCall(call, argumentsOf(call))
-          const branched = yield* runHooks(
-            hooks,
-            returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
-            [toolCall],
-            returned,
-          )
+          const branched = skipped
+            ? returned
+            : yield* runHooks(
+                hooks,
+                returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
+                [toolCall],
+                returned,
+              )
           const final = skipped ? returned : yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
           const save = (result: ToolResult) =>
             Effect.try({
@@ -676,9 +677,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           // A call after a stop request never runs. It still gets a result, so that the next request is valid.
           const skipped = run.stop !== undefined
           yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
-          results.push(
-            yield* runCall(assistant, call, skipped ? Effect.succeed(failed(NOT_RUN)) : runToolCall(toolContext, call)),
-          )
+          results.push(yield* runCall(assistant, call, runToolCall(toolContext, call)))
         }
         if (run.stop !== undefined) return yield* stopHere
         // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
@@ -758,7 +757,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               ])
             }
           }),
-          Effect.ignore(
+          Effect.orDie(
             Effect.tap(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted), (settlement) =>
               Effect.gen(function* () {
                 if (settlement === "superseded") run.displaced = (yield* store.getThread(threadId)).terminated === null

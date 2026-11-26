@@ -39,6 +39,11 @@ export const describe = (cause: unknown) => {
 
 export class ResultUnreadable extends Data.TaggedError("ResultUnreadable")<{ readonly message: string }> {}
 
+export const notRun = Object.freeze({
+  status: "error" as const,
+  error: "Spindle did not run this call, because the execution was stopped before the call started.",
+})
+
 export const failed = (error: string): ToolResult => ({ status: "error", error })
 
 export const scopeFor = (turn: Turn, entry: PromptToolConfig | undefined): EnvScope => ({
@@ -110,6 +115,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   }
   const callback: Callback = {}
   const state = stateFor(callback)
+  if (state.execution?.stopped) return notRun
   const returned = yield* Effect.result(
     Effect.tryPromise({
       try: () =>
