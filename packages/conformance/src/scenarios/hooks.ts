@@ -925,6 +925,58 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H12d closes a call that started in a response that then failed with one tool_call_done and runs nothing else for it",
+    requirements: ["6d96f2a3"],
+    run: async (driver) => {
+      const events: Array<unknown> = []
+      const hooks = [
+        defineHook({
+          hook: "tool_call_started",
+          id: "on_start",
+          execute: async (_state, toolCall) => {
+            events.push(["started", toolCall.id])
+          },
+        }),
+        defineHook({
+          hook: "after_tool_call_failure",
+          id: "on_failure",
+          execute: async (_state, toolCall) => {
+            events.push(["failure", toolCall.id])
+            return null
+          },
+        }),
+        defineHook({
+          hook: "tool_call_done",
+          id: "on_done",
+          execute: async (_state, toolCall, result) => {
+            events.push(["done", toolCall.id, result.status, result.error])
+          },
+        }),
+      ]
+      const provider = new ScriptedProvider([
+        {
+          chunks: [
+            { type: "tool-call-start", id: "c_lost", name: "noop" },
+            { type: "error", error: "upstream dropped", code: "server_error" },
+          ],
+        },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools: noop, hooks, prompt: { hooks: hookIds(hooks) } },
+        async (session, thread) => {
+          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+          expect(toolRows(await session.messages(thread))).toEqual([])
+        },
+      )
+      expect(events).toEqual([
+        ["started", "c_lost"],
+        ["done", "c_lost", "error", "Spindle did not run this call, because the model response that held it failed."],
+      ])
+    },
+  },
+  {
     name: "H13 starts a call when it appears, or when its progress argument is complete, or when it finishes without it",
     requirements: ["bdfd2d2d", "7bef4e87", "31e58fe6", "3fb4e4f0", "106ba9d7", "b02bac78", "f31fd3d3", "8f7b59dd"],
     run: async (driver) => {
