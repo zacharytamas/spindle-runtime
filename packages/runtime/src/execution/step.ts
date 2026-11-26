@@ -108,9 +108,10 @@ const reasoningSource = (turn: Turn) => ({
   model: turn.model.value.model,
 })
 
-// The response is stored as the model returned it, so the stored arguments are the ones the tool runs with and
-// the next request shows. Messages section 1 stores arguments as the JSON text of an object, so arguments that
-// are not one are kept as the text of invalid_json.
+// The response is stored as the model returned it, so the stored arguments are what the model sent and what the
+// next request shows. The tool gets them after its schema validates them, which may transform a value. Messages
+// section 1 stores arguments as the JSON text of an object, so arguments that are not one are kept as the text of
+// invalid_json.
 const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
