@@ -712,6 +712,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       )
 
     return yield* loop.pipe(
+      Effect.interruptible,
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
         const found = Cause.findError(cause)

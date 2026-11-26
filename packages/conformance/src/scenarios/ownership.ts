@@ -958,4 +958,24 @@ export const ownershipScenarios: ReadonlyArray<Scenario> = [
       })
     },
   },
+  ...(["send", "queueMessage"] as const).map(
+    (method): Scenario => ({
+      name: `O21 settles a same-turn abort after ${method} on an idle thread`,
+      requirements: [],
+      run: async (driver) => {
+        const provider = new ScriptedProvider([{ text: "reply" }, { text: "second reply" }])
+        await using(driver, { provider }, async (session, thread, peer) => {
+          const state = await session.state(thread)
+          const first = method === "send" ? quiet(session.send(thread, "A")) : undefined
+          if (!first) await state.queueMessage({ role: "user", content: "A" })
+          expect(await session.abort(thread)).toBe(true)
+          if (first) expect(await first).toMatchObject({ status: "idle", reason: "aborted_by_user" })
+          await session.settled(thread)
+          expect(await session.send(thread, "B")).toMatchObject({ status: "idle" })
+          expect(await peer.inspect(thread)).toMatchObject({ claim: null, status: { state: "idle" } })
+          expect((await contents(peer, thread)).filter((value) => value === "A" || value === "B")).toEqual(["A", "B"])
+        })
+      },
+    }),
+  ),
 ]

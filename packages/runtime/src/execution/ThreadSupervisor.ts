@@ -189,7 +189,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             ),
             Effect.asVoid,
           )
-          entry.fiber = yield* Effect.forkIn(Effect.interruptible(execution), scope)
+          // Start masked so an interrupt before the first scheduler turn still runs both settlement finalizers.
+          entry.fiber = yield* Effect.forkIn(execution, scope, { uninterruptible: true })
           return entry
         })
 
