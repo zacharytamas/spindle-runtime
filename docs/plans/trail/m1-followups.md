@@ -107,6 +107,22 @@ From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
 
+## Structure PRs, on top of the stack
+
+Seven code quality reviews found that no PR of the stack meets the operator's bar for structure. The reports are under `docs/plans/trail/reviews/`. The operator chose new PRs on top of the stack, one at a time, each keeping behavior the same.
+
+1. The Effect language service (`@effect/tsgo`), the hole in the platform lint rule, the two-way platform contract, and the entry point of the command line. Running.
+2. A test harness module, and the split of the five scenario files and the one store test that are over 1,000 lines.
+3. The store as three services (threads, messages, runs), one ownership check, `recover` split by caller, and positions returned from the insert in place of the `WeakMap`.
+4. One state machine for the life of an execution, in place of the `Run` bag, the two finalizers, and the five releases of an abort's hold. Interrupts as a scoped service.
+5. Hooks as three typed kinds owned by the operations they decorate, `createMessage` split in two, and the step loop cut down.
+6. One shared module for the commands, one channel for a waiting line, and the chat as one fiber that drains one queue of events.
+7. The registry validator lifted out of its generator, `Schema` at the boundaries where it removes code, and Effect's `Schedule`, `Stream`, and event-stream parser in the model call.
+
+To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
+
+After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
+
 ## Decided by the operator on 2026-11-26
 
 - A live process is never taken over. `spindle recover <thread> --force` settles a thread whose holder is frozen. To be looked at again in M4, when there is a long-lived server.
