@@ -131,7 +131,6 @@ export class FlowEnded extends Data.TaggedError("FlowEnded")<{
 
 export class QueueEntryGone extends Data.TaggedError("QueueEntryGone")<{ readonly seq: number }> {}
 
-// The process that runs an execution and the execution itself.
 export interface Claim {
   readonly holder: string
   readonly flowId: string
@@ -234,7 +233,6 @@ export class ThreadStore extends Context.Service<
     ) => Effect.Effect<void, SqlError>
     readonly dropHolder: (holderId: string) => Effect.Effect<void, SqlError>
     readonly holderOf: (threadId: string) => Effect.Effect<Holder | null, SqlError>
-    // The runs this holder holds, by thread.
     readonly owned: (holderId: string) => Effect.Effect<ReadonlyMap<string, string>, SqlError>
 
     readonly getValue: (threadId: string, key: string) => Effect.Effect<unknown, KeyNotWellFormed | SqlError>

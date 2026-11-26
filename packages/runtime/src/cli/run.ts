@@ -102,7 +102,6 @@ const describe = (cause: Cause.Cause<unknown>) => {
   return error instanceof Error ? error.message : String(error)
 }
 
-// The flags that run and send share. Both deliver one message from the human side and print the run that takes it.
 export const deliveryFlags = {
   message: Flag.String("message").pipe(Flag.withAlias("m"), Flag.withDescription("The message from the human side")),
   dir: Flag.String("dir").pipe(Flag.withDescription("The project directory that holds agents/"), Flag.withDefault(".")),
@@ -140,7 +139,6 @@ export interface DeliveryArgs {
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
 
-// Creates a thread for the agent, or sends to the thread that already exists, and prints the run that takes the message.
 export const deliver = (args: DeliveryArgs, target: { readonly agent: string } | { readonly thread: string }) =>
   Console.consoleWith((current) => {
     const secrets = new Set<string>()

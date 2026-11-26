@@ -24,7 +24,6 @@ export interface StopRequest {
   readonly reason: "aborted" | "aborted_by_user"
 }
 
-// What the supervisor and the execution share about one run.
 export interface Run {
   readonly flowId: string
   readonly abort: AbortController

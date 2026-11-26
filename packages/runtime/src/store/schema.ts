@@ -172,7 +172,6 @@ export const messageRow = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-// The id and the function name of each call that a stored tool_calls text lists.
 export const callsIn = (toolCalls: Text): Array<{ readonly id: string; readonly name: string }> => {
   let parsed: unknown
   try {
