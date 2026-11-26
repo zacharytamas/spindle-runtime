@@ -17,6 +17,7 @@ const CONTROL_POLL = Duration.millis(250)
 export class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
 
 export interface Delivery {
+  readonly stillQueued?: boolean
   // The outcome of the execution that took the message, when this process ran it.
   readonly outcome?: RunOutcome
   // The holder that ran the thread, when another process did.
@@ -348,8 +349,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               const current = yield* store.getThread(threadId)
               if (current.terminated !== null)
                 return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
-              if (status.reason === "execution_lost" || !(yield* store.isQueued(threadId, admitted.seq))) {
-                const delivery = { status, ...(elsewhere === undefined ? {} : { elsewhere }) }
+              const stillQueued = yield* store.isQueued(threadId, admitted.seq)
+              if (status.reason === "execution_lost" || !stillQueued) {
+                const delivery = { status, stillQueued, ...(elsewhere === undefined ? {} : { elsewhere }) }
                 return outcome === undefined ? delivery : { ...delivery, outcome }
               }
               started = yield* claimWith(

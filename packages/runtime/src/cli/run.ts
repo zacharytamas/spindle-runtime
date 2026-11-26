@@ -194,10 +194,13 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           if (filename !== ":memory:") yield* Console.error(`spindle: thread ${threadId}`)
           const delivery = yield* sendMessage(threadId, args.message, options).pipe(answerInterrupts(threadId))
           const { outcome } = delivery
+          const queuedNote = delivery.stillQueued
+            ? ". Your message is still queued and the next run of this thread will deliver it."
+            : ""
           if (outcome !== undefined) {
             if (outcome.reason === "execution_lost")
               return yield* fail(
-                `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it`,
+                `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
               )
             yield* Console.error(
               `spindle: ${outcome.status} (${outcome.reason}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
@@ -207,7 +210,8 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           }
           const { status } = delivery
           yield* Console.error(`spindle: ${status.state} (${status.reason ?? "none"}), thread ${threadId}`)
-          if (status.state === "failed") return yield* fail(`the run of thread ${threadId} ended ${status.reason}`)
+          if (status.state === "failed")
+            return yield* fail(`the run of thread ${threadId} ended ${status.reason}${queuedNote}`)
         }).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
       }).pipe(Effect.provide(Registry.layer(root)))
     }).pipe(

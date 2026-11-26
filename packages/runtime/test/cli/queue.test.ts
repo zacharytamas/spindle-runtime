@@ -199,7 +199,9 @@ describe("spindle across processes", () => {
         expect(yield* status.exit).toBe(0)
         expect(status.out).toEqual([expect.stringMatching(/^failed execution_lost since /), "queued 2"])
         expect([yield* x.exit, yield* y.exit]).toEqual([1, 1])
-        expect(x.err.at(-1)).toBe(`spindle: the run of thread ${thread} ended execution_lost`)
+        expect(x.err.at(-1)).toBe(
+          `spindle: the run of thread ${thread} ended execution_lost. Your message is still queued and the next run of this thread will deliver it.`,
+        )
         yield* touch(at("release-model"))
         expect(yield* other.exit).toBe(0)
         const again = yield* spindle(gate, ["send", thread, "-m", "z", ...project, "--db", db])
