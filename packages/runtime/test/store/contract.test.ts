@@ -5,7 +5,8 @@ import { PlatformLive, SqliteLive } from "#platform"
 import { layer } from "../../src/store/sqlite.ts"
 import { type NewMessage, ThreadStore } from "../../src/store/ThreadStore.ts"
 
-const storeAt = (filename: string) => layer.pipe(Layer.provide(SqliteLive({ filename })))
+// Effect.provide reuses a layer that an enclosing provide already built, so a nested store would share its connection.
+const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
 
 const withDatabaseFile = <A, E>(use: (filename: string) => Effect.Effect<A, E>) =>
