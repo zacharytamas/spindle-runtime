@@ -33,9 +33,12 @@ const invalid: ReadonlyArray<Case> = [
     [error("agent_side_backing_conflict", "agents/agents/two_backings.ts:sideA")],
   ],
   [
-    "rejects a side with no backing",
+    "rejects a side with no backing and an agent with one side",
     "no-backing",
-    [error("agent_side_backing_missing", "agents/agents/no_backing.ts:sideA")],
+    [
+      error("agent_side_backing_missing", "agents/agents/no_backing.ts:sideA"),
+      error("agent_side_missing", "agents/agents/one_side.ts:sideB"),
+    ],
   ],
   [
     "rejects subagents on a human side",
@@ -43,9 +46,12 @@ const invalid: ReadonlyArray<Case> = [
     [error("agent_subagents_on_human_side", "agents/agents/coordinator.ts:sideB.subagents")],
   ],
   [
-    "rejects a property other than human and label on a human side",
+    "rejects a human side whose human is not true or that has a property other than label",
     "human-side-option",
-    [error("agent_side_option_invalid_for_backing", "agents/agents/greeter.ts:sideB.greeting")],
+    [
+      error("agent_side_option_invalid_for_backing", "agents/agents/greeter.ts:sideB.greeting"),
+      error("agent_side_invalid", "agents/agents/half_human.ts:sideA.human"),
+    ],
   ],
   [
     "rejects session bindings, maxSteps, and stop bindings on a non-prompt side",
@@ -135,17 +141,21 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
-    "rejects a model with a bad name, provider, model id, price, fallback, or provider options",
+    "rejects a model with a bad name, provider, model id, price, or fallback",
     "model-fields",
     [
       error("model_fallback_undefined", "agents/models/bad_fallback.ts:fallbacks[1]"),
-      error("model_provider_options_invalid", "agents/models/bad_options.ts:providerOptions"),
       error("model_property_invalid", "agents/models/bad_price.ts:inputPrice"),
       error("model_id_missing", "agents/models/no_model.ts:model"),
       error("model_provider_invalid", "agents/models/no_provider.ts:provider"),
       error("definition_name_mismatch", "agents/models/spaced_name.ts:name"),
       error("model_name_invalid", "agents/models/spaced_name.ts:name"),
     ],
+  ],
+  [
+    "rejects provider options that fail the provider's schema",
+    "model-provider-options",
+    [error("model_provider_options_invalid", "agents/models/bad_options.ts:providerOptions")],
   ],
   [
     "rejects a hook with an unknown type, a bad id, or no execute",
@@ -178,7 +188,12 @@ const invalid: ReadonlyArray<Case> = [
   [
     "rejects two files that define the same name",
     "duplicate-name",
-    [error("definition_name_duplicate", "agents/tools/lookup.ts")],
+    [
+      error("definition_name_duplicate", "agents/agents/relay.ts"),
+      error("definition_name_duplicate", "agents/effects/digest.ts"),
+      error("definition_name_duplicate", "agents/hooks/trim.ts"),
+      error("definition_name_duplicate", "agents/tools/lookup.ts"),
+    ],
   ],
   [
     "warns about names that are not snake_case",
@@ -242,6 +257,20 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
         expect(issues).toEqual([])
+        expect(definitions.map((d) => `${d.kind} ${d.qualifiedName}`)).toEqual([
+          "agent assistant",
+          "agent intake",
+          "agent relay",
+          "prompt assistant",
+          "prompt house_rules",
+          "prompt summarize",
+          "tool lookup",
+          "model conversational",
+          "hook drop_empty",
+          "hook limit_history",
+          "handler relay_pipe",
+          "effect send_digest",
+        ])
         expect(counts(definitions)).toEqual({
           agent: 3,
           prompt: 3,

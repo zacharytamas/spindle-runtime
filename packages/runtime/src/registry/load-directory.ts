@@ -36,7 +36,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         issues.push({
           code: "definition_name_duplicate",
           severity: "error",
-          message: `${file} and ${earlier} both define the ${kind} ${name}`,
+          message: `${earlier} also defines the ${kind} ${name}`,
           file,
           path: "",
         })
