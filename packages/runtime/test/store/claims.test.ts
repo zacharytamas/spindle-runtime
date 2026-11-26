@@ -436,6 +436,27 @@ describe("ThreadStore claims", () => {
     }).pipe(Effect.provide(inMemory)),
   )
 
+  it.effect("recovers a closed local holder even if its row could not be deleted", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadStore
+      const runs = yield* RunStore
+      const sql = yield* SqlClient
+      const thread = yield* threads.createThread({ agentId: "assistant" })
+      const holder = crypto.randomUUID()
+      yield* sql`CREATE TRIGGER keep_holder BEFORE DELETE ON holders BEGIN SELECT RAISE(ABORT, 'kept'); END`
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* runs.acquireHolder({ id: holder, pid: processId })
+          yield* runs.admit(thread.id, message("pending"), claim("flow", holder), external)
+          expect(yield* runs.recoverLost(thread.id)).toEqual([])
+        }),
+      )
+      expect(yield* runs.holderOf(thread.id)).toEqual({ id: holder, pid: processId })
+      expect(yield* runs.recoverLost(thread.id)).toEqual([thread.id])
+      expect((yield* threads.getThread(thread.id)).status).toMatchObject({ state: "failed", reason: "execution_lost" })
+    }).pipe(Effect.provide(layer.pipe(Layer.provideMerge(SqliteLive({ filename: ":memory:" }))))),
+  )
+
   it.live("a store call never yields to another fiber while it holds the connection", () =>
     Effect.gen(function* () {
       const threadStore = yield* ThreadStore
