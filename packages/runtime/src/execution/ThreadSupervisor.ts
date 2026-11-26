@@ -2,7 +2,7 @@ import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardag
 import { Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
-import { WritingHandle, type Holder, type QueueEntry, ThreadStore } from "../store/ThreadStore.ts"
+import { type Holder, type QueueEntry, ThreadStore, WritingHandle } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
@@ -147,7 +147,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                         threadId,
                         flowId: run.flowId,
                         status: run.displaced || status.state === "failed" ? ("failed" as const) : ("idle" as const),
-                        reason: run.displaced ? "execution_lost" : status.reason ?? "aborted",
+                        reason: run.displaced ? "execution_lost" : (status.reason ?? "aborted"),
                         steps: run.steps,
                         trace: [],
                         modelCalls: [],
@@ -165,7 +165,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
       const newRun = (): Run => ({
-        pending: new Set(), releaseWait: new AbortController(),
+        pending: new Set(),
+        releaseWait: new AbortController(),
         flowId: crypto.randomUUID(),
         abort: new AbortController(),
         stop: undefined,
@@ -213,7 +214,10 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         Effect.gen(function* () {
           yield* store.terminate(threadId)
           const local = live.get(threadId)
-          if (local?.fiber !== undefined) { local.run.releaseWait.abort(); yield* Fiber.interrupt(local.fiber) }
+          if (local?.fiber !== undefined) {
+            local.run.releaseWait.abort()
+            yield* Fiber.interrupt(local.fiber)
+          }
         })
 
       const control = (threadId: string): ThreadControl => ({
@@ -269,12 +273,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         ),
       )
       yield* store.registerHolder(holder)
-      yield* Effect.forkIn(
-        Effect.forever(
-          Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick)),
-        ),
-        scope,
-      )
+      yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
 
       return ThreadSupervisor.of({
         holderId: holder.id,

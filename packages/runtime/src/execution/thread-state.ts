@@ -1,4 +1,3 @@
-import type {Callback} from "./callback.ts"
 import type {
   ExecutionState,
   Message,
@@ -10,7 +9,8 @@ import type {
 import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
-import { ThreadStore, WritingHandle, HandleExpired } from "../store/ThreadStore.ts"
+import { HandleExpired, ThreadStore, WritingHandle } from "../store/ThreadStore.ts"
+import type { Callback } from "./callback.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
@@ -153,10 +153,18 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const expired = () =>
     call?.expired === true
       ? new HookExpired({ hook: call.hook, position: call.position })
-      : (state.callback ?? call)?.finished ? new HandleExpired() : owner?.ended === true
-        ? new ExecutionEnded({ flowId: owner.flowId })
-        : owner?.abort.signal.aborted ? new HandleExpired() : undefined
-  const services = Context.add(state.services, WritingHandle, {flowId: owner?.flowId, terminated: state.thread.terminated, expired: () => expired() !== undefined})
+      : (state.callback ?? call)?.finished
+        ? new HandleExpired()
+        : owner?.ended === true
+          ? new ExecutionEnded({ flowId: owner.flowId })
+          : owner?.abort.signal.aborted
+            ? new HandleExpired()
+            : undefined
+  const services = Context.add(state.services, WritingHandle, {
+    flowId: owner?.flowId,
+    terminated: state.thread.terminated,
+    expired: () => expired() !== undefined,
+  })
   const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.
   const signal = owner === undefined ? undefined : { signal: owner.abort.signal }

@@ -145,9 +145,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
       const path = yield* Path.Path
       const root = path.resolve(args.dir)
       const filename = args.db === ":memory:" ? args.db : path.resolve(args.db)
-      for (const [flag, value] of [
-        ["--hook-timeout", args.hookTimeout],
-      ] as const)
+      for (const [flag, value] of [["--hook-timeout", args.hookTimeout]] as const)
         if (Option.isSome(value) && !(value.value > 0)) return yield* fail(`${flag} takes a number of seconds above 0`)
       // The thread names the agent that send runs, so send reads it before it validates the definitions.
       let agent: string
@@ -197,7 +195,10 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           const delivery = yield* sendMessage(threadId, args.message, options).pipe(answerInterrupts(threadId))
           const { outcome } = delivery
           if (outcome !== undefined) {
-            if (outcome.reason === "execution_lost") return yield* fail(`lost thread ${threadId}: another process recovered it by force, so this process stopped working on it`)
+            if (outcome.reason === "execution_lost")
+              return yield* fail(
+                `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it`,
+              )
             yield* Console.error(
               `spindle: ${outcome.status} (${outcome.reason}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
             )

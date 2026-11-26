@@ -159,12 +159,17 @@ export interface HandleOwner {
   readonly expired: () => boolean
 }
 
-export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle/WritingHandle", { defaultValue: () => undefined })
+export const WritingHandle = Context.Reference<HandleOwner | undefined>("spindle/WritingHandle", {
+  defaultValue: () => undefined,
+})
 
 export type WriteRefused = FlowEnded | ThreadTerminated | HandleExpired
 
-export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{readonly messageId:string}> {}
-export interface MessagePosition {readonly seq:number; readonly callerSeq:number|null}
+export class CallerHasOpenCalls extends Data.TaggedError("CallerHasOpenCalls")<{ readonly messageId: string }> {}
+export interface MessagePosition {
+  readonly seq: number
+  readonly callerSeq: number | null
+}
 export const positions = new WeakMap<Message, MessagePosition>()
 
 export interface InsertOptions {
@@ -181,7 +186,6 @@ export class ThreadStore extends Context.Service<
     readonly createThread: (thread: NewThread) => Effect.Effect<Thread, ThreadNotFound | ValueNotJson | SqlError>
     readonly getThread: (threadId: string) => Effect.Effect<Thread, ThreadNotFound | SqlError>
     readonly terminate: (threadId: string) => Effect.Effect<number, ThreadNotFound | WriteRefused | SqlError>
-    readonly setStatus: (threadId: string, status: RunStatus) => Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
 
     readonly appendMessages: (
       threadId: string,
@@ -192,7 +196,10 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       message: IdentifiedMessage,
       options?: InsertOptions,
-    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | WriteRefused | QueueEntryGone | SqlError>
+    ) => Effect.Effect<
+      Inserted,
+      ThreadNotFound | ValueNotJson | MessageIdTaken | WriteRefused | QueueEntryGone | SqlError
+    >
     // Every insert, update, and delete of one of the thread's messages raises its revision by one, whoever writes.
     readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
     // Every message of the thread, oldest first and silent ones included, and the revision they match.
@@ -209,13 +216,10 @@ export class ThreadStore extends Context.Service<
       messageId: string,
       updates: MessageUpdates,
     ) => Effect.Effect<Message, MessageNotFound | ValueNotJson | WriteRefused | SqlError>
-    readonly deleteMessage: (threadId: string, messageId: string) => Effect.Effect<boolean, CallerHasOpenCalls | WriteRefused | SqlError>
-
-    readonly enqueue: (
+    readonly deleteMessage: (
       threadId: string,
-      entry: QueueEntry,
-    ) => Effect.Effect<Queued, ThreadNotFound | ValueNotJson | SqlError>
-    readonly takeQueue: (threadId: string) => Effect.Effect<ReadonlyArray<Queued>, SqlError>
+      messageId: string,
+    ) => Effect.Effect<boolean, CallerHasOpenCalls | WriteRefused | SqlError>
 
     // Runtime sections 2 and 9 in one transaction: refuses a terminated thread, queues the entry, and claims the
     // thread for the caller when no execution holds it.

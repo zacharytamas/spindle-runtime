@@ -92,7 +92,12 @@ describe("spindle ownership across processes", () => {
         yield* lost.signal("SIGKILL")
         yield* lost.exit
         const read = yield* spindle(gate, ["recover", thread, "--db", db])
-        expect([yield* read.exit, read.out]).toEqual([0, [`thread ${thread} was running in process ${lost.pid}, which is gone. Settled it as failed (execution_lost).`]])
+        expect([yield* read.exit, read.out]).toEqual([
+          0,
+          [
+            `thread ${thread} was running in process ${lost.pid}, which is gone. Settled it as failed (execution_lost).`,
+          ],
+        ])
         yield* touch(at("release-model"))
         const again = yield* spindle(gate, ["send", thread, "-m", "again", ...project, "--db", db])
         expect([yield* again.exit, again.out]).toEqual([0, ["ack: first | again"]])
@@ -232,15 +237,7 @@ describe("spindle ownership across processes", () => {
       Effect.gen(function* () {
         const { gate, db, at } = yield* setup
         yield* touch(at("hold-model"))
-        const run = yield* spindle(gate, [
-          "run",
-          "assistant",
-          "-m",
-          "first",
-          ...project,
-          "--db",
-          db,
-        ])
+        const run = yield* spindle(gate, ["run", "assistant", "-m", "first", ...project, "--db", db])
         const thread = yield* threadIn(run)
         yield* until(
           "the process to enter the model",

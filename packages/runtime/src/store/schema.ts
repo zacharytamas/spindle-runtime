@@ -1,6 +1,6 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
-import { positions } from "./ThreadStore.ts"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
+import { positions } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
 
@@ -71,7 +71,7 @@ export const toThread = (row: ThreadRow): Thread => ({
 
 export type MessageRow = {
   readonly seq?: number
-  readonly caller_seq?: number|null
+  readonly caller_seq?: number | null
   readonly id: string
   readonly role: Message["role"]
   readonly content: Text | null
@@ -92,7 +92,8 @@ export type MessageRow = {
 }
 
 export const messageColumns = [
-  "seq", "caller_seq",
+  "seq",
+  "caller_seq",
   "id",
   "role",
   textColumn("content"),
@@ -126,28 +127,29 @@ const noSubagent = {
 } satisfies Partial<Message>
 
 export const toMessage = (row: MessageRow): Message => {
- const message: Message = {
-  id: row.id,
-  role: row.role,
-  content: text(row.content),
-  name: text(row.name),
-  tool_calls: text(row.tool_calls),
-  tool_call_id: text(row.tool_call_id),
-  tool_status: row.tool_status,
-  status: row.status,
-  attachments: row.attachments === null ? null : JSON.parse(row.attachments),
-  reasoning_content: text(row.reasoning_content),
-  reasoning_details: text(row.reasoning_details),
-  prompt: text(row.prompt),
-  created_at: row.created_at,
-  parent_id: text(row.parent_id),
-  depth: row.depth,
-  silent: row.silent === 1,
-  metadata: JSON.parse(row.metadata),
-  ...noSubagent,
- }
- if (row.seq !== undefined && (row.tool_calls !== null || row.caller_seq != null)) positions.set(message,{seq:row.seq, callerSeq:row.caller_seq ?? null})
- return message
+  const message: Message = {
+    id: row.id,
+    role: row.role,
+    content: text(row.content),
+    name: text(row.name),
+    tool_calls: text(row.tool_calls),
+    tool_call_id: text(row.tool_call_id),
+    tool_status: row.tool_status,
+    status: row.status,
+    attachments: row.attachments === null ? null : JSON.parse(row.attachments),
+    reasoning_content: text(row.reasoning_content),
+    reasoning_details: text(row.reasoning_details),
+    prompt: text(row.prompt),
+    created_at: row.created_at,
+    parent_id: text(row.parent_id),
+    depth: row.depth,
+    silent: row.silent === 1,
+    metadata: JSON.parse(row.metadata),
+    ...noSubagent,
+  }
+  if (row.seq !== undefined && (row.tool_calls !== null || row.caller_seq != null))
+    positions.set(message, { seq: row.seq, callerSeq: row.caller_seq ?? null })
+  return message
 }
 
 export const messageRow = (

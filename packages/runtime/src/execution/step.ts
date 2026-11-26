@@ -1,5 +1,3 @@
-import {positions} from "../store/ThreadStore.ts"
-import type {Callback} from "./callback.ts"
 import type {
   AttachmentRef,
   HookToolCall,
@@ -14,7 +12,7 @@ import type {
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import { Registry } from "../registry/Registry.ts"
-import { type NewMessage, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
+import { type NewMessage, positions, type Queued, type Settlement, ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -28,6 +26,7 @@ import {
   withoutReasoning,
 } from "./assemble.ts"
 import { callModel, type ModelCall, type ModelResponse, type StreamedCalls } from "./call.ts"
+import type { Callback } from "./callback.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { makeHistory } from "./history.ts"
 import { agentHooks, countHooks, type HookScope, has, runHooks, turnHooks } from "./hooks.ts"
@@ -397,7 +396,8 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             ...base,
             scope: scopeFor(turn, entry),
             from: tool.definition,
-            caller: tool, callback,
+            caller: tool,
+            callback,
             invoke: (name, args) => invokeTool(toolContext, tool, name, args).pipe(Effect.provideContext(services)),
           }),
       }
@@ -448,7 +448,11 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           : undefined
       // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the stored
       // message, then tool_call_done with what was stored.
-      const runCall = (caller: Message, call: ToolCall, outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>) =>
+      const runCall = (
+        caller: Message,
+        call: ToolCall,
+        outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
+      ) =>
         Effect.gen(function* () {
           const returned = yield* outcome
           const toolCall = hookCall(call, argumentsOf(call))
@@ -463,7 +467,11 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             Effect.try({
               try: () => storedResult(turn, call, result),
               catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
-            }).pipe(Effect.flatMap((message) => createMessage({...write,callerSeq: positions.get(caller)!.seq}, message, "result")))
+            }).pipe(
+              Effect.flatMap((message) =>
+                createMessage({ ...write, callerSeq: positions.get(caller)!.seq }, message, "result"),
+              ),
+            )
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
           const stored = yield* save(final).pipe(
             Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
@@ -518,13 +526,15 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           yield* observe({ type: "message", message })
           yield* runHooks(hooks, "tool_call_started", [hookCall(call, argumentsText)], undefined)
           yield* runCall(
-            message, call,
+            message,
+            call,
             tool === undefined
               ? Effect.succeed(failed(call.problem ?? ""))
               : executeTool(
                   tool,
                   entry.args,
-                  callback => toolContext.stateFor(tool, exposed?.entry, callback), run.pending,
+                  (callback) => toolContext.stateFor(tool, exposed?.entry, callback),
+                  run.pending,
                   scopeFor(turn, exposed?.entry),
                 ),
           )
@@ -595,7 +605,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         yield* record("assemble", `snapshot, ${snapshot.length} messages`)
         yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
         if (filtered !== snapshot) {
-          const original = new Map(snapshot.map(m => [m.id, positions.get(m)]))
+          const original = new Map(snapshot.map((m) => [m.id, positions.get(m)]))
           for (const message of filtered) {
             const position = original.get(message.id)
             if (position) positions.set(message, position)
@@ -648,7 +658,9 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           // A call after a stop request never runs. It still gets a result, so that the next request is valid.
           const skipped = run.stop !== undefined
           yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
-          results.push(yield* runCall(assistant, call, skipped ? Effect.succeed(failed(NOT_RUN)) : runToolCall(toolContext, call)))
+          results.push(
+            yield* runCall(assistant, call, skipped ? Effect.succeed(failed(NOT_RUN)) : runToolCall(toolContext, call)),
+          )
         }
         if (run.stop !== undefined) return yield* stopHere
         // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
@@ -720,7 +732,12 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           Effect.promise(async () => {
             abort.abort()
             if (run.waitForCallbacks && run.pending.size && !run.releaseWait.signal.aborted) {
-              await Promise.race([Promise.allSettled(run.pending), new Promise<void>(resolve => run.releaseWait.signal.addEventListener("abort", () => resolve(), {once:true}))])
+              await Promise.race([
+                Promise.allSettled(run.pending),
+                new Promise<void>((resolve) =>
+                  run.releaseWait.signal.addEventListener("abort", () => resolve(), { once: true }),
+                ),
+              ])
             }
           }),
           Effect.ignore(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted)),

@@ -1,4 +1,3 @@
-import {invokeCallback, type Callback} from "./callback.ts"
 import type {
   AgentDefinition,
   HookExecutionSource,
@@ -10,6 +9,7 @@ import type {
 import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { toJson } from "../store/schema.ts"
+import { type Callback, invokeCallback } from "./callback.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -449,7 +449,13 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-const callHook = (hook: SelectedHook, args: () => ReadonlyArray<unknown>, timeout: Duration.Duration, call: HookCall, pending: HookScope["pending"]) =>
+const callHook = (
+  hook: SelectedHook,
+  args: () => ReadonlyArray<unknown>,
+  timeout: Duration.Duration,
+  call: HookCall,
+  pending: HookScope["pending"],
+) =>
   Effect.tryPromise({
     try: () => invokeCallback(call, pending, () => hook.execute(...args())),
     catch: () => "threw an error",

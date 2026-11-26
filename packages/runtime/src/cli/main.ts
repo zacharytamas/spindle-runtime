@@ -5,7 +5,7 @@ import { Command } from "effect/cli"
 import { PlatformLive, platformName, runMain } from "#platform"
 import { runCommand } from "./run.ts"
 import { sendCommand } from "./send.ts"
-import { statusCommand, recoverCommand } from "./status.ts"
+import { recoverCommand, statusCommand } from "./status.ts"
 import { validateCommand } from "./validate.ts"
 
 const PackageJson = Schema.fromJsonString(Schema.Struct({ version: Schema.String }))

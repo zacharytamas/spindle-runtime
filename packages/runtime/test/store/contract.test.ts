@@ -6,11 +6,28 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
 import { PlatformLive, platformName, SqliteLive } from "#platform"
+import { admitEntry, drainEntries } from "../../scripts/store-fixtures.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { type NewMessage, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 // Effect.provide reuses a layer that an enclosing provide already built, so a nested store would share its connection.
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
+const startRun = (threadId: string) =>
+  ThreadStore.use((store) =>
+    Effect.gen(function* () {
+      if (!(yield* store.claim(threadId, claim)))
+        yield* store.admit(threadId, { kind: "message", message: { role: "user", content: "trigger" } }, claim)
+      return (yield* store.getThread(threadId)).status
+    }),
+  )
+const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason: string }) =>
+  ThreadStore.use((store) =>
+    Effect.gen(function* () {
+      yield* store.settle(threadId, claim.flowId, outcome, { continueIfQueued: false, closing: "" })
+      return (yield* store.getThread(threadId)).status
+    }),
+  )
+const claim = { holder: "fixture", flowId: "fixture-flow" }
 const inMemory = storeAt(":memory:")
 
 const withDatabaseFile = <A, E, R>(use: (filename: string) => Effect.Effect<A, E, R>) =>
@@ -84,17 +101,18 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         yield* TestClock.adjust("1 second")
-        const running = yield* store.setStatus(thread.id, { state: "running" })
+        const running = yield* startRun(thread.id)
         expect(running).toEqual({ state: "running", since: 1_000_000, reason: null })
         yield* TestClock.adjust("1 second")
-        expect(yield* store.setStatus(thread.id, { state: "running" })).toEqual(running)
+        expect(yield* startRun(thread.id)).toEqual(running)
         yield* TestClock.adjust("1 second")
-        const idle = yield* store.setStatus(thread.id, { state: "idle", reason: "stop_on_response" })
+        const idle = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
         expect(idle).toEqual({ state: "idle", since: 3_000_000, reason: "stop_on_response" })
         yield* TestClock.adjust("1 second")
-        expect(yield* store.setStatus(thread.id, { state: "idle", reason: "stop_on_response" })).toEqual(idle)
+        expect(yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })).toEqual(idle)
         yield* TestClock.adjust("1 second")
-        const stopTool = yield* store.setStatus(thread.id, { state: "idle", reason: "stop_tool" })
+        yield* startRun(thread.id)
+        const stopTool = yield* settleRun(thread.id, { state: "idle", reason: "stop_tool" })
         expect(stopTool).toEqual({ state: "idle", since: 5_000_000, reason: "stop_tool" })
         expect((yield* store.getThread(thread.id)).status).toEqual(stopTool)
       }).pipe(Effect.provide(inMemory)),
@@ -107,9 +125,9 @@ describe("ThreadStore", () => {
             const store = yield* ThreadStore
             const thread = yield* store.createThread({ agentId: "assistant" })
             yield* TestClock.adjust("1 second")
-            yield* store.setStatus(thread.id, { state: "running" })
+            yield* startRun(thread.id)
             yield* TestClock.adjust("1 second")
-            const status = yield* store.setStatus(thread.id, { state: "failed", reason: "execution_lost" })
+            const status = yield* settleRun(thread.id, { state: "failed", reason: "execution_lost" })
             return { threadId: thread.id, status }
           }).pipe(Effect.provide(storeAt(filename)))
           expect(written.status).toEqual({ state: "failed", since: 2_000_000, reason: "execution_lost" })
@@ -899,21 +917,25 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         const other = yield* store.createThread({ agentId: "assistant" })
-        yield* store.enqueue(thread.id, { kind: "message", message: { role: "user", content: "first" } })
-        yield* store.enqueue(other.id, { kind: "message", message: { role: "user", content: "elsewhere" } })
-        yield* store.enqueue(thread.id, { kind: "tool", toolName: "lookup", args: { q: "x" } })
-        yield* store.enqueue(thread.id, {
-          kind: "message",
-          message: { role: "assistant", content: "third", silent: true },
-        })
-        const taken = yield* store.takeQueue(thread.id)
+        yield* admitEntry(thread.id, { kind: "message", message: { role: "user", content: "first" } }, claim)
+        yield* admitEntry(other.id, { kind: "message", message: { role: "user", content: "elsewhere" } }, claim)
+        yield* admitEntry(thread.id, { kind: "tool", toolName: "lookup", args: { q: "x" } }, claim)
+        yield* admitEntry(
+          thread.id,
+          {
+            kind: "message",
+            message: { role: "assistant", content: "third", silent: true },
+          },
+          claim,
+        )
+        const taken = yield* drainEntries(thread.id, claim.flowId)
         expect(taken.map(({ seq: _, queuedAt: __, ...entry }) => entry)).toEqual([
           { kind: "message", message: { role: "user", content: "first" } },
           { kind: "tool", toolName: "lookup", args: { q: "x" } },
           { kind: "message", message: { role: "assistant", content: "third", silent: true } },
         ])
-        expect(yield* store.takeQueue(thread.id)).toEqual([])
-        expect((yield* store.takeQueue(other.id)).length).toBe(1)
+        expect(yield* drainEntries(thread.id, claim.flowId)).toEqual([])
+        expect((yield* drainEntries(other.id, claim.flowId)).length).toBe(1)
       }).pipe(Effect.provide(inMemory)),
     )
 
@@ -921,9 +943,11 @@ describe("ThreadStore", () => {
       Effect.gen(function* () {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
-        yield* store.enqueue(thread.id, { kind: "tool", toolName: "lookup", args: {} })
-        yield* Effect.flip(store.transaction(Effect.andThen(store.takeQueue(thread.id), Effect.fail("crash"))))
-        expect((yield* store.takeQueue(thread.id)).length).toBe(1)
+        yield* admitEntry(thread.id, { kind: "tool", toolName: "lookup", args: {} }, claim)
+        yield* Effect.flip(
+          store.transaction(Effect.andThen(drainEntries(thread.id, claim.flowId), Effect.fail("crash"))),
+        )
+        expect((yield* drainEntries(thread.id, claim.flowId)).length).toBe(1)
       }).pipe(Effect.provide(inMemory)),
     )
   })
@@ -1219,7 +1243,6 @@ describe("ThreadStore", () => {
               parentId: parent.id,
               arguments: { [nul("argument key")]: nul("argument") },
             })
-            const status = yield* store.setStatus(thread.id, { state: "idle", reason: nul("reason") })
             const [message] = yield* store.appendMessages(thread.id, [
               {
                 role: "tool",
@@ -1244,12 +1267,17 @@ describe("ThreadStore", () => {
                 metadata: { [nul("metadata key")]: nul("metadata") },
               },
             ])
-            yield* store.enqueue(thread.id, { kind: "message", message: { role: "user", content: nul("queued") } })
-            yield* store.enqueue(thread.id, {
-              kind: "tool",
-              toolName: nul("tool"),
-              args: { [nul("arg")]: nul("value") },
-            })
+            yield* admitEntry(thread.id, { kind: "message", message: { role: "user", content: nul("queued") } }, claim)
+            yield* admitEntry(
+              thread.id,
+              {
+                kind: "tool",
+                toolName: nul("tool"),
+                args: { [nul("arg")]: nul("value") },
+              },
+              claim,
+            )
+            const status = yield* settleRun(thread.id, { state: "idle", reason: nul("reason") })
             yield* store.setValue(thread.id, nul("key"), { [nul("value key")]: nul("value") })
             return { thread: yield* store.getThread(thread.id), status, message }
           }).pipe(Effect.provide(storeAt(filename)))
@@ -1265,7 +1293,8 @@ describe("ThreadStore", () => {
             expect(yield* store.getMessage(threadId, written.message?.id ?? "")).toEqual(written.message)
             expect((yield* store.getMessages(threadId)).messages).toEqual([written.message])
             expect(written.message?.content).toBe(nul("content"))
-            expect(yield* store.takeQueue(threadId)).toMatchObject([
+            yield* store.claim(threadId, claim)
+            expect(yield* drainEntries(threadId, claim.flowId)).toMatchObject([
               { kind: "message", message: { role: "user", content: nul("queued") } },
               { kind: "tool", toolName: nul("tool"), args: { [nul("arg")]: nul("value") } },
             ])

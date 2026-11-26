@@ -226,15 +226,7 @@ describe("spindle across processes", () => {
           { name: "echo", arguments: { text: "one" } },
           { name: "hold", arguments: { name: "b" } },
         ])
-        const run = yield* spindle(gate, [
-          "run",
-          "assistant",
-          "-m",
-          `call:${calls}`,
-          ...project,
-          "--db",
-          db,
-        ])
+        const run = yield* spindle(gate, ["run", "assistant", "-m", `call:${calls}`, ...project, "--db", db])
         const thread = yield* threadIn(run)
         yield* until("the second tool to start", exists(at("tool-entered-b")))
         const token = yield* spindle(gate, ["send", thread, "-m", "token", ...project, "--db", db])
@@ -277,15 +269,7 @@ describe("spindle across processes", () => {
       Effect.gen(function* () {
         const { gate, db, at } = yield* setup
         const hold = JSON.stringify([{ name: "hold", arguments: { name: "t", watch: true } }])
-        const run = yield* spindle(gate, [
-          "run",
-          "assistant",
-          "-m",
-          `call:${hold}`,
-          ...project,
-          "--db",
-          db,
-        ])
+        const run = yield* spindle(gate, ["run", "assistant", "-m", `call:${hold}`, ...project, "--db", db])
         const thread = yield* threadIn(run)
         yield* until("the tool to start", exists(at("tool-entered-t")))
         const queued = yield* spawn(gate, probe, [

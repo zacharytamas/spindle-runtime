@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { PlatformLive, processId, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer } from "../../src/store/sqlite.ts"
-import { positions, type NewMessage, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
+import { type NewMessage, positions, type QueueEntry, ThreadStore } from "../../src/store/ThreadStore.ts"
 
 const storeAt = (filename: string) => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename }))))
 const inMemory = storeAt(":memory:")
@@ -34,11 +34,21 @@ const resultFor = (id: string): NewMessage => ({
   tool_status: "success",
 })
 
-const insertCalls = (threadId:string, flowId:string, caller: NewMessage, result?:NewMessage) => Effect.gen(function* () {
-  const store = yield* ThreadStore
-  const inserted = yield* store.insertMessage(threadId,{...caller, id:crypto.randomUUID(),created_at:0},{flowId})
-  if (result) yield* store.insertMessage(threadId,{...result,id:crypto.randomUUID(),created_at:0},{flowId,callerSeq:positions.get(inserted.message)!.seq})
-})
+const insertCalls = (threadId: string, flowId: string, caller: NewMessage, result?: NewMessage) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore
+    const inserted = yield* store.insertMessage(
+      threadId,
+      { ...caller, id: crypto.randomUUID(), created_at: 0 },
+      { flowId },
+    )
+    if (result)
+      yield* store.insertMessage(
+        threadId,
+        { ...result, id: crypto.randomUUID(), created_at: 0 },
+        { flowId, callerSeq: positions.get(inserted.message)!.seq },
+      )
+  })
 
 const rows = (threadId: string) =>
   Effect.flatMap(theStore, (store) =>
@@ -68,8 +78,8 @@ describe("ThreadStore claims", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.setStatus(thread.id, { state: "running" })
-      yield* store.setStatus(thread.id, { state: "failed", reason: "execution_lost" })
+      yield* store.admit(thread.id, message("first"), claim("flow-a"))
+      yield* store.recover(thread.id)
       yield* TestClock.adjust("2 seconds")
       expect((yield* store.admit(thread.id, message("again"), claim("flow-r"))).claimed).toBe(true)
       expect((yield* store.getThread(thread.id)).status).toEqual({ state: "running", since: 2_000_000, reason: null })
@@ -189,7 +199,7 @@ describe("ThreadStore claims", () => {
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.appendMessages(thread.id, [callsBy("assistant", "old")])
       yield* store.admit(thread.id, message("go"), claim("flow-a"))
-      yield* insertCalls(thread.id,"flow-a",callsBy("assistant","c1","c2","c3"),resultFor("c1"))
+      yield* insertCalls(thread.id, "flow-a", callsBy("assistant", "c1", "c2", "c3"), resultFor("c1"))
       yield* store.appendMessages(thread.id, [
         { role: "user", content: "seeded by the human side", tool_calls: JSON.stringify([{ id: "h1" }]) },
       ])
@@ -222,7 +232,7 @@ describe("ThreadStore claims", () => {
       yield* store.registerHolder({ id: "alive", pid: processId })
       yield* store.admit(lost.id, message("x"), claim("flow-lost", "dead"))
       yield* store.admit(live.id, message("y"), claim("flow-live", "alive"))
-      yield* insertCalls(lost.id,"flow-lost",callsBy("assistant","c1","c2"),resultFor("c1"))
+      yield* insertCalls(lost.id, "flow-lost", callsBy("assistant", "c1", "c2"), resultFor("c1"))
       yield* store.admit(lost.id, message("z"), claim("flow-ignored"))
       yield* TestClock.adjust("2 seconds")
       expect(yield* store.recover(live.id)).toEqual([])
@@ -315,7 +325,7 @@ describe("ThreadStore claims", () => {
       const thread = yield* store.createThread({ agentId: "assistant" })
       yield* store.admit(thread.id, message("x"), claim("flow-a"))
       yield* store.admit(thread.id, message("y"), claim("flow-b"))
-      yield* insertCalls(thread.id,"flow-a",callsBy("assistant","c1"))
+      yield* insertCalls(thread.id, "flow-a", callsBy("assistant", "c1"))
       yield* TestClock.adjust("4 seconds")
       const terminated = yield* store.terminate(thread.id)
       const after = yield* store.getThread(thread.id)

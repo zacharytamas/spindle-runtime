@@ -50,7 +50,9 @@ describe("an interrupted hook", () => {
         entered = resolve
       })
       let release!: () => void
-      const cleanup = new Promise<void>(resolve => {release = resolve})
+      const cleanup = new Promise<void>((resolve) => {
+        release = resolve
+      })
       const hang = defineHook({
         hook: position,
         id: "hang",

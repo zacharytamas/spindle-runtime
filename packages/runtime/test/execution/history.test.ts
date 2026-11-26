@@ -36,7 +36,7 @@ const countingStore = (reads: { count: number }) =>
     }),
   ).pipe(Layer.provide(inMemory()))
 
-const runOnce = (setup: Setup, reads: { count: number }, outside?: (state:ThreadState) => void) =>
+const runOnce = (setup: Setup, reads: { count: number }, outside?: (state: ThreadState) => void) =>
   Effect.gen(function* () {
     const thread = yield* createThread("assistant")
     if (outside) outside(yield* stateAtRest(thread.id))
@@ -85,7 +85,10 @@ describe("the history an execution keeps", () => {
       const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
       const outcome = yield* runOnce(
         { provider, tools, hooks, prompt: { hooks: ["write_last", "count"] } },
-        reads, state => { elsewhere = state },
+        reads,
+        (state) => {
+          elsewhere = state
+        },
       )
       expect(outcome.steps).toBe(21)
       expect(perStep).toEqual([...Array.from({ length: 20 }, () => 1), 2])
@@ -139,7 +142,10 @@ describe("the history an execution keeps", () => {
           provider,
           tools,
         },
-        reads, state => { elsewhere = state },
+        reads,
+        (state) => {
+          elsewhere = state
+        },
       )
       expect(seen).toEqual({
         quiet: {
@@ -195,10 +201,9 @@ describe("the history an execution keeps", () => {
         },
         { text: "done" },
       ])
-      yield* runOnce(
-        { provider, tools, hooks, prompt: { hooks: ["write_later", "count"] } },
-        reads, state => { elsewhere = state },
-      )
+      yield* runOnce({ provider, tools, hooks, prompt: { hooks: ["write_later", "count"] } }, reads, (state) => {
+        elsewhere = state
+      })
       expect(seen).toEqual([
         ["filter", 1, ["go"]],
         ["tool", 1, ["go", null]],
