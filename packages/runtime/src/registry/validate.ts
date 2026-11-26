@@ -98,6 +98,18 @@ const cyclesOf = (edges: Edges) => {
   return cycles
 }
 
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (Array.isArray(a) || Array.isArray(b))
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]))
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a)
+    return (
+      keys.length === Object.keys(b).length && keys.every((key) => Object.hasOwn(b, key) && sameValue(a[key], b[key]))
+    )
+  }
+  return Object.is(a, b)
+}
+
 const listed = (names: ReadonlyArray<string>) => `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 
 export interface Validation {
@@ -539,7 +551,6 @@ export const validate = Effect.gen(function* () {
       )
       const agent = definition && loaded.get(definition)
       if (!isRecord(agent) || agent.parentHooks === undefined) continue
-      const declared = JSON.stringify(agent.parentHooks)
       const sources = [
         ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
         [
@@ -551,7 +562,7 @@ export const validate = Effect.gen(function* () {
       ] as const
       for (const [label, field, value, file] of sources) {
         const copy = isRecord(value) ? value[agentName] : undefined
-        if (JSON.stringify(copy) !== declared)
+        if (!sameValue(copy, agent.parentHooks))
           issues.push({
             code: "package_parent_hooks_mismatch",
             severity: "error",

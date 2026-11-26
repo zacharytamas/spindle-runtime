@@ -398,6 +398,13 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
+    it.effect("accepts parent hook disclosures whose object keys are in another order", () =>
+      Effect.gen(function* () {
+        const { issues } = yield* validateFixture("parent-hooks-key-order")
+        expect(issues).toEqual([])
+      }).pipe(Effect.provide(PlatformLive)),
+    )
+
     it.effect("skips declaration files next to definitions", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("declaration-files")

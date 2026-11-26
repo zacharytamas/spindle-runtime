@@ -1,0 +1,23 @@
+{
+  "name": "standardagent-gate",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": [
+      "gate"
+    ],
+    "parentHooks": {
+      "gate": [
+        {
+          "reason": "Shows the gate context to the parent.",
+          "hook": "share_context",
+          "stage": "before_parent"
+        }
+      ]
+    }
+  }
+}
