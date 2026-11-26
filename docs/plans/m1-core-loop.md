@@ -113,7 +113,7 @@ The ledger is a JSON map from requirement id to `{ status, milestone, tests, rea
 - [x] Write `packages/conformance/src/ledger.ts`. It fails when a requirement id has no ledger entry, when a `covered` entry names no test, when a named test does not exist, and when a ledger id is absent from `requirements.json`.
 - [ ] Fill `ledger.json` with one entry per id. Mark every `specification:users` entry `deferred` with the reason that the page is a Draft. Mark every other entry `planned` with its milestone from Appendix E.
 - [x] Add the `pnpm check` script. It runs Biome, `tsc --noEmit`, Vitest, the ledger check, and `scripts/spec-requirements.mjs --check`.
-- [ ] Run `pnpm check` in CI on Node 22, on Node 24, and on Bun.
+- [x] Run `pnpm check` in CI on Node 22, on Node 24, and on Bun.
 
 **You see.**
 
