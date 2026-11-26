@@ -1,4 +1,4 @@
-**Status. Draft. The section "Decisions for the M1-6 fix round" is what gets built. The operator has not yet confirmed the four choices it marks, and can overrule them.**
+**Status. The first section, "Decisions for the M1-6 fix round", is built in PR 8.**
 
 # Thread ownership
 

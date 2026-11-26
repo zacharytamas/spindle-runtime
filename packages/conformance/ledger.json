@@ -351,7 +351,9 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/conformance.test.ts > queue > Q06 starts a turn from a message queued to an idle thread, with its perspective and payload, and parks for the human",
-			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run"
+			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
+			"packages/runtime/test/conformance.test.ts > queue > Q08 runs a tool queued to an idle thread with no model call asking for it, then the model sees the call and result",
+			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request"
 		],
 		"reason": ""
 	},
@@ -366,7 +368,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
-			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request"
+			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request",
+			"packages/runtime/test/conformance.test.ts > queue > Q40 puts every entry that one drain delivers at the start of a turn into the first request after it"
 		],
 		"reason": ""
 	},
@@ -754,7 +757,11 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q12 lets a running tool finish after stop, runs no later call, and starts a send that waited only after it settles",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes run two threads at the same time"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes run two threads at the same time",
+			"packages/runtime/test/conformance.test.ts > ownership > O01 refuses every write of a tool whose thread was recovered by force, and leaves the successor's thread as it was",
+			"packages/runtime/test/conformance.test.ts > ownership > O03 refuses the writes of a hook whose thread was recovered by force while the hook ran",
+			"packages/runtime/test/conformance.test.ts > ownership > O06 holds the thread after an abort until a tool that ignores the signal returns, then delivers the send that waited",
+			"packages/runtime/test/conformance.test.ts > ownership > O07 settles a terminated thread immediately and refuses the unfinished tool’s writes"
 		],
 		"reason": ""
 	},
@@ -1174,19 +1181,22 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once",
-			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > two connections to one file that admit to one idle thread claim it once"
+			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > two connections to one file that admit to one idle thread claim it once",
+			"packages/runtime/test/conformance.test.ts > ownership > O01 refuses every write of a tool whose thread was recovered by force, and leaves the successor's thread as it was",
+			"packages/runtime/test/conformance.test.ts > ownership > O06 holds the thread after an abort until a tool that ignores the signal returns, then delivers the send that waited"
 		],
 		"reason": ""
 	},
 	"infrastructure:runtime:3b19a524": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
+			"packages/runtime/test/conformance.test.ts > queue > Q25 leaves work queued when the step cap ends an execution, and the next send delivers it once and in order"
 		],
-		"reason": ""
+		"reason": "Q25 delivers an undrained tool after the step cap. The crash tests cover pending messages. Delivery of an undrained tool after process loss still lacks a witness."
 	},
 	"infrastructure:runtime:65371315": {
 		"status": "planned",
@@ -3701,7 +3711,8 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > run status > R16 settles each run with the stop reason code that applies",
 			"packages/runtime/test/conformance.test.ts > queue > Q06 starts a turn from a message queued to an idle thread, with its perspective and payload, and parks for the human",
-			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle"
+			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
+			"packages/runtime/test/conformance.test.ts > queue > Q23 ends an execution at the step cap although a hook queues a message on every response, and the next send delivers it"
 		],
 		"reason": "The runtime settles with stop_on_response, stop_tool, max_side_steps, awaiting_human, aborted, and aborted_by_user where they apply. The clause for clients belongs to the Thread Client API in M6, and the session and handler codes arrive with sessions and handlers in M2."
 	},
@@ -3721,7 +3732,8 @@
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
-			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
+			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session",
+			"packages/runtime/test/conformance.test.ts > queue > Q35 never reports idle to a sender whose run could not be settled"
 		],
 		"reason": ""
 	},
@@ -3741,7 +3753,9 @@
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
 			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > recover settles a thread whose holder's lease expired as lost and keeps its queue and its history",
-			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > admit claims a failed thread, which is how a recovery run starts"
+			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > admit claims a failed thread, which is how a recovery run starts",
+			"packages/runtime/test/conformance.test.ts > ownership > O05 keeps a thread running whose holder is alive, however far the observer's wall clock moves",
+			"packages/runtime/test/conformance.test.ts > ownership > O14 closes the open call of a lost execution although a hook set the caller's prompt to null"
 		],
 		"reason": ""
 	},
@@ -4140,10 +4154,12 @@
 		"reason": ""
 	},
 	"specification:tools:24622716": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
-		"reason": "defineTool comes from @standardagents/spec, so Spindle does not implement it, and a test here would test the package. The operator decides whether the row is not-testable."
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > Registry > keeps a tool's annotations unchanged on the loaded definition"
+		],
+		"reason": ""
 	},
 	"specification:tools:e2d0db94": {
 		"status": "covered",
@@ -4589,14 +4605,14 @@
 		"reason": "The Users page is a Draft in spec 0.2.0."
 	},
 	"infrastructure:runtime:6e443a4c": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records"
 		],
-		"reason": ""
+		"reason": "Human sends start execution. An explicit history injection starts none."
 	},
 	"infrastructure:runtime:d0f4d8de": {
 		"status": "covered",
@@ -4621,14 +4637,14 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:cca93b6d": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/conformance.test.ts > queue > Q08 runs a tool queued to an idle thread with no model call asking for it, then the model sees the call and result",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once"
 		],
-		"reason": ""
+		"reason": "Scheduled effects are planned."
 	},
 	"infrastructure:runtime:176f7205": {
 		"status": "covered",
@@ -4736,19 +4752,23 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
-			"packages/runtime/test/conformance.test.ts > queue > Q16 ends a write that a tool's injectMessage started when terminate aborts the run, and refuses the tool's later calls"
+			"packages/runtime/test/conformance.test.ts > queue > Q16 ends a write that a tool's injectMessage started when terminate aborts the run, and refuses the tool's later calls",
+			"packages/runtime/test/conformance.test.ts > ownership > O04 refuses an update that a tool submitted before another session terminated the thread, and its later writes",
+			"packages/runtime/test/conformance.test.ts > ownership > O07 settles a terminated thread immediately and refuses the unfinished tool’s writes"
 		],
 		"reason": ""
 	},
 	"infrastructure:runtime:dc7d7df0": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
+			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
+			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": ""
+		"reason": "Send and queue admissions are covered. Direct execution still lacks a live-thread control."
 	},
 	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
@@ -5407,7 +5427,11 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
-			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running",
+			"packages/runtime/test/conformance.test.ts > queue > Q30 keeps the id and the tool name of a queued call that a secret overlaps, and pairs its result with it",
+			"packages/runtime/test/conformance.test.ts > ownership > O15 stores exactly one result for a completed call whose id holds a NUL character",
+			"packages/runtime/test/conformance.test.ts > ownership > O16 gives two open callers that reuse one call id a closing result each, and the next request pairs each with its caller",
+			"packages/runtime/test/conformance.test.ts > ownership > O17 refuses to delete a message that holds an open call of a running execution, from the tool and from another session"
 		],
 		"reason": ""
 	},
@@ -6263,12 +6287,12 @@
 		"reason": ""
 	},
 	"specification:threads/messages:778b4467": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
 		],
-		"reason": ""
+		"reason": "The active prompt is recorded for a programmatic queued call, even though it did not produce that call."
 	},
 	"specification:threads/messages:61c7bee3": {
 		"status": "partial",
@@ -6289,14 +6313,15 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:04d1538b": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
 			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
-			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
+			"packages/runtime/test/conformance.test.ts > ownership > O10 refuses a handle that a hook of an inbound message kept, after the hook returned and after the thread was terminated"
 		],
-		"reason": ""
+		"reason": "Inbound delivery hooks see null execution while a flow owns the thread."
 	},
 	"specification:threads/execution-state:048a4525": {
 		"status": "covered",
@@ -6365,12 +6390,12 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:da3295e2": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle"
 		],
-		"reason": ""
+		"reason": "The tests check the stopping side after stop. Its value before stop lacks an assertion."
 	},
 	"specification:threads/execution-state:18655cf1": {
 		"status": "covered",
@@ -6437,7 +6462,8 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state",
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
-			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission"
+			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
+			"packages/runtime/test/conformance.test.ts > queue > Q36 shows the termination time on the handle whose terminate() resolved"
 		],
 		"reason": ""
 	},
@@ -6530,13 +6556,13 @@
 		"reason": "A value from any source but the thread is secret. Thread values and their text classification arrive with setEnv in M2."
 	},
 	"specification:threads:39260b1a": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
 		],
-		"reason": ""
+		"reason": "Direct invocation is implemented only for a calling tool."
 	},
 	"specification:threads:c544edac": {
 		"status": "covered",
@@ -6630,7 +6656,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
+			"packages/runtime/test/conformance.test.ts > queue > Q33 sets an unreadable queue entry aside with its sequence and payload, and delivers the entries behind it once"
 		],
 		"reason": ""
 	},
@@ -6654,7 +6681,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request"
+			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request",
+			"packages/runtime/test/conformance.test.ts > queue > Q40 puts every entry that one drain delivers at the start of a turn into the first request after it"
 		],
 		"reason": ""
 	},
@@ -6663,17 +6691,18 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
-			"packages/runtime/test/conformance.test.ts > queue > Q12 lets a running tool finish after stop, runs no later call, and starts a send that waited only after it settles"
+			"packages/runtime/test/conformance.test.ts > queue > Q12 lets a running tool finish after stop, runs no later call, and starts a send that waited only after it settles",
+			"packages/runtime/test/conformance.test.ts > queue > Q18 does not run a queued tool whose started hook or create hook calls stop, and stores one result that says so"
 		],
 		"reason": "Q11 and Q12 show that stop ends the current execution loop at the next boundary. A session and stopSession arrive in M2, which owes the rule that stop alone does not end a session."
 	},
 	"specification:threads/execution-state:ff3ed10f": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
-		"reason": ""
+		"reason": "The curated excerpt covers ThreadState access. The rest of the sentence requires clients to receive status without polling. The separate client delivery requirement specification:threads/execution-state:bc901e39 awaits the stream API."
 	},
 	"specification:threads/execution-state:b9a39da8": {
 		"status": "covered",
@@ -6684,27 +6713,29 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:d0569ee5": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
-		"reason": ""
+		"reason": "Run status is independent of termination. Parent registry propagation awaits linked threads."
 	},
 	"specification:threads:b7c8285e": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q06 starts a turn from a message queued to an idle thread, with its perspective and payload, and parks for the human"
 		],
-		"reason": ""
+		"reason": "Stored attachment references are supported. New file data awaits the thread file system."
 	},
 	"specification:threads:304b015d": {
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q08 runs a tool queued to an idle thread with no model call asking for it, then the model sees the call and result",
-			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
+			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list",
+			"packages/runtime/test/conformance.test.ts > queue > Q26 commits nothing for a queueTool that throws, and runs each accepted call once when its arguments queue another",
+			"packages/runtime/test/conformance.test.ts > queue > Q37 throws from queueTool when the arguments are null, and queues nothing"
 		],
 		"reason": ""
 	},
@@ -6736,12 +6767,12 @@
 		"reason": ""
 	},
 	"specification:threads:a1ac0a36": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
 		],
-		"reason": ""
+		"reason": "A calling tool can invoke another tool. Direct invocation from hooks and at rest is incomplete."
 	},
 	"specification:threads:d0a36934": {
 		"status": "covered",
@@ -6762,22 +6793,22 @@
 		"reason": ""
 	},
 	"specification:threads:9090af10": {
-		"status": "covered",
+		"status": "partial",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
-			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails"
+			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
+			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
+			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": ""
+		"reason": "Send and queued work are refused after termination. A direct execution attempt lacks a live-thread control."
 	},
 	"specification:threads:b83b63ca": {
-		"status": "partial",
+		"status": "planned",
 		"milestone": "M1",
-		"tests": [
-			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission"
-		],
-		"reason": "Q14 reads a thread's history and status through a ThreadState at rest, after the thread ends its runs and after it is terminated. Thread endpoints arrive in M4, which owes access through an endpoint."
+		"tests": [],
+		"reason": "Thread endpoints arrive in M6."
 	},
 	"specification:threads:9a66b438": {
 		"status": "covered",
