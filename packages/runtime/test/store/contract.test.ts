@@ -681,11 +681,13 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
-    it.effect("setValue fails with ThreadNotFound for an unknown thread", () =>
+    it.effect("setValue fails with ThreadNotFound for an unknown thread, whether it writes or deletes", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore
-        const error = yield* Effect.flip(store.setValue("missing", "k", 1))
-        expect(error._tag).toBe("ThreadNotFound")
+        for (const value of [1, { a: 1 }, null, undefined]) {
+          const error = yield* Effect.flip(store.setValue("missing", "k", value))
+          expect(error).toMatchObject({ _tag: "ThreadNotFound", threadId: "missing" })
+        }
       }).pipe(Effect.provide(inMemory)),
     )
   })

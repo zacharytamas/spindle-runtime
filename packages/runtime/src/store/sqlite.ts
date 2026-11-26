@@ -234,7 +234,12 @@ export const layer = Layer.effect(
       setValue: (threadId, key, value) => {
         if (!isWellFormed(key)) return Effect.fail(new KeyNotWellFormed({ key }))
         if (value === null || value === undefined)
-          return Effect.asVoid(sql`DELETE FROM kv WHERE thread_id = ${threadId} AND key = ${key}`)
+          return sql.withTransaction(
+            Effect.gen(function* () {
+              yield* requireThread(threadId)
+              yield* sql`DELETE FROM kv WHERE thread_id = ${threadId} AND key = ${key}`
+            }),
+          )
         return sql.withTransaction(
           Effect.gen(function* () {
             const text = yield* json(`the value of key ${JSON.stringify(key)}`, value)
