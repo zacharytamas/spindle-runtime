@@ -174,32 +174,48 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
 
 // The chat completions format puts each result right after the message that holds its call, in the order of the
 // calls. A message stored between them, such as one a tool injected while its call ran, follows the last result. A
-// result belongs to the nearest earlier message that lists its call id. The stored order does not change.
+// result belongs to the nearest earlier message that lists its call id. The stored order does not change, and the
+// order is undefined when the stored order already is the request order, which is the usual case.
+const NO_CALLS: Array<ProviderToolCallPart> = []
+
 const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
   const holder = new Map<string, number>()
+  const holderOf = (message: Message, index: number) => {
+    if (message.role === "tool") return holder.get(message.tool_call_id ?? "")
+    for (const call of parsed[index] ?? []) holder.set(call.id, index)
+    return undefined
+  }
+  let last = -1
+  let position = -1
+  let stored = true
+  history.forEach((message, index) => {
+    const at = holderOf(message, index)
+    if (message.role !== "tool") {
+      last = index
+      position = -1
+    } else if (at !== undefined) {
+      const next = (parsed[at] ?? []).findIndex((call) => call.id === message.tool_call_id)
+      if (at !== last || next < position) stored = false
+      position = next
+    }
+  })
+  if (stored) return undefined
+  holder.clear()
   const results = new Map<number, Array<number>>()
   const moved = new Set<number>()
   history.forEach((message, index) => {
-    if (message.role !== "tool") {
-      for (const call of parsed[index] ?? []) holder.set(call.id, index)
-      return
-    }
-    const at = holder.get(message.tool_call_id ?? "")
+    const at = holderOf(message, index)
     if (at === undefined) return
     moved.add(index)
-    const list = results.get(at)
-    if (list === undefined) results.set(at, [index])
-    else list.push(index)
+    results.set(at, [...(results.get(at) ?? []), index])
   })
   const order: Array<number> = []
   history.forEach((_message, index) => {
     if (moved.has(index)) return
     order.push(index)
-    const list = results.get(index)
-    if (list === undefined) return
     const ids = (parsed[index] ?? []).map((call) => call.id)
-    const position = (result: number) => ids.indexOf(history[result]?.tool_call_id ?? "")
-    order.push(...list.sort((a, b) => position(a) - position(b)))
+    const at = (result: number) => ids.indexOf(history[result]?.tool_call_id ?? "")
+    order.push(...(results.get(index) ?? []).sort((a, b) => at(a) - at(b)))
   })
   return order
 }
@@ -213,10 +229,11 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const shownCalls = new Map<string, boolean>()
   const messages: Array<ProviderMessage> = []
   const parsed = history.map((message) =>
-    message.role === "user" || message.role === "assistant" ? toolCallsOf(message) : [],
+    (message.role === "user" || message.role === "assistant") && message.tool_calls != null
+      ? toolCallsOf(message)
+      : NO_CALLS,
   )
-  requestOrder(history, parsed).forEach((index) => {
-    const message = history[index] as Message
+  const visit = (message: Message, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
       if (shownCalls.get(message.tool_call_id ?? "") !== true) return
@@ -245,7 +262,10 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
         ...reasoningOf(message, view),
       })
     }
-  })
+  }
+  const order = requestOrder(history, parsed)
+  if (order === undefined) history.forEach(visit)
+  else for (const index of order) visit(history[index] as Message, index)
   return messages
 }
 
