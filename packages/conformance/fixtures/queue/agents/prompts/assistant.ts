@@ -5,7 +5,7 @@ export default definePrompt({
   toolDescription: "Answers from the gate's rules",
   model: "gated",
   prompt: "You are a test assistant.",
-  tools: ["hold", "echo"],
+  tools: ["hold", "echo", "late"],
   includeChat: true,
   includePastTools: true,
 })
