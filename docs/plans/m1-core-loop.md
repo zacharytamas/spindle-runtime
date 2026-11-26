@@ -44,6 +44,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
   - [ ] Clean room. Read the spec text and `@standardagents/spec` only. Never open a file inside `@standardagents/builder`, `@standardagents/cloudflare`, or any other proprietary Standard Agents package. Never install `@standardagents/builder`.
   - [ ] Effect v4 from the installed package. Read the type declarations under `node_modules/effect` and `node_modules/@effect/*` before you write a call. Do not write Effect v3 names from memory. `@effect/platform` and `@effect/sql` stopped at 0.x and are not dependencies.
   - [ ] Spec text decides behavior and `@standardagents/spec` decides signatures. Record each disagreement in `packages/conformance/DIVERGENCES.md`.
+- [ ] Before an owner starts M1-4, M1-5, or M1-6, run a spec brief on GPT-6.2 Astra and give the owner its path. The brief reads the PR's spec pages and its plan section. It lists each place where the plan contradicts the spec, the scenarios the PR must pass with their spec lines, the legal inputs that must work and the illegal inputs that must fail, and each requirement that has no entry in `requirements.json`. The first three PRs each passed their own tests and then failed an Astra audit on points the spec text already stated, so the brief moves that reading in front of the build.
 - [ ] Follow this dependency graph. Each owner branches from its parent's branch.
   - [ ] M1-1 is first and branches from `main`.
   - [ ] M1-2 and M1-3 are independent of each other. Both branch from M1-1.
