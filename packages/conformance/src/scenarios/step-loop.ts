@@ -136,10 +136,79 @@ const counter = () => {
 const send = (session: RuntimeSession, thread: string, text: string, options?: SendOptions): Promise<RunOutcome> =>
   session.send(thread, text, options)
 
+const orientation = async (driver: RuntimeDriver, humanOn: "a" | "b") => {
+  const humanRole = humanOn === "b" ? "user" : "assistant"
+  const modelRole = humanOn === "b" ? "assistant" : "user"
+  const provider = new ScriptedProvider([
+    { toolCalls: [{ id: "call_own", name: "lookup", arguments: { q: "x" } }] },
+    { text: "one" },
+    { text: "two" },
+  ])
+  const tools = {
+    lookup: defineTool({
+      description: "Look up a word",
+      args: z.object({ q: z.string() }),
+      execute: async () => ok("found"),
+    }),
+  }
+  await using(
+    driver,
+    { provider, tools, humanOn, prompt: { includeChat: true, tools: ["lookup"] } },
+    async (session, thread) => {
+      await session.seed(thread, [
+        {
+          role: humanRole,
+          content: "earlier",
+          tool_calls: JSON.stringify([
+            { id: "call_other", type: "function", function: { name: "other_side_tool", arguments: '{"k":1}' } },
+          ]),
+        },
+        {
+          role: "tool",
+          content: "other side result",
+          name: "other_side_tool",
+          tool_call_id: "call_other",
+          tool_status: "success",
+        },
+      ])
+      expect(await send(session, thread, "first")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+      expect(await send(session, thread, "second")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+      const stored = await session.messages(thread)
+      expect(stored.map((message) => [message.role, message.content, message.prompt])).toEqual([
+        [humanRole, "earlier", null],
+        ["tool", "other side result", null],
+        [humanRole, "first", null],
+        [modelRole, null, "assistant"],
+        ["tool", "found", "assistant"],
+        [modelRole, "one", "assistant"],
+        [humanRole, "second", null],
+        [modelRole, "two", "assistant"],
+      ])
+      expect(history(provider.requests[1]).map(sideOf)).toEqual([
+        ["user", "earlier"],
+        ["user", "first"],
+        ["assistant", null, ["call_own"]],
+        ["tool", "call_own"],
+      ])
+      expect(history(provider.requests[2]).map(sideOf)).toEqual([
+        ["user", "earlier"],
+        ["user", "first"],
+        ["assistant", "one", []],
+        ["user", "second"],
+      ])
+      for (const request of provider.requests) {
+        expect(request.messages[0]?.role).toBe("system")
+        expect(JSON.stringify(request)).not.toContain("call_other")
+        expect(JSON.stringify(request)).not.toContain("other side result")
+      }
+    },
+  )
+}
+
 export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   {
     name: "S01 persists the response before any tool and each result before the next tool starts",
-    requirements: ["6362a22f", "9e1310ee", "f6fb47da", "7056a090", "c5f07383", "13b3351a", "83735bf6", "43d5659d"],
+    requirements: ["ae6194c8", "6362a22f", "9e1310ee", "f6fb47da", "7056a090", "c5f07383", "bd9fdd64", "43d5659d"],
     run: async (driver) => {
       const firstStarted = gate()
       const firstRelease = gate()
@@ -223,82 +292,18 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S02 maps stored perspective to provider roles for a human on either side and hides the other side's calls",
-    requirements: ["58bf6a6d", "3b206e78", "43bbb05d", "266d6af4"],
-    run: async (driver) => {
-      for (const humanOn of ["b", "a"] as const) {
-        const humanRole = humanOn === "b" ? "user" : "assistant"
-        const modelRole = humanOn === "b" ? "assistant" : "user"
-        const provider = new ScriptedProvider([
-          { toolCalls: [{ id: "call_own", name: "lookup", arguments: { q: "x" } }] },
-          { text: "one" },
-          { text: "two" },
-        ])
-        const tools = {
-          lookup: defineTool({
-            description: "Look up a word",
-            args: z.object({ q: z.string() }),
-            execute: async () => ok("found"),
-          }),
-        }
-        await using(
-          driver,
-          { provider, tools, humanOn, prompt: { includeChat: true, tools: ["lookup"] } },
-          async (session, thread) => {
-            await session.seed(thread, [
-              {
-                role: humanRole,
-                content: "earlier",
-                tool_calls: JSON.stringify([
-                  { id: "call_other", type: "function", function: { name: "other_side_tool", arguments: '{"k":1}' } },
-                ]),
-              },
-              {
-                role: "tool",
-                content: "other side result",
-                name: "other_side_tool",
-                tool_call_id: "call_other",
-                tool_status: "success",
-              },
-            ])
-            expect(await send(session, thread, "first")).toMatchObject({ status: "idle", reason: "stop_on_response" })
-            expect(await send(session, thread, "second")).toMatchObject({ status: "idle", reason: "stop_on_response" })
-            const stored = await session.messages(thread)
-            expect(stored.map((message) => [message.role, message.content, message.prompt])).toEqual([
-              [humanRole, "earlier", null],
-              ["tool", "other side result", null],
-              [humanRole, "first", null],
-              [modelRole, null, "assistant"],
-              ["tool", "found", "assistant"],
-              [modelRole, "one", "assistant"],
-              [humanRole, "second", null],
-              [modelRole, "two", "assistant"],
-            ])
-            expect(history(provider.requests[1]).map(sideOf)).toEqual([
-              ["user", "earlier"],
-              ["user", "first"],
-              ["assistant", null, ["call_own"]],
-              ["tool", "call_own"],
-            ])
-            expect(history(provider.requests[2]).map(sideOf)).toEqual([
-              ["user", "earlier"],
-              ["user", "first"],
-              ["assistant", "one", []],
-              ["user", "second"],
-            ])
-            for (const request of provider.requests) {
-              expect(request.messages[0]?.role).toBe("system")
-              expect(JSON.stringify(request)).not.toContain("call_other")
-              expect(JSON.stringify(request)).not.toContain("other side result")
-            }
-          },
-        )
-      }
-    },
+    name: "S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+    requirements: ["14d530a7", "6e443a4c", "58bf6a6d", "3b206e78", "43bbb05d", "9b948743", "6638d0e6", "778b4467"],
+    run: (driver) => orientation(driver, "b"),
+  },
+  {
+    name: "S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A",
+    requirements: ["176f7205", "58bf6a6d", "3b206e78", "43bbb05d", "266d6af4", "37cadafc"],
+    run: (driver) => orientation(driver, "a"),
   },
   {
     name: "S03 renders includes in place and resolves variables by precedence before any request",
-    requirements: ["97e0539c", "e9cb2058"],
+    requirements: ["67885fd3", "97e0539c", "a7e2995d", "3a27e944", "8e8bbe20", "65b3e24e", "3918859a", "6cd8ba3f"],
     run: async (driver) => {
       const parts = definePrompt({
         name: "assistant",
@@ -404,7 +409,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live",
-    requirements: ["a3e64f93", "22a9ddbb", "b93f89a4", "8254ece3", "dca92c64"],
+    requirements: ["a3e64f93", "22a9ddbb", "8254ece3", "dca92c64", "b93f89a4", "07cc7193", "482d644d", "61c7bee3"],
     run: async (driver) => {
       const views: Record<string, unknown> = {}
       for (const [includeChat, includePastTools] of [
@@ -488,7 +493,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S05 sends the native model id and the offered function tools, and runs two returned calls in order",
-    requirements: ["a170a848", "987763cb", "072413a0", "83735bf6", "ec3b4b7f"],
+    requirements: ["db1fad8a", "f3a1cf30", "3faec548", "987763cb", "59cc8ad5", "072413a0", "ec3b4b7f", "f46d5136"],
     run: async (driver) => {
       const events: Array<string> = []
       const tools = {
@@ -550,8 +555,32 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
-    name: "S06 merges provider options model then prompt and carries the reasoning settings with the model's levels",
-    requirements: [],
+    name: "S06a merges provider options from the model and then the prompt, later keys winning",
+    requirements: ["d7549987", "ec3b4b7f", "a0076042", "bf553948", "da82bb5b"],
+    run: async (driver) => {
+      const provider = new ScriptedProvider([{ text: "ok" }, { text: "ok" }])
+      await using(
+        driver,
+        {
+          provider,
+          prompt: { providerOptions: { b: 2, shared: "prompt" } } as Partial<PromptDefinition>,
+          model: { providerOptions: { a: 1, shared: "model", nested: { keep: true } } },
+        },
+        async (session, thread) => {
+          await send(session, thread, "hi")
+        },
+      )
+      expect(provider.requests[0]?.providerOptions).toEqual({ a: 1, shared: "prompt", nested: { keep: true }, b: 2 })
+      const plain = new ScriptedProvider([{ text: "ok" }])
+      await using(driver, { provider: plain }, async (session, thread) => {
+        await send(session, thread, "hi")
+      })
+      expect(plain.requests[0]).not.toHaveProperty("providerOptions")
+    },
+  },
+  {
+    name: "S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+    requirements: ["57723af5", "1caa81d5", "171552a1", "cc611236", "3f5e07ed", "29d03e8b", "132940db", "c4839f4c"],
     run: async (driver) => {
       const levels = { 0: "none", 33: "low", 66: "medium", 100: "high" }
       const requestFor = async (prompt: Partial<PromptDefinition>, model: Partial<ModelDefinition>) => {
@@ -561,30 +590,23 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
         })
         return provider.requests[0]
       }
-      const merged = await requestFor(
-        {
-          providerOptions: { b: 2, shared: "prompt" },
-          reasoning: { level: 57, maxTokens: 512, exclude: true, include: false },
-        },
-        {
-          providerOptions: { a: 1, shared: "model", reasoning_effort: "low" },
-          capabilities: { reasoningLevels: levels },
-        },
+      const full = await requestFor(
+        { reasoning: { level: 57, maxTokens: 512, exclude: true, include: false } },
+        { capabilities: { reasoningLevels: levels } },
       )
-      expect(merged?.providerOptions).toEqual({ a: 1, shared: "prompt", reasoning_effort: "low", b: 2 })
-      expect(merged?.reasoning).toEqual({ level: 57, levels, maxTokens: 512, exclude: true })
+      expect(full?.reasoning).toEqual({ level: 57, levels, maxTokens: 512, exclude: true })
       const zero = await requestFor({ reasoning: { level: 0 } }, { capabilities: { reasoningLevels: levels } })
       expect(zero?.reasoning).toEqual({ level: 0, levels })
+      const undeclared = await requestFor({ reasoning: { level: 40 } }, {})
+      expect(undeclared?.reasoning).toEqual({ level: 40 })
       const unset = await requestFor({ reasoning: { maxTokens: 100 } }, { capabilities: { reasoningLevels: levels } })
       expect(unset?.reasoning).toEqual({ maxTokens: 100 })
-      const plain = await requestFor({}, {})
-      expect(plain).not.toHaveProperty("reasoning")
-      expect(plain).not.toHaveProperty("providerOptions")
+      expect(await requestFor({}, {})).not.toHaveProperty("reasoning")
     },
   },
   {
     name: "S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids",
-    requirements: ["539cf227", "20479ea7", "975e02f5", "ea4bf54e", "2f53909a"],
+    requirements: ["539cf227", "d0ac352d", "20479ea7", "975e02f5", "ea4bf54e", "2f53909a"],
     run: async (driver) => {
       const runs = counter()
       const tools = { act: defineTool({ description: "Act", execute: async () => runs.tick(ok("acted")) }) }
@@ -673,7 +695,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
-    requirements: ["6a7975b1", "7abccc72", "c0dc1ab1"],
+    requirements: ["83735bf6", "7abccc72", "c0dc1ab1", "6a7975b1", "d50d7c17", "a5a61544", "f3f5c522"],
     run: async (driver) => {
       const tools = {
         lookup: defineTool({
@@ -730,7 +752,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S10 replays persisted reasoning unless include is false, and never for a message outside the request",
-    requirements: ["7abccc72", "80b5ff9b", "b9e3d243", "bbc2f60d", "c0dc1ab1"],
+    requirements: ["7abccc72", "80b5ff9b", "b9e3d243", "bbc2f60d", "c0dc1ab1", "aea91179", "13e0d197", "6e1d2f01"],
     run: async (driver) => {
       const responses: Array<ScriptStep> = [
         { text: "t1", reasoning: "r1" },
@@ -806,7 +828,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S11 fetches response metadata beside the loop and waits for it only before the run settles",
-    requirements: ["016dca2f"],
+    requirements: ["016dca2f", "d20be44c", "a894b520", "b68429b5", "6eb61992"],
     run: async (driver) => {
       const metadataGate = gate()
       const secondRequest = gate()
@@ -867,7 +889,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S12 validates arguments against the tool schema and runs execute only with the parsed values",
-    requirements: ["e2a1037e", "5522b4f9", "2cf0753e"],
+    requirements: ["f3a1cf30", "e2a1037e", "5522b4f9", "2cf0753e"],
     run: async (driver) => {
       const received: Array<unknown> = []
       const tools = {
@@ -932,7 +954,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling",
-    requirements: ["732b2d4b"],
+    requirements: ["732b2d4b", "6a7975b1"],
     run: async (driver) => {
       const seen: Array<string> = []
       const tools = {
@@ -978,7 +1000,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S14 stores every tool outcome as a named, linked result and keeps the loop running",
-    requirements: ["968989f2", "41278e5e", "3b0dd02b", "5522b4f9", "2cf0753e", "732b2d4b"],
+    requirements: ["732b2d4b", "5522b4f9", "2cf0753e", "2d964c36", "968989f2", "41278e5e", "3b0dd02b"],
     run: async (driver) => {
       const tools = {
         soft: defineTool({
@@ -1048,7 +1070,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
-    requirements: ["3b0dd02b"],
+    requirements: ["50d12acc", "1d6d311a", "39260b1a"],
     run: async (driver) => {
       const chart = {
         id: "att_1",
@@ -1158,7 +1180,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
-    requirements: ["732b2d4b", "a403d2a5"],
+    requirements: ["732b2d4b", "dc9a10a7", "a403d2a5", "39260b1a"],
     run: async (driver) => {
       const hidden = counter()
       const asState = (state: unknown) => state as ThreadState
@@ -1228,7 +1250,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false",
-    requirements: ["7aa29e92", "f6fb47da", "c5f07383", "13b3351a", "47ded442"],
+    requirements: ["13b3351a", "47ded442", "7aa29e92"],
     run: async (driver) => {
       const tools = { act: defineTool({ description: "Act", execute: async () => ok("acted") }) }
       const mixed = new ScriptedProvider([
@@ -1266,7 +1288,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
-    requirements: ["77195da7", "e70c9393", "60822bc8"],
+    requirements: ["60822bc8", "77195da7", "e70c9393"],
     run: async (driver) => {
       const tools = {
         finish: defineTool({
@@ -1318,7 +1340,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S19 counts maxSteps per side and per turn and exposes the counters to tools",
-    requirements: ["c5ab8a06", "bc5ba253"],
+    requirements: ["d80e4c71", "bc5ba253", "c5ab8a06", "ffcb95d1", "77517ef7", "5c3c3e89", "0700c380", "903da2e2"],
     run: async (driver) => {
       const probes: Array<unknown> = []
       const tools = {
@@ -1386,7 +1408,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
-    requirements: ["60822bc8", "47ded442", "bc5ba253"],
+    requirements: ["d80e4c71", "7b5d1f06", "44e51927", "8d9a5b12", "35afe886"],
     run: async (driver) => {
       const tools = { finish: defineTool({ description: "Finish", execute: async () => ok("finished") }) }
       const side = { stopTool: "finish", maxSteps: 1 }
@@ -1406,7 +1428,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S21 records empty and reasoning-only responses as completed steps without a response stop",
-    requirements: ["7aa29e92", "c5ab8a06"],
+    requirements: ["c0dc1ab1", "7aa29e92"],
     run: async (driver) => {
       const provider = new ScriptedProvider([
         { text: null },
@@ -1442,7 +1464,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S22 retries retryable provider errors within the budget and settles failed on the others",
-    requirements: ["e50614cd"],
+    requirements: ["e50614cd", "8fd04a52", "d3de63cd", "3ff82607", "31f3e684", "fe4cd03b", "bd7788f4"],
     run: async (driver) => {
       const cases = [
         ["rate_limit", 429, true],
@@ -1504,7 +1526,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S23 ignores tool annotations in the request, the validation, the execution, and the result",
-    requirements: ["e2d0db94", "20a428b9", "cfce7619"],
+    requirements: ["3bb2444c", "e2d0db94", "20a428b9", "cfce7619"],
     run: async (driver) => {
       const runWith = async (annotations: Record<string, unknown> | undefined) => {
         const provider = new ScriptedProvider([
@@ -1539,7 +1561,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S24 keeps stored attachment references intact and describes them in the request",
-    requirements: [],
+    requirements: ["149b9d7b", "244b7d29"],
     run: async (driver) => {
       const chart = {
         id: "att_1",
@@ -1581,7 +1603,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
-    requirements: ["d263e879"],
+    requirements: ["5522b650", "d263e879", "b7cd3b54"],
     run: async (driver) => {
       const marker = "SECRET-MARKER-7f3a"
       const instance = { API_TOKEN: marker, LABEL: "shown" }
@@ -1663,7 +1685,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S27 treats provider-executed tools and generated images as parts of one response and runs nothing locally",
-    requirements: ["f6fb47da", "c5f07383"],
+    requirements: [],
     run: async (driver) => {
       const local = counter()
       const tools = {
@@ -1701,7 +1723,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state",
-    requirements: [],
+    requirements: ["bb21b13f", "afa3f93e", "ac0df6bc", "bc63a67f", "7b26e7c9", "e6e64d26", "31e057f3", "09150a13"],
     run: async (driver) => {
       const seen: Array<Record<string, unknown>> = []
       const tools = {
@@ -1759,7 +1781,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S29 loads definitions and lists their names through ThreadState",
-    requirements: ["c4b75828", "e3afb48b", "4d4c50a2", "cf66e53e", "be6b8ba1", "75fba4a7"],
+    requirements: ["52e1e778", "c4b75828", "e3afb48b", "4d4c50a2", "cf66e53e", "be6b8ba1", "75fba4a7"],
     run: async (driver) => {
       let report: Record<string, unknown> = {}
       const tools = {
@@ -1802,7 +1824,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
-    requirements: ["8cefb16e", "b74ef581", "73bce32e", "6d37745b", "16606350", "8233eb0b", "41fe7364", "c4905fe6"],
+    requirements: ["8cefb16e", "b74ef581", "73bce32e", "c4905fe6"],
     run: async (driver) => {
       const seen: Array<unknown> = []
       const tools = {
@@ -1870,7 +1892,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
-    requirements: ["04d1538b", "c544edac", "6ad6d3c1", "8a66bc04", "6f984718", "18655cf1"],
+    requirements: ["04d1538b", "8a66bc04", "6ad6d3c1", "18655cf1", "6f984718", "903da2e2", "c544edac"],
     run: async (driver) => {
       const seen: Array<unknown> = []
       const tools = {
@@ -1913,7 +1935,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
-    requirements: ["341727f4", "a01f5667", "39260b1a", "d6567ce8", "7553bb50", "5522b650"],
+    requirements: ["5522b650", "7553bb50", "287f2aef", "d6567ce8", "07a378de", "341727f4", "a01f5667"],
     run: async (driver) => {
       let report: Record<string, unknown> = {}
       const tools = {
@@ -1988,7 +2010,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S33 passes ThreadState message reads, updates, and deletes through to thread storage",
-    requirements: ["37e69561", "3489685d", "f67424cd", "bd122f30", "7f464a24", "1edbcdb1", "96307380", "79171656"],
+    requirements: ["79171656", "37e69561", "3489685d", "f67424cd", "bd122f30", "7f464a24", "1edbcdb1", "96307380"],
     run: async (driver) => {
       const seen: Record<string, unknown> = {}
       const tools = {
@@ -2042,7 +2064,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   },
   {
     name: "S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
-    requirements: ["d0bf2dee", "70e01371", "b680018e", "1c6df0f5", "5e2f73a8"],
+    requirements: ["d0bf2dee", "70e01371", "5e2f73a8", "b680018e", "1c6df0f5"],
     run: async (driver) => {
       const tools = {
         remember: defineTool({
@@ -2080,6 +2102,41 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
       } finally {
         await session.close()
       }
+    },
+  },
+  {
+    name: "S35 leaves a message injected during tools out of the current request and puts it in the next one",
+    requirements: ["88c209cc", "41fe7364", "8233eb0b", "6d37745b", "16606350"],
+    run: async (driver) => {
+      const tools = {
+        inject: defineTool({
+          description: "Inject a note",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "system", content: "late note" })
+            return ok("injected")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "inject", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(driver, { provider, tools, prompt: { includeChat: true } }, async (session, thread) => {
+        await session.seed(thread, [{ role: "system", content: "early note" }])
+        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+      })
+      expect(provider.requests).toHaveLength(2)
+      expect((provider.requests[0]?.messages ?? []).slice(1).map(sideOf)).toEqual([
+        ["system", "early note"],
+        ["user", "go"],
+      ])
+      expect((provider.requests[1]?.messages ?? []).slice(1).map(sideOf)).toEqual([
+        ["system", "early note"],
+        ["user", "go"],
+        ["assistant", null, ["c1"]],
+        ["system", "late note"],
+        ["tool", "c1"],
+      ])
     },
   },
 ]

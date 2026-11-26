@@ -376,4 +376,24 @@ describe("provider config slots", () => {
       expect(seen).toEqual([state])
     }),
   )
+
+  it.effect("fails setup when the model's provider factory throws or returns something that is not a provider", () =>
+    Effect.gen(function* () {
+      const failures: Array<string> = []
+      for (const factory of [
+        () => ({ name: "half" }),
+        () => {
+          throw new Error("no credentials")
+        },
+      ]) {
+        const exit = yield* Effect.exit(providerFor(loaded(factory as never), {} as never, new Set()))
+        const reason = Exit.isFailure(exit) ? exit.cause.reasons.find((r) => r._tag === "Fail") : undefined
+        failures.push(reason?._tag === "Fail" ? (reason.error as SetupError).message : "succeeded")
+      }
+      expect(failures).toEqual([
+        "The provider factory of model lane failed: it did not return an object with generate and stream methods",
+        "The provider factory of model lane failed: no credentials",
+      ])
+    }),
+  )
 })
