@@ -73,6 +73,46 @@ it.effect("refuses a stop during an abort hold and runs queued work when the too
   )
 })
 
+it.effect("an exiting abort followed by a holding abort leaves queued work for the next trigger", () => {
+  const entered = gate()
+  const leave = gate()
+  const provider = new ScriptedProvider([
+    { toolCalls: [{ id: "1", name: "wait", arguments: {} }] },
+    { text: "resumed" },
+  ])
+  const wait = defineTool({
+    description: "Wait for release",
+    execute: async () => {
+      entered.release()
+      await leave.opened
+      return ok("done")
+    },
+  })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+    yield* Effect.promise(() => entered.opened)
+    yield* supervisor.control(id).queueMessage({ role: "user", content: "queued" }, newSecrets(), { kind: "external" })
+    yield* supervisor.abort(id, true)
+    yield* supervisor.abort(id)
+    leave.release()
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    yield* supervisor.settled(id)
+    expect((yield* supervisor.status(id)).reason).toBe("aborted_by_user")
+    expect(yield* RunStore.use((store) => store.queueLength(id))).toBe(1)
+    expect(provider.requests).toHaveLength(1)
+  }).pipe(
+    Effect.ensuring(Effect.sync(leave.release)),
+    Effect.provide(
+      Layer.merge(
+        registryOf(project({ provider, tools: { wait } })),
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  )
+})
+
 for (const mode of ["abort", "terminate", "abort after provider failure"] as const)
   it.effect(`preserves the sender's outcome on ${mode} while committed metadata is pending`, () =>
     Effect.gen(function* () {
