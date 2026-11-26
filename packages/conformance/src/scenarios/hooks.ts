@@ -810,6 +810,42 @@ export const hookScenarios: ReadonlyArray<Scenario> = [
     },
   },
   {
+    name: "H12e keeps the tool's text when a result hook cannot receive an isolated copy",
+    requirements: ["5fc8a060"],
+    run: async (driver) => {
+      let called = false
+      const hook = defineHook({
+        hook: "before_store_tool_result",
+        id: "change_text",
+        execute: async (_state, _call, result) => {
+          called = true
+          result.result = "modified"
+          throw new Error("hook failed")
+        },
+      })
+      const tools = {
+        diagnostic: defineTool({
+          description: "Returns an uncloneable diagnostic",
+          execute: async () => ({ status: "error", result: "original", error_data: { callback: () => 0 } }),
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "diagnostic", arguments: {} }] },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks: [hook], prompt: { hooks: ["change_text"] } },
+        async (session, thread) => {
+          await send(session, thread, "go")
+          const result = (await session.messages(thread)).find((message) => message.tool_call_id === "c1")
+          expect(result?.content).toContain("original")
+          expect(called).toBe(false)
+        },
+      )
+    },
+  },
+  {
     name: "H12b calls the success hook only after a tool succeeds and the failure hook only after one fails",
     requirements: ["a91f50b9", "0fc819f0", "ca83d472", "5fc8a060"],
     run: async (driver) => {

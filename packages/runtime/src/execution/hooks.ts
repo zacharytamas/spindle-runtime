@@ -447,18 +447,9 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-// A hook may change what it is given in place, so each call gets its own copy, and a failed call leaves nothing.
-const copy = <A>(value: A): A => {
-  try {
-    return structuredClone(value)
-  } catch {
-    return value
-  }
-}
-
-const callHook = (hook: SelectedHook, args: ReadonlyArray<unknown>, timeout: Duration.Duration) =>
+const callHook = (hook: SelectedHook, args: () => ReadonlyArray<unknown>, timeout: Duration.Duration) =>
   Effect.tryPromise({
-    try: () => Promise.resolve(hook.execute(...args)),
+    try: () => Promise.resolve(hook.execute(...args())),
     catch: () => "threw an error",
   }).pipe(Effect.timeoutOption(timeout), Effect.result)
 
@@ -487,10 +478,10 @@ export const runHooks = <K extends Position>(
     let current = value
     for (const hook of hooks) {
       const call: HookCall = { hook: hook.id, position, depth: (options.depth ?? 0) + 1, expired: false }
-      const args = [
+      const args = () => [
         scope.stateFor(hook, call),
-        ...lead.map(copy),
-        ...(position === "after_thread_created" ? [] : [copy(current)]),
+        ...lead.map((arg) => structuredClone(arg)),
+        ...(position === "after_thread_created" ? [] : [structuredClone(current)]),
         { source: { ...scope.set.source } },
       ]
       const started = yield* Clock.currentTimeMillis
