@@ -6692,7 +6692,9 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
 			"packages/runtime/test/conformance.test.ts > queue > Q12 lets a running tool finish after stop, runs no later call, and starts a send that waited only after it settles",
-			"packages/runtime/test/conformance.test.ts > queue > Q18 does not run a queued tool whose started hook or create hook calls stop, and stores one result that says so"
+			"packages/runtime/test/conformance.test.ts > queue > Q18 does not run a queued tool whose started hook or create hook calls stop, and stores one result that says so",
+			"packages/runtime/test/conformance.test.ts > queue > Q19 does not retry a model attempt that was cut off after stop was called",
+			"packages/runtime/test/conformance.test.ts > queue > Q21 keeps the result of a call that a stop left unstarted an error that says it did not run, whatever a hook returns"
 		],
 		"reason": "Q11 and Q12 show that stop ends the current execution loop at the next boundary. A session and stopSession arrive in M2, which owes the rule that stop alone does not end a session."
 	},

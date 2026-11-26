@@ -37,6 +37,14 @@ const echo = defineTool({
 
 const noop = defineTool({ description: "Do nothing", execute: async () => ok("noop") })
 
+const stopOnStart = defineHook({
+  hook: "tool_call_started",
+  id: "stop_on_start",
+  execute: async (state) => {
+    state.execution?.stop()
+  },
+})
+
 // A response whose text names the user messages that the request ends with, so that a request shows what it held.
 const acknowledge = (request: RecordedRequest) => {
   const trailing: Array<string> = []
@@ -862,38 +870,28 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
     name: "Q19 does not retry a model attempt that was cut off after stop was called",
     requirements: ["7a032a6c"],
     run: async (driver) => {
-      let execution: ExecutionState | null = null
-      const keep = defineHook({
-        hook: "filter_messages",
-        id: "keep",
-        execute: async (state, messages) => {
-          execution = state.execution
-          return messages
-        },
-      })
-      const held = gate()
-      const release = gate()
       const provider = new ScriptedProvider([
-        async () => {
-          held.release()
-          await release.opened
-          // A stream that ends with no finish chunk is an attempt the provider cut off, which a run retries.
-          return { chunks: [] }
+        // Ending without a finish chunk cuts off the attempt after the started hook requests a stop.
+        {
+          chunks: [
+            { type: "tool-call-start", id: "c_noop", name: "noop" },
+            { type: "tool-call-done", id: "c_noop", arguments: {} },
+          ],
         },
         { text: "from the retry" },
       ])
-      await using(driver, { provider, hooks: [keep], prompt: { hooks: ["keep"] } }, async (session, thread) => {
-        const run = quiet(session.send(thread, "go"))
-        await held.opened
-        ;(execution as ExecutionState | null)?.stop()
-        release.release()
-        const outcome = await run
-        expect({
-          requests: provider.requests.length,
-          outcome: [outcome.status, outcome.reason],
-          stored: (await session.messages(thread)).map((message) => message.content),
-        }).toEqual({ requests: 1, outcome: ["idle", "aborted"], stored: ["go"] })
-      })
+      await using(
+        driver,
+        { provider, tools: { noop }, hooks: [stopOnStart], prompt: { hooks: [stopOnStart.id] } },
+        async (session, thread) => {
+          const outcome = await session.send(thread, "go")
+          expect({
+            requests: provider.requests.length,
+            outcome: [outcome.status, outcome.reason],
+            stored: (await session.messages(thread)).map((message) => message.content),
+          }).toEqual({ requests: 1, outcome: ["idle", "aborted"], stored: ["go"] })
+        },
+      )
     },
   },
   {
@@ -957,16 +955,7 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       })
       const seen: Record<string, unknown> = {}
       for (const hook of [failureHook, resultHook, createHook]) {
-        let execution: ExecutionState | null = null
         let entries = 0
-        const keep = defineHook({
-          hook: "filter_messages",
-          id: "keep",
-          execute: async (state, messages) => {
-            execution = state.execution
-            return messages
-          },
-        })
         const worker = defineTool({
           description: "Count each run",
           execute: async () => {
@@ -974,29 +963,19 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
             return ok("the effect happened")
           },
         })
-        const held = gate()
-        const release = gate()
         const provider = new ScriptedProvider([
-          async () => {
-            held.release()
-            await release.opened
-            return {
-              toolCalls: [
-                { id: "x", name: "worker", arguments: {} },
-                { id: "y", name: "worker", arguments: {} },
-              ],
-            }
+          {
+            toolCalls: [
+              { id: "x", name: "worker", arguments: {} },
+              { id: "y", name: "worker", arguments: {} },
+            ],
           },
         ])
         await using(
           driver,
-          { provider, tools: { worker }, hooks: [keep, hook], prompt: { hooks: ["keep", hook.id] } },
+          { provider, tools: { worker }, hooks: [stopOnStart, hook], prompt: { hooks: [stopOnStart.id, hook.id] } },
           async (session, thread) => {
-            const run = quiet(session.send(thread, "go"))
-            await held.opened
-            ;(execution as ExecutionState | null)?.stop()
-            release.release()
-            const outcome = await run
+            const outcome = await session.send(thread, "go")
             const results = (await session.messages(thread)).filter((message) => message.role === "tool")
             seen[hook.id] = {
               entries,
