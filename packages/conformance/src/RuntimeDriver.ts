@@ -28,8 +28,6 @@ export interface LoadOptions {
   readonly instanceEnv?: Readonly<Record<string, string>>
   // How long one hook call may run, in milliseconds. Hooks section 1.2 asks for a limit and names none.
   readonly hookTimeoutMs?: number
-  // How long the session's claim on a running thread lasts without renewal, in milliseconds. Another session counts
-  // a silent holder as gone after this long.
 }
 
 export interface SendOptions {

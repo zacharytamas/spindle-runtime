@@ -462,22 +462,19 @@ export const queueScenarios: ReadonlyArray<Scenario> = [
       for (const humanOn of SIDES) {
         let execution: ExecutionState | null = null
         const ran: Array<string> = []
-        const keep = defineHook({
-          hook: "filter_messages",
-          id: "keep",
-          execute: async (state, messages) => {
-            execution = state.execution
-            return messages
-          },
-        })
         const held = gate()
         const release = gate()
-        const provider = new ScriptedProvider([
-          async () => {
+        const keep = defineHook({
+          hook: "tool_call_started",
+          id: "keep",
+          execute: async (state) => {
+            execution = state.execution
             held.release()
             await release.opened
-            return { text: "partial", toolCalls: [{ id: "c_noop", name: "noop", arguments: {} }] }
           },
+        })
+        const provider = new ScriptedProvider([
+          { text: "partial", toolCalls: [{ id: "c_noop", name: "noop", arguments: {} }] },
           { text: "next" },
         ])
         const tracked = defineTool({
