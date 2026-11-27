@@ -85,6 +85,8 @@ const isAttachmentRef = (value: unknown): value is AttachmentRef =>
 const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
   Predicate.isObject(value) && typeof value.data === "string"
 
+const skipped = Symbol("skipped")
+
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
 export const executeTool = Effect.fn("executeTool")(function* (
@@ -113,11 +115,15 @@ export const executeTool = Effect.fn("executeTool")(function* (
   }
   const callback = new Callback()
   const state = context.stateFor(tool, entry, callback)
-  if (state.execution?.stopped) return undefined
   const work = Effect.tryPromise({
     try: () =>
       context.execution.call(callback, `tool ${name}`, () =>
-        schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
+        // Checked in the same synchronous step that starts the tool, so no stop can arrive in between.
+        state.execution?.stopped
+          ? skipped
+          : schema === null
+            ? tool.value.execute(state)
+            : tool.value.execute(state, args),
       ),
     catch: (cause) => `Tool ${name} threw: ${describe(cause)}`,
   })
@@ -128,6 +134,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
       : callback.within(work, timeout, () => `Tool ${name} timed out after ${Duration.format(timeout)}`, context.scope)
   const returned = yield* Effect.result(bounded)
   if (Result.isFailure(returned)) return failed(returned.failure)
+  if (returned.success === skipped) return undefined
   const read = yield* Effect.result(Effect.try({ try: () => readResult(returned.success), catch: describe }))
   if (Result.isFailure(read)) return failed(`Reading the result of tool ${name} threw: ${read.failure}`)
   const result = read.success
