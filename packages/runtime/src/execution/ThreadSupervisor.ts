@@ -37,7 +37,7 @@ export interface Delivery {
   readonly status: ThreadStatus
 }
 
-export type WaitingHolder = { kind: "remote"; pid: number } | { kind: "local"; pid: number; abortedOperation?: string }
+export type WaitingHolder = { kind: "remote"; pid: number } | { kind: "local"; pid: number; operation?: string }
 
 interface SendOptions extends ExecutionOptions {
   readonly interruptedWhileQueued?: Effect.Effect<void>
@@ -154,10 +154,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           const prior = live.get(threadId)
           if (prior && !prior.ended) prior.cancel("displace")
           live.set(threadId, run)
+          const settings = { ...defaults, ...options }
           yield* run.start(
             threadId,
             scope,
-            prepareSteps(threadId, run, control(threadId), { ...defaults, ...options }),
+            prepareSteps(threadId, run, control(threadId), settings),
             Effect.suspend(() =>
               closing
                 ? Effect.undefined
@@ -172,6 +173,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               flows.delete(flowId)
               if (live.get(threadId) === run) live.delete(threadId)
             },
+            settings.onHold,
           )
           return run
         }).pipe(Effect.uninterruptible)
@@ -280,7 +282,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                   yield* options.onWaiting({
                     kind: "local",
                     pid: holder.pid,
-                    ...(operation ? { abortedOperation: operation } : {}),
+                    ...(operation && { operation }),
                   })
                 }
                 outcome = yield* local.lastOutcome

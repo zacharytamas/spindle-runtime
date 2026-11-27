@@ -5,7 +5,7 @@ import { RunStore } from "../store/RunStore.ts"
 import { ProviderFailure } from "./call.ts"
 import type { Callback } from "./callback.ts"
 import { CLOSING } from "./run-status.ts"
-import type { prepareSteps, RunOutcome } from "./step.ts"
+import type { ExecutionOptions, prepareSteps, RunOutcome } from "./step.ts"
 import { SetupError, type Side } from "./turn.ts"
 
 export interface End extends Pick<RunOutcome, "status" | "reason" | "error" | "stopTool"> {
@@ -57,7 +57,7 @@ export class Execution {
     await: Deferred.await(this.#done),
     isDone: () => Deferred.isDoneUnsafe(this.#done),
   })
-  #phase: "running" | "holding" | "dropping" | "ended" = "running"
+  #phase: "running" | "waiting" | "holding" | "dropping" | "ended" = "running"
   #stop: Side | "user" | undefined
   #steps = 0
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
@@ -85,6 +85,8 @@ export class Execution {
     return { status: "idle", reason: this.#stop === "user" ? "aborted_by_user" : "aborted" } as const
   }
   requestStop(by: Side | "user" = "user") {
+    // Acknowledge the first Ctrl-C so the caller can escalate. No step boundary remains to stop at.
+    if (this.#phase === "waiting") return true
     if (this.#phase !== "running") return false
     this.#stop ??= by
     this.#stopRequested.openUnsafe()
@@ -93,7 +95,7 @@ export class Execution {
   call<A>(callback: Callback, operation: string, invoke: () => PromiseLike<A> | A) {
     return callback.invoke(invoke, (promise) => {
       this.#pending.set(promise, operation)
-      if (this.#phase === "holding") this.#released.closeUnsafe()
+      if (this.#phase !== "dropping") this.#released.closeUnsafe()
       return () => {
         this.#pending.delete(promise)
         this.#releaseIfReady()
@@ -101,10 +103,10 @@ export class Execution {
     })
   }
   #releaseIfReady() {
-    if (this.#phase === "dropping" || (this.#phase === "holding" && !this.#pending.size)) this.#released.openUnsafe()
+    if (this.#phase === "dropping" || !this.#pending.size) this.#released.openUnsafe()
   }
   get waitingOn() {
-    return this.#phase === "holding" ? this.#pending.values().next().value : undefined
+    return this.#phase === "holding" || this.#phase === "waiting" ? this.#pending.values().next().value : undefined
   }
 
   cancel(mode: "hold" | "exit" | "displace") {
@@ -128,12 +130,29 @@ export class Execution {
     steps: ReturnType<typeof prepareSteps>,
     resume: Effect.Effect<Execution | undefined, never, R>,
     remove: () => void,
+    onHold?: ExecutionOptions["onHold"],
   ) {
     const finish = Effect.gen({ self: this }, function* () {
       const store = yield* RunStore
       const { advance, report, stepCap } = yield* steps
+      const advanceAndWait = Effect.gen({ self: this }, function* () {
+        const exit = yield* Effect.exit(advance)
+        const operation = this.#pending.values().next().value
+        if (operation !== undefined && this.#phase === "running") {
+          if (Exit.isFailure(exit) && (Cause.hasInterruptsOnly(exit.cause) || failure(exit.cause) instanceof FlowEnded))
+            return yield* exit
+          this.#phase = "waiting"
+          if (onHold) {
+            yield* onHold(operation)
+            onHold = undefined
+          }
+          while (this.#pending.size) yield* this.#released.await
+          this.#phase = "running"
+        }
+        return yield* exit
+      })
       while (true) {
-        const exit = yield* Effect.exit(Effect.interruptible(advance))
+        const exit = yield* Effect.exit(Effect.interruptible(advanceAndWait))
         const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
         if (interrupted) {
           this.#abort.abort()

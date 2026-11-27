@@ -125,8 +125,7 @@ export const note = {
   providerError: (message: string) => `spindle: provider error: ${message}`,
   behindProcess: (id: string, pid: number) =>
     `spindle: thread ${id} is running in process ${pid}, so the line waits in its queue`,
-  behindTool: (name: string) =>
-    `spindle: tool ${name} has not returned since the abort, so the line waits in the queue until it does`,
+  behindTool: (name: string) => `spindle: tool ${name} has not returned, so the line waits in the queue until it does`,
   notSent: "spindle: the line was not sent: ",
   stillQueued: "spindle: your last line is still queued, and the next run of the thread delivers it",
   resume: (agent: string, id: string, db: string, dir?: string) =>

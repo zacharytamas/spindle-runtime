@@ -14,6 +14,9 @@ import { ThreadTerminated } from "../store/model.ts"
 import { type Stores, layer as sqliteStore } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 
+export const holdNote = (threadId: string, operation: string, exit: string) =>
+  `${operation} has not returned. Thread ${threadId} stays held until it returns. Press Ctrl-C twice to ${exit}. Use --tool-timeout to bound tool calls.`
+
 export const note = (text: string) => Console.error(`spindle: ${text}`)
 export const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
 export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`

@@ -53,6 +53,7 @@ export interface ThreadScope {
 }
 
 export interface ExecutionOptions {
+  readonly onHold?: (operation: string) => Effect.Effect<void>
   readonly toolTimeout?: ToolContext["toolTimeout"]
   readonly retries?: number
   readonly stepCap?: number

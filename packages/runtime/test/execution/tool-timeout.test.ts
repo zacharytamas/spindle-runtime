@@ -420,3 +420,198 @@ it.effect("refuses a tool write past its deadline even before the event loop can
     )
   }),
 )
+
+function nestedFixture(options: { awaitInner?: boolean; fail?: boolean } = {}) {
+  const inner = waitingTool()
+  const outer = defineTool({
+    description: "Start the inner tool",
+    execute: async (state: ThreadState) => {
+      const pending = state.invokeTool("inner", {})
+      if (options.awaitInner) await pending
+      else void pending.catch(() => {}) // Aborting the flow interrupts invokeTool.
+      return ok("outer returned")
+    },
+  })
+  const steps: ScriptStep[] = [
+    { toolCalls: [call] },
+    options.fail ? { reject: { code: "invalid_request", message: "rejected" } } : { text: "done" },
+    { text: "next reply" },
+  ]
+  return { inner, ...fixture({ wait: outer, inner: inner.tool }, { limited: false, steps }) }
+}
+
+it.effect("holds the running thread for an unawaited nested tool and continues queued work in the same flow", () => {
+  const { inner, live, provider } = nestedFixture()
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.entered)
+    yield* TestClock.adjust(0)
+    expect((yield* supervisor.status(id)).state).toBe("running")
+    expect(provider.requests).toHaveLength(2)
+    yield* Effect.promise(() => inner.state().setValue("during-hold", true))
+    expect(yield* ThreadStore.use((s) => s.getValue(id, "during-hold"))).toBe(true)
+    const waiting = gate()
+    const second = yield* Effect.forkChild(
+      supervisor.send(id, "next", {
+        onWaiting: (holder) =>
+          Effect.sync(() => {
+            expect(holder).toMatchObject({ kind: "local", operation: "tool inner" })
+            waiting.release()
+          }),
+      }),
+    )
+    yield* waitFor(waiting)
+    expect(yield* RunStore.use((s) => s.queueLength(id))).toBe(1)
+    expect(provider.requests).toHaveLength(2)
+    inner.leave.release()
+    const first = yield* Fiber.join(sent)
+    expect(first.outcome?.steps).toBe(3)
+    expect((yield* Fiber.join(second)).outcome?.flowId).toBe(first.outcome?.flowId)
+    expect(provider.requests).toHaveLength(3)
+  }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})
+
+for (const fail of [false, true])
+  it.effect(
+    `keeps the ${fail ? "failure" : "successful outcome"} and history when a nested tool delays settlement`,
+    () => {
+      const snapshot = (hold: boolean) => {
+        const { inner, live } = nestedFixture({ fail })
+        return Effect.gen(function* () {
+          if (!hold) inner.leave.release()
+          const { id, sent } = yield* start
+          const supervisor = yield* ThreadSupervisor
+          yield* waitFor(inner.entered)
+          yield* TestClock.adjust(0)
+          if (hold) {
+            expect((yield* supervisor.status(id)).state).toBe("running")
+            expect(yield* supervisor.stop(id)).toBe(true)
+            inner.leave.release()
+          }
+          const { outcome, status } = yield* Fiber.join(sent)
+          const rows = (yield* messages(id)).messages
+          expect(status.reason).toBe(fail ? "step_error" : "stop_on_response")
+          expect(outcome?.steps).toBe(fail ? 1 : 2)
+          if (fail) expect(outcome?.error).toMatchObject({ message: "rejected", code: "invalid_request" })
+          return {
+            ...outcome,
+            threadId: undefined,
+            flowId: undefined,
+            trace: outcome?.trace.map(({ detail, ...entry }) => ({
+              ...entry,
+              detail: rows.reduce((text, row, i) => text.replaceAll(row.id, `message-${i}`), detail),
+            })),
+            messages: rows.map(({ id, created_at, ...row }) => row),
+          }
+        }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+      }
+      return Effect.gen(function* () {
+        const control = yield* snapshot(false)
+        expect(yield* snapshot(true)).toEqual(control)
+      })
+    },
+  )
+
+for (const deadline of ["general", "inner", "outer"] as const)
+  it.effect(`uses each nested callback's own deadline with a ${deadline} limit`, () => {
+    const { inner, live } = nestedFixture({ awaitInner: deadline === "outer" })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const supervisor = yield* ThreadSupervisor
+      const held: string[] = []
+      const sent = yield* Effect.forkChild(
+        supervisor.send(id, "go", {
+          toolTimeout: (name) =>
+            deadline === "general" || name === (deadline === "outer" ? "wait" : "inner") ? limit : undefined,
+          onHold: (operation) =>
+            Effect.sync(() => {
+              held.push(operation)
+            }),
+        }),
+      )
+      yield* waitFor(inner.entered)
+      yield* TestClock.adjust("9 millis")
+      expect((yield* supervisor.status(id)).state).toBe("running")
+      yield* TestClock.adjust("1 millis")
+      if (deadline === "outer") {
+        expect((yield* supervisor.status(id)).state).toBe("running")
+        expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+        inner.leave.release()
+      }
+      expect((yield* Fiber.join(sent)).outcome?.reason).toBe("stop_on_response")
+      expect(held).toEqual(["tool inner"])
+    }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+  })
+
+for (const abort of [false, true])
+  it.effect(
+    `a nested write's hook ${abort ? "keeps the abort hold until exit" : "expires at its default deadline"}`,
+    () => {
+      const entered = gate()
+      const leave = gate()
+      const hook = defineHook({
+        id: "paused",
+        hook: "before_create_message",
+        execute: async (_state, message) => {
+          if (message.content === "nested") {
+            entered.release()
+            await leave.opened
+          }
+          return message
+        },
+      })
+      const wait = defineTool({
+        description: "Start a write that runs a hook",
+        execute: async (state: ThreadState) => {
+          void state.injectMessage({ role: "user", content: "nested" }).catch(() => {})
+          await entered.opened
+          return ok("started")
+        },
+      })
+      const { live } = fixture({ wait }, { hooks: [hook], limited: false })
+      return Effect.gen(function* () {
+        const supervisor = yield* ThreadSupervisor
+        const { id } = yield* createThread("assistant")
+        const held = Promise.withResolvers<string>()
+        const sent = yield* Effect.forkChild(
+          supervisor.send(id, "go", {
+            onHold: (operation) => Effect.sync(() => held.resolve(operation)),
+          }),
+        )
+        expect(yield* Effect.promise(() => held.promise)).toBe("hook paused")
+        if (abort) yield* supervisor.abort(id)
+        yield* TestClock.adjust("29999 millis")
+        expect((yield* supervisor.status(id)).state).toBe("running")
+        yield* TestClock.adjust("1 millis")
+        if (abort) {
+          expect((yield* supervisor.status(id)).state).toBe("running")
+          yield* supervisor.abort(id, true)
+        }
+        expect((yield* Fiber.join(sent)).outcome?.reason).toBe(abort ? "aborted_by_user" : "stop_on_response")
+      }).pipe(Effect.ensuring(Effect.sync(leave.release)), Effect.provide(live))
+    },
+  )
+
+it.effect("aborting a failed step's wait signals the nested tool and holds until its callback returns", () => {
+  const { inner, live } = nestedFixture({ fail: true })
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.entered)
+    yield* TestClock.adjust(0)
+    expect((yield* supervisor.status(id)).state).toBe("running")
+    const settlement = yield* supervisor.abort(id)
+    yield* TestClock.adjust(0)
+    expect(inner.state().execution?.abortSignal.aborted).toBe(true)
+    expect(settlement?.isDone()).toBe(false)
+    inner.leave.release()
+    expect((yield* Fiber.join(sent)).outcome).toMatchObject({
+      status: "idle",
+      reason: "aborted_by_user",
+      steps: 1,
+      trace: [],
+      modelCalls: [],
+    })
+  }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})

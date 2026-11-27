@@ -17,6 +17,7 @@ import {
   deliveryFlags,
   describe,
   fail,
+  holdNote,
   note,
   requestText,
   toolCallLine,
@@ -202,6 +203,8 @@ const converse = (chat: Conversation, events: Queue.Queue<Event>, own: Set<numbe
           const turn = yield* Effect.forkScoped(
             supervisor.send(chat.id, event.line, {
               observe,
+              onHold: (operation) =>
+                chat.identify(holdNote(chat.id, chat.clean(operation), "abort, then once at the prompt to exit")),
               onAdmitted: (seq) => {
                 Queue.offerUnsafe(events, { kind: "admitted", seq })
               },
@@ -221,8 +224,8 @@ const converse = (chat: Conversation, events: Queue.Queue<Event>, own: Set<numbe
           phase.kind = "waiting"
           const { holder } = event
           yield* chat.identify(
-            holder.kind === "local" && holder.abortedOperation
-              ? `${chat.clean(holder.abortedOperation)} has not returned since the abort, so the line waits in the queue until it does`
+            holder.kind === "local" && holder.operation
+              ? `${chat.clean(holder.operation)} has not returned, so the line waits in the queue until it does`
               : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
           )
           if (holder.kind === "remote" && !poll)

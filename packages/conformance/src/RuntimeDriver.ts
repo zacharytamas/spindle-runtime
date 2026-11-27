@@ -31,6 +31,7 @@ export interface LoadOptions {
 }
 
 export interface SendOptions {
+  readonly onHold?: (operation: string) => void
   // How many times one step may repeat a model request after a retryable provider error or a response that
   // breaks the prompt's toolChoice.
   readonly retries?: number

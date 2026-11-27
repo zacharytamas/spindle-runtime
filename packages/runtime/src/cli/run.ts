@@ -8,7 +8,17 @@ import type { ExecutionEvent } from "../execution/step.ts"
 import { ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { createThread } from "../execution/trigger.ts"
-import { deliveryFlags, fail, note, plural, requestText, toolCallLine, withOutput, withProject } from "./shared.ts"
+import {
+  deliveryFlags,
+  fail,
+  holdNote,
+  note,
+  plural,
+  requestText,
+  toolCallLine,
+  withOutput,
+  withProject,
+} from "./shared.ts"
 
 const stillQueued = "Your message is still queued and the next run of this thread will deliver it."
 
@@ -60,6 +70,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           if ("thread" in target) yield* reportId(threadId)
           const supervisor = yield* ThreadSupervisor
           const send = supervisor.send(threadId, args.message, {
+            onHold: (operation) => identify(holdNote(threadId, clean(operation), "abort and exit")),
             onWaiting: (holder) =>
               holder.kind === "remote"
                 ? identify(`thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`)

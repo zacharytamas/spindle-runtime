@@ -1119,6 +1119,10 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - The conformance harness fails the scenario when admission has not occurred after 500 polls.
 
+### Settled in M1-19
+
+- A run that finishes or fails keeps the thread while a tool it started through `invokeTool` is still running or a hook started by an unawaited write is still pending. The nested tool can write through its own handle until it returns, reaches its own `--tool-timeout` limit, or the run is aborted. New sends wait in the queue. The command names the operation holding the thread and explains how to exit.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
