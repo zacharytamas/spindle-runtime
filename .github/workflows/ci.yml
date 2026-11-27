@@ -42,6 +42,31 @@ jobs:
       - run: pnpm build
       - run: ${{ matrix.platform }} packages/runtime/dist/cli/main.js --version | tee /dev/stderr | grep -q "platform ${{ matrix.platform }}"
 
+  fallow:
+    name: dead code
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DO_NOT_TRACK: "1"
+      FALLOW_TELEMETRY_DISABLED: "1"
+      FALLOW_UPDATE_CHECK: "off"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - if: github.event_name == 'pull_request'
+        run: pnpm exec fallow audit --base "origin/$GITHUB_BASE_REF"
+      - if: github.event_name == 'push'
+        run: pnpm fallow
+
   requirements:
     name: requirements match the pinned spec
     runs-on: ubuntu-latest
