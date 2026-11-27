@@ -27,6 +27,16 @@ The plan named seven pull requests. Building it took twenty-three.
 
 **Cause 3: a tall stack multiplies review.** Each merge at the bottom rebased everything above it, and the review bots read every pull request again. Two merges on 2026-11-27 produced thirteen new threads. Seven of them were true, and none of those would be met in ordinary use.
 
+## What M1c cost
+
+M1c was planned as four pull requests and took seven: five of code (#26 to #30), its plan (#25), and its closing entry. All were built and merged on 2026-11-27.
+
+- Tests went from 596 to 685. Covered statements went from 357 to 368, and planned statements of milestone 1 from 12 to none.
+- The fifth code pull request came from the first. A sweep that could change no source found eleven statements that needed code. Five were fixed, one was dropped as a wrong reading, four moved to M2a, and one was settled as a reading of ambiguous text.
+- Tests written before the build, by a different model than the builder, held. No builder changed an expectation it was given, and three times a builder left a test red and reported it, which was right each time.
+- The bots and two reading reviews raised 21 findings. Eighteen were true, two were false, and one was declined. Eight of the true ones were in the two changes that manage a lifetime, and the reading reviews found five of those before any bot did.
+- Two pull requests each added migration `0005`. Independent pull requests still meet in the ledger, the migrations, and `thread-state.ts`.
+
 ## Rules for the next milestones
 
 1. **The structure bar is part of the build brief.** A brief names the modules a feature may touch, the state it may share, and the size a function may reach. Fallow and the Effect checker now enforce part of this in CI.
@@ -83,9 +93,9 @@ Not in M1c: the Ctrl-C limit of `spindle chat` under a blocked pipe, and the lon
 
 ### M2a, sides and turns
 
-- **Scope.** A handler side. Two prompt sides. Session turns and `maxSessionTurns`. `forceTurn`.
+- **Scope.** A handler side. Two prompt sides. Session turns and `maxSessionTurns`. `forceTurn`. Direct execution outside a calling tool: `invokeTool` from a hook, and `invokeTool` and `runAgent` on a handle at rest. The operator moved this here from M1c on 2026-11-27.
 - **What it changes.** The step loop runs a prompt side against a human side. A side becomes a value the loop is given. The drain stores a queued tool as the prompt side's call, which a handler side cannot use.
-- **Before it starts.** A design note on sides and turns.
+- **Before it starts.** A design note on sides and turns. It also settles how an execution starts from a handle at rest: its claim, its run status, and what happens to queued work and to a second caller.
 
 ### M2b, tools between sides and thread values
 

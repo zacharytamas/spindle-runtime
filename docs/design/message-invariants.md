@@ -42,6 +42,10 @@ The MIT declarations in `packages/runtime/node_modules/@standardagents/spec/dist
 
 Raw SQL from outside the store is not a supported writer. For example, with SQLite recursive triggers disabled, INSERT OR REPLACE using an existing message ID in a different thread can implicitly delete the old row without firing its delete trigger. The destination revision rises and the source cache can keep serving the missing row (#14–15).
 
+## Adding a message from code
+
+`injectMessage()` stores a message and starts nothing. `queueMessage()` stores a message and starts a run when the thread is idle, or delivers it before the next model call when the thread is running. Code that wants a reply to the message it adds uses `queueMessage()`. `queueMessage()` returns nothing and takes only the `user` and `assistant` roles, so code that needs the stored message back, or a `system` message, uses `injectMessage()` and gets no run.
+
 ## Gaps in current enforcement
 
 1. **Validation depends on entry point (#1–3, #16–17).** Low-level insertMessage trusts its caller’s ID and time. appendMessages supplies its own ID/time but accepts draft fields directly. Neither applies acceptMessage. A direct insert can supply a NUL ID that Node lists truncated. Typed InjectMessageInput excludes tool and requires string content, but makeThreadState copies role/content without runtime signature validation. Untyped user code can supply role tool without an owner. Contract tests cover the query bound; no end-to-end unsafe hook timestamp case identified.
