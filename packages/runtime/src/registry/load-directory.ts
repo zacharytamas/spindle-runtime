@@ -1,6 +1,6 @@
-import { Effect, FileSystem, Path } from "effect"
+import { Effect, FileSystem, Path, Result } from "effect"
 import { type Issue, KINDS, PLURAL } from "./definition.ts"
-import { type Discovered, importFile, LoadError, reportDefects } from "./import-file.ts"
+import { type Discovered, type ImportFile, LoadError } from "./load-error.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
@@ -14,7 +14,7 @@ const exportsNoDefinition = (value: unknown) =>
     Object.getPrototypeOf(value) === Object.prototype &&
     Reflect.ownKeys(value).length === 0)
 
-export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string) {
+export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string, importFile: ImportFile) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const definitions: Array<Discovered> = []
@@ -34,22 +34,28 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
     })
     return { definitions, issues }
   }
-  for (const kind of KINDS) {
-    const dir = path.join(agentsDir, PLURAL[kind])
-    if (!(yield* exists(dir))) continue
-    const entries = yield* fs.readDirectory(dir).pipe(
-      Effect.catch((error) => {
-        issues.push({
-          code: "definition_load_failed",
-          severity: "error",
-          message: `Spindle cannot read ${path.relative(root, dir)} as a directory. ${error.message}`,
-          file: path.relative(root, dir),
-          path: "",
-        })
-        return Effect.succeed([])
-      }),
-    )
-    for (const entry of entries.sort()) {
+  const directories = yield* Effect.forEach(
+    KINDS,
+    Effect.fn(function* (kind) {
+      const dir = path.join(agentsDir, PLURAL[kind])
+      const entries = (yield* exists(dir)) ? yield* Effect.result(fs.readDirectory(dir)) : Result.succeed([])
+      return { kind, dir, entries }
+    }),
+    { concurrency: KINDS.length },
+  )
+  for (const { kind, dir, entries } of directories) {
+    if (Result.isFailure(entries)) {
+      const file = path.relative(root, dir)
+      issues.push({
+        code: "definition_load_failed",
+        severity: "error",
+        message: `Spindle cannot read ${file} as a directory. ${entries.failure.message}`,
+        file,
+        path: "",
+      })
+      continue
+    }
+    for (const entry of entries.success.sort()) {
       const extension = path.extname(entry)
       if (!EXTENSIONS.includes(extension) || /\.d\.m?ts$/.test(entry) || entry.startsWith(".")) continue
       const name = path.basename(entry, extension)
@@ -81,7 +87,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         package: undefined,
         file,
         path: "",
-        load: reportDefects(load, { kind, file, path: "" }),
+        load,
       })
     }
   }

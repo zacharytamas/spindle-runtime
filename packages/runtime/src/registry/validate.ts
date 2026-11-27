@@ -1,7 +1,7 @@
 import { Effect, Predicate } from "effect"
 import { checks, type Edge, site } from "./check-definition.ts"
 import { type Definition, type Issue, KINDS, type Kind } from "./definition.ts"
-import { describeCause } from "./import-file.ts"
+import { describeCause } from "./load-error.ts"
 import { Registry } from "./Registry.ts"
 
 type Edges = ReadonlyMap<Definition, ReadonlyArray<Edge>>

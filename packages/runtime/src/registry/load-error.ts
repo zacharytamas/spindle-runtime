@@ -1,5 +1,10 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, type Path } from "effect"
 import type { Definition, Issue } from "./definition.ts"
+
+export type ImportFile = (
+  file: string,
+  url: ReturnType<Path.Path["toFileUrl"]>,
+) => Effect.Effect<Record<string, unknown>, LoadError>
 
 export interface Discovered extends Omit<Definition, "value"> {
   readonly load: Effect.Effect<unknown, LoadError>
@@ -76,25 +81,4 @@ export const fieldIssues = (
         issue([location.path, field].filter((part) => part !== "").join("."), describe(message)),
       )
     : [issue(location.path, whole)]
-}
-
-export const importFile = <E>(file: string, url: Effect.Effect<URL, E>) => {
-  const failure = (cause: unknown) =>
-    new LoadError({
-      issues: fieldIssues(
-        cause,
-        { file, path: "" },
-        (message) => `The file failed to load. ${message}`,
-        describeImportFailure(cause),
-      ),
-    })
-  return url.pipe(
-    Effect.mapError(failure),
-    Effect.flatMap((href) =>
-      Effect.tryPromise({
-        try: (): Promise<Record<string, unknown>> => import(href.href),
-        catch: failure,
-      }),
-    ),
-  )
 }

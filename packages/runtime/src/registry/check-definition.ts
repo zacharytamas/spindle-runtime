@@ -1,6 +1,6 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
 import { type Definition, type Issue, type IssueCode, type Kind, namespaceOf } from "./definition.ts"
-import { describeCause } from "./import-file.ts"
+import { describeCause } from "./load-error.ts"
 import type { Registry } from "./Registry.ts"
 import type { Resolution } from "./resolve.ts"
 

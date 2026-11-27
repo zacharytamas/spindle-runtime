@@ -1,7 +1,14 @@
 import { Context, Effect, type FileSystem, Layer, type Path, Result } from "effect"
 import type { Definition, Issue, Kind, Package } from "./definition.ts"
-import { describeCause, type LoadError } from "./import-file.ts"
 import { loadDirectory } from "./load-directory.ts"
+import {
+  describeCause,
+  describeImportFailure,
+  fieldIssues,
+  type ImportFile,
+  LoadError,
+  reportDefects,
+} from "./load-error.ts"
 import { loadPackages } from "./load-packages.ts"
 import { DefinitionIndex } from "./resolve.ts"
 
@@ -20,13 +27,14 @@ export class Registry extends Context.Service<
     Layer.effect(
       Registry,
       Effect.gen(function* () {
-        const local = yield* loadDirectory(root)
-        const packed = yield* loadPackages(root)
+        const local = yield* loadDirectory(root, importFile)
+        const packed = yield* loadPackages(root, importFile)
         const found = [...local.definitions, ...packed.definitions]
         const issues = [...local.issues, ...packed.issues]
         const results = yield* Effect.forEach(
           found,
-          ({ load, ...source }) => Effect.map(Effect.result(load), (result) => ({ source, result })),
+          ({ load, ...source }) =>
+            Effect.map(Effect.result(reportDefects(load, source)), (result) => ({ source, result })),
           { concurrency: 16 },
         )
         const index = new DefinitionIndex()
@@ -108,4 +116,25 @@ const finishLoad = (
     name: declared,
     qualifiedName: source.package === undefined ? declared : `${source.package.signature.packageId}/${declared}`,
   }
+}
+
+const importFile: ImportFile = (file, url) => {
+  const failure = (cause: unknown) =>
+    new LoadError({
+      issues: fieldIssues(
+        cause,
+        { file, path: "" },
+        (message) => `The file failed to load. ${message}`,
+        describeImportFailure(cause),
+      ),
+    })
+  return url.pipe(
+    Effect.mapError(failure),
+    Effect.flatMap((href) =>
+      Effect.tryPromise({
+        try: (): Promise<Record<string, unknown>> => import(href.href),
+        catch: failure,
+      }),
+    ),
+  )
 }
