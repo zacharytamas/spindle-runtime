@@ -8,7 +8,7 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Predicate, Result } from "effect"
+import { Data, Effect, type Fiber, Predicate, Result, Stream } from "effect"
 import { isTimeout } from "../providers/timeout.ts"
 import type { SetupError } from "./turn.ts"
 
@@ -82,8 +82,6 @@ export interface ModelResponse {
   providerTools: number
   finish: Finish | undefined
 }
-
-type FinishedResponse = ModelResponse & { readonly finish: Finish }
 
 const callOf = (response: ModelResponse, id: string): StreamedCall => {
   let call = response.calls.get(id)
@@ -264,11 +262,10 @@ const streamResponse = (
   started: Array<StreamedCall>,
 ) =>
   Effect.gen(function* () {
-    const iterable = yield* Effect.tryPromise({
-      try: () => provider.stream(request),
-      catch: (cause) => failureOf(cause, provider),
-    })
-    const iterator = iterable[Symbol.asyncIterator]()
+    const scoped = yield* Effect.abortSignal
+    const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])
+    const onError = (cause: unknown) => failureOf(cause, provider)
+    const iterable = yield* Effect.tryPromise({ try: () => provider.stream({ ...request, signal }), catch: onError })
     const response: ModelResponse = {
       content: null,
       reasoning: null,
@@ -279,41 +276,27 @@ const streamResponse = (
       finish: undefined,
     }
     const watchers = new Map<string, (delta: string) => { readonly value: unknown } | undefined>()
-    const read = Effect.gen(function* () {
-      while (true) {
-        const next = yield* Effect.tryPromise({
-          try: () => iterator.next(),
-          catch: (cause) => failureOf(cause, provider),
-        })
-        if (next.done === true) break
-        const failure = applyChunk(response, next.value)
-        if (failure !== undefined) return yield* failure
-        if (hooks !== undefined) yield* startCalls(response, next.value, hooks, started, watchers)
-      }
-      const { finish } = response
-      // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
-      if (finish === undefined)
-        return yield* new ProviderFailure({
-          message: "The provider stream ended without a finish chunk",
-          code: "server_error",
-          origin: `provider:${provider.name}`,
-        })
-      if (finish.finishReason === "error")
-        return yield* new ProviderFailure({
-          message: "The provider finished the response with an error",
-          code: "unknown",
-          origin: `provider:${provider.name}`,
-        })
-      return { ...response, finish } satisfies FinishedResponse
+    yield* Stream.runForEach(Stream.fromAsyncIterable(iterable, onError), (chunk) => {
+      const failure = applyChunk(response, chunk)
+      if (failure !== undefined) return Effect.fail(failure)
+      return hooks === undefined ? Effect.void : startCalls(response, chunk, hooks, started, watchers)
     })
-    return yield* read.pipe(
-      Effect.onError(() =>
-        Effect.sync(() => {
-          Promise.resolve(iterator.return?.()).catch(() => {})
-        }),
-      ),
-    )
-  })
+    const { finish } = response
+    // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
+    if (finish === undefined)
+      return yield* new ProviderFailure({
+        message: "The provider stream ended without a finish chunk",
+        code: "server_error",
+        origin: `provider:${provider.name}`,
+      })
+    if (finish.finishReason === "error")
+      return yield* new ProviderFailure({
+        message: "The provider finished the response with an error",
+        code: "unknown",
+        origin: `provider:${provider.name}`,
+      })
+    return { ...response, finish }
+  }).pipe(Effect.scoped)
 
 export interface ModelCall {
   readonly step: number
