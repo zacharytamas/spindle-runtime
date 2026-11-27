@@ -57,6 +57,24 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string,
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
       const load = importFile(file, path.toFileUrl(absolute)).pipe(
+        Effect.catch((failure) =>
+          Effect.flatMap(exists(absolute), (present) =>
+            Effect.fail(
+              present
+                ? failure
+                : new LoadError({
+                    issues: [
+                      issue(
+                        "definition_load_failed",
+                        file,
+                        "",
+                        `Cannot load ${file}. The file or its link target does not exist.`,
+                      ),
+                    ],
+                  }),
+            ),
+          ),
+        ),
         Effect.flatMap((module) => {
           if (!exportsNoDefinition(module.default)) return Effect.succeed(module.default)
           const message = `The file exports no definition. Export the ${kind} definition as the default export.`
