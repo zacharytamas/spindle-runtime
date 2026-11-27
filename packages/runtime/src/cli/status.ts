@@ -1,8 +1,8 @@
-import { Cause, Console, Effect, Path } from "effect"
+import { Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { RunStore } from "../store/RunStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { fail, openDatabase, RunFailed } from "./run.ts"
+import { commandErrors, fail, openDatabase } from "./shared.ts"
 
 const time = (micros: number) =>
   micros === 0 ? "0" : `${new Date(Math.floor(micros / 1000)).toISOString()} (${micros})`
@@ -18,7 +18,7 @@ export const statusCommand = Command.make(
     Effect.gen(function* () {
       const path = yield* Path.Path
       const filename = path.resolve(args.db)
-      const database = yield* openDatabase(filename)
+      const database = openDatabase(filename)
       yield* Effect.gen(function* () {
         const runStore = yield* RunStore
         const threadStore = yield* ThreadStore
@@ -33,15 +33,7 @@ export const statusCommand = Command.make(
         yield* Console.log(`queued ${yield* runStore.queueLength(thread.id)}`)
         if (thread.terminated !== null) yield* Console.log(`terminated ${time(thread.terminated)}`)
       }).pipe(Effect.provide(database))
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const failure = Cause.findError(cause)
-        if (failure._tag === "Success" && failure.success instanceof RunFailed) return Effect.failCause(cause)
-        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-        const error = Cause.squash(cause)
-        return fail(error instanceof Error ? error.message : String(error))
-      }),
-    ),
+    }).pipe(commandErrors()),
 ).pipe(Command.withDescription("Print a thread's run status: idle, running, or failed, with the reason and the time"))
 
 export const recoverCommand = Command.make(
@@ -56,7 +48,7 @@ export const recoverCommand = Command.make(
   },
   ({ thread, db, force }) =>
     Effect.gen(function* () {
-      const database = yield* openDatabase(db)
+      const database = openDatabase(db)
       const result = yield* RunStore.use((store) => store.recoverThread(thread, force)).pipe(
         Effect.provide(database),
         Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)),
@@ -75,5 +67,5 @@ export const recoverCommand = Command.make(
         ? `thread ${thread} was running in process ${result.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
         : `thread ${thread} was running in process ${result.pid}, which is gone. Settled it as failed (execution_lost).`
       yield* Console.log(line)
-    }),
+    }).pipe(commandErrors()),
 ).pipe(Command.withDescription("Settle a thread whose execution was lost"))

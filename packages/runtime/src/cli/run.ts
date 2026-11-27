@@ -1,59 +1,14 @@
-import type { LLMProviderInterface, Message } from "@standardagents/spec"
-import { Cause, Console, Data, Duration, Effect, FileSystem, Layer, Logger, Option, Path, Runtime } from "effect"
+import type { Message } from "@standardagents/spec"
+import { Console, Duration, Effect, Option } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
-import { onInterrupt, SqliteLive } from "#platform"
+import { onInterrupt } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
-import { newSecrets } from "../execution/env.ts"
 import { HookTimeout } from "../execution/hooks.ts"
-import { redactor } from "../execution/redact.ts"
-import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
-import { layer as supervisorLayer, ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
+import type { ExecutionEvent } from "../execution/step.ts"
+import { ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { createThread, sendMessage } from "../execution/trigger.ts"
-import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
-import { decodeScript, scriptedProvider } from "../providers/script.ts"
-import { Registry } from "../registry/Registry.ts"
-import { validate } from "../registry/validate.ts"
-import { ThreadTerminated } from "../store/model.ts"
-import { type Stores, layer as sqliteStore } from "../store/sqlite.ts"
-import { ThreadStore } from "../store/ThreadStore.ts"
-
-export class RunFailed extends Data.TaggedError("RunFailed")<{ readonly message: string }> {
-  // runMain logs a failure and its stack unless this is false. The run already printed a plain message.
-  override readonly [Runtime.errorReported] = false
-}
-
-export const fail = (message: string) =>
-  Effect.gen(function* () {
-    yield* Console.error(`spindle: ${message}`)
-    return yield* new RunFailed({ message })
-  })
-
-// For diagnostics assembled from runtime identifiers and already-cleaned fields.
-export const operatorNotes = (console: Console.Console) => (text: string) =>
-  Effect.sync(() => console.error(`spindle: ${text}`))
-
-const loadScript = (file: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const text = yield* fs
-      .readFileString(file)
-      .pipe(Effect.catch((error) => fail(`cannot read the script ${file}: ${error.message}`)))
-    const script = yield* decodeScript(text).pipe(
-      Effect.catch((error) => fail(`${file} is not a valid script: ${error.message.replaceAll(/\s*\n\s*/g, " ")}`)),
-    )
-    return scriptedProvider(script)
-  })
-
-// Threads section 2.3 and Infrastructure Providers: the command prints no secret value. Every line it prints goes
-// through one redactor, which knows each value the execution has resolved as secret by then.
-const redacting = (console: Console.Console, redact: (text: string) => string): Console.Console => {
-  const clean = (parts: ReadonlyArray<unknown>) => parts.map((part) => (typeof part === "string" ? redact(part) : part))
-  return Object.assign(Object.create(console) as Console.Console, {
-    log: (...parts: ReadonlyArray<unknown>) => console.log(...clean(parts)),
-    error: (...parts: ReadonlyArray<unknown>) => console.error(...clean(parts)),
-  })
-}
+import { deliveryFlags, fail, type note, plural, requestText, toolCallLine, withOutput, withProject } from "./shared.ts"
 
 const stillQueued = "Your message is still queued and the next run of this thread will deliver it."
 
@@ -61,7 +16,7 @@ const printer =
   (
     modelRole: Message["role"],
     options: { readonly trace: boolean; readonly dumpRequests: boolean },
-    identify: ReturnType<typeof operatorNotes>,
+    identify: typeof note,
   ) =>
   (event: ExecutionEvent): Effect.Effect<void> => {
     const print = (line: string) => Console.log(line)
@@ -73,8 +28,7 @@ const printer =
       )
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
-      const { signal: _, ...request } = event.request
-      return print(JSON.stringify(request, null, 2))
+      return print(requestText(event.request))
     }
     const message = event.message
     if (message.role === "tool")
@@ -82,56 +36,11 @@ const printer =
     if (message.role !== modelRole) return Effect.void
     return Effect.gen(function* () {
       if (message.content !== null && message.content !== "") yield* print(message.content)
-      for (const call of toolCallsOf(message))
-        yield* print(`[tool call] ${call.name} ${JSON.stringify(call.arguments)}`)
+      for (const call of toolCallsOf(message)) yield* print(toolCallLine(call))
     })
   }
 
-// SQLite says only that it cannot open the file, so the command names a missing directory or a directory first.
-export const openDatabase = (filename: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const problem = (cause: string) => fail(`cannot open the database ${filename}: ${cause}`)
-    if (filename !== ":memory:") {
-      const info = yield* Effect.option(fs.stat(filename))
-      if (Option.isSome(info) && info.value.type === "Directory") return yield* problem("it is a directory")
-      const directory = path.dirname(filename)
-      if (!(yield* fs.exists(directory))) return yield* problem(`the directory ${directory} does not exist`)
-    }
-    return Layer.provide(sqliteStore, SqliteLive({ filename })).pipe(
-      Layer.catchTag("SqlError", (error) =>
-        Layer.effectContext<Stores, RunFailed, never>(
-          problem(error.cause.cause instanceof Error ? error.cause.cause.message : error.message),
-        ),
-      ),
-    )
-  })
-
-const describe = (cause: Cause.Cause<unknown>) => {
-  const error = Cause.squash(cause)
-  return error instanceof Error ? error.message : String(error)
-}
-
-export const deliveryFlags = {
-  message: Flag.String("message").pipe(Flag.withAlias("m"), Flag.withDescription("The message from the human side")),
-  dir: Flag.String("dir").pipe(Flag.withDescription("The project directory that holds agents/"), Flag.withDefault(".")),
-  script: Flag.String("script").pipe(
-    Flag.withDescription("Answer from a JSON script of responses instead of calling the model's provider"),
-    Flag.optional,
-  ),
-  trace: Flag.Boolean("trace").pipe(Flag.withDescription("Print each phase of each step"), Flag.withDefault(false)),
-  dumpRequests: Flag.Boolean("dump-requests").pipe(
-    Flag.withDescription("Print each provider request as JSON, with secret values redacted"),
-    Flag.withDefault(false),
-  ),
-  hookTimeout: Flag.Finite("hook-timeout").pipe(
-    Flag.withDescription("Seconds one hook call may run before the run goes on without it. The default is 30."),
-    Flag.optional,
-  ),
-}
-
-export interface DeliveryArgs {
+interface DeliveryArgs {
   readonly message: string
   readonly dir: string
   readonly script: Option.Option<string>
@@ -141,116 +50,47 @@ export interface DeliveryArgs {
   readonly hookTimeout: Option.Option<number>
 }
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
-
 export const deliver = (args: DeliveryArgs, target: { readonly agent: string } | { readonly thread: string }) =>
-  Console.consoleWith((current) => {
-    const secrets = new Set<string>()
-    const redact = redactor(secrets)
-    const console = redacting(current, redact)
-    const identify = operatorNotes(current)
-    // A log line, such as a hook that failed, goes to standard error with the other notes, through the redactor.
-    const logger = Logger.make((entry) => {
-      const parts: ReadonlyArray<unknown> = Array.isArray(entry.message) ? entry.message : [entry.message]
-      console.error(`spindle: ${parts.join(" ")}`)
-    })
-    return Effect.gen(function* () {
-      const path = yield* Path.Path
-      const root = path.resolve(args.dir)
-      const filename = args.db === ":memory:" ? args.db : path.resolve(args.db)
-      for (const [flag, value] of [["--hook-timeout", args.hookTimeout]] as const)
-        if (Option.isSome(value) && !(value.value > 0)) return yield* fail(`${flag} takes a number of seconds above 0`)
-      // The thread names the agent that send runs, so send reads it before it validates the definitions.
-      let agent: string
-      let store: Layer.Layer<Stores, unknown> | undefined
-      if ("agent" in target) agent = target.agent
-      else {
-        const { thread } = target
-        const opened = yield* openDatabase(filename)
-        store = opened
-        agent = yield* Effect.gen(function* () {
-          const threads = yield* ThreadStore
-          return (yield* threads.getThread(thread)).agentId
-        }).pipe(
-          Effect.provide(opened),
-          Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${filename}`)),
+  withOutput(({ secrets, clean, identify }) => {
+    if (Option.isSome(args.hookTimeout) && !(args.hookTimeout.value > 0))
+      return fail("--hook-timeout takes a number of seconds above 0")
+    const run = withProject(args.dir, args.db, target, args.script, secrets, (role, filename) =>
+      Effect.gen(function* () {
+        const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
+        // Another command can name a thread in a database file, so the id comes first, before any reply.
+        if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
+        const delivery = yield* sendMessage(threadId, args.message, { observe: printer(role, args, identify) }).pipe(
+          answerInterrupts(threadId, identify),
         )
-      }
-      yield* Effect.gen(function* () {
-        const { issues } = yield* validate
-        // The redactor knows only what the execution has learned, so it learns the turn's secrets before the
-        // command prints its first line. A turn that cannot be prepared fails again in the run with its own message.
-        yield* prepareTurn(agent).pipe(
-          Effect.flatMap((turn) => learnSecrets(turn, newSecrets(secrets))),
-          Effect.ignore,
-        )
-        const errors = issues.filter((issue) => issue.severity === "error")
-        for (const issue of errors)
-          yield* Console.error(
-            `${issue.code} ${issue.file}${issue.path === "" ? "" : `:${issue.path}`} ${issue.message}`,
-          )
-        if (errors.length > 0) return yield* fail(`${root} has ${plural(errors.length, "definition error")}`)
-        const sides = yield* sidesOf(agent).pipe(Effect.catchTag("SetupError", (error) => fail(error.message)))
-        const provider: LLMProviderInterface | undefined = Option.isSome(args.script)
-          ? yield* loadScript(path.resolve(args.script.value))
-          : undefined
-        const database = store ?? (yield* openDatabase(filename))
-        const reject = (message: string) => Effect.andThen(identify(message), Effect.fail(new RunFailed({ message })))
-        const options = {
-          ...(provider === undefined ? {} : { provider }),
-          secrets,
-          observe: printer(roleOf(sides.side), args, identify),
-        }
-        const supervisor = supervisorLayer(options)
-        yield* Effect.gen(function* () {
-          const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
-          // Another command can name a thread in a database file, so the id comes first, before any reply.
-          if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
-          const delivery = yield* sendMessage(threadId, args.message, options).pipe(
-            answerInterrupts(threadId, identify),
-          )
-          const { outcome } = delivery
-          const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
-          if (outcome !== undefined) {
-            if (outcome.reason === "execution_lost")
-              return yield* reject(
-                `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
-              )
-            yield* identify(
-              `${outcome.status} (${redact(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
+        const { outcome } = delivery
+        const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
+        if (outcome !== undefined) {
+          if (outcome.reason === "execution_lost")
+            return yield* reject(
+              `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
             )
-            if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
-            return
-          }
-          const { status } = delivery
-          yield* identify(`${status.state} (${redact(status.reason ?? "none")}), thread ${threadId}`)
-          if (status.state === "failed")
-            return yield* reject(`the run of thread ${threadId} ended ${redact(status.reason ?? "none")}${queuedNote}`)
-        }).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
-      }).pipe(Effect.provide(Registry.layer(root)))
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const failure = Cause.findError(cause)
-        if (failure._tag === "Success" && failure.success instanceof RunFailed) return Effect.failCause(cause)
-        if (failure._tag === "Success" && failure.success instanceof ThreadTerminated) {
-          const { message } = failure.success
-          return Effect.andThen(identify(message), Effect.fail(new RunFailed({ message })))
+          yield* identify(
+            `${outcome.status} (${clean(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
+          )
+          if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
+          return
         }
-        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-        return fail(describe(cause))
+        const { status } = delivery
+        yield* identify(`${status.state} (${clean(status.reason ?? "none")}), thread ${threadId}`)
+        if (status.state === "failed")
+          return yield* reject(`the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`)
       }),
-      Effect.provide(Logger.layer([logger])),
-      Option.isSome(args.hookTimeout)
-        ? Effect.provideService(HookTimeout, Duration.millis(args.hookTimeout.value * 1000))
-        : (effect) => effect,
-      Effect.provideService(Console.Console, console),
     )
+    const reject = (message: string) => fail(message, identify)
+    return Option.isSome(args.hookTimeout)
+      ? run.pipe(Effect.provideService(HookTimeout, Duration.millis(args.hookTimeout.value * 1000)))
+      : run
   })
 
 // The first Ctrl-C asks the execution to stop after its current operation. The second interrupts it, and the run
 // settles idle while the thread stays open. A Ctrl-C after that ends the process.
 const answerInterrupts =
-  (threadId: string, identify: ReturnType<typeof operatorNotes>) =>
+  (threadId: string, identify: typeof note) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | ThreadSupervisor> =>
     Effect.gen(function* () {
       const supervisor = yield* ThreadSupervisor

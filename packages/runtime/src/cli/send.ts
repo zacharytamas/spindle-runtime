@@ -1,5 +1,7 @@
 import { Argument, Command, Flag } from "effect/cli"
-import { deliver, deliveryFlags } from "./run.ts"
+import { deliver } from "./run.ts"
+
+import { deliveryFlags } from "./shared.ts"
 
 export const sendCommand = Command.make(
   "send",
