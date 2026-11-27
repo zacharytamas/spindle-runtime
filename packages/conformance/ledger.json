@@ -1342,7 +1342,7 @@
 	},
 	"specification:effects:b7593fb4": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
@@ -1448,7 +1448,7 @@
 	},
 	"specification:hooks:f3dc7790": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
 		],
@@ -1456,7 +1456,7 @@
 	},
 	"specification:hooks:ebcb97e7": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
@@ -1621,7 +1621,7 @@
 	},
 	"specification:hooks:5cf7c4b6": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > messages > M4 lets filter_messages and prefilter_llm_history shape only the request while history keeps the stored rows",
 			"packages/runtime/test/conformance.test.ts > hooks > H11b sends every field of the array prefilter_llm_history returns that a provider message can hold"
@@ -2665,22 +2665,28 @@
 		"reason": ""
 	},
 	"specification:threads:7c070519": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "No test yet compares the members of a ThreadState with the interface the spec declares. The M1 review or M1-7 can add one, since every member exists after M1-6."
+		"status": "covered",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > exposes only the public spec members at rest and inside a tool"
+		],
+		"reason": ""
 	},
 	"specification:threads:19fce160": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "No test yet compares the members of a ThreadState with the interface the spec declares. The M1 review or M1-7 can add one, since every member exists after M1-6."
+		"status": "covered",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > exposes only the public spec members at rest and inside a tool"
+		],
+		"reason": ""
 	},
 	"specification:threads:2e916e49": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "No test yet compares the members of a ThreadState with the interface the spec declares. The M1 review or M1-7 can add one, since every member exists after M1-6."
+		"status": "covered",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > exposes only the public spec members at rest and inside a tool"
+		],
+		"reason": ""
 	},
 	"specification:threads:52e1e778": {
 		"status": "covered",
@@ -2691,28 +2697,38 @@
 		"reason": ""
 	},
 	"specification:threads:b97f0023": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "queueMessage, queueTool, getMessages, and the hook writes reject invalid parameters, and no test yet checks every method of ThreadState against this row. The M1 review owes that sweep."
+		"status": "partial",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects invalid pagination, keys, non-JSON values and unknown definition names"
+		],
+		"reason": "Invalid counts, malformed Unicode keys and non-JSON values reject. getMessages accepts an unknown order, numeric message ids and value keys resolve, and injectMessage(null) throws before returning a promise. The parameter checks at the ThreadState boundary are incomplete."
 	},
 	"specification:threads:86d51bef": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "A storage error reaches the caller of a ThreadState method as a rejection, and no test yet forces one through every method. The M1 review owes that sweep."
+		"status": "partial",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > propagates SQLite failures through every M1 storage-backed operation"
+		],
+		"reason": "The SQLite-backed methods surface storage failures. instanceEnv resolves to undefined when its configuration source fails, masking the error as an absent key. See Instance environment read failures in DIVERGENCES.md."
 	},
 	"specification:threads:a22d57c1": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "getMessages returns an empty list and getMessage and getValue return null, and no test yet cites this row for every method. The M1 review owes that sweep."
+		"status": "partial",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > returns the documented empty values on an unused root thread",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > lists no definition names when the registry is empty"
+		],
+		"reason": "Message, thread, value and registry lookups return their empty values. Missing-file reads (M3a), empty effect schedules (M4) and missing skills (M7) reject until those services exist."
 	},
 	"specification:threads:28e54701": {
-		"status": "planned",
-		"milestone": "M1",
-		"tests": [],
-		"reason": "No test yet cites this row for every method of ThreadState. The M1 review owes that sweep."
+		"status": "partial",
+		"milestone": "M1c",
+		"tests": [
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > accepts omitted message options and distinguishes an absent instance variable from a required lookup",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > returns the documented empty values on an unused root thread"
+		],
+		"reason": "Message defaults, an absent instance value, a missing user and parent lookup are supported. A root thread still rejects notifyParent with nonempty content when no parent exists (M3b)."
 	},
 	"specification:threads/client-api:0d171793": {
 		"status": "planned",
@@ -5287,7 +5303,7 @@
 	},
 	"specification:agents:13907439": {
 		"status": "not-testable",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [],
 		"reason": "Only the packer consumes optional author metadata. Spindle loads definitions and does not pack them."
 	},

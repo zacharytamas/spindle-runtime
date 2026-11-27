@@ -180,6 +180,14 @@ Standard Agent Specification 0.2.0 defines no tool deadline. Spindle adds an ope
 
 ## Identifying effects and hooks made by their definition helpers
 
-- **Spec.** Effects requires the default export to be made by `defineEffect` (`specification:effects:b7593fb4`). Hooks requires `defineHook`, a recognized hook position, and a unique snake_case id (`specification:hooks:f3dc7790`, `specification:hooks:ebcb97e7`).
-- **Package.** The MIT helpers return an unbranded tuple and an unbranded object respectively. An author can export the same values directly.
-- **Spindle.** The loader checks the exported shape, hook position and id. The export carries no record of the function that constructed it.
+- **Spec.** Effects §1.2 requires the default export to be made by `defineEffect` (`specification:effects:b7593fb4`). Hooks §1.2 requires `defineHook`, a recognized hook position, and a unique snake_case id (`specification:hooks:f3dc7790`, `specification:hooks:ebcb97e7`).
+- **Package.** In `@standardagents/spec` 0.45.13, `defineEffect` returns a tuple and `defineHook` returns an object containing `hook`, `id`, and `execute`.
+- **Disagreement.** Both helpers return unbranded values. A loader cannot distinguish an author-written equivalent from a helper's return value.
+- **Spindle.** The loader validates the observable export. The malformed-effect, invalid-hook and duplicate-name cases in `packages/runtime/test/registry/validate.test.ts` exercise those checks.
+
+## User-value reads through a thread without a user
+
+- **Spec.** Threads §2 and §7 describe `user()` and the thread key-value store. They do not describe an account key-value API on the thread. Users §1 makes user capabilities unavailable on a user-less thread.
+- **Package.** `ThreadState` in `@standardagents/spec` 0.45.13 additionally declares `getUserValue`, `listUserValues`, and `setUserValue`.
+- **Disagreement.** The package specifies a null lookup and an empty list on a user-less thread, even though the spec does not define these two reads.
+- **Spindle.** `user()` resolves to null. The package-only user-value operations reject pending the Users milestone. The `ThreadState` member test checks the signatures' names, and the empty-root-thread test checks `user()`.
