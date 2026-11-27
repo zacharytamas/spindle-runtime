@@ -822,5 +822,101 @@
     "section": "1.3 Naming",
     "level": "MUST",
     "text": "Effect names are file-based (`agents/effects/send_digest.ts` => `send_digest`)"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.1 States",
+    "level": "MUST",
+    "text": "| `idle` | No execution is running and the last run did not fail — or the thread has never run (`since` is `0`, `reason` is `null`). |"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.1 States",
+    "level": "MUST",
+    "text": "| `running` | An execution is in flight. `reason` is `null`. |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "6.1 Thread Arguments",
+    "level": "MUST",
+    "text": "`arguments` is the read-only argument object supplied when the thread was created or invoked."
+  },
+  {
+    "page": "specification:threads",
+    "section": "6.2 Per-Execution Context",
+    "level": "MUST",
+    "text": "User code may mutate it during execution, and later participants in that same execution see those mutations."
+  },
+  {
+    "page": "specification:threads",
+    "section": "6.3 Context Limitations",
+    "level": "MUST",
+    "text": "| **Scope** | Single execution only |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "6.3 Context Limitations",
+    "level": "MUST",
+    "text": "| **Persistence** | Mutations are lost after execution ends |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7. Durable Key-Value Store",
+    "level": "MUST",
+    "text": "Values persist across executions, tool calls, hook invocations, and endpoint requests for the lifetime of the thread."
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Scope** | Per-thread; not shared with parent, child, or sibling threads |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Persistence** | Durable across executions for the lifetime of the thread |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Value type** | Any JSON-serializable value (objects, arrays, strings, numbers, booleans, `null`) |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Missing keys** | `getValue` returns `null` |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Deletion** | `setValue(key, null)` or `setValue(key, undefined)` deletes the key |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "7.2 Semantics",
+    "level": "MUST",
+    "text": "| **Subagents** | Values are **not** automatically copied to spawned child threads |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `id` | `string` | Unique message ID |"
+  },
+  {
+    "page": "specification:threads/messages",
+    "section": "1. Message Structure",
+    "level": "MUST",
+    "text": "| `created_at` | `number` | Creation timestamp |"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.1 States",
+    "level": "MUST",
+    "text": "| `failed` | The last run ended in an error. |"
   }
 ]

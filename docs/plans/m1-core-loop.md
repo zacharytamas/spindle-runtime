@@ -230,29 +230,29 @@ The store holds four tables keyed by thread id. `threads` holds the agent name, 
 
 **Files.**
 
-- [ ] Create `packages/runtime/src/store/ThreadStore.ts`, `schema.ts`, `migrations/0001_threads.ts`, and `sqlite.ts`.
-- [ ] Create `packages/runtime/scripts/store-probe.ts`.
-- [ ] Edit `packages/runtime/src/platform/node.ts` and `packages/runtime/src/platform/bun.ts` only if the store needs a `SqliteClient` option that M1-1 did not set.
+- [x] Create `packages/runtime/src/store/ThreadStore.ts`, `schema.ts`, `migrations/0001_threads.ts`, and `sqlite.ts`.
+- [x] Create `packages/runtime/scripts/store-probe.ts`.
+- [x] Edit `packages/runtime/src/platform/node.ts` and `packages/runtime/src/platform/bun.ts` only if the store needs a `SqliteClient` option that M1-1 did not set.
 
 **Build.**
 
-- [ ] Define `ThreadStore` as an Effect service whose methods return typed records and typed errors. The live layer needs `SqlClient` from `effect/sql/SqlClient` and names no SQLite package.
-- [ ] Write one implementation. Tests use the same implementation on an in-memory database. Do not add a second adapter.
+- [x] Define `ThreadStore` as an Effect service whose methods return typed records and typed errors. The live layer needs `SqlClient` from `effect/sql/SqlClient` and names no SQLite package.
+- [x] Write one implementation. Tests use the same implementation on an in-memory database. Do not add a second adapter.
 - [ ] Run migrations with the `SqliteMigrator` module of the platform's SQLite package, reached through `#platform`.
-- [ ] Give the caller control of the transaction boundary. A batch that the caller writes in one transaction commits together or not at all. The store never groups a step's records by itself, because the step loop in M1-4 commits the assistant message before it runs a tool and commits each tool result before the next tool.
-- [ ] Implement the durable key-value rules from the second section 14 of the Runtime page. `setValue` with `null` or `undefined` deletes the key. `getValue` returns `null` for a key that was never set. A thread cannot read another thread's keys. A value that JSON cannot represent makes `setValue` fail with an error that names the key.
-- [ ] Implement message reads with `includeSilent`, a stable order by sequence number, and the paging options of `GetMessagesOptions`.
-- [ ] Change the `since` time of the run status only when the state or the reason changes.
-- [ ] Write `store-probe.ts` with one subcommand per live lane. Each subcommand prints what it wrote or read as JSON.
+- [x] Offer `ThreadStore.transaction`, which commits every store call inside it together or not at all. The caller picks the boundary. Runtime section 3 persists the assistant response before the tools run, so M1-4 decides which records share a transaction.
+- [x] Implement the durable key-value rules from the second section 14 of the Runtime page. `setValue` with `null` or `undefined` deletes the key. `getValue` returns `null` for a key that was never set. A thread cannot read another thread's keys. A value that JSON cannot represent makes `setValue` fail with an error that names the key.
+- [x] Implement message reads with `includeSilent`, a stable order by sequence number, and the paging options of `GetMessagesOptions`.
+- [x] Change the `since` time of the run status only when the state or the reason changes.
+- [x] Write `store-probe.ts` with one subcommand per live lane. Each subcommand prints what it wrote or read as JSON.
 
 **You see.**
 
-- [ ] `node packages/runtime/scripts/store-probe.ts roundtrip --db /tmp/x.db` prints three message records in order, and a second process prints the same three.
-- [ ] `sqlite3 /tmp/x.db ".tables"` lists `threads`, `messages`, `queue`, and `kv`.
+- [x] `node packages/runtime/scripts/store-probe.ts roundtrip --db /tmp/x.db` prints three message records in order, and a second process prints the same three.
+- [x] `sqlite3 /tmp/x.db ".tables"` lists `threads`, `messages`, `queue`, and `kv`.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/runtime/test/store/contract.test.ts` gains one case per `ThreadStore` method and one case per key-value rule. Run `pnpm vitest run packages/runtime/test/store` on Node and on Bun.
+- [x] `packages/runtime/test/store/contract.test.ts` gains one case per `ThreadStore` method and one case per key-value rule. Run `pnpm vitest run packages/runtime/test/store` on Node and on Bun.
 - [ ] The ledger entries that `ledger.json` assigns to M1 in the second section 14 of `infrastructure:runtime`, and the entries for the persistence statements in `specification:threads/execution-state` section 4.3 change to `covered`. Run `pnpm check`.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
@@ -666,6 +666,59 @@ exit 0
 - The file boundary names `src/registry`, `src/cli`, and `fixtures`. M1-2 also adds `test/registry`, `test/cli`, and edits `requirements.extra.json`, `requirements.json`, `ledger.json`, and `DIVERGENCES.md`, as the owner brief allows.
 - `packages/conformance/fixtures/generate-large.mjs <dir>` writes the 200-definition fixture for the perf lane. One unmeasured run took 0.37 seconds on Node and 0.13 seconds on Bun. The perf lane owns the real medians.
 - The plan describes the registry as a map to lazy loaders. A name in a `name` or `id` field is known only after the file loads, so the `Registry` layer loads every definition once when it builds and keeps the values. Each `Definition` still has its cached `load` effect.
+
+### Settled in M1-3
+
+The M1-3 owner ran each command below on 2026-11-25 on macOS, from the repository root, with Node 22.22.3 and Bun 1.4.5. Transcripts are in `/tmp/spindle-m1-3/evidence/` on that machine.
+
+**Columns.** The plan names the four tables. These columns are the owner's choice, and each names the need that drove it.
+
+- `threads` adds `created_at` for `ThreadState.createdAt`. The run status is three columns, `run_state`, `run_reason`, and `run_since`. A never-run thread reads `idle`, since `0`, reason `null`, which Execution State 4.1 requires. A `CHECK` keeps `run_reason` null while the state is `running`. `user_id` is absent because the Users page is a Draft.
+- `messages` has one column per field of the spec's `Message` record, except the nine `subagent_*` fields. The spec calls those projections of the child registry, so M3 computes them at read time. `seq` is an `AUTOINCREMENT` key, so it only grows, even after a delete. `reasoning_content`, `reasoning_details`, and `prompt` serve M1-4, which persists reasoning with the assistant message. `silent`, `metadata`, `parent_id`, and `depth` serve the M1-5 lanes and the `maxDepth` read option. `status` serves M1-6, which marks queued messages `pending`.
+- `queue` holds `kind` (`message` or `tool`), a JSON `payload`, and `queued_at`. The payload of a message is the package's `QueueMessageInput`, and the payload of a tool call is the tool name and its arguments. M1-6 lanes 2 to 4 drain it.
+- `kv` holds the value as JSON text, keyed by thread id and key.
+- Every time column holds microseconds since the epoch, like `created_at` in the package and `since` in Execution State 4.
+
+**Durability.** The store sets `synchronous = FULL` on top of the WAL mode that both SQLite clients set. WAL with `NORMAL` already survives `SIGKILL`, because a commit reaches the operating system before `COMMIT` returns. `FULL` also calls `fsync` on each commit, which on Linux makes a commit survive an operating system crash. On macOS `fsync` does not flush the drive cache, so `FULL` does not survive power loss there. In 4 interleaved rounds of 2,000 appends each, the median append took 0.062 ms with `NORMAL` and 0.093 ms with `FULL` on Node, and 0.058 ms and 0.146 ms on Bun. Why Bun pays more for `fsync` is a guess. Bun on macOS loads the system SQLite 3.54.0, and Node bundles SQLite 3.51.3. `PRAGMA foreign_keys = ON` is set too, so a row cannot name a thread that does not exist.
+
+**Step atomicity.** `ThreadStore.transaction` wraps `sql.withTransaction`, and every store method nests inside it as a savepoint. A caller that wants a step's records to commit together wraps the step in it. `store-probe kill-mid-transaction --rounds 10` killed a looping writer at random times and found 3,949 committed steps on Node and 5,530 on Bun, each with all three records. The `--hold` case, killed after three writes and before `COMMIT`, found zero records. On Bun that `--hold` child was not killed. Bun exits once no timer is left, so the child exited with code 0 before the kill, and zero records proved nothing there. The fix round gave the held child a timer and made the probe fail unless the child died from `SIGKILL`. After it, the `--hold` child died from `SIGKILL` on both runtimes with zero records found, and 10 random rounds found 4,057 committed steps on Node and 3,589 on Bun, none incomplete.
+
+**Migrations.** The store runs migration 0001 with `Migrator.make({})` from `effect/sql/Migrator`, not through `#platform`. In `@effect/sql-sqlite-node@4.1.5` and `@effect/sql-sqlite-bun@4.1.5`, `SqliteMigrator.run` is that same `Migrator.make({})` call, with its schema dump commented out. Reaching it through `#platform` would add a member to `Platform` and a dynamic import that runs the same code. The box that names `SqliteMigrator` stays unchecked until the root accepts or rejects this. `Platform` is unchanged.
+
+**Perf, one interleaved run for the owner's confidence.** `store-probe bench-interleaved --rounds 6` alternated Node and Bun, each round on a fresh file database. Each bench does 2,000 single-message appends, each in its own transaction, and 50 reads of 1,000 messages. The load average was 4.97 on 24 cores.
+
+| Runtime | SQLite | Append median of round medians | Range | Read of 1,000, median | Range |
+|---|---|---|---|---|---|
+| Node 22.22.3 | 3.51.3 | 0.095 ms | 0.091 to 0.096 ms | 1.853 ms | 1.814 to 1.974 ms |
+| Bun 1.4.5 | 3.54.0 | 0.149 ms | 0.140 to 0.155 ms | 0.574 ms | 0.565 to 0.579 ms |
+
+The ranges do not overlap. The read gap comes from the driver. A script outside the store ran the same `SELECT` with no Effect code on the same file and took a median 1.12 ms with `node:sqlite` and 0.40 ms with `bun:sqlite`. The store adds a count query, the row mapping, and the Effect calls, about 0.7 ms on Node and 0.17 ms on Bun. The append gap is the `fsync` cost above. With `NORMAL`, the two runtimes were within 0.004 ms. No profiler ran, so the split inside the store's share is not measured.
+
+**Perf after the fix round.** `store-probe bench-interleaved --rounds 10` at the fix-round head, with a load average of 3.4 to 3.7 on 24 cores, gave these medians of the round medians.
+
+| Runtime | Append, first head | Append, fix round | Read of 1,000, first head | Read of 1,000, fix round |
+|---|---|---|---|---|
+| Node 22.22.3 | 0.097 ms | 0.095 ms | 1.913 ms | 2.189 ms |
+| Bun 1.4.5 | 0.152 ms | 0.114 ms | 0.569 ms | 0.795 ms |
+
+The first-head numbers are the verifier's run. To split the read cost, four builds ran 6 alternating rounds each in one session. The builds were the first head, the fix-round head, that head without the read transaction, and that head without the NUL-safe column expressions. Appends showed no measurable difference on either runtime. The first head also measured 0.125 ms on Bun in that session, so the lower Bun append median above is session variance. The read of 1,000 rose from 1.867 ms to 2.212 ms on Node and from 0.573 ms to 0.791 ms on Bun. The NUL-safe column expressions cost about 0.17 ms on Node and 0.14 ms on Bun. The read transaction cost about 0.09 ms on Node and nothing measurable on Bun. The remaining 0.08 to 0.09 ms is the row mapping, which now decodes text and adds the nine `subagent_*` fields. That split comes from removing one change at a time, not from a profiler. Both reads stay far under the 50 ms budget.
+
+**Decisions in the fix round.** An audit and a verifier found five defects and several weak tests. Each store defect has a test in `contract.test.ts` that fails at `56d3c00` on at least one runtime. The NUL defect fails only on Node.
+
+- A tool result belongs to the nearest earlier assistant message in its thread whose `tool_calls` lists its `tool_call_id`. Messages section 6 ties the cascade to "their parent assistant message", and a provider may reuse a call id in a later turn.
+- `getMessages` rejects a `limit` or `offset` that is not a non-negative integer with `InvalidMessagesQuery`, instead of clamping it. A negative or fractional value is a caller bug, and clamping would hide it.
+- `setValue` and `getValue` reject a key that holds a lone surrogate, and a JSON value may nest at most 1000 levels. `DIVERGENCES.md` documents both caps, as Runtime 14.2 asks.
+- The store still rejects a `Date` or a `Map` as a key-value value. It checks the object's tag, not its prototype, so a plain object from another realm passes.
+- A lone surrogate in message text still reads back as U+FFFD on both runtimes. The spec gives no cap for message text, so the store neither rejects nor encodes it. This stays open.
+- `Effect.provide` reuses a layer that an enclosing provide built, so two nested providers of one store share a connection. The tests wrap each store layer in `Layer.fresh`.
+
+**Where M1-3 differs from this plan.**
+
+- The plan's step box first said a step's assistant message and its tool results commit together. Runtime section 3 orders "Persist assistant response" before "Execute tool calls sequentially", and M1-4 lane 6 needs the assistant message on disk while a tool sleeps. Those two cannot both hold for one step. The fix round rewrote the box to say what the store offers. The caller picks the transaction, M1-4 has to choose, and lane 3 of M1-3 tests only that a transaction is atomic.
+- The plan's ledger box asks for `covered` on every M1 entry in Runtime section 14 and every persistence statement of Execution State 4.3. Six of the ten Runtime entries are `covered`. Two are `partial`, because they promise the behavior on `ThreadState` in tools, hooks, and endpoints, which M1-4 and M4 build. Two are permissions and are `not-testable`. In 4.3, two entries are `covered` and two are `partial`, because M1-6 sets and recovers the status. That box stays unchecked.
+- `packages/runtime/scripts/` is exempt from the platform import rule, and `tsconfig.json` now type-checks it. The probe spawns and kills processes and reads its arguments.
+- The probe imports `#platform`, which resolves to `dist` under plain Node and Bun. Run `pnpm build` before the probe, as the boot recipe does.
+- Threads 7.3 points at "Runtime §15" for the key-value semantics, and the Runtime page numbers that section 14. The Runtime page has two sections numbered 14.
 
 ## Appendix B. Alternatives rejected
 
