@@ -40,14 +40,18 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
       threadId: string,
       message: IdentifiedMessage,
       origin: WriteOrigin,
-      link: { readonly callerSeq?: number | undefined; readonly dequeue?: number | undefined } = {},
+      link: {
+        readonly callerSeq?: number | undefined
+        readonly dequeue?: number | undefined
+        readonly resultPrompt?: string | undefined
+      } = {},
     ) {
       const nested = Option.isSome(yield* Effect.serviceOption(sql.transactionService))
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           const thread = yield* selectRun(threadId)
           const flowId = originFlow(origin)
-          const { callerSeq, dequeue } = flowId === null ? {} : link
+          const { callerSeq, dequeue, resultPrompt } = flowId === null ? {} : link
           const refusal = authorize(threadId, thread, origin, "insert")
           if (refusal) return yield* refusal
           if (dequeue !== undefined) {
@@ -64,6 +68,7 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
           })
           const facts = {
             admission_seq: dequeue ?? null,
+            result_prompt: stored(resultPrompt ?? null),
             flow_id: flowId,
             caller_seq: callerSeq ?? null,
           }

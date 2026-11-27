@@ -48,12 +48,12 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
         role: roleOf(turn.side),
         content: null,
         tool_calls: JSON.stringify([hookCall(call, argumentsText)]),
-        prompt: turn.prompt.qualifiedName,
         status: "completed",
         metadata: { queued: true },
       },
       {
         dequeue: entry.seq,
+        resultPrompt: turn.prompt.qualifiedName,
         finish: (message) => ({
           ...message,
           tool_calls: JSON.stringify([

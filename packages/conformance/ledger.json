@@ -6315,12 +6315,13 @@
 		"reason": ""
 	},
 	"specification:threads/messages:778b4467": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+			"packages/runtime/test/conformance.test.ts > queue > Q44 records no prompt on the caller message of a queued tool and the producing prompt on each model response",
+			"packages/runtime/test/execution/ownership.test.ts > preserves the result prompt when termination closes a queued call"
 		],
-		"reason": "A model response records its producing prompt. A programmatic queueTool call also records the active prompt on its synthetic caller message although no prompt produced it."
+		"reason": ""
 	},
 	"specification:threads/messages:61c7bee3": {
 		"status": "covered",

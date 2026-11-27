@@ -44,7 +44,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
   const closeCalls = (threadId: string, flowId: string | null, closing: string, now: number) =>
     Effect.gen(function* () {
       const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
-          SELECT seq, tool_calls, CAST(parent_id AS BLOB) AS parent_id, CAST(prompt AS BLOB) AS prompt FROM messages
+          SELECT seq, tool_calls, CAST(parent_id AS BLOB) AS parent_id, CAST(coalesce(result_prompt, prompt) AS BLOB) AS prompt FROM messages
           WHERE thread_id = ${threadId} AND flow_id = ${flowId} AND tool_calls IS NOT NULL
           ORDER BY seq`
       for (const caller of callers) {
