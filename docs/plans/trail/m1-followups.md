@@ -26,6 +26,9 @@ For the fix round.
 - Only message writes are fenced against a stale holder. A `setValue` can still land.
 - `store.setStatus` and `takeQueue` still exist and bypass the transition table and the claims. `takeQueue` deletes the batch it hands out.
 - Queued work can carry one execution past the step cap. When a step reaches the cap and a higher-ranked stop rule also applies, such as `stop_on_response`, the loop continues if the queue holds work. A hook that queues a message on every response then runs without end. The review bot found this on PR 8 at `step.ts:651`, and the root confirmed it by reading. The fix is to check the step count on its own when deciding whether to continue.
+- A `send` that waited behind a run exits 0 and prints `idle (aborted)` when another process terminates the thread, and its message stays queued for good. Reading 7 says its claim fails with `ThreadTerminated`. The verifier saw this in 16 of 16 races on each runtime.
+- A process that lost its thread prints a success outcome and exits 0.
+- The error text on a call that never started says Spindle does not know whether the tool finished. For a call that never started, that is untrue.
 - `supervisor.abort` releases the thread while a tool that ignores the signal may still run. Only `spindle run` uses it today, and that command exits right after.
 
 Open, not for this round.
@@ -37,6 +40,23 @@ Open, not for this round.
 - The planned threads rows still owe a test of each ThreadState member.
 - Cleanup on interrupt was incomplete before M1-6. The owner's report does not say whether it is complete now, so the audit has to.
 - Two sub-checks are not asserted. One is that a nested `invokeTool` starts no competing flow. The other is an execute alias after terminate.
+
+After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of the round are running, and they decide which of the items above are closed.
+
+- Recovery cannot tell whether a call without a result had started, because the runtime keeps no durable record of dispatch. Every such call gets one text that is true for both cases.
+- For an optimization pass after spec conformance. The step runs 13 SQL statements where M1-5 runs 11. The two extra are a read of the queue and a lookup of tool results by `caller_seq`, both at every step, and both look avoidable when the queue is empty and the step's own calls were all stored. Measured overhead per step is between 15 and 19 percent above M1-5, depending on machine load.
+- The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
+
+From the audit of the fix round, at `2ca86ee`. The full lists are in `m1-6-audit-c.md`, beside this file.
+
+- Fifteen behaviours of the fix round have no test. The audit found them by breaking each fix and running the suite. Among them are the commit-time check of an expired handle, the three ways an abort's hold is released, and three of the filters on pending queue entries.
+- Nothing reads or removes a queue entry marked `failed_delivery`, and nothing removes the holder row of a killed process.
+- Deleting a tool result reopens its call, and settlement then stores an error result for it.
+- The refusal of a secret in queued arguments has no minimum length, does not name the variable, and misses a secret passed as a number.
+- `appendMessages` and an `insertMessage` without a flow are unfenced. Only scripts and tests call them.
+- A nested hook's handle does not inherit its parent's expiry.
+- A database from an earlier build of PR 8 fails with "Failed to prepare statement" and no hint.
+- For the structure review, ten points. The decision that a run lost its thread is made in four places. `Run` is six mutable signals shared by two files. The exit handler of `start` does four jobs. The ownership check is spelled three ways in the store. The stop check and the queued-call redaction each exist twice. Pairing rides on a `WeakMap` exported from the store's interface file. `recover` serves three callers through one optional id and one flag.
 
 ## M1-7, chat, and a cleanup PR after it
 
@@ -78,6 +98,7 @@ Open, not for this round.
 - GPT-6.2 Astra writes the conformance scenarios before a build, and a Claude owner implements until they pass. This starts with M1-7.
 - Every audit is gated from its first round. Stored data lost or changed, a leaked secret, a tool call without its result, a tool that runs twice, two executions of one thread, or a thread that cannot continue blocks a PR. Everything else goes on this list.
 - Claude models implement. GPT and Gemini models read and judge.
+- Performance is reported and not gated until the runtime conforms to the spec. The plan's rule that a PR fails when its per-step median is more than 20 percent above its parent's no longer blocks a PR. One guard stays, against the architectural kind of problem. The cost of a step and the number of SQL statements per step must not grow with the length of the thread. A verifier checks that at two thread lengths and reports it.
 
 ## Before the stack lands
 
@@ -85,6 +106,64 @@ Open, not for this round.
 - The stack has six merge commits and is rebased to linear history, one PR at a time from the bottom, before the operator's review. The old tips get archive tags first, because the plan and this trail cite their commit hashes.
 - For the structure review. The guard in `history.ts` against a history read inside a rolled-back transaction does nothing alone, because the store's guard already covers it. It can go.
 - The operator's review of code quality and file structure, after which the full verification swarm runs on M1-2 to M1-7.
+
+## Structure PRs, on top of the stack
+
+Seven code quality reviews found that no PR of the stack meets the operator's bar for structure. The reports are under `docs/plans/trail/reviews/`. The operator chose new PRs on top of the stack, one at a time, each keeping behavior the same.
+
+1. The Effect language service (`@effect/tsgo`), the hole in the platform lint rule, the two-way platform contract, and the entry point of the command line. Running.
+2. A test harness module, and the split of the five scenario files and the one store test that are over 1,000 lines.
+3. The store as three services (threads, messages, runs), one ownership check, `recover` split by caller, and positions returned from the insert in place of the `WeakMap`.
+4. One state machine for the life of an execution, in place of the `Run` bag, the two finalizers, and the five releases of an abort's hold. Interrupts as a scoped service.
+5. Hooks as three typed kinds owned by the operations they decorate, `createMessage` split in two, and the step loop cut down.
+6. One shared module for the commands, one channel for a waiting line, and the chat as one fiber that drains one queue of events.
+7. The registry validator lifted out of its generator, `Schema` at the boundaries where it removes code, and Effect's `Schedule`, `Stream`, and event-stream parser in the model call.
+
+8. Fallow, added last, by the operator's decision of 2026-11-26. It gets a pinned development dependency, the configuration in `docs/plans/trail/reviews/fallow.md`, and one CI job outside the runtime matrix that runs its audit of a PR. The findings it has then are cleared in that PR, so that it starts from a clean baseline. Until then its findings go to the structure PR that owns the code: the two circular imports between `Registry.ts` and its two loaders go to PR 7, and the list of exports that nothing uses goes to each PR for its own files.
+
+Found by the structure reviews and left. A `filter_messages` hook that returns a crafted `tool_calls` name on a visible call ends the run with `fatal_error`, where a value from a hook should never crash the loop. `extraContent` in a dispatched request is the history cache's own object, so a provider that mutates its request edits the cached history. The drain delivers every queued entry in one pass and stores a queued tool as the prompt side's call, which a handler side in milestone 2 cannot use.
+
+Found by the review of structure PR 6 and left for the operator's code review, because none changes what a user sees. `settlement.isDone` in `Execution.ts` is read only by one test. `withProject` in `cli/shared.ts` takes seven positional parameters and carries a rule only the chat uses. The chat repeats the thread check that `open` already makes. `chat.ts` still squashes a cause and tests `instanceof` although the send's error channel is typed. A `waiting` event is dropped while the chat is stopping, which matters only for a Ctrl-C inside a window of microseconds. `runMain` hands an interrupt to every open subscription, and no command opens two. A command that fails on a store error prints `Failed to prepare statement` without SQLite's reason. On Node, two interrupts under 3 ms apart at the prompt end the chat by the signal more often than before (60 of 160 against 32), always after the resume line.
+
+Older than the structure PRs, confirmed by that review. A line typed within half a millisecond of a Ctrl-C is echoed and not stored, with no note. A keyboard cannot produce that gap.
+
+Found by the review of structure PR 8 and left for the operator's code review. The stop rule of the model call is checked in four places. The schedule's delay modifier does the wait itself and returns zero. The abort of the transport is ordered after an idle iterator's `return()` in one scope, so a `return()` that stalls means the abort never fires, which is no worse than before. Not judged by that review: `AbortSignal.any` and Vitest's fake timers on Bun, beyond the suite passing there.
+
+A lesson for the milestone revision. Effect's event-stream parser was recommended by a quality review and adopted, and it made the provider stricter than real endpoints need, in three ways that fail or hang a run. A recommendation to use a library's parser needs a check against sloppy input, not only against the standard.
+
+Found by the review of the tool time limit and left for the operator's code review. `Callback.within` changes three things on one parameter, the clock, the order of the race, and whether it forks. A tool past its limit does not bound a tool it started with `invokeTool` that has no limit of its own. A general limit given twice keeps the last without a word, while a name given twice is an error, and the number parsing accepts `0x10` and a leading space. Not driven end to end by that review: an abort in `spindle chat` that waits for a tool's limit, and timing on Bun.
+
+Decided by the operator on 2026-11-27, from the triage of the bot threads at the stack tip. Both go into M1-19 on top of the stack. The two threads stay open until it is pushed.
+
+- A line of 1,024 bytes or more typed or pasted at a macOS terminal never reaches `spindle chat`, which then waits with no message. Linux was not measured. Decision: document the limit and do not fix it, because `spindle chat` is a debug tool and the fix is not very small. The fix would have the chat read a terminal through `node:readline` in raw mode. That is about 30 to 60 lines, but raw mode also takes over Ctrl-C, Ctrl-D and echo, which is the part of the chat that needed the most fix rounds, and Bun's `readline` in terminal mode is unchecked. Thread on PR 10.
+- A tool that calls `invokeTool` without awaiting it leaves the nested tool running after an ordinary finish releases the thread. Its writes are refused, and the tool time limit does not bound it. Decision: hold the thread until it returns, and tell the operator what it waits for, so a nested tool that never ends is not lost track of. The note to the operator makes this more than the 6 lines first estimated. Thread on PR 8.
+
+Found by the review of the fix PR and left. A `filter_messages` hook that renames a caller and also adds or removes a message before it still sends the call without its result. A hook that swaps the ids of two callers swaps their results, which follows from an id being a message's identity. With `--thread`, a signal while the chat opens the thread exits with neither the id nor the resume line, and the user typed that id. Request assembly now matches a hook's messages to stored rows in three ways, and one matcher with its limits written down would be easier to check.
+
+To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
+
+After them. The tool timeout setting is built, as PR 20. The PR descriptions were brought up to date on 2026-11-27, and the milestone revision is `docs/plans/milestones.md`, proposed in PR 24. Its last section lists what the operator still has to decide, including the six questions below.
+
+## Decided by the operator on 2026-11-26
+
+- A live process is never taken over. `spindle recover <thread> --force` settles a thread whose holder is frozen. To be looked at again in M4, when there is a long-lived server.
+- A handle given to a tool or a hook stops working when it returns.
+- A terminated thread accepts only an explicit injected message from outside.
+- A tool call whose arguments hold a known secret is refused at `queueTool`.
+- `spindle chat` with no `--db` keeps the thread in memory, says so, and prints no resume line.
+- `spindle chat` prints what a successful tool returned, shortened on one line, with a flag for the whole of it. The build prints `ok`, so this is a change for the round after the M1-7 audit.
+- A tool has no default deadline. A `--tool-timeout` flag and a per-tool setting are added, in a cleanup PR after M1-7. A tool past its limit gets an error result that says it timed out, its handle stops working, and the run goes on.
+- The milestone list for M2 to M7 is revised after the operator's review of the code, not before.
+- Performance is reported and not gated until the runtime conforms to the spec.
+
+## Questions that wait for the milestone revision
+
+- How a value is classified as secret once thread values carry a type, and whether a definition default follows the spec's default of secret. M2.
+- Whether every request to a model gets one final check after all hooks, in every role. M2.
+- Whether a create hook may change `parent_id` and `depth` when a nested prompt starts, and what deleting a parent call does to its nested conversation. M2.
+- Whether a prefilter hook may send a request with an incomplete group of tool calls and results. M2.
+- Where trusted access inside the process ends, and what a client may receive through an endpoint or a stream. M4 and M6.
+- A total budget of time or writes for one operation and everything its hooks start. M2.
 
 ## Readings the operator can overrule
 
@@ -98,3 +177,34 @@ Open, not for this round.
 - The key-value store accepts plain JSON data only.
 - A tool call whose arguments are not valid JSON is stored as `{"invalid_json": "<raw text>"}` and never runs.
 - A secret has no minimum length for redaction.
+- An execution that reaches the step cap ends, and work left in the queue waits for the next trigger.
+
+From the ten bot threads that the rebase of 2026-11-27 produced. An Opus reviewer judged each at the stack tip; the report was `/tmp/structure/threads/rebase/report.md`. Three fixes and two tests went to M1-20. These are true and not fixed:
+
+- An abort does not wait for a custom provider's `stream()` or `next()` that ignores the request signal, so the next execution's request can start before it settles. The thread's messages are unaffected. It is failure mode 15 in `docs/design/thread-ownership.md`. A fix is about 40 to 60 lines in `execution/call.ts`, `step.ts` and `Execution.ts`, and has to track the detached iterator cleanup too. Thread on PR 8, answered and resolved.
+- In `spindle chat`, Ctrl-C does nothing while a transcript write is blocked on a stdout pipe that nobody reads and nobody closes. Only SIGKILL ends the process until the reader drains. A fix moves output off the single event consumer, about 40 to 80 lines in `cli/chat.ts`, and reopens the event ordering PR 16 settled. Thread on PR 16, answered and resolved.
+- No test stalls the reader during a remote wait to show that at most one poll is outstanding. The bound holds by construction. About 60 lines in `test/cli/chat-shared.test.ts`, and sensitive to timing.
+- One tool call can give a `before_create_message` hook two drafts, the unstorable result and its replacement. That is intended, and the plan could say it to hook authors in one sentence.
+
+From the short Opus read of PR 22 (the hold at an ordinary end). Two of its four defects were fixed in the PR: a stop during the wait was thrown away, and the note gave a hook the advice for a tool. These stay:
+
+- An abort during the wait reports `aborted_by_user` and loses a failed last step's error. Keeping the run's own outcome there means a second wait outside the interruptible region and a rule for queued work after an abort, about 15 lines in `Execution.ts` and another review.
+- A nested tool is counted as pending only when its tool code is entered, so one still validating its arguments at the end of the run starts after the thread is released. Counting from the `invokeTool` call would close it.
+- Nothing is printed when a hook that holds the thread is given up at its limit. The hook-note wording has no test of its own.
+- O11 and O12 now test a write that lands while the run is held. A write that commits after settlement, from a hook that expired, has no test.
+
+
+## Found while M1c was built, 2026-11-27
+
+- A hook started by an unawaited nested write, such as `injectMessage`, counts as pending only once the hook is entered. A run can end before that, and the hook then runs late. The store refuses its write, but the hook's own outside actions happen. M1c-4 closed the same gap for a nested tool and left this one. The probe was `hook-gap.test.ts` of the M1c-4 builder.
+- Direct execution from a hook or on a handle at rest (`invokeTool`, `runAgent`), four statements. The operator moved it to M2a on 2026-11-27.
+- Decided on 2026-11-27: `injectMessage` starts no execution and gets no option to. `queueMessage` is the call that does. Whether to report the spec's wording is issue #31.
+- `Number("0x10")` is accepted as a `Retry-After` of 16 seconds.
+- A definition whose getter calls `process.exit` when Spindle reads it after loading still ends `spindle validate`. Declined on PR 28, and stated in `docs/design/user-code-at-the-edge.md`.
+- A value that cannot be read when secrets are learned is not redacted if a later read of it succeeds. Stated in `docs/design/secrets.md`.
+
+## Closed by M1c, 2026-11-27
+
+These items above are done and stay only as history: the fifteen untested behaviours of the M1-6 fix round; the `failed_delivery` entries and the holder row of a killed process; the planned threads rows; the shape checks of `spindle validate`, the definition file that throws from a timer, exits, or never settles, the `stopTool` in a missing package, the `word: text` message and the broken symlink; the provider items under "A provider PR, or milestone 7", except that usage stays zero and no reasoning budget is sent; the abort during the wait that lost a failed step's error; and the nested tool counted only once its code was entered.
+
+Still open from the M1-7 list, and not owed to a ledger statement: what `spindle send` prints when another process ran the message, `--dump-requests` with a quote in a secret and its help text, the scripted provider's `reasoning.exclude`, and the silent win of a definition default over an instance value.
