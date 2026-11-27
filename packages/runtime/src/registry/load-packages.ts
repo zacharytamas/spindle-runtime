@@ -1,5 +1,5 @@
 import type { PackageSignature } from "@standardagents/spec"
-import { Effect, FileSystem, Path, Predicate, Result } from "effect"
+import { Effect, FileSystem, Path, Predicate, Result, SemVer } from "effect"
 import { type Issue, issue, KINDS, type Package, pluralKind } from "./definition.ts"
 import { type Discovered, describeCause, type ImportFile, loadFailure } from "./load-error.ts"
 import { packageEntry } from "./package-entry.ts"
@@ -214,6 +214,8 @@ export const loadPackages = Effect.fn("loadPackages")(function* (
       packedAt: Number(meta.packedAt),
     })
     const pkg: Package = { signature, entryAgents, file, manifestFile: relativeManifest, manifest, meta }
+    if (Result.isFailure(SemVer.parse(signature.version)))
+      issues.push(issue("package_meta_invalid", file, "version", "__meta.version must be a semantic version"))
     packages.push(pkg)
     collectDefinitions(pkg, name, exports, definitions, issues)
   })
