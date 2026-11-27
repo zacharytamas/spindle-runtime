@@ -127,6 +127,10 @@ Found by the review of structure PR 6 and left for the operator's code review, b
 
 Older than the structure PRs, confirmed by that review. A line typed within half a millisecond of a Ctrl-C is echoed and not stored, with no note. A keyboard cannot produce that gap.
 
+Found by the review of structure PR 8 and left for the operator's code review. The stop rule of the model call is checked in four places. The schedule's delay modifier does the wait itself and returns zero. The abort of the transport is ordered after an idle iterator's `return()` in one scope, so a `return()` that stalls means the abort never fires, which is no worse than before. Not judged by that review: `AbortSignal.any` and Vitest's fake timers on Bun, beyond the suite passing there.
+
+A lesson for the milestone revision. Effect's event-stream parser was recommended by a quality review and adopted, and it made the provider stricter than real endpoints need, in three ways that fail or hang a run. A recommendation to use a library's parser needs a check against sloppy input, not only against the standard.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
 After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
