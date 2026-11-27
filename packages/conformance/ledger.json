@@ -5852,7 +5852,8 @@
 		"tests": [
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns from generate the same text, reasoning, call, and finish that stream yields",
-			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible responses > accepts a minimal generate response and one whose content was filtered"
 		],
 		"reason": ""
 	},
@@ -5862,7 +5863,8 @@
 		"tests": [
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > streams chunk by chunk and gives no tool-call-done to a call whose arguments are not a JSON object",
-			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible event stream > joins the data lines of one event with a newline before it parses them"
 		],
 		"reason": ""
 	},
@@ -5905,7 +5907,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure",
-			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError"
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible responses > rejects a generate response with no choice as a ProviderError"
 		],
 		"reason": ""
 	},
@@ -5989,7 +5992,8 @@
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a body that outlives the timeout slot after the headers arrived with a timeout ProviderError",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails with a retryable timeout when the transport times out, and never for a request the caller cancelled",
-			"packages/runtime/test/cli/run.test.ts > spindle run > retries a response whose body the transport times out after the headers arrived"
+			"packages/runtime/test/cli/run.test.ts > spindle run > retries a response whose body the transport times out after the headers arrived",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible HTTP failures > treats status 408 as a retryable timeout"
 		],
 		"reason": ""
 	},
