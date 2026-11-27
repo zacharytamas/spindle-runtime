@@ -472,6 +472,28 @@ it.effect("holds the running thread for an unawaited nested tool and continues q
   }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
 })
 
+it.effect("a stop taken during the wait keeps the run's outcome and leaves queued work to its sender", () => {
+  const { inner, live, provider } = nestedFixture()
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.entered)
+    yield* TestClock.adjust(0)
+    const waiting = gate()
+    const second = yield* Effect.forkChild(
+      supervisor.send(id, "next", { onWaiting: () => Effect.sync(() => waiting.release()) }),
+    )
+    yield* waitFor(waiting)
+    expect(yield* supervisor.stop(id)).toBe(true)
+    expect(provider.requests).toHaveLength(2)
+    inner.leave.release()
+    const first = yield* Fiber.join(sent)
+    expect(first.outcome).toMatchObject({ steps: 2, status: "idle", reason: "stop_on_response" })
+    // The stopped flow did not take the queued line. Its sender ran it in a flow of its own.
+    expect((yield* Fiber.join(second)).outcome?.flowId).not.toBe(first.outcome?.flowId)
+  }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})
+
 for (const fail of [false, true])
   it.effect(
     `keeps the ${fail ? "failure" : "successful outcome"} and history when a nested tool delays settlement`,

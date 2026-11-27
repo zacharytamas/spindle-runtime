@@ -85,9 +85,8 @@ export class Execution {
     return { status: "idle", reason: this.#stop === "user" ? "aborted_by_user" : "aborted" } as const
   }
   requestStop(by: Side | "user" = "user") {
-    // Acknowledge the first Ctrl-C so the caller can escalate. No step boundary remains to stop at.
-    if (this.#phase === "waiting") return true
-    if (this.#phase !== "running") return false
+    // A stop taken while the run waits for its callbacks keeps the run's outcome and leaves queued work queued.
+    if (this.#phase !== "running" && this.#phase !== "waiting") return false
     this.#stop ??= by
     this.#stopRequested.openUnsafe()
     return true
@@ -175,7 +174,7 @@ export class Execution {
                 { flowId: this.flowId },
                 { state: end.status, reason: end.reason },
                 {
-                  continueIfQueued: !!end.continueIfQueued,
+                  continueIfQueued: !!end.continueIfQueued && this.#stop === undefined,
                   atCap: this.steps >= stepCap,
                   closing: end.status === "failed" ? CLOSING.failed : CLOSING.aborted,
                 },
