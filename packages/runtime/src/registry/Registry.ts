@@ -1,13 +1,13 @@
 import { Context, Effect, type FileSystem, Layer, type Path, Result } from "effect"
-import type { Definition, Issue, Kind, Package } from "./definition.ts"
+import { type Definition, type Issue, issue, type Kind, type Package } from "./definition.ts"
 import { loadDirectory } from "./load-directory.ts"
 import {
   describeCause,
   describeImportFailure,
-  fieldIssues,
   type ImportFile,
-  LoadError,
-  reportDefects,
+  type LoadError,
+  loadFailure,
+  loadValue,
 } from "./load-error.ts"
 import { loadPackages } from "./load-packages.ts"
 import { DefinitionIndex } from "./resolve.ts"
@@ -31,36 +31,24 @@ export class Registry extends Context.Service<
         const packed = yield* loadPackages(root, importFile)
         const found = [...local.definitions, ...packed.definitions]
         const issues = [...local.issues, ...packed.issues]
-        const results = yield* Effect.forEach(
-          found,
-          ({ load, ...source }) =>
-            Effect.map(Effect.result(reportDefects(load, source)), (result) => ({ source, result })),
-          { concurrency: 16 },
-        )
+        const results = yield* Effect.forEach(found, loadValue, { concurrency: 16 })
         const index = new DefinitionIndex()
         const definitions = results.map(({ source, result }) => {
           const definition = finishLoad(source, result, issues)
           const earlier = index.add(definition)
-          if (earlier)
-            issues.push({
-              code: "definition_name_duplicate",
-              severity: "error",
-              message: `${earlier.file}${earlier.path === "" ? "" : `:${earlier.path}`} also defines the ${definition.kind} ${definition.qualifiedName}`,
-              file: definition.file,
-              path: definition.path,
-            })
+          if (earlier) {
+            const location = earlier.path ? `${earlier.file}:${earlier.path}` : earlier.file
+            const message = `${location} also defines the ${definition.kind} ${definition.qualifiedName}`
+            issues.push(issue("definition_name_duplicate", definition.file, definition.path, message))
+          }
           return definition
         })
         for (const pkg of packed.packages)
           for (const agent of pkg.entryAgents)
-            if (!index.entryAgent(pkg, agent))
-              issues.push({
-                code: "package_entry_agent_undefined",
-                severity: "error",
-                message: `${pkg.signature.packageId} lists entry agent ${agent}, which it does not export`,
-                file: pkg.file,
-                path: "",
-              })
+            if (!index.entryAgent(pkg, agent)) {
+              const message = `${pkg.signature.packageId} lists entry agent ${agent}, which it does not export`
+              issues.push(issue("package_entry_agent_undefined", pkg.file, "", message))
+            }
         return {
           root,
           definitions,
@@ -92,24 +80,21 @@ const finishLoad = (
     declared =
       field !== undefined && typeof value === "object" && value !== null ? Reflect.get(value, field) : undefined
   } catch (cause) {
-    issues.push({
-      code: "definition_load_failed",
-      severity: "error",
-      message: `The ${source.kind} threw while Spindle read its identifier. ${describeCause(cause)}`,
-      file: source.file,
-      path: source.path,
-    })
+    const message = `The ${source.kind} threw while Spindle read its identifier. ${describeCause(cause)}`
+    issues.push(issue("definition_load_failed", source.file, source.path, message))
     return source
   }
   if (typeof declared !== "string" || declared === "" || declared === source.name) return { ...source, value }
   const origin = source.package === undefined ? "file name" : "export key"
-  issues.push({
-    code: "definition_name_mismatch",
-    severity: "warning",
-    message: `${source.kind} ${declared} has the ${origin} ${source.name}. Spindle finds it by its ${field}, ${declared}. Rename the ${origin} to match.`,
-    file: source.file,
-    path: [source.path, field].filter((part) => part !== "").join("."),
-  })
+  issues.push(
+    issue(
+      "definition_name_mismatch",
+      source.file,
+      [source.path, field].filter((part) => part !== "").join("."),
+      `${source.kind} ${declared} has the ${origin} ${source.name}. Spindle finds it by its ${field}, ${declared}. Rename the ${origin} to match.`,
+      "warning",
+    ),
+  )
   return {
     ...source,
     value,
@@ -120,14 +105,7 @@ const finishLoad = (
 
 const importFile: ImportFile = (file, url) => {
   const failure = (cause: unknown) =>
-    new LoadError({
-      issues: fieldIssues(
-        cause,
-        { file, path: "" },
-        (message) => `The file failed to load. ${message}`,
-        describeImportFailure(cause),
-      ),
-    })
+    loadFailure(cause, file, "", "The file failed to load. ", describeImportFailure(cause))
   return url.pipe(
     Effect.mapError(failure),
     Effect.flatMap((href) =>

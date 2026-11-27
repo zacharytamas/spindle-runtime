@@ -1,6 +1,6 @@
 import { Effect, Predicate } from "effect"
 import { checks, type Edge, site } from "./check-definition.ts"
-import { type Definition, type Issue, KINDS, type Kind } from "./definition.ts"
+import { type Definition, type Issue, issue, KINDS, type Kind } from "./definition.ts"
 import { describeCause } from "./load-error.ts"
 import { Registry } from "./Registry.ts"
 
@@ -85,13 +85,14 @@ const checkDisclosures = (registry: Registry["Service"], issues: Array<Issue>) =
         }
       }
     } catch (cause) {
-      issues.push({
-        code: "package_invalid",
-        severity: "error",
-        message: `${pkg.signature.packageId} threw while Spindle compared its parentHooks disclosures. ${describeCause(cause)}`,
-        file: pkg.file,
-        path: "",
-      })
+      issues.push(
+        issue(
+          "package_invalid",
+          pkg.file,
+          "",
+          `${pkg.signature.packageId} threw while Spindle compared its parentHooks disclosures. ${describeCause(cause)}`,
+        ),
+      )
     }
   }
 }

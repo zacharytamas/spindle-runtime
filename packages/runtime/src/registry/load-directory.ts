@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Path, Result } from "effect"
-import { type Issue, KINDS, PLURAL } from "./definition.ts"
+import { type Issue, issue, KINDS, pluralKind } from "./definition.ts"
 import { type Discovered, type ImportFile, LoadError } from "./load-error.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
@@ -37,7 +37,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string,
   const directories = yield* Effect.forEach(
     KINDS,
     Effect.fn(function* (kind) {
-      const dir = path.join(agentsDir, PLURAL[kind])
+      const dir = path.join(agentsDir, pluralKind(kind))
       const entries = (yield* exists(dir)) ? yield* Effect.result(fs.readDirectory(dir)) : Result.succeed([])
       return { kind, dir, entries }
     }),
@@ -46,13 +46,8 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string,
   for (const { kind, dir, entries } of directories) {
     if (Result.isFailure(entries)) {
       const file = path.relative(root, dir)
-      issues.push({
-        code: "definition_load_failed",
-        severity: "error",
-        message: `Spindle cannot read ${file} as a directory. ${entries.failure.message}`,
-        file,
-        path: "",
-      })
+      const message = `Spindle cannot read ${file} as a directory. ${entries.failure.message}`
+      issues.push(issue("definition_load_failed", file, "", message))
       continue
     }
     for (const entry of entries.success.sort()) {
@@ -62,23 +57,11 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string,
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
       const load = importFile(file, path.toFileUrl(absolute)).pipe(
-        Effect.flatMap((module) =>
-          exportsNoDefinition(module.default)
-            ? Effect.fail(
-                new LoadError({
-                  issues: [
-                    {
-                      code: "definition_export_missing",
-                      severity: "error",
-                      message: `The file exports no definition. Export the ${kind} definition as the default export.`,
-                      file,
-                      path: "",
-                    },
-                  ],
-                }),
-              )
-            : Effect.succeed(module.default),
-        ),
+        Effect.flatMap((module) => {
+          if (!exportsNoDefinition(module.default)) return Effect.succeed(module.default)
+          const message = `The file exports no definition. Export the ${kind} definition as the default export.`
+          return Effect.fail(new LoadError({ issues: [issue("definition_export_missing", file, "", message)] }))
+        }),
       )
       definitions.push({
         kind,

@@ -1,21 +1,17 @@
 import type { PackageSignature } from "@standardagents/spec"
-import { Effect, FileSystem, Path, Result } from "effect"
-import { type Issue, KINDS, type Package, PLURAL } from "./definition.ts"
-import { type Discovered, describeCause, fieldIssues, type ImportFile, LoadError } from "./load-error.ts"
-
+import { Effect, FileSystem, Path, Predicate, Result } from "effect"
+import { type Issue, KINDS, type Package, pluralKind } from "./definition.ts"
+import { type Discovered, describeCause, type ImportFile, loadFailure } from "./load-error.ts"
 import { packageEntry } from "./package-entry.ts"
 
 type Source = PackageSignature["source"]
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 const isStringArray = (value: unknown): value is Array<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
 
 // PackedMeta.packageId is the npm name or a local identifier, so it may differ from the package.json name.
 const metaProblem = (meta: unknown): string | undefined => {
-  if (!isRecord(meta)) return "exports no __meta object"
+  if (!Predicate.isObject(meta)) return "exports no __meta object"
   if (typeof meta.packageId !== "string" || meta.packageId === "") return "has no __meta.packageId"
   if (typeof meta.version !== "string") return "has no __meta.version string"
   if (!isStringArray(meta.entryAgents)) return "has no __meta.entryAgents array of agent names"
@@ -25,7 +21,7 @@ const metaProblem = (meta: unknown): string | undefined => {
 
 const withSignature = (definition: unknown, signature: PackageSignature): unknown => {
   if (Array.isArray(definition)) return Object.assign([...definition], { __package: signature })
-  if (isRecord(definition))
+  if (Predicate.isObject(definition))
     return Object.create(Object.getPrototypeOf(definition), {
       ...Object.getOwnPropertyDescriptors(definition),
       __package: { value: signature, writable: true, enumerable: true, configurable: true },
@@ -42,23 +38,24 @@ const collectDefinitions = (
 ) => {
   const { file, signature } = pkg
   for (const kind of KINDS) {
-    const loaders = exports[PLURAL[kind]]
+    const plural = pluralKind(kind)
+    const loaders = exports[plural]
     if (loaders === undefined && kind === "effect") continue
-    if (!isRecord(loaders)) {
+    if (!Predicate.isObject(loaders)) {
       issues.push({
         code: "package_invalid",
         severity: "error",
         message:
           loaders === undefined
-            ? `${name} does not export ${PLURAL[kind]}. A package exports every registry except effects and threadEndpoints, even when it is empty.`
-            : `${name} exports ${PLURAL[kind]} that is not an object of loaders`,
+            ? `${name} does not export ${plural}. A package exports every registry except effects and threadEndpoints, even when it is empty.`
+            : `${name} exports ${plural} that is not an object of loaders`,
         file,
-        path: PLURAL[kind],
+        path: plural,
       })
       continue
     }
     for (const [key, loader] of Object.entries(loaders)) {
-      const at = `${PLURAL[kind]}.${key}`
+      const at = `${plural}.${key}`
       const load = Effect.tryPromise({
         try: async () => {
           if (typeof loader !== "function") throw new TypeError(`${at} is not a loader function`)
@@ -68,15 +65,10 @@ const collectDefinitions = (
           if (typeof then !== "function") throw new TypeError(`${at} returns a value, not a Promise`)
           return withSignature(await pending, signature)
         },
-        catch: (cause) =>
-          new LoadError({
-            issues: fieldIssues(
-              cause,
-              { file, path: at },
-              (message) => `${name} ${at} failed to load: ${message}`,
-              `${name} ${at} failed to load: ${describeCause(cause)}`,
-            ),
-          }),
+        catch: (cause) => {
+          const prefix = `${name} ${at} failed to load: `
+          return loadFailure(cause, file, at, prefix, prefix + describeCause(cause))
+        },
       })
       definitions.push({
         kind,
@@ -141,7 +133,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
       Effect.flatMap((text) => Effect.try({ try: (): unknown => JSON.parse(text), catch: describeCause })),
       Effect.result,
     )
-    if (Result.isFailure(read) || !isRecord(read.success)) {
+    if (Result.isFailure(read) || !Predicate.isObject(read.success)) {
       const reason = Result.isFailure(read) ? read.failure : "It holds JSON that is not an object."
       issue(
         "package_invalid",
@@ -192,7 +184,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     }
     const exports = loaded.success
     const problem = metaProblem(exports.__meta)
-    if (problem !== undefined || !isRecord(exports.__meta)) {
+    if (problem !== undefined || !Predicate.isObject(exports.__meta)) {
       issue("package_meta_invalid", file, `${name} ${problem}`)
       return
     }

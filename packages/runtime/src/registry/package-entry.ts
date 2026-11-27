@@ -1,7 +1,4 @@
-import { Effect, FileSystem, Path, Result } from "effect"
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+import { Effect, FileSystem, Path, Predicate, Result } from "effect"
 
 // Node and Bun both match these conditions, so a package resolves to the same entry on either runtime.
 const CONDITIONS = ["import", "node", "default"]
@@ -28,7 +25,7 @@ const exportTarget = (value: unknown): Entry | undefined => {
     return value.startsWith("./")
       ? { _tag: "Export", target: value }
       : invalid(`exports the root target ${value}, which does not start with ./`)
-  if (!isRecord(value) || Object.keys(value).some((key) => key.startsWith(".")))
+  if (!Predicate.isObject(value) || Object.keys(value).some((key) => key.startsWith(".")))
     return invalid("has a root export that is not a path, null, or an object of conditions")
   for (const [condition, target] of Object.entries(value)) {
     if (!CONDITIONS.includes(condition)) continue
@@ -46,7 +43,7 @@ const entryOf = (manifest: Record<string, unknown>): Entry => {
       ? { _tag: "Main", target: main }
       : invalid("has a main that is not a path")
   }
-  const keys = isRecord(exports) ? Object.keys(exports) : []
+  const keys = Predicate.isObject(exports) ? Object.keys(exports) : []
   const subpaths = keys.filter((key) => key.startsWith("."))
   if (subpaths.length > 0 && subpaths.length < keys.length)
     return invalid("mixes subpath keys and condition keys in exports")
@@ -78,15 +75,11 @@ export const packageEntry = Effect.fn(function* (dir: string, manifest: Record<s
   }
   // Node does not import a directory and Bun does, so Spindle picks the index.js of a main directory itself.
   const entry = kind === "Directory" && target._tag === "Main" ? path.join(named, "index.js") : named
-  const unusable =
-    kind === "Missing"
-      ? "which does not exist"
-      : kind === "Directory" && target._tag === "Export"
-        ? "which is a directory. An export target must name a file."
-        : undefined
-  if (unusable !== undefined) {
-    return yield* Effect.fail(`names the entry ${target.target}, ${unusable}`)
-  }
+  if (kind === "Missing") return yield* Effect.fail(`names the entry ${target.target}, which does not exist`)
+  if (kind === "Directory" && target._tag === "Export")
+    return yield* Effect.fail(
+      `names the entry ${target.target}, which is a directory. An export target must name a file.`,
+    )
   const located = yield* Effect.all([fs.realPath(dir), fs.realPath(entry), fs.stat(entry)], { concurrency: 3 }).pipe(
     Effect.result,
   )

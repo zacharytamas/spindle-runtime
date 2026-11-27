@@ -1,5 +1,5 @@
 import { Data, Effect, type Path } from "effect"
-import type { Definition, Issue } from "./definition.ts"
+import { type Definition, type Issue, issue } from "./definition.ts"
 
 export type ImportFile = (
   file: string,
@@ -27,26 +27,16 @@ export const describeCause = (cause: unknown): string => {
 }
 
 // Authored code can throw from a getter or a proxy trap wherever Spindle reads it, so a defect here becomes an issue.
-export const reportDefects = <A, R>(
-  load: Effect.Effect<A, LoadError, R>,
-  definition: Pick<Definition, "kind" | "file" | "path">,
-): Effect.Effect<A, LoadError, R> =>
+export const loadValue = ({ load, ...source }: Discovered) =>
   load.pipe(
-    Effect.catchDefect((cause) =>
-      Effect.fail(
-        new LoadError({
-          issues: [
-            {
-              code: "definition_load_failed",
-              severity: "error",
-              message: `The ${definition.kind} threw while Spindle loaded it. ${describeCause(cause)}`,
-              file: definition.file,
-              path: definition.path,
-            },
-          ],
-        }),
-      ),
-    ),
+    Effect.catchDefect((cause) => {
+      const message = `The ${source.kind} threw while Spindle loaded it. ${describeCause(cause)}`
+      return Effect.fail(
+        new LoadError({ issues: [issue("definition_load_failed", source.file, source.path, message)] }),
+      )
+    }),
+    Effect.result,
+    Effect.map((result) => ({ source, result })),
   )
 
 export const describeImportFailure = (cause: unknown): string => {
@@ -59,26 +49,14 @@ export const describeImportFailure = (cause: unknown): string => {
 // The definition helpers in @standardagents/spec, such as defineAgent, throw one "<path>: <message>" line per issue.
 const FIELD_LINE = /^([A-Za-z_$][\w$]*(?:\.[\w$]+|\[\d+\])*): (.+)$/
 
-export const fieldIssues = (
-  cause: unknown,
-  location: { readonly file: string; readonly path: string },
-  describe: (message: string) => string,
-  whole: string,
-): ReadonlyArray<Issue> => {
+export const loadFailure = (cause: unknown, file: string, path: string, prefix: string, whole: string) => {
   const lines = describeCause(cause)
     .split("\n")
     .map((line) => FIELD_LINE.exec(line))
-  const fields = lines.flatMap((match) => (match === null ? [] : [match]))
-  const issue = (path: string, message: string): Issue => ({
-    code: "definition_load_failed",
-    severity: "error",
-    message,
-    file: location.file,
-    path,
-  })
-  return fields.length === lines.length
-    ? fields.map(([, field = "", message = ""]) =>
-        issue([location.path, field].filter((part) => part !== "").join("."), describe(message)),
+  const issues = lines.every((match) => match !== null)
+    ? lines.map(([, field, message]) =>
+        issue("definition_load_failed", file, [path, field].filter(Boolean).join("."), prefix + message),
       )
-    : [issue(location.path, whole)]
+    : [issue("definition_load_failed", file, path, whole)]
+  return new LoadError({ issues })
 }

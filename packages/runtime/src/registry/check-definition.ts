@@ -1,5 +1,6 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
-import { type Definition, type Issue, type IssueCode, type Kind, namespaceOf } from "./definition.ts"
+import { Predicate } from "effect"
+import { type Definition, type Issue, issue, type Kind, namespaceOf } from "./definition.ts"
 import { describeCause } from "./load-error.ts"
 import type { Registry } from "./Registry.ts"
 import type { Resolution } from "./resolve.ts"
@@ -53,9 +54,6 @@ const SNAKE_CASE = /^[a-z][a-z0-9_]*$/
 
 type Shape = Record<string, unknown>
 
-const isRecord = (value: unknown): value is Shape =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const isNonEmptyString = (value: unknown): value is string => typeof value === "string" && value !== ""
 
 const isOneOf = (allowed: ReadonlyArray<string>, value: unknown) => typeof value === "string" && allowed.includes(value)
@@ -77,14 +75,10 @@ export interface Edge {
 }
 
 export const site = (registry: Registry["Service"], issues: Array<Issue>, definition: Definition) => {
-  const report = (code: IssueCode, path: string, message: string, severity: Issue["severity"] = "error"): void => {
-    issues.push({
-      code,
-      severity,
-      message,
-      file: definition.file,
-      path: [definition.path, path].filter((part) => part !== "").join("."),
-    })
+  const report = (code: Issue["code"], path: string, message: string, severity: Issue["severity"] = "error"): void => {
+    issues.push(
+      issue(code, definition.file, [definition.path, path].filter((part) => part !== "").join("."), message, severity),
+    )
   }
   const from = namespaceOf(definition)
   const resolve = (kind: Kind, name: string) => registry.resolve(kind, name, from)
@@ -117,7 +111,7 @@ export const site = (registry: Registry["Service"], issues: Array<Issue>, defini
     }
   }
   // The diagnostic reads the authored name again only when lookup fails. It can be a getter.
-  const reference = (kind: Kind, read: () => string, code: IssueCode, path: string, suffix = "") => {
+  const reference = (kind: Kind, read: () => string, code: Issue["code"], path: string, suffix = "") => {
     const found = resolve(kind, read())
     if (found._tag === "Found") return found.definition
     report(code, path, describe(kind, read(), found) + suffix)
@@ -144,20 +138,20 @@ const edgesTo = (at: Site, targets: ReadonlyArray<readonly [name: unknown, path:
   })
 
 const toolNames = (prompt: unknown): Array<string> =>
-  isRecord(prompt) && Array.isArray(prompt.tools)
+  Predicate.isObject(prompt) && Array.isArray(prompt.tools)
     ? prompt.tools.flatMap((entry) => {
-        const name = typeof entry === "string" ? entry : isRecord(entry) ? entry.name : undefined
+        const name = typeof entry === "string" ? entry : Predicate.isObject(entry) ? entry.name : undefined
         return typeof name === "string" ? [parseQualifiedName(name)[1]] : []
       })
     : []
 
 const checkAgent = (at: Site, agent: unknown) => {
   for (const issue of validateAgentDefinition(agent)) at.report(issue.code, issue.path, issue.message, issue.severity)
-  if (!isRecord(agent)) return
+  if (!Predicate.isObject(agent)) return
   at.snakeCase()
   for (const sideKey of ["sideA", "sideB"]) {
     const side = agent[sideKey]
-    if (!isRecord(side)) continue
+    if (!Predicate.isObject(side)) continue
     const backing = backingOf(side)
     if (side.label !== undefined && typeof side.label !== "string")
       at.report("agent_side_invalid", `${sideKey}.label`, "label must be a string")
@@ -180,7 +174,7 @@ const checkAgent = (at: Site, agent: unknown) => {
       at.reference("handler", () => side.handler, "agent_handler_undefined", `${sideKey}.handler`)
     if (backing === "human" || !Array.isArray(side.subagents)) continue
     side.subagents.forEach((relationship: unknown, index) => {
-      if (!isRecord(relationship) || !hasName(relationship, "agent")) return
+      if (!Predicate.isObject(relationship) || !hasName(relationship, "agent")) return
       const path = `${sideKey}.subagents[${index}]`
       at.reference("agent", () => relationship.agent, "subagent_agent_undefined", `${path}.agent`)
       if (isNonEmptyString(relationship.as) && relationship.as.includes("/"))
@@ -209,7 +203,7 @@ const checkAgent = (at: Site, agent: unknown) => {
         at.report("agent_parent_hooks_invalid", `parentHooks[${index}]`, "parentHooks entries must be objects")
         continue
       }
-      if (!isRecord(requirement) || !hasName(requirement, "hook")) continue
+      if (!Predicate.isObject(requirement) || !hasName(requirement, "hook")) continue
       const target = at.reference(
         "hook",
         () => requirement.hook,
@@ -230,7 +224,8 @@ const checkAgent = (at: Site, agent: unknown) => {
 }
 
 const checkPrompt = (at: Site, prompt: unknown) => {
-  if (!isRecord(prompt)) return at.report("prompt_content_invalid", "", "A prompt definition must be an object")
+  if (!Predicate.isObject(prompt))
+    return at.report("prompt_content_invalid", "", "A prompt definition must be an object")
   if (!isNonEmptyString(prompt.name)) at.report("prompt_name_missing", "name", "name must be a non-empty string")
   at.snakeCase()
   if (!isNonEmptyString(prompt.toolDescription))
@@ -242,7 +237,7 @@ const checkPrompt = (at: Site, prompt: unknown) => {
     for (const [index, part] of (prompt.prompt as Array<unknown>).entries()) {
       const path = `prompt[${index}]`
       const valid =
-        isRecord(part) &&
+        Predicate.isObject(part) &&
         ((part.type === "text" && typeof part.content === "string") ||
           (part.type === "include" && hasName(part, "prompt")) ||
           (part.type === "env" && isNonEmptyString(part.property)))
@@ -262,9 +257,9 @@ const checkPrompt = (at: Site, prompt: unknown) => {
   if (prompt.toolChoice !== undefined && !isOneOf(["auto", "none", "required"], prompt.toolChoice))
     at.report("prompt_tool_choice_invalid", "toolChoice", "toolChoice must be one of auto, none, or required")
   if (prompt.reasoning !== undefined) {
-    const level = isRecord(prompt.reasoning) ? prompt.reasoning.level : undefined
+    const level = Predicate.isObject(prompt.reasoning) ? prompt.reasoning.level : undefined
     if (
-      !isRecord(prompt.reasoning) ||
+      !Predicate.isObject(prompt.reasoning) ||
       (level !== undefined && !(typeof level === "number" && level >= 0 && level <= 100))
     )
       at.report("prompt_reasoning_level_invalid", "reasoning.level", "reasoning.level must be a number from 0 to 100")
@@ -276,13 +271,13 @@ const checkPrompt = (at: Site, prompt: unknown) => {
       "recentImageThreshold",
       "recentImageThreshold must be a positive integer",
     )
-  const providerTools = isRecord(model) && isStringArray(model.providerTools) ? model.providerTools : []
+  const providerTools = Predicate.isObject(model) && isStringArray(model.providerTools) ? model.providerTools : []
   if (prompt.tools !== undefined && !Array.isArray(prompt.tools))
     at.report("prompt_tool_undefined", "tools", "tools must be an array")
   if (Array.isArray(prompt.tools))
     for (const [index, entry] of (prompt.tools as Array<unknown>).entries()) {
       const path = `tools[${index}]`
-      if (isRecord(entry)) {
+      if (Predicate.isObject(entry)) {
         const keys = Object.keys(entry).filter((key) => RELATIONSHIP_ONLY_KEYS.includes(key))
         if (keys.length > 0) {
           at.report(
@@ -293,7 +288,7 @@ const checkPrompt = (at: Site, prompt: unknown) => {
           continue
         }
       }
-      const name = typeof entry === "string" ? entry : isRecord(entry) ? entry.name : undefined
+      const name = typeof entry === "string" ? entry : Predicate.isObject(entry) ? entry.name : undefined
       if (!isNonEmptyString(name)) {
         at.report("prompt_tool_undefined", path, `${path} must be a tool name or an object with a name`)
         continue
@@ -309,7 +304,7 @@ const checkPrompt = (at: Site, prompt: unknown) => {
       const tool = at.tool(name)
       if (tool._tag === "Found") {
         const target = tool.definition.value
-        if (tool.definition.kind === "agent" && isRecord(target) && target.exposeAsTool !== true)
+        if (tool.definition.kind === "agent" && Predicate.isObject(target) && target.exposeAsTool !== true)
           at.report(
             "prompt_tool_agent_not_exposed",
             path,
@@ -334,14 +329,17 @@ const checkPrompt = (at: Site, prompt: unknown) => {
     Array.isArray(prompt.prompt)
       ? prompt.prompt.map(
           (part: unknown, i) =>
-            [isRecord(part) && part.type === "include" ? part.prompt : undefined, `prompt[${i}].prompt`] as const,
+            [
+              Predicate.isObject(part) && part.type === "include" ? part.prompt : undefined,
+              `prompt[${i}].prompt`,
+            ] as const,
         )
       : [],
   )
 }
 
 const checkModel = (at: Site, model: unknown) => {
-  if (!isRecord(model)) return at.report("model_property_invalid", "", "A model definition must be an object")
+  if (!Predicate.isObject(model)) return at.report("model_property_invalid", "", "A model definition must be an object")
   if (!isNonEmptyString(model.name) || /\s/.test(model.name))
     at.report("model_name_invalid", "name", "name must be a non-empty string without spaces")
   if (typeof model.provider !== "function")
@@ -356,7 +354,7 @@ const checkModel = (at: Site, model: unknown) => {
     if (model[field] !== undefined && !isStringArray(model[field]))
       at.report("model_property_invalid", field, `${field} must be an array of strings`)
   }
-  if (model.capabilities !== undefined && !isRecord(model.capabilities))
+  if (model.capabilities !== undefined && !Predicate.isObject(model.capabilities))
     at.report("model_property_invalid", "capabilities", "capabilities must be an object")
   if (isStringArray(model.fallbacks))
     model.fallbacks.forEach((name, index) => {
@@ -371,15 +369,15 @@ const checkModel = (at: Site, model: unknown) => {
   const schema =
     typeof model.provider === "function" ? (model.provider as { providerOptions?: unknown }).providerOptions : undefined
   // The provider's schema decides the type of providerOptions, which may be a scalar. Without one, it is an object.
-  if (model.providerOptions !== undefined && isRecord(schema) && typeof schema.safeParse === "function") {
+  if (model.providerOptions !== undefined && Predicate.isObject(schema) && typeof schema.safeParse === "function") {
     const parsed: unknown = schema.safeParse(model.providerOptions)
-    if (isRecord(parsed) && parsed.success === false)
+    if (Predicate.isObject(parsed) && parsed.success === false)
       at.report(
         "model_provider_options_invalid",
         "providerOptions",
         `providerOptions do not match the provider's schema: ${describeCause(parsed.error)}`,
       )
-  } else if (model.providerOptions !== undefined && !isRecord(model.providerOptions))
+  } else if (model.providerOptions !== undefined && !Predicate.isObject(model.providerOptions))
     at.report("model_property_invalid", "providerOptions", "providerOptions must be an object")
   return edgesTo(
     at,
@@ -395,7 +393,8 @@ const checkTool = (at: Site, tool: unknown) => {
       "",
       `Tool name ${at.definition.name} is reserved for the injected lifecycle tools (${RESERVED_RELATIONSHIP_NAMES.join(", ")})`,
     )
-  if (!isRecord(tool)) return at.report("tool_invalid", "", "A tool definition must be an object from defineTool()")
+  if (!Predicate.isObject(tool))
+    return at.report("tool_invalid", "", "A tool definition must be an object from defineTool()")
   if (typeof tool.execute !== "function") at.report("tool_invalid", "execute", "execute must be a function")
   if (typeof tool.description !== "string") at.report("tool_invalid", "description", "description must be a string")
   if (tool.uses === undefined || tool.uses === null) return
@@ -407,7 +406,7 @@ const checkTool = (at: Site, tool: unknown) => {
 }
 
 const checkHook = (at: Site, hook: unknown) => {
-  if (!isRecord(hook))
+  if (!Predicate.isObject(hook))
     return at.report("hook_type_invalid", "", "A hook definition must be an object from defineHook()")
   if (!isOneOf(THREAD_HOOKS, hook.hook))
     at.report("hook_type_invalid", "hook", `hook must be one of ${THREAD_HOOKS.join(", ")}`)
@@ -417,7 +416,7 @@ const checkHook = (at: Site, hook: unknown) => {
 }
 
 const checkHandler = (at: Site, handler: unknown) => {
-  if (!isRecord(handler))
+  if (!Predicate.isObject(handler))
     return at.report("handler_invalid", "", "A handler definition must be an object from defineHandler()")
   if (typeof handler.execute !== "function") at.report("handler_invalid", "execute", "execute must be a function")
   if (handler.description !== undefined && typeof handler.description !== "string")
@@ -430,7 +429,7 @@ const checkEffect = (at: Site, effect: unknown) => {
     Array.isArray(effect) &&
     effect.length === 3 &&
     typeof effect[0] === "string" &&
-    (effect[1] === null || isRecord(effect[1])) &&
+    (effect[1] === null || Predicate.isObject(effect[1])) &&
     typeof effect[2] === "function"
   if (!valid)
     at.report(

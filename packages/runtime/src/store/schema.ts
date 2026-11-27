@@ -1,5 +1,5 @@
 import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Option, Schema } from "effect"
+import { Option, Predicate, Schema } from "effect"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./model.ts"
 
 type Text = string | Uint8Array
@@ -172,18 +172,16 @@ export const messageRow = (
   metadata: json.metadata,
 })
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 export const callsIn = (toolCalls: Text): Array<{ readonly id: string; readonly name: string }> => {
   const parsed = Option.getOrUndefined(parsePayload(text(toolCalls)))
   if (!Array.isArray(parsed)) return []
   return parsed.flatMap((entry: unknown) =>
-    isRecord(entry) && typeof entry.id === "string"
+    Predicate.isObject(entry) && typeof entry.id === "string"
       ? [
           {
             id: entry.id,
-            name: isRecord(entry.function) && typeof entry.function.name === "string" ? entry.function.name : "",
+            name:
+              Predicate.isObject(entry.function) && typeof entry.function.name === "string" ? entry.function.name : "",
           },
         ]
       : [],
@@ -216,7 +214,7 @@ const optionalCount = (value: unknown) => value === undefined || count(value)
 const optionalString = (value: unknown) => value === undefined || typeof value === "string"
 
 export const isAttachmentRef = (value: unknown): value is AttachmentRef =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   value.type === "file" &&
   typeof value.id === "string" &&
   typeof value.path === "string" &&

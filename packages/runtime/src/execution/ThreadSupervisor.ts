@@ -1,5 +1,5 @@
 import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Context, Data, Duration, Effect, Layer, Scope } from "effect"
+import { Context, Data, Duration, Effect, Layer, Predicate, Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
@@ -66,9 +66,6 @@ export class ThreadSupervisor extends Context.Service<
   }
 >()("spindle/ThreadSupervisor") {}
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 
 // A caller of the runtime's API passes these numbers as plain values, so NaN, Infinity, or a fraction can arrive.
@@ -85,19 +82,20 @@ const checkOptions = (options: ExecutionOptions) => {
 const queuedMessage = (input: QueueMessageInput, secrets: Secrets) =>
   Effect.gen(function* () {
     const refuse = (problem: string) => new QueueRefused({ message: `queueMessage ${problem}` })
-    if (!isRecord(input)) return yield* refuse("takes an object with a role and content")
+    if (!Predicate.isObject(input)) return yield* refuse("takes an object with a role and content")
     if (input.role !== "user" && input.role !== "assistant")
       return yield* refuse(`takes the role user or assistant, got ${JSON.stringify(input.role)}`)
     if (typeof input.content !== "string") return yield* refuse("takes content that is a string")
     if (input.silent !== undefined && typeof input.silent !== "boolean")
       return yield* refuse("takes silent as a boolean")
-    if (input.metadata !== undefined && !isRecord(input.metadata)) return yield* refuse("takes metadata as an object")
+    if (input.metadata !== undefined && !Predicate.isObject(input.metadata))
+      return yield* refuse("takes metadata as an object")
     const attachments: ReadonlyArray<unknown> = input.attachments ?? []
     if (!Array.isArray(attachments)) return yield* refuse("takes attachments as an array")
     for (const item of attachments)
       if (!isAttachmentRef(item))
         return yield* refuse(
-          isRecord(item) && typeof item.data === "string"
+          Predicate.isObject(item) && typeof item.data === "string"
             ? "cannot store a new file in this version of Spindle. The thread file system arrives in M3, so pass a reference to a stored file."
             : "takes attachments that are references to stored files",
         )

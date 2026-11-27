@@ -9,7 +9,7 @@ import type {
   ToolArgs,
   VariableDefinition,
 } from "@standardagents/spec"
-import { Data, Effect } from "effect"
+import { Data, Effect, Predicate } from "effect"
 import { type Definition, type Kind, namespaceOf } from "../registry/definition.ts"
 import { Registry } from "../registry/Registry.ts"
 
@@ -50,18 +50,15 @@ export interface Turn {
   readonly tools: ReadonlyMap<string, ExposedTool>
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 export const isFunctionTool = (definition: Definition | undefined): definition is Loaded<FunctionTool> => {
   const value = definition?.value
   return (
-    isRecord(value) &&
+    Predicate.isObject(value) &&
     typeof value.execute === "function" &&
     typeof value.description === "string" &&
     (value.args === null ||
       value.args === undefined ||
-      (isRecord(value.args) && typeof value.args.safeParseAsync === "function"))
+      (Predicate.isObject(value.args) && typeof value.args.safeParseAsync === "function"))
   )
 }
 
@@ -79,7 +76,7 @@ export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
 })
 
 const backingOf = (side: unknown) => {
-  if (!isRecord(side)) return "nothing"
+  if (!Predicate.isObject(side)) return "nothing"
   if (side.human === true) return "human"
   if (typeof side.prompt === "string") return "prompt"
   if (typeof side.handler === "string") return "handler"
