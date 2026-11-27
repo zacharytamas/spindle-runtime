@@ -1137,6 +1137,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - Spindle checks the prototype of nested objects while copying tool error data. A nested class instance in an object field or array element produces the same stored error and dropped-data note as a top-level instance.
 
+- Between reading the history snapshot and starting the first `filter_messages` hook, the scheduler does not hand the thread to another fiber, so a message stored before the hook starts is in that assembly. A stop is checked in the same synchronous step that starts a tool. Neither has a test of its own. The first shows only with Effect's operation budget lowered through an internal key, and the second needs the budget to run out at one instruction.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
