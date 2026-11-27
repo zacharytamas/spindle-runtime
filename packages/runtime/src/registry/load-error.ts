@@ -49,7 +49,19 @@ export const describeImportFailure = (cause: unknown): string => {
 // The definition helpers in @standardagents/spec, such as defineAgent, throw one "<path>: <message>" line per issue.
 const FIELD_LINE = /^([A-Za-z_$][\w$]*(?:\.[\w$]+|\[\d+\])*): (.+)$/
 
+// defineAgent throws an ordinary Error with no issue payload. Check its origin before interpreting authored text.
+const fromDefineAgent = (cause: unknown) => {
+  try {
+    if (!(cause instanceof Error) || typeof cause.stack !== "string") return false
+    const firstFrame = cause.stack.split("\n").find((line) => /^\s+at /.test(line))
+    return firstFrame !== undefined && /\bdefineAgent .*[/\\]@standardagents[/\\]spec[/\\]/.test(firstFrame)
+  } catch {
+    return false
+  }
+}
+
 export const loadFailure = (cause: unknown, file: string, path: string, prefix: string, whole: string) => {
+  if (!fromDefineAgent(cause)) return new LoadError({ issues: [issue("definition_load_failed", file, path, whole)] })
   const lines = describeCause(cause)
     .split("\n")
     .map((line) => FIELD_LINE.exec(line))
