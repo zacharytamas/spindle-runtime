@@ -1101,9 +1101,9 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 ### Settled in M1-18
 
-- A history hook that changes only a caller's message id keeps the stored pairing in the model request, even when another caller uses the same tool call id.
+- A history hook that changes only a caller's message id keeps the stored pairing in the model request, even when another caller uses the same tool call id. The renamed caller is recognized by its place in the list. A hook that renames a caller and also adds or removes a message before it still sends the call without its result, as before this change. A value from the hook that is too deep to compare counts as a new message and does not end the run.
 
-- Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement.
+- Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement. A chat with no database prints the note that the thread lives in memory with the id, and no resume command.
 
 - During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON, and direct writes to process.stdout still reach standard output.
 
