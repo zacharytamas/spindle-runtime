@@ -384,6 +384,55 @@ it.effect("leaves the execution abort signal live for a sibling after a tool tim
   }).pipe(Effect.provide(live))
 })
 
+it.effect("refuses a write at commit when its tool times out inside the message hook", () => {
+  const entered = gate()
+  const leave = gate()
+  const hook = defineHook({
+    id: "paused",
+    hook: "before_create_message",
+    execute: async (_state, message) => {
+      if (message.content === "pending write") {
+        entered.release()
+        await leave.opened
+      }
+      return message
+    },
+  })
+  let write: Promise<unknown>
+  const wait = defineTool({
+    description: "Inject a message through the paused hook",
+    execute: async (state: ThreadState) => {
+      write = state.injectMessage({ role: "user", content: "pending write" })
+      await write
+      return ok("wrote")
+    },
+  })
+  const { live } = fixture(
+    { wait },
+    {
+      hooks: [hook],
+      steps: [
+        { toolCalls: [call] },
+        async () => {
+          // Keep the flow active through the insert so only the tool's deadline can refuse it.
+          await write.catch(() => {})
+          return { text: "done" }
+        },
+      ],
+    },
+  )
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(entered)
+    yield* TestClock.adjust("11 millis")
+    expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+    leave.release()
+    yield* Effect.promise(() => expect(write).rejects.toMatchObject({ _tag: "HandleExpired" }))
+    yield* Fiber.join(sent)
+    expect((yield* messages(id)).messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["go"])
+  }).pipe(Effect.ensuring(Effect.sync(leave.release)), Effect.provide(live))
+})
+
 it.effect("refuses a tool write past its deadline even before the event loop can run its timer", () =>
   Effect.gen(function* () {
     const clock = yield* Clock.Clock
