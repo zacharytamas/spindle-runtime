@@ -58,7 +58,12 @@ const listen = (seconds: number) => {
   return { evaluate, restore, faults, exits }
 }
 
-export const isolateDefinitionLoads = <A, E, R>(seconds: number, load: Effect.Effect<A, E, R>) =>
+// The faults are described before the exit function is restored, because describing a thrown value reads it.
+export const isolateDefinitionLoads = <A, E, R>(
+  seconds: number,
+  load: Effect.Effect<A, E, R>,
+  describe: (cause: unknown) => string,
+) =>
   Effect.acquireUseRelease(
     Effect.sync(() => listen(seconds)),
     ({ evaluate, faults, exits }) =>
@@ -66,7 +71,7 @@ export const isolateDefinitionLoads = <A, E, R>(seconds: number, load: Effect.Ef
         const value = yield* Effect.provideService(load, DefinitionLoad, evaluate)
         yield* Effect.promise(() => delay(0))
         for (const [cause, file] of exits) faults.push({ file, cause })
-        return { value, faults }
+        return { value, faults: faults.map(({ file, cause }) => ({ file, reason: describe(cause) })) }
       }),
     ({ restore }) => Effect.sync(restore),
   ).pipe(Semaphore.withPermit(lock))

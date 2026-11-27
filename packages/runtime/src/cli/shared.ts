@@ -119,12 +119,12 @@ export const loadTimeoutFlag = Flag.Finite("load-timeout").pipe(
 export const commandRegistry = (root: string, seconds: number) =>
   Layer.effect(
     Registry,
-    isolateDefinitionLoads(seconds, Effect.provide(Registry, Registry.layer(root))).pipe(
+    isolateDefinitionLoads(seconds, Effect.provide(Registry, Registry.layer(root)), describeCause).pipe(
       Effect.map(({ value, faults }) => ({
         ...value,
         issues: [
           ...value.issues,
-          ...faults.map(({ file, cause }) => issue("definition_load_failed", file, "", describeCause(cause))),
+          ...faults.map(({ file, reason }) => issue("definition_load_failed", file, "", reason)),
         ],
       })),
     ),
