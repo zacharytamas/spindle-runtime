@@ -239,7 +239,7 @@ describe("spindle chat and Ctrl-C", () => {
         expect(yield* toolRows(db, thread)).toEqual([["success", "released a, aborted false"]])
         expect(yield* requesters(gate)).toHaveLength(1)
         const status = yield* spindleWith(gate, ["status", thread, "--db", db])
-        expect(yield* status.exit).toBe(0)
+        expect(yield* status.exit, status.err()).toBe(0)
         expect(linesOf(status.out())[0]).toMatch(/^idle aborted_by_user since /)
         yield* session.type("next\n")
         yield* prompt(session, 3)
