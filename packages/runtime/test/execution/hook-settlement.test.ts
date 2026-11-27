@@ -6,6 +6,7 @@ import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { attempt, gate, project } from "../../../conformance/src/scenarios/harness.ts"
 import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
@@ -52,5 +53,37 @@ it.effect("refuses a write submitted by a hook before its timeout that reaches S
   }).pipe(
     Effect.ensuring(Effect.sync(release.release)),
     Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), stores))),
+  )
+})
+
+it.effect("refuses an inbound hook's write when recovery displaced its flow before the next poll", () => {
+  const entered = gate()
+  const release = gate()
+  let result: string | undefined
+  const hook = defineHook({
+    id: "incoming",
+    hook: "after_create_message",
+    execute: async (state, message) => {
+      if (message.content !== "go") return
+      entered.release()
+      await release.opened
+      result = await attempt(() => state.setValue("stale", 1))
+    },
+  })
+  const registry = registryOf(
+    project({ provider: new ScriptedProvider([{ text: "done" }]), hooks: [hook], agent: { hooks: ["incoming"] } }),
+  )
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+    yield* Effect.promise(() => entered.opened)
+    yield* RunStore.use((store) => store.recoverThread(id, true))
+    release.release()
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("execution_lost")
+    expect(result).toBe("FlowEnded")
+    expect(yield* ThreadStore.use((store) => store.getValue(id, "stale"))).toBeNull()
+  }).pipe(
+    Effect.ensuring(Effect.sync(release.release)),
+    Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), inMemory))),
   )
 })
