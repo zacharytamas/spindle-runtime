@@ -117,6 +117,7 @@ const nativeMessage = (message: ProviderMessage): Json => {
               id: call.id,
               type: "function",
               function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+              ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
             })),
           }
     }
@@ -146,6 +147,7 @@ export const requestBody = (request: ProviderRequest, stream: boolean): Json => 
           : { type: "function", function: { name: request.toolChoice.name } }
     if (request.parallelToolCalls !== undefined) body.parallel_tool_calls = request.parallelToolCalls
   }
+  if (request.user !== undefined) body.user = request.user
   if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens
   if (request.temperature !== undefined) body.temperature = request.temperature
   if (request.topP !== undefined) body.top_p = request.topP
@@ -162,12 +164,16 @@ export const requestBody = (request: ProviderRequest, stream: boolean): Json => 
   }
   if (stream) {
     body.stream = true
-    body.stream_options = { include_usage: true }
+    body.stream_options = {
+      ...(Predicate.isObject(body.stream_options) ? body.stream_options : {}),
+      include_usage: true,
+    }
   }
   return body
 }
 
 const codeForStatus = (status: number): ProviderErrorCode => {
+  if (status === 408) return "timeout"
   if (status === 429) return "rate_limit"
   if (status === 401 || status === 403) return "auth_error"
   if (status === 400 || status === 404 || status === 422) return "invalid_request"
@@ -177,9 +183,18 @@ const codeForStatus = (status: number): ProviderErrorCode => {
 
 const retryAfterSeconds = (response: Response): number | undefined => {
   const header = response.headers.get("retry-after")
-  if (header === null) return undefined
+  if (header === null || header.trim() === "") return undefined
   const seconds = Number(header)
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+  if (!Number.isNaN(seconds)) return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+  // Date.parse accepts unrelated strings such as "wait 5" and treats an asctime date as local time.
+  const asctime = /^[A-Za-z]{3} [A-Za-z]{3} [ \d]\d \d{2}:\d{2}:\d{2} \d{4}$/.test(header)
+  if (
+    !asctime &&
+    !/^[A-Za-z]+, (?:\d{2} [A-Za-z]{3} \d{4}|\d{2}-[A-Za-z]{3}-\d{2}) \d{2}:\d{2}:\d{2} GMT$/i.test(header)
+  )
+    return undefined
+  const date = Date.parse(asctime ? `${header} GMT` : header)
+  return Number.isNaN(date) ? undefined : Math.max(0, (date - Date.now()) / 1000)
 }
 
 const httpError = async (response: Response): Promise<ProviderError> => {
@@ -286,7 +301,7 @@ const reasoningText = (delta: Json): string | undefined => {
   return undefined
 }
 
-async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+async function* eventLines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const decoder = new TextDecoder()
   let buffer = ""
   for await (const bytes of body) {
@@ -295,18 +310,54 @@ async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
     while (end !== -1) {
       const line = buffer.slice(0, end).replace(/\r$/, "")
       buffer = buffer.slice(end + 1)
-      if (line.startsWith("data:")) yield line.slice(5).trimStart()
+      yield line
       end = buffer.indexOf("\n")
     }
   }
   buffer += decoder.decode()
-  if (buffer.startsWith("data:")) yield buffer.slice(5).trimStart()
+  if (buffer !== "") yield buffer.replace(/\r$/, "")
+}
+
+const isJson = (text: string) => {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Data that is complete JSON is delivered at once, because some endpoints send no blank line between events and an
+// event must not wait for the one after it. Data that is not complete yet is joined to the next data line with a
+// newline, as the event-stream standard says, until it is complete or a blank line, the sentinel, or the end of
+// the stream delivers what there is.
+async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  let pending: string | undefined
+  for await (const line of eventLines(body)) {
+    if (line !== "" && !line.startsWith("data:")) continue
+    const data = line === "" ? undefined : line.slice(5).trimStart()
+    if (data === undefined || data === "[DONE]") {
+      if (pending !== undefined) yield pending
+      pending = undefined
+      if (data !== undefined) return
+      continue
+    }
+    // An empty field with nothing buffered would only start an event that holds no data.
+    if (pending === undefined && data === "") continue
+    pending = pending === undefined ? data : `${pending}\n${data}`
+    if (isJson(pending)) {
+      yield pending
+      pending = undefined
+    }
+  }
+  if (pending !== undefined) yield pending
 }
 
 interface WireCall {
   id: string
   name: string
   arguments: string
+  extraContent?: Json
 }
 
 // A call whose argument text is not a JSON object gets no tool-call-done, so the runtime never runs it. A stream
@@ -321,7 +372,6 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
   let sawContent = false
   let sawReasoning = false
   for await (const data of serverSentEvents(body)) {
-    if (data === "[DONE]") break
     let event: unknown
     try {
       event = JSON.parse(data)
@@ -362,6 +412,7 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
           call = { id: typeof part.id === "string" ? part.id : `call_${index}`, name: "", arguments: "" }
           calls.set(index, call)
         }
+        if (Predicate.isObject(part.extra_content)) call.extraContent = part.extra_content
         if (call.name === "" && typeof fn.name === "string" && fn.name !== "") {
           call.name = fn.name
           yield { type: "tool-call-start", id: call.id, name: call.name }
@@ -387,7 +438,13 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
   if (sawContent) yield { type: "content-done" }
   for (const call of calls.values()) {
     const parsed = parseArguments(call.arguments)
-    if (parsed !== undefined) yield { type: "tool-call-done", id: call.id, arguments: parsed }
+    if (parsed !== undefined)
+      yield {
+        type: "tool-call-done",
+        id: call.id,
+        arguments: parsed,
+        ...(call.extraContent === undefined ? {} : { extraContent: call.extraContent }),
+      }
   }
   yield {
     type: "finish",
@@ -409,10 +466,11 @@ async function* guarded(
 }
 
 const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
-  const choice =
-    Predicate.isObject(body) && Array.isArray(body.choices) && Predicate.isObject(body.choices[0])
-      ? body.choices[0]
-      : {}
+  if (!Predicate.isObject(body) || !Array.isArray(body.choices) || !Predicate.isObject(body.choices[0]))
+    throw new ProviderError("The endpoint sent no completion choice", "unknown", undefined, undefined, {
+      origin: ORIGIN,
+    })
+  const choice = body.choices[0]
   const message = Predicate.isObject(choice.message) ? choice.message : {}
   const toolCalls: Array<ProviderToolCallPart> = []
   for (const part of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
@@ -427,7 +485,12 @@ const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
         undefined,
         { origin: ORIGIN },
       )
-    toolCalls.push({ id: String(part.id), name: String(part.function.name), arguments: parsed })
+    toolCalls.push({
+      id: String(part.id),
+      name: String(part.function.name),
+      arguments: parsed,
+      ...(Predicate.isObject(part.extra_content) ? { extraContent: part.extra_content } : {}),
+    })
   }
   const reasoning = exclude ? undefined : reasoningText(message)
   const details: Array<ProviderReasoningDetail> = []
@@ -438,8 +501,8 @@ const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
     ...(details.length === 0 ? {} : { reasoningDetails: details }),
     ...(toolCalls.length === 0 ? {} : { toolCalls }),
     finishReason: finishReason(choice.finish_reason),
-    usage: usageOf(Predicate.isObject(body) ? body.usage : undefined),
-    ...(Predicate.isObject(body) && typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
+    usage: usageOf(body.usage),
+    ...(typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
   }
 }
 

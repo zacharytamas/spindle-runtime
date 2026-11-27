@@ -2,6 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import {
   defineModel,
   defineProvider,
+  defineTool,
   type ProviderError,
   type ProviderFactoryWithOptions,
   type ProviderReasoningDetail,
@@ -12,10 +13,13 @@ import {
 } from "@standardagents/spec"
 import { ConfigProvider, Effect, Exit } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { ok, using } from "../../../conformance/src/scenarios/harness.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { SetupError } from "../../src/execution/turn.ts"
 import { providerFor } from "../../src/providers/config.ts"
 import { openaiCompatible, requestBody } from "../../src/providers/openai-compatible.ts"
+import { spindleDriver } from "../spindle-driver.ts"
 
 interface Sent {
   readonly url: string
@@ -650,4 +654,381 @@ describe("provider config slots", () => {
       ])
     }),
   )
+})
+
+// M1c-3. Each strict expectation below sits beside the tolerant input that real endpoints send, which must keep
+// working. The event-stream rules come from the WHATWG HTML standard, section 9.2 Server-sent events, "Interpreting
+// an event stream".
+describe("openaiCompatible event stream", () => {
+  const chunked = (parts: ReadonlyArray<Uint8Array>) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start: (controller) => {
+          for (const part of parts) controller.enqueue(part)
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  const streamOf = async (response: () => Response) =>
+    collect(await openaiCompatible({ apiKey: "", fetch: transport(response).fetch }).stream(request))
+  const zero = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+
+  // WHATWG: each data field appends its value and a newline to the data buffer, and dispatch drops the last newline,
+  // so the data lines of one event are joined with a newline. JSON allows a newline wherever white space goes. The
+  // last line also has no space after its colon, which the standard allows.
+  it("joins the data lines of one event with a newline before it parses them", async () => {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = [
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+        "",
+        'data: {"choices":[{"delta":',
+        'data: {"content":"lo"},',
+        'data:"finish_reason":"stop"}]}',
+        "",
+        "data: [DONE]",
+        "",
+        "",
+      ].join(eol)
+      expect(await streamOf(() => new Response(body))).toEqual([
+        { type: "content-delta", delta: "Hel" },
+        { type: "content-delta", delta: "lo" },
+        { type: "content-done" },
+        { type: "finish", finishReason: "stop", usage: zero },
+      ])
+    }
+  })
+
+  // Tolerant neighbors of the test above. Endpoints send `data:` with and without the space, CRLF line endings,
+  // comment lines as keep-alives (WHATWG: a line that starts with a colon is ignored), and id or event fields that a
+  // chat completions client has no use for. The single-line-event form without a blank line is covered by "reads each
+  // data line as one event, with or without a blank line after it" above, and must still hold after the join.
+  it("reads the event-stream forms that real endpoints send", async () => {
+    const whole = await streamOf(() => sse(streamed))
+    const lines = streamed.map((event) => JSON.stringify(event))
+    const forms = [
+      `${lines.map((line) => `data:${line}\n\n`).join("")}data:[DONE]\n\n`,
+      `${lines.map((line) => `data: ${line}\r\n\r\n`).join("")}data: [DONE]\r\n\r\n`,
+      `: OPENROUTER PROCESSING\n\n${lines.map((line) => `:keep-alive\ndata: ${line}\n\n`).join("")}data: [DONE]\n\n`,
+      `${lines.map((line, index) => `id: ${index}\nevent: message\ndata: ${line}\n\n`).join("")}data: [DONE]\n\n`,
+    ]
+    for (const body of forms) expect(await streamOf(() => new Response(body))).toEqual(whole)
+  })
+
+  // An empty data field after a complete event adds nothing to it. It must not start an event of its own.
+  it("ignores an empty data field that follows a complete event", async () => {
+    const whole = await streamOf(() => sse(streamed))
+    const body = `${streamed.map((event) => `data: ${JSON.stringify(event)}\ndata:\n\n`).join("")}data: [DONE]\n\n`
+    expect(await streamOf(() => new Response(body))).toEqual(whole)
+  })
+
+  // An endpoint that sends no blank lines must not make each event wait for the one after it. A chat shows a delta
+  // when it arrives, and the last event of a held-open connection has no successor at all.
+  it("delivers an event as soon as its data is complete, before the next line arrives", async () => {
+    const event = { choices: [{ delta: { content: "now" } }] }
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n`)),
+    })
+    const { fetch } = transport(() => new Response(body))
+    const chunks = (await openaiCompatible({ apiKey: "", fetch }).stream(request))[Symbol.asyncIterator]()
+    const late = new Promise<"late">((resolve) => setTimeout(() => resolve("late"), 500))
+    const first = await Promise.race([chunks.next(), late])
+    expect(first).toEqual({ done: false, value: { type: "content-delta", delta: "now" } })
+    await chunks.return?.()
+  })
+
+  // Tolerant neighbor. TCP may cut an event anywhere, inside a field name, a line ending, or a multi-byte character.
+  it("reads one small event split across network chunks at every byte position", async () => {
+    const event = { choices: [{ delta: { content: "héllo ☃" }, finish_reason: "stop" }] }
+    const bytes = new TextEncoder().encode(`data: ${JSON.stringify(event)}\r\n\r\ndata: [DONE]\r\n\r\n`)
+    const expected = [
+      { type: "content-delta", delta: "héllo ☃" },
+      { type: "content-done" },
+      { type: "finish", finishReason: "stop", usage: zero },
+    ]
+    for (let cut = 1; cut < bytes.length; cut++)
+      expect(await streamOf(() => chunked([bytes.slice(0, cut), bytes.slice(cut)]))).toEqual(expected)
+    const single = Array.from(bytes, (byte) => Uint8Array.of(byte))
+    expect(await streamOf(() => chunked(single))).toEqual(expected)
+  })
+})
+
+describe("openaiCompatible HTTP failures", () => {
+  const failure = (status: number, headers: Record<string, string> = {}) =>
+    openaiCompatible({ apiKey: "", fetch: async () => new Response("busy", { status, headers }) })
+      .generate(request)
+      .then(
+        (response): ProviderError => {
+          throw new Error(`generate resolved with ${JSON.stringify(response)}`)
+        },
+        (cause: ProviderError) => cause,
+      )
+
+  // RFC 9110 section 10.2.3: Retry-After = HTTP-date / delay-seconds, and HTTP-date is normally the IMF-fixdate that
+  // Date.prototype.toUTCString writes. ProviderError.retryAfter is in seconds, which callModel turns into its delay.
+  // The test reads the error and never sleeps. A date already past means no wait.
+  it("turns a Retry-After that holds an HTTP date into the seconds until that date", async () => {
+    const ahead = await failure(429, { "retry-after": new Date(Date.now() + 30_000).toUTCString() })
+    expect([ahead.code, ahead.statusCode]).toEqual(["rate_limit", 429])
+    expect(ahead.retryAfter).toBeGreaterThanOrEqual(25)
+    expect(ahead.retryAfter).toBeLessThanOrEqual(30)
+    const past = await failure(503, { "retry-after": new Date(Date.now() - 60_000).toUTCString() })
+    expect(past.retryAfter).toBe(0)
+  })
+
+  // RFC 9110 section 10.2.3 allows only a date or a number of seconds. Anything else carries no delay, so retryAfter
+  // stays unset and callModel falls back to its exponential backoff. An empty header is neither.
+  it("ignores a Retry-After that holds neither a number nor a date", async () => {
+    for (const value of ["soon", "", "later today", "-5"]) {
+      const error = await failure(429, { "retry-after": value })
+      expect([value, error.code, error.retryAfter]).toEqual([value, "rate_limit", undefined])
+    }
+  })
+
+  // Tolerant neighbor of the two tests above. The numeric form keeps working, a fractional count included, which
+  // RFC 9110 does not allow and which costs nothing to honor. A bare number must not be read as a date: Date.parse
+  // reads "7" as a year.
+  it("keeps a Retry-After that holds a number of seconds", async () => {
+    for (const [value, seconds] of [
+      ["0", 0],
+      ["7", 7],
+      ["1.5", 1.5],
+    ] as const)
+      expect([value, (await failure(429, { "retry-after": value })).retryAfter]).toEqual([value, seconds])
+  })
+
+  // HTTP 408 Request Timeout (RFC 9110 section 15.5.9) says the server gave up waiting for the request, so a repeat
+  // may succeed. Providers section 7.1 names the timeout code "Request timed out" and marks it retryable.
+  it("treats status 408 as a retryable timeout", async () => {
+    const error = await failure(408)
+    expect([error.code, error.statusCode, error.isRetryable, error.origin]).toEqual([
+      "timeout",
+      408,
+      true,
+      "provider:openai_compatible",
+    ])
+  })
+})
+
+describe("openaiCompatible responses", () => {
+  // Providers sections 5 and 6 and ProviderUsage in @standardagents/spec 0.45.13 make usage and its three counts
+  // required on a response and on a finish chunk, so a provider cannot leave usage out. What the types do let it
+  // leave out are reasoningTokens, cachedTokens, cost, provider, and pricing, so none of them may appear as a zero.
+  // This pins today's behavior.
+  it("reports the required counts as zero and no optional count when the endpoint sends no usage", async () => {
+    const zero = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    const message = { content: "Hi." }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([{ choices: [{ delta: message, finish_reason: "stop" }] }, { choices: [], usage: null }])
+        : Response.json({ choices: [{ message, finish_reason: "stop" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    expect((await provider.generate(request)).usage).toStrictEqual(zero)
+    const finish = (await collect(await provider.stream(request))).at(-1)
+    expect(finish?.type === "finish" ? finish.usage : undefined).toStrictEqual(zero)
+    const bare = { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, prompt_tokens_details: {} }
+    const partial = openaiCompatible({
+      apiKey: "",
+      fetch: async () => Response.json({ choices: [{ message, finish_reason: "stop" }], usage: bare }),
+    })
+    expect((await partial.generate(request)).usage).toStrictEqual({
+      promptTokens: 4,
+      completionTokens: 2,
+      totalTokens: 6,
+    })
+  })
+
+  // Chat completions answers with a choices array whose first entry holds the message. A body with no choice is no
+  // response at all, and Providers section 7 says "Providers throw typed errors for error conditions", so generate
+  // throws a ProviderError rather than return an empty message that looks like a model that said nothing.
+  it("rejects a generate response with no choice as a ProviderError", async () => {
+    for (const body of [{}, { choices: [] }, null, []]) {
+      const outcome = await openaiCompatible({ apiKey: "", fetch: async () => Response.json(body) })
+        .generate(request)
+        .then(
+          (response) => `resolved with ${JSON.stringify(response)}`,
+          (cause: ProviderError) => [cause.constructor.name, cause.origin],
+        )
+      expect([JSON.stringify(body), outcome]).toEqual([
+        JSON.stringify(body),
+        ["ProviderError", "provider:openai_compatible"],
+      ])
+    }
+  })
+
+  // Tolerant neighbor. A minimal body with one choice is a response even with no id, no usage, no role, and no
+  // finish reason, and a choice whose content a filter removed is a response with null content, which the step loop
+  // judges, not the provider.
+  it("accepts a minimal generate response and one whose content was filtered", async () => {
+    const minimal = openaiCompatible({
+      apiKey: "",
+      fetch: async () => Response.json({ choices: [{ message: { content: "Hi." } }] }),
+    })
+    expect(await minimal.generate(request)).toMatchObject({ content: "Hi.", finishReason: "stop" })
+    const filtered = openaiCompatible({
+      apiKey: "",
+      fetch: async () =>
+        Response.json({
+          choices: [{ message: { role: "assistant", content: null }, finish_reason: "content_filter" }],
+        }),
+    })
+    expect(await filtered.generate(request)).toMatchObject({ content: null, finishReason: "content_filter" })
+  })
+})
+
+// ProviderToolCallPart.extraContent in @standardagents/spec 0.45.13: "Provider-specific metadata that must round-trip
+// with the tool call", such as a thought signature that has to be echoed back on the next turn. On the chat
+// completions wire of endpoints that send it, it is the extra_content member of a tool_calls entry, in a response
+// message and in a streamed delta alike. DIVERGENCES.md, "Stream chunks that only the package declares", says that
+// Spindle keeps extraContent in metadata.tool_call_extra and sends it back with the call.
+describe("openaiCompatible extra_content", () => {
+  const extra = { google: { thought_signature: "sig-1" } }
+  const wireCall = (fields: Record<string, unknown>) => ({
+    id: "call_g",
+    type: "function",
+    function: { name: "noop", arguments: "{}" },
+    ...fields,
+  })
+
+  it("reads extra_content on a tool call from generate and stream", async () => {
+    const message = { content: null, tool_calls: [wireCall({ extra_content: extra })] }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([
+            { choices: [{ delta: { tool_calls: [{ index: 0, ...wireCall({ extra_content: extra }) }] } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : Response.json({ choices: [{ message, finish_reason: "tool_calls" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    expect((await provider.generate(request)).toolCalls).toEqual([
+      { id: "call_g", name: "noop", arguments: {}, extraContent: extra },
+    ])
+    // The package lets either tool-call-start or tool-call-done carry it, and callModel reads both.
+    const carried = (await collect(await provider.stream(request))).flatMap((chunk) =>
+      (chunk.type === "tool-call-start" || chunk.type === "tool-call-done") && chunk.id === "call_g"
+        ? [chunk.extraContent]
+        : [],
+    )
+    expect(carried).toContainEqual(extra)
+  })
+
+  it("sends extraContent back as extra_content on the tool call it came with", () => {
+    const body = requestBody(
+      {
+        model: "m",
+        messages: [
+          {
+            role: "assistant",
+            content: null,
+            toolCalls: [
+              { id: "call_g", name: "noop", arguments: {}, extraContent: extra },
+              { id: "call_h", name: "noop", arguments: {} },
+            ],
+          },
+        ],
+      },
+      false,
+    )
+    expect(body.messages).toEqual([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_g", type: "function", function: { name: "noop", arguments: "{}" }, extra_content: extra },
+          { id: "call_h", type: "function", function: { name: "noop", arguments: "{}" } },
+        ],
+      },
+    ])
+  })
+
+  // Tolerant neighbor. A call without extra_content, or with a null one, carries no extraContent.
+  it("gives no extraContent to a call that arrives without an object in extra_content", async () => {
+    const message = { content: null, tool_calls: [wireCall({}), wireCall({ id: "call_n", extra_content: null })] }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([
+            { choices: [{ delta: { tool_calls: message.tool_calls.map((call, index) => ({ index, ...call })) } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : Response.json({ choices: [{ message, finish_reason: "tool_calls" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    for (const call of (await provider.generate(request)).toolCalls ?? [])
+      expect(call).not.toHaveProperty("extraContent")
+    for (const chunk of await collect(await provider.stream(request))) expect(chunk).not.toHaveProperty("extraContent")
+  })
+
+  // The whole trip through the runtime: the endpoint sends extra_content, the step loop stores the call, runs the
+  // tool, and the next request carries extra_content on that call.
+  it("carries extra_content from a streamed response to the next request through a run", async () => {
+    const { sent, fetch } = transport(() =>
+      sent.length === 1
+        ? sse([
+            { choices: [{ delta: { tool_calls: [{ index: 0, ...wireCall({ extra_content: extra }) }] } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : sse([{ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }]),
+    )
+    const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+    const model = { provider: (config: { apiKey: string }) => openaiCompatible({ ...config, apiKey: "", fetch }) }
+    await using(spindleDriver, { provider: new ScriptedProvider([]), model, tools }, async (session, thread) => {
+      expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+      const assistant = (await session.messages(thread)).find((message) => message.role === "assistant")
+      expect(assistant?.metadata).toMatchObject({ tool_call_extra: { call_g: extra } })
+    })
+    expect(sent).toHaveLength(2)
+    const replayed = ((sent[1]?.body.messages ?? []) as Array<Record<string, unknown>>).find(
+      (message) => message.role === "assistant",
+    )
+    expect(replayed?.tool_calls).toEqual([
+      { id: "call_g", type: "function", function: { name: "noop", arguments: "{}" }, extra_content: extra },
+    ])
+  })
+})
+
+describe("openaiCompatible request fields", () => {
+  // ProviderRequest.user in @standardagents/spec 0.45.13: "Providers that support it (OpenAI-compatible `user`; ...)
+  // should forward it". The spec text's ProviderRequest has no user, and DIVERGENCES.md records that the runtime sets
+  // none yet. This tests the provider: a request that carries user sends it as the chat completions user field.
+  it("forwards the request's user as the chat completions user field", () => {
+    for (const stream of [false, true])
+      expect(requestBody({ ...request, user: "thread-1" }, stream)).toMatchObject({ user: "thread-1" })
+  })
+
+  // Tolerant neighbor. A request without user sends none, and a user that only providerOptions names still goes out
+  // as Providers section 2.1 merges providerOptions.
+  it("sends no user when the request has none, and keeps one that providerOptions sets", () => {
+    expect(requestBody({ model: "m", messages: [] }, true)).not.toHaveProperty("user")
+    expect(requestBody({ model: "m", messages: [], providerOptions: { user: "operator" } }, false)).toMatchObject({
+      user: "operator",
+    })
+  })
+
+  // Providers section 2.1: the merged providerOptions apply as they are, and a key the provider sets itself replaces
+  // only that key. The provider needs stream_options.include_usage to read usage from a stream, and a sibling that
+  // providerOptions puts in stream_options, such as include_obfuscation, must survive beside it.
+  it("keeps a providerOptions stream_options sibling beside include_usage", () => {
+    const body = requestBody(
+      { model: "m", messages: [], providerOptions: { stream_options: { include_obfuscation: false } } },
+      true,
+    )
+    expect(body.stream_options).toEqual({ include_obfuscation: false, include_usage: true })
+  })
+
+  // Prompts section 6.1 lets a prompt set reasoning.maxTokens, and chat completions has no common field for a reasoning
+  // token budget. The ledger reason for specification:prompts:132940db says "openaiCompatible sends none". This pins
+  // that: the budget appears nowhere in the body, alone or beside a level.
+  it("sends no reasoning token budget", () => {
+    for (const reasoning of [
+      { maxTokens: 4093 },
+      { level: 66, levels: { 33: "low", 66: "medium" }, maxTokens: 4093 },
+    ]) {
+      const body = requestBody({ model: "m", messages: [], reasoning }, true)
+      expect(JSON.stringify(body)).not.toContain("4093")
+      expect(body).not.toHaveProperty("reasoning")
+      expect(body).not.toHaveProperty("max_tokens")
+    }
+  })
 })
