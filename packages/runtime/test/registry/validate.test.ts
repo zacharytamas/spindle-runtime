@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Path } from "effect"
 import { PlatformLive } from "#platform"
-import { describeImportFailure, type Issue, Registry } from "../../src/registry/Registry.ts"
+import type { Issue } from "../../src/registry/definition.ts"
+import { describeImportFailure } from "../../src/registry/load-error.ts"
+import { Registry } from "../../src/registry/Registry.ts"
 import { counts, validate } from "../../src/registry/validate.ts"
 
 const fixture = (name: string) =>
@@ -357,6 +359,11 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "keeps the entry agent after an identifier getter renames its package and reports a later content getter failure",
+    "registry-read-order",
+    [error("definition_load_failed", "agents/packed/standardagent-reads/index.js:prompts.example")],
+  ],
+  [
     "reports each definition or package that throws while Spindle reads it and goes on",
     "throwing-reads",
     [
@@ -451,13 +458,13 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
         const intake = definitions.find((d) => d.kind === "agent" && d.name === "intake")
-        expect(yield* intake?.load ?? Effect.undefined).toMatchObject({
+        expect(intake?.value).toMatchObject({
           maxSessionTurns: 4,
           sideA: { human: true },
           sideB: { handler: "relay_pipe" },
         })
         const relay = definitions.find((d) => d.kind === "agent" && d.name === "relay")
-        expect(yield* relay?.load ?? Effect.undefined).not.toHaveProperty("maxSessionTurns")
+        expect(relay?.value).not.toHaveProperty("maxSessionTurns")
         expect(issues.filter((issue) => issue.file.startsWith("agents/agents/"))).toEqual([])
       }).pipe(Effect.provide(PlatformLive)),
     )
@@ -479,7 +486,7 @@ describe("validate", () => {
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
         const assistant = definitions.find((d) => d.kind === "agent" && d.name === "assistant")
-        expect(yield* assistant?.load ?? Effect.undefined).toMatchObject({
+        expect(assistant?.value).toMatchObject({
           packageName: "agents-basic",
           version: "1.0.0",
           author: "Spindle",
@@ -492,11 +499,7 @@ describe("validate", () => {
     it.effect("accepts several hooks of one type with distinct ids", () =>
       Effect.gen(function* () {
         const { definitions, issues } = yield* validateFixture("agents-basic")
-        const hooks = yield* Effect.forEach(
-          definitions.filter((d) => d.kind === "hook"),
-          (d) => d.load,
-          { concurrency: 1 },
-        )
+        const hooks = definitions.filter((d) => d.kind === "hook").map((d) => d.value)
         expect(hooks.map((hook) => (hook as { hook: string }).hook)).toEqual(["filter_messages", "filter_messages"])
         expect(issues).toEqual([])
       }).pipe(Effect.provide(PlatformLive)),
@@ -530,7 +533,7 @@ describe("validate", () => {
             ["standardagent-other-realm/inherited", "standardagent-other-realm"],
           ])
           const inherited = definitions.find((d) => d.qualifiedName === "standardagent-other-realm/inherited")
-          expect(yield* inherited?.load ?? Effect.undefined).toMatchObject({
+          expect(inherited?.value).toMatchObject({
             name: "inherited",
             model: "fixture-model",
             __package: { packageId: "standardagent-other-realm" },
@@ -733,11 +736,7 @@ describe("validate", () => {
           "handler",
           "effect",
         ])
-        const signatures = yield* Effect.forEach(
-          definitions,
-          (d) => d.load.pipe(Effect.map((value) => Reflect.get(Object(value), "__package"))),
-          { concurrency: 1 },
-        )
+        const signatures = definitions.map((d) => Reflect.get(Object(d.value), "__package"))
         expect(signatures).toEqual(
           definitions.map(() => ({
             packageId: "standardagent-every-kind",
@@ -792,7 +791,7 @@ describe("Registry", () => {
       const root = yield* fixture("step-loop")
       const registry = yield* Effect.provide(Registry, Registry.layer(root))
       const noop = registry.definitions.find((definition) => definition.kind === "tool" && definition.name === "noop")
-      const value = noop === undefined ? undefined : registry.loaded.get(noop)
+      const value = noop?.value
       expect((value as { annotations?: unknown } | undefined)?.annotations).toEqual({
         spindle_test: { sentinel: "kept as written" },
         someone_else: { codemode: { codeArgument: "x" } },

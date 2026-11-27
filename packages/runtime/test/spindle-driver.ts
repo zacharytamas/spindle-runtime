@@ -13,8 +13,9 @@ import { appendMessages } from "../scripts/store-fixtures.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
-import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
-import { resolver } from "../src/registry/resolve.ts"
+import type { Definition, Kind } from "../src/registry/definition.ts"
+import { Registry } from "../src/registry/Registry.ts"
+import { definitionIndex } from "../src/registry/resolve.ts"
 import { validate } from "../src/registry/validate.ts"
 import { MessageStore } from "../src/store/MessageStore.ts"
 import { RunStore } from "../src/store/RunStore.ts"
@@ -27,7 +28,7 @@ const definition = (kind: Kind, name: string, value: unknown): Definition => ({
   package: undefined,
   file: `memory/${kind}s/${name}`,
   path: "",
-  load: Effect.succeed(value),
+  value,
 })
 
 // The scenarios define a project in memory, so this registry holds the values without a directory.
@@ -39,15 +40,12 @@ export const registryOf = (project: Project) => {
     ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
     ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
   ]
-  const loaded = new Map<Definition, unknown>()
-  for (const entry of definitions) loaded.set(entry, Effect.runSync(entry.load))
   return Layer.succeed(Registry, {
     root: "memory",
     definitions,
     packages: [],
-    loaded,
     issues: [],
-    resolve: resolver(definitions),
+    ...definitionIndex(definitions, [], []),
   })
 }
 

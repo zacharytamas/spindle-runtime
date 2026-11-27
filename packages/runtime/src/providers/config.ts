@@ -6,16 +6,13 @@ import type {
   ProviderFactoryWithOptions,
   ThreadState,
 } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, Predicate } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { addSecret, instanceEnv, type Secrets } from "../execution/env.ts"
 import { type Loaded, SetupError } from "../execution/turn.ts"
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const isSource = (value: unknown): value is Record<string, unknown> =>
-  isRecord(value) && ((value.type === "env" && typeof value.name === "string") || value.type === "const")
+  Predicate.isObject(value) && ((value.type === "env" && typeof value.name === "string") || value.type === "const")
 
 const coerce = (value: unknown, type: unknown) => {
   if (typeof value !== "string") return value
@@ -58,7 +55,7 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
       if (source.valueType === "secret" || slot?.type === "secret") learn(found, name, value)
       return coerce(value, type)
     }
-    if (!isRecord(source)) {
+    if (!Predicate.isObject(source)) {
       if (slot?.type === "secret") learn(found, undefined, source)
       return source
     }
@@ -71,7 +68,7 @@ const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found
   })
 
 const isProvider = (value: unknown): value is LLMProviderInterface =>
-  isRecord(value) && typeof value.stream === "function" && typeof value.generate === "function"
+  Predicate.isObject(value) && typeof value.stream === "function" && typeof value.generate === "function"
 
 export const resolveConfig = Effect.fn("resolveConfig")(function* (model: Loaded<ModelDefinition>, secrets: Secrets) {
   const factory = model.value.provider as ProviderFactoryWithOptions
@@ -101,7 +98,7 @@ export const providerFor = Effect.fn("providerFor")(function* (
   const factory = model.value.provider as ProviderFactoryWithOptions
   const definition = factory.providerDefinition
   const { config, missing } = yield* resolveConfig(model, secrets)
-  const name = model.definition.qualifiedName
+  const name = model.qualifiedName
   if (missing.length > 0)
     return yield* new SetupError({
       message: `The provider of model ${name} needs ${missing.join(", ")}, which ${missing.length === 1 ? "has" : "have"} no value`,

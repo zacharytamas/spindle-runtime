@@ -1,5 +1,6 @@
-import { Effect, FileSystem, Path } from "effect"
-import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL, reportDefects } from "./Registry.ts"
+import { Effect, FileSystem, Path, Result } from "effect"
+import { type Issue, issue, KINDS, pluralKind } from "./definition.ts"
+import { type Discovered, type ImportFile, LoadError } from "./load-error.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
@@ -13,10 +14,10 @@ const exportsNoDefinition = (value: unknown) =>
     Object.getPrototypeOf(value) === Object.prototype &&
     Reflect.ownKeys(value).length === 0)
 
-export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string) {
+export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string, importFile: ImportFile) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const definitions: Array<Definition> = []
+  const definitions: Array<Discovered> = []
   const issues: Array<Issue> = []
   const agentsDir = path.join(root, "agents")
   // A failed check counts as present, so the read that follows reports the cause as an issue.
@@ -33,45 +34,34 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
     })
     return { definitions, issues }
   }
-  for (const kind of KINDS) {
-    const dir = path.join(agentsDir, PLURAL[kind])
-    if (!(yield* exists(dir))) continue
-    const entries = yield* fs.readDirectory(dir).pipe(
-      Effect.catch((error) => {
-        issues.push({
-          code: "definition_load_failed",
-          severity: "error",
-          message: `Spindle cannot read ${path.relative(root, dir)} as a directory. ${error.message}`,
-          file: path.relative(root, dir),
-          path: "",
-        })
-        return Effect.succeed([])
-      }),
-    )
-    for (const entry of entries.sort()) {
+  const directories = yield* Effect.forEach(
+    KINDS,
+    Effect.fn(function* (kind) {
+      const dir = path.join(agentsDir, pluralKind(kind))
+      const entries = (yield* exists(dir)) ? yield* Effect.result(fs.readDirectory(dir)) : Result.succeed([])
+      return { kind, dir, entries }
+    }),
+    { concurrency: KINDS.length },
+  )
+  for (const { kind, dir, entries } of directories) {
+    if (Result.isFailure(entries)) {
+      const file = path.relative(root, dir)
+      const message = `Spindle cannot read ${file} as a directory. ${entries.failure.message}`
+      issues.push(issue("definition_load_failed", file, "", message))
+      continue
+    }
+    for (const entry of entries.success.sort()) {
       const extension = path.extname(entry)
       if (!EXTENSIONS.includes(extension) || /\.d\.m?ts$/.test(entry) || entry.startsWith(".")) continue
       const name = path.basename(entry, extension)
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
       const load = importFile(file, path.toFileUrl(absolute)).pipe(
-        Effect.flatMap((module) =>
-          exportsNoDefinition(module.default)
-            ? Effect.fail(
-                new LoadError({
-                  issues: [
-                    {
-                      code: "definition_export_missing",
-                      severity: "error",
-                      message: `The file exports no definition. Export the ${kind} definition as the default export.`,
-                      file,
-                      path: "",
-                    },
-                  ],
-                }),
-              )
-            : Effect.succeed(module.default),
-        ),
+        Effect.flatMap((module) => {
+          if (!exportsNoDefinition(module.default)) return Effect.succeed(module.default)
+          const message = `The file exports no definition. Export the ${kind} definition as the default export.`
+          return Effect.fail(new LoadError({ issues: [issue("definition_export_missing", file, "", message)] }))
+        }),
       )
       definitions.push({
         kind,
@@ -80,7 +70,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         package: undefined,
         file,
         path: "",
-        load: yield* Effect.cached(reportDefects(load, { kind, file, path: "" })),
+        load,
       })
     }
   }

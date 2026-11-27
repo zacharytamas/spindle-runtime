@@ -1,6 +1,7 @@
 import { Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
-import { type Definition, type Issue, KINDS, PLURAL, Registry } from "../registry/Registry.ts"
+import { type Definition, type Issue, KINDS, pluralKind } from "../registry/definition.ts"
+import { Registry } from "../registry/Registry.ts"
 import { counts, type Validation, validate } from "../registry/validate.ts"
 
 import { CommandFailed, commandErrors, plural } from "./shared.ts"
@@ -46,7 +47,7 @@ const formatText = ({ definitions, issues }: Validation, options: { readonly lis
   }
   for (const issue of issues) lines.push(oneLine(`${issue.code} ${issue.severity} ${location(issue)} ${issue.message}`))
   const count = counts(definitions)
-  lines.push(KINDS.map((kind) => `${PLURAL[kind]} ${count[kind]}`).join(", "))
+  lines.push(KINDS.map((kind) => `${pluralKind(kind)} ${count[kind]}`).join(", "))
   const errors = issues.filter((issue) => issue.severity === "error").length
   lines.push(`${plural(errors, "error")}, ${plural(issues.length - errors, "warning")}`)
   return lines

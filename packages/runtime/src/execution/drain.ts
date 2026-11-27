@@ -31,9 +31,8 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
     const definition = registry.definitions.find(
       (candidate) => candidate.kind === "tool" && candidate.qualifiedName === entry.toolName,
     )
-    const value = definition === undefined ? undefined : registry.loaded.get(definition)
-    const tool = definition !== undefined && isFunctionTool(value) ? { definition, value } : undefined
-    const exposed = [...turn.tools.values()].find((candidate) => candidate.tool.definition === definition)
+    const tool = isFunctionTool(definition) ? definition : undefined
+    const exposed = [...turn.tools.values()].find((candidate) => candidate.tool === definition)
     const name = exposed?.name ?? definition?.name ?? entry.toolName
     const argumentsText = JSON.stringify(mapStrings(entry.args, redact, redact))
     const call: ToolCall = {
@@ -49,7 +48,7 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
         role: roleOf(turn.side),
         content: null,
         tool_calls: JSON.stringify([hookCall(call, argumentsText)]),
-        prompt: turn.prompt.definition.qualifiedName,
+        prompt: turn.prompt.qualifiedName,
         status: "completed",
         metadata: { queued: true },
       },

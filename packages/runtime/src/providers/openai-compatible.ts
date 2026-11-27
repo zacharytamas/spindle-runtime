@@ -19,14 +19,13 @@ import {
   type ProviderToolResultContent,
   type ProviderUsage,
 } from "@standardagents/spec"
+import { Predicate } from "effect"
 import { isTimeout } from "./timeout.ts"
 
 const NAME = "openai_compatible"
 const ORIGIN = `provider:${NAME}` as const
 
 type Json = Record<string, unknown>
-
-const isRecord = (value: unknown): value is Json => typeof value === "object" && value !== null && !Array.isArray(value)
 
 const dataUri = (mediaType: string, data: string) =>
   data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`
@@ -63,8 +62,8 @@ const TYPES: Readonly<Record<string, ProviderReasoningDetail["type"]>> = {
 }
 
 const detailOf = (value: unknown): ProviderReasoningDetail | undefined => {
-  const type = isRecord(value) && typeof value.type === "string" ? TYPES[value.type] : undefined
-  if (!isRecord(value) || type === undefined) return undefined
+  const type = Predicate.isObject(value) && typeof value.type === "string" ? TYPES[value.type] : undefined
+  if (!Predicate.isObject(value) || type === undefined) return undefined
   return {
     type,
     ...optional("id", value.id),
@@ -188,7 +187,7 @@ const httpError = async (response: Response): Promise<ProviderError> => {
   let detail = text.slice(0, 500)
   try {
     const parsed: unknown = JSON.parse(text)
-    if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string")
+    if (Predicate.isObject(parsed) && Predicate.isObject(parsed.error) && typeof parsed.error.message === "string")
       detail = parsed.error.message
   } catch {}
   return new ProviderError(
@@ -235,14 +234,14 @@ const finishReason = (value: unknown): ProviderFinishReason => {
 const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0)
 
 const usageOf = (value: unknown): ProviderUsage => {
-  const usage = isRecord(value) ? value : {}
+  const usage = Predicate.isObject(value) ? value : {}
   const result: ProviderUsage = {
     promptTokens: count(usage.prompt_tokens),
     completionTokens: count(usage.completion_tokens),
     totalTokens: count(usage.total_tokens),
   }
-  const completion = isRecord(usage.completion_tokens_details) ? usage.completion_tokens_details : {}
-  const prompt = isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {}
+  const completion = Predicate.isObject(usage.completion_tokens_details) ? usage.completion_tokens_details : {}
+  const prompt = Predicate.isObject(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {}
   if (typeof completion.reasoning_tokens === "number") result.reasoningTokens = completion.reasoning_tokens
   if (typeof prompt.cached_tokens === "number") result.cachedTokens = prompt.cached_tokens
   if (typeof usage.cost === "number") result.cost = usage.cost
@@ -252,7 +251,7 @@ const usageOf = (value: unknown): ProviderUsage => {
 const parseArguments = (text: string): Json | undefined => {
   try {
     const parsed: unknown = JSON.parse(text === "" ? "{}" : text)
-    return isRecord(parsed) ? parsed : undefined
+    return Predicate.isObject(parsed) ? parsed : undefined
   } catch {
     return undefined
   }
@@ -267,7 +266,7 @@ const addDetails = (
   for (const part of Array.isArray(value) ? value : []) {
     const detail = detailOf(part)
     if (detail === undefined) continue
-    const index = isRecord(part) && typeof part.index === "number" ? part.index : undefined
+    const index = Predicate.isObject(part) && typeof part.index === "number" ? part.index : undefined
     const earlier = index === undefined ? undefined : indexed.get(index)
     if (earlier === undefined) {
       details.push(detail)
@@ -330,8 +329,8 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
       yield { type: "error", error: `The endpoint sent an event that is not JSON: ${data.slice(0, 200)}` }
       return
     }
-    if (!isRecord(event)) continue
-    if (isRecord(event.error)) {
+    if (!Predicate.isObject(event)) continue
+    if (Predicate.isObject(event.error)) {
       yield {
         type: "error",
         error: typeof event.error.message === "string" ? event.error.message : JSON.stringify(event.error),
@@ -340,9 +339,9 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
       return
     }
     if (event.usage !== undefined && event.usage !== null) usage = event.usage
-    const choice = Array.isArray(event.choices) && isRecord(event.choices[0]) ? event.choices[0] : undefined
+    const choice = Array.isArray(event.choices) && Predicate.isObject(event.choices[0]) ? event.choices[0] : undefined
     if (choice === undefined) continue
-    const delta = isRecord(choice.delta) ? choice.delta : {}
+    const delta = Predicate.isObject(choice.delta) ? choice.delta : {}
     const reasoning = exclude ? undefined : reasoningText(delta)
     if (!exclude) addDetails(details, indexed, delta.reasoning_details)
     if (reasoning !== undefined && reasoning !== "") {
@@ -355,9 +354,9 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
     }
     if (Array.isArray(delta.tool_calls))
       for (const part of delta.tool_calls) {
-        if (!isRecord(part)) continue
+        if (!Predicate.isObject(part)) continue
         const index = typeof part.index === "number" ? part.index : calls.size
-        const fn = isRecord(part.function) ? part.function : {}
+        const fn = Predicate.isObject(part.function) ? part.function : {}
         let call = calls.get(index)
         if (call === undefined) {
           call = { id: typeof part.id === "string" ? part.id : `call_${index}`, name: "", arguments: "" }
@@ -410,11 +409,14 @@ async function* guarded(
 }
 
 const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
-  const choice = isRecord(body) && Array.isArray(body.choices) && isRecord(body.choices[0]) ? body.choices[0] : {}
-  const message = isRecord(choice.message) ? choice.message : {}
+  const choice =
+    Predicate.isObject(body) && Array.isArray(body.choices) && Predicate.isObject(body.choices[0])
+      ? body.choices[0]
+      : {}
+  const message = Predicate.isObject(choice.message) ? choice.message : {}
   const toolCalls: Array<ProviderToolCallPart> = []
   for (const part of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
-    if (!isRecord(part) || !isRecord(part.function)) continue
+    if (!Predicate.isObject(part) || !Predicate.isObject(part.function)) continue
     const text = typeof part.function.arguments === "string" ? part.function.arguments : ""
     const parsed = parseArguments(text)
     if (parsed === undefined)
@@ -436,8 +438,8 @@ const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
     ...(details.length === 0 ? {} : { reasoningDetails: details }),
     ...(toolCalls.length === 0 ? {} : { toolCalls }),
     finishReason: finishReason(choice.finish_reason),
-    usage: usageOf(isRecord(body) ? body.usage : undefined),
-    ...(isRecord(body) && typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
+    usage: usageOf(Predicate.isObject(body) ? body.usage : undefined),
+    ...(Predicate.isObject(body) && typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
   }
 }
 

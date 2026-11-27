@@ -31,7 +31,7 @@ export const responseCalls = (response: ModelResponse): Array<ToolCall> =>
 // Messages section 1.3: reasoning details go back only to the model that produced them, so the message records
 // which model definition and native model that was. A later model under the same prompt name gets none.
 export const reasoningSource = (turn: Turn) => ({
-  definition: turn.model.definition.qualifiedName,
+  definition: turn.model.qualifiedName,
   model: turn.model.value.model,
 })
 
@@ -58,7 +58,7 @@ export const responseMessage = (turn: Turn, response: ModelResponse, calls: Read
           ),
     reasoning_content: response.reasoning,
     reasoning_details: response.reasoningDetails === undefined ? null : JSON.stringify(response.reasoningDetails),
-    prompt: turn.prompt.definition.qualifiedName,
+    prompt: turn.prompt.qualifiedName,
     status: "completed",
     metadata: {
       ...(Object.keys(extra).length === 0 ? {} : { tool_call_extra: extra }),

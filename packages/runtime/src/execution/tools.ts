@@ -1,6 +1,6 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Predicate, Result } from "effect"
-import type { Definition } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
 import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
@@ -91,7 +91,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   input: unknown,
 ) {
   const scope = scopeFor(context.turn, entry)
-  const name = tool.definition.qualifiedName
+  const name = tool.qualifiedName
   for (const variable of tool.value.variables ?? [])
     if (variable.required && (yield* resolveEnv(scope, variable.name)) === undefined)
       return failed(`Tool ${name} requires variable ${variable.name}, which has no value`)
@@ -142,7 +142,7 @@ export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolCont
   if (exposed === undefined) {
     const offered = [...context.turn.tools.keys()]
     return failed(
-      `The model called ${call.name}, which prompt ${context.turn.prompt.definition.qualifiedName} does not offer.${offered.length === 0 ? "" : ` It offers ${offered.join(", ")}.`}`,
+      `The model called ${call.name}, which prompt ${context.turn.prompt.qualifiedName} does not offer.${offered.length === 0 ? "" : ` It offers ${offered.join(", ")}.`}`,
     )
   }
   return yield* executeTool(context, exposed.tool, exposed.entry, call.arguments)
@@ -158,12 +158,8 @@ const outsideUses = Effect.fnUntraced(function* (
   const uses = caller.value.uses
   if (uses === undefined || uses === null) return undefined
   for (const entry of uses)
-    if (
-      entry === name ||
-      (target !== undefined && (yield* lookup("tool", entry, caller.definition))?.definition === target.definition)
-    )
-      return undefined
-  return `Tool ${caller.definition.qualifiedName} does not list ${name} in uses`
+    if (entry === name || (target !== undefined && (yield* lookup("tool", entry, caller)) === target)) return undefined
+  return `Tool ${caller.qualifiedName} does not list ${name} in uses`
 })
 
 const notAFunctionTool = Effect.fnUntraced(function* (name: string, from: Definition | undefined, method: string) {
@@ -184,12 +180,12 @@ export const queueTarget = Effect.fn("queueTarget")(function* (
   from: Definition | undefined,
   name: string,
 ) {
-  const target = yield* lookup<unknown>("tool", name, from)
+  const target = yield* lookup("tool", name, from)
   const outside = caller === undefined ? undefined : yield* outsideUses(caller, name, target)
   if (outside !== undefined) return yield* new QueueRefused({ message: outside })
-  if (target === undefined || !isFunctionTool(target.value))
+  if (!isFunctionTool(target))
     return yield* new QueueRefused({ message: yield* notAFunctionTool(name, from, "queueTool") })
-  return target.definition.qualifiedName
+  return target.qualifiedName
 })
 
 // Tools section 2.1: invokeTool returns an error result for a target outside a supplied uses list.
@@ -199,14 +195,12 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   name: string,
   input: unknown,
 ) {
-  const target = yield* lookup<unknown>("tool", name, caller.definition)
+  const target = yield* lookup("tool", name, caller)
   const outside = yield* outsideUses(caller, name, target)
   if (outside !== undefined) return failed(outside)
-  if (target === undefined || !isFunctionTool(target.value))
-    return failed(yield* notAFunctionTool(name, caller.definition, "invokeTool"))
-  const tool = target as Loaded<FunctionTool>
-  const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
-  return (yield* executeTool(context, tool, entry, input)) ?? notRun
+  if (!isFunctionTool(target)) return failed(yield* notAFunctionTool(name, caller, "invokeTool"))
+  const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool === target)?.entry
+  return (yield* executeTool(context, target, entry, input)) ?? notRun
 })
 
 export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
@@ -246,7 +240,7 @@ export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): Ne
     role: "tool",
     name: call.name,
     tool_call_id: call.id,
-    prompt: turn.prompt.definition.qualifiedName,
+    prompt: turn.prompt.qualifiedName,
     status: "completed",
     tool_status: dropped.length === 0 ? result.status : "error",
     content: [contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n"),

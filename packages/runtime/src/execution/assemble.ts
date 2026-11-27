@@ -9,7 +9,7 @@ import type {
   ProviderToolCallPart,
 } from "@standardagents/spec"
 import { Effect, Predicate } from "effect"
-import type { Definition } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { copyMessage } from "./history.ts"
@@ -35,7 +35,7 @@ const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn
   for (const variable of variables)
     if (variable.required && (yield* resolveEnv(scope, variable.name)) === undefined)
       return yield* new SetupError({
-        message: `Prompt ${root.definition.qualifiedName} requires variable ${variable.name}, which has no value`,
+        message: `Prompt ${root.qualifiedName} requires variable ${variable.name}, which has no value`,
       })
   const render = (
     prompt: Loaded<PromptDefinition>,
@@ -47,37 +47,37 @@ const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn
       for (const part of prompt.value.prompt) {
         if (part.type === "text") text += part.content
         else if (part.type === "include") {
-          const included = yield* lookup<PromptDefinition>("prompt", part.prompt, prompt.definition)
+          const included = yield* lookup("prompt", part.prompt, prompt)
           if (included === undefined)
             return yield* new SetupError({
-              message: `Prompt ${prompt.definition.qualifiedName} includes ${part.prompt}, which is not defined`,
+              message: `Prompt ${prompt.qualifiedName} includes ${part.prompt}, which is not defined`,
             })
-          if (trail.includes(included.definition))
+          if (trail.includes(included))
             return yield* new SetupError({
-              message: `Prompts include each other: ${[...trail, included.definition].map((d) => d.qualifiedName).join(" -> ")}`,
+              message: `Prompts include each other: ${[...trail, included].map((d) => d.qualifiedName).join(" -> ")}`,
             })
-          text += yield* render(included, [...trail, included.definition])
+          text += yield* render(included, [...trail, included])
         } else {
           const variable = variables.find((candidate) => candidate.name === part.property)
           if (variable === undefined || variable.type !== "text")
             return yield* new SetupError({
-              message: `Prompt ${root.definition.qualifiedName} interpolates ${part.property}, which it does not declare as a text variable. A system prompt holds only declared text variables, never a secret.`,
+              message: `Prompt ${root.qualifiedName} interpolates ${part.property}, which it does not declare as a text variable. A system prompt holds only declared text variables, never a secret.`,
             })
           if (secrets.names.has(part.property))
             return yield* new SetupError({
-              message: `Prompt ${root.definition.qualifiedName} interpolates variable ${part.property}, which a declaration or the provider config marks secret. A system prompt never holds a secret.`,
+              message: `Prompt ${root.qualifiedName} interpolates variable ${part.property}, which a declaration or the provider config marks secret. A system prompt never holds a secret.`,
             })
           const found = yield* lookupEnv(scope, part.property)
           if (found?.fromInstance === true)
             return yield* new SetupError({
-              message: `Prompt ${root.definition.qualifiedName} interpolates variable ${part.property}, whose value comes from the runtime instance environment. Spindle treats every instance value as secret, and a system prompt never holds a secret.`,
+              message: `Prompt ${root.qualifiedName} interpolates variable ${part.property}, whose value comes from the runtime instance environment. Spindle treats every instance value as secret, and a system prompt never holds a secret.`,
             })
           text += found?.value ?? ""
         }
       }
       return text
     })
-  return yield* render(root, [root.definition])
+  return yield* render(root, [root])
 })
 
 const holdsSecret = (text: string, secrets: Secrets) =>
@@ -88,7 +88,7 @@ const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
   holdsSecret(text, secrets)
     ? Effect.fail(
         new SetupError({
-          message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
+          message: `The system prompt that prompt ${turn.prompt.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
         }),
       )
     : Effect.void

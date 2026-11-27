@@ -8,7 +8,7 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Result } from "effect"
+import { Data, Effect, type Fiber, Predicate, Result } from "effect"
 import { isTimeout } from "../providers/timeout.ts"
 import type { SetupError } from "./turn.ts"
 
@@ -24,9 +24,6 @@ const RETRYABLE: ReadonlyArray<ProviderErrorCode> = ["rate_limit", "server_error
 
 const isCode = (value: unknown): value is ProviderErrorCode => CODES.includes(value as ProviderErrorCode)
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   readonly message: string
   readonly code: ProviderErrorCode
@@ -40,12 +37,13 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   }
 }
 
-export class ResponseRejected extends Data.TaggedError("ResponseRejected")<{ readonly message: string }> {}
+class ResponseRejected extends Data.TaggedError("ResponseRejected")<{ readonly message: string }> {}
 
 // Providers SHOULD attribute their errors, and the runtime MAY attribute the request boundary when they do not.
 // An error with no code, or with the code unknown, that a timeout caused is the timeout of Providers section 7.1.
 const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFailure => {
-  const fields = isRecord(cause) || cause instanceof Error ? (cause as unknown as Record<string, unknown>) : {}
+  const fields =
+    Predicate.isObject(cause) || cause instanceof Error ? (cause as unknown as Record<string, unknown>) : {}
   const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
   const statusCode = number(fields.statusCode)
   const retryAfter = number(fields.retryAfter)
@@ -97,7 +95,7 @@ const callOf = (response: ModelResponse, id: string): StreamedCall => {
 }
 
 // One chunk at a time, so that a hook can observe a call as it starts and as its arguments arrive.
-export const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk): ProviderFailure | undefined => {
+const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk): ProviderFailure | undefined => {
   switch (chunk.type) {
     case "content-delta":
       response.content = (response.content ?? "") + chunk.delta
@@ -116,7 +114,7 @@ export const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk):
       return
     case "tool-call-done": {
       const call = callOf(response, chunk.id)
-      if (isRecord(chunk.arguments)) call.arguments = chunk.arguments
+      if (Predicate.isObject(chunk.arguments)) call.arguments = chunk.arguments
       if (chunk.extraContent !== undefined) call.extraContent = chunk.extraContent
       return
     }
