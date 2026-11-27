@@ -1,10 +1,9 @@
 import { Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { type Definition, type Issue, KINDS, pluralKind } from "../registry/definition.ts"
-import { Registry } from "../registry/Registry.ts"
 import { counts, type Validation, validate } from "../registry/validate.ts"
 
-import { CommandFailed, commandErrors, plural } from "./shared.ts"
+import { CommandFailed, commandErrors, commandRegistry, loadTimeoutFlag, plural } from "./shared.ts"
 
 const location = (issue: Issue) => (issue.path === "" ? issue.file : `${issue.file}:${issue.path}`)
 
@@ -66,6 +65,7 @@ const formatJson = ({ definitions, issues }: Validation, options: { readonly lis
 export const validateCommand = Command.make(
   "validate",
   {
+    loadTimeout: loadTimeoutFlag,
     dir: Argument.String("dir").pipe(
       Argument.withDescription("The project directory that holds agents/"),
       Argument.withDefault("."),
@@ -76,10 +76,10 @@ export const validateCommand = Command.make(
       Flag.withDefault(false),
     ),
   },
-  ({ dir, json, list }) =>
+  ({ dir, json, list, loadTimeout }) =>
     Effect.gen(function* () {
       const path = yield* Path.Path
-      const load = validate.pipe(Effect.provide(Registry.layer(path.resolve(dir))))
+      const load = validate.pipe(Effect.provide(commandRegistry(path.resolve(dir), loadTimeout)))
       const result = yield* json
         ? Effect.acquireUseRelease(
             Effect.sync(() => {

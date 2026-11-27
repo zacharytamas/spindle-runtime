@@ -1,5 +1,6 @@
 import type { PackageSignature } from "@standardagents/spec"
-import { Effect, FileSystem, Path, Predicate, Result } from "effect"
+import { Effect, FileSystem, Path, Predicate, Result, SemVer } from "effect"
+import { readDefinition } from "#platform"
 import { type Issue, issue, KINDS, type Package, pluralKind } from "./definition.ts"
 import { type Discovered, describeCause, type ImportFile, loadFailure } from "./load-error.ts"
 import { packageEntry } from "./package-entry.ts"
@@ -22,6 +23,23 @@ const metaProblem = (meta: unknown): string | undefined => {
   if (!isStringArray(meta.entryAgents)) return "has no __meta.entryAgents array of agent names"
   if (typeof meta.packedAt !== "number") return "has no __meta.packedAt timestamp"
   return undefined
+}
+
+const checkEntryAgents = (pkg: Package, issues: Array<Issue>) => {
+  const manifest = pkg.manifest.standardagent
+  if (!Predicate.isObject(manifest) || !isStringArray(manifest.entryAgents)) return
+  const declared = new Set(manifest.entryAgents)
+  const exported = new Set(pkg.entryAgents)
+  if (declared.size !== exported.size || [...exported].some((name) => !declared.has(name)))
+    issues.push(
+      issue(
+        "package_entry_agents_mismatch",
+        pkg.manifestFile,
+        "standardagent.entryAgents",
+        "The package.json entryAgents and __meta.entryAgents lists name different agents",
+        "warning",
+      ),
+    )
 }
 
 const withSignature = (definition: unknown, signature: PackageSignature): unknown => {
@@ -61,8 +79,9 @@ const collectDefinitions = (
     }
     for (const [key, loader] of Object.entries(loaders)) {
       const at = `${plural}.${key}`
-      const load = Effect.tryPromise({
-        try: async () => {
+      const load = readDefinition(
+        file,
+        async () => {
           if (typeof loader !== "function") throw new TypeError(`${at} is not a loader function`)
           const pending: unknown = loader()
           // A Promise from another realm fails instanceof Promise, so any thenable counts.
@@ -70,11 +89,11 @@ const collectDefinitions = (
           if (typeof then !== "function") throw new TypeError(`${at} returns a value, not a Promise`)
           return withSignature(await pending, signature)
         },
-        catch: (cause) => {
+        (cause) => {
           const prefix = `${name} ${at} failed to load: `
           return loadFailure(cause, file, at, prefix, prefix + describeCause(cause))
         },
-      })
+      )
       definitions.push({
         kind,
         name: key,
@@ -214,6 +233,9 @@ export const loadPackages = Effect.fn("loadPackages")(function* (
       packedAt: Number(meta.packedAt),
     })
     const pkg: Package = { signature, entryAgents, file, manifestFile: relativeManifest, manifest, meta }
+    checkEntryAgents(pkg, issues)
+    if (Result.isFailure(SemVer.parse(signature.version)))
+      issues.push(issue("package_meta_invalid", file, "version", "__meta.version must be a semantic version"))
     packages.push(pkg)
     collectDefinitions(pkg, name, exports, definitions, issues)
   })

@@ -1,4 +1,4 @@
-export const __meta = { packageId: "standardagent-signature", version: "1", entryAgents: [], packedAt: 0 }
+export const __meta = { packageId: "standardagent-signature", version: "1.0.0", entryAgents: [], packedAt: 0 }
 export const agents = {}
 export const handlers = {}
 export const prompts = {}

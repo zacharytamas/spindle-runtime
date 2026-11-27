@@ -1,4 +1,5 @@
 import { Context, Effect, type FileSystem, Layer, type Path, Result } from "effect"
+import { readDefinition } from "#platform"
 import { type Definition, type Issue, issue, type Kind, type Package } from "./definition.ts"
 import { loadDirectory } from "./load-directory.ts"
 import {
@@ -100,11 +101,6 @@ const importFile: ImportFile = (file, url) => {
     loadFailure(cause, file, "", "The file failed to load. ", describeImportFailure(cause))
   return url.pipe(
     Effect.mapError(failure),
-    Effect.flatMap((href) =>
-      Effect.tryPromise({
-        try: (): Promise<Record<string, unknown>> => import(href.href),
-        catch: failure,
-      }),
-    ),
+    Effect.flatMap((href) => readDefinition(file, (): Promise<Record<string, unknown>> => import(href.href), failure)),
   )
 }

@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Path, Result } from "effect"
-import { type Issue, issue, KINDS, pluralKind } from "./definition.ts"
+import { type Issue, issue, KINDS, type Kind, pluralKind } from "./definition.ts"
 import { type Discovered, type ImportFile, LoadError } from "./load-error.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
@@ -13,6 +13,23 @@ const exportsNoDefinition = (value: unknown) =>
     value !== null &&
     Object.getPrototypeOf(value) === Object.prototype &&
     Reflect.ownKeys(value).length === 0)
+
+const loadDefault = Effect.fn(function* (
+  kind: Kind,
+  file: string,
+  module: ReturnType<ImportFile>,
+  exists: Effect.Effect<boolean>,
+) {
+  const result = yield* Effect.result(module)
+  if (Result.isFailure(result)) {
+    if (yield* exists) return yield* result.failure
+    const message = `Cannot load ${file}. The file or its link target does not exist.`
+    return yield* new LoadError({ issues: [issue("definition_load_failed", file, "", message)] })
+  }
+  if (!exportsNoDefinition(result.success.default)) return result.success.default
+  const message = `The file exports no definition. Export the ${kind} definition as the default export.`
+  return yield* new LoadError({ issues: [issue("definition_export_missing", file, "", message)] })
+})
 
 export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string, importFile: ImportFile) {
   const fs = yield* FileSystem.FileSystem
@@ -56,13 +73,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string,
       const name = path.basename(entry, extension)
       const absolute = path.join(dir, entry)
       const file = path.relative(root, absolute)
-      const load = importFile(file, path.toFileUrl(absolute)).pipe(
-        Effect.flatMap((module) => {
-          if (!exportsNoDefinition(module.default)) return Effect.succeed(module.default)
-          const message = `The file exports no definition. Export the ${kind} definition as the default export.`
-          return Effect.fail(new LoadError({ issues: [issue("definition_export_missing", file, "", message)] }))
-        }),
-      )
+      const load = loadDefault(kind, file, importFile(file, path.toFileUrl(absolute)), exists(absolute))
       definitions.push({
         kind,
         name,

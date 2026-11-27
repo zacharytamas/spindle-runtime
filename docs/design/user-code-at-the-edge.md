@@ -4,6 +4,17 @@
 
 A tool owes its caller a result. A hook owes the operation it decorates a chance to finish. Read what the callback returned while failure can still be attributed to that callback. Keep the last accepted value, refuse an optional write, or record a tool error according to who owns the operation. A handler will own a turn, so its exception belongs to that turn.
 
+## While a definition loads
+
+Definition files execute in the CLI process. They may import modules and await initialization.
+Each file and each packed definition loader has 30 seconds to settle. `--load-timeout` sets the limit in seconds for `validate`, `run`, `send`, and `chat`.
+Spindle reports a failed or timed-out load and continues checking the other definitions.
+A call to `process.exit`, an uncaught exception, or an unhandled rejection during loading also counts as an error.
+Spindle listens through one more event-loop turn after loading, then restores the exit function and removes its listeners.
+A load error makes validation fail and prevents a run from starting.
+The guard covers loading only. It is there for a mistake, such as a script that exits when it is done. A definition that calls `process.exit` from a getter, which Spindle reads later while it checks the definition, still ends the command.
+A timeout ends the wait. Code that blocks the JavaScript thread can still block the command, and work scheduled by a definition may outlive the load.
+
 ## What can cross the boundary
 
 The columns below distinguish these cases in order.

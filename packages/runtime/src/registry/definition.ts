@@ -51,6 +51,7 @@ type IssueCode =
   | "package_invalid"
   | "package_meta_invalid"
   | "package_duplicate"
+  | "package_entry_agents_mismatch"
   | "package_entry_agent_undefined"
   | "package_keyword_missing"
   | "package_name_prefix"

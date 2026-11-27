@@ -60,28 +60,30 @@ export interface Validation {
 const checkDisclosures = (registry: Registry["Service"], issues: Array<Issue>) => {
   for (const pkg of registry.packages) {
     try {
-      for (const agentName of pkg.entryAgents) {
-        const agent = registry.entryAgent(pkg, agentName)?.value
-        if (!Predicate.isObject(agent) || agent.parentHooks === undefined) continue
-        const sources = [
-          ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
-          [
-            "package.json",
-            "standardagent.parentHooks",
-            Predicate.isObject(pkg.manifest.standardagent) ? pkg.manifest.standardagent.parentHooks : undefined,
-            pkg.manifestFile,
-          ],
-        ] as const
-        for (const [label, field, value, file] of sources) {
-          const copy = Predicate.isObject(value) ? value[agentName] : undefined
-          if (!sameValue(copy, agent.parentHooks))
-            issues.push({
-              code: "package_parent_hooks_mismatch",
-              severity: "error",
-              message: `${pkg.signature.packageId} must reproduce the parentHooks of entry agent ${agentName} in ${label}`,
-              file,
-              path: `${field}.${agentName}`,
-            })
+      const sources = [
+        ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
+        [
+          "package.json",
+          "standardagent.parentHooks",
+          Predicate.isObject(pkg.manifest.standardagent) ? pkg.manifest.standardagent.parentHooks : undefined,
+          pkg.manifestFile,
+        ],
+      ] as const
+      for (const [label, field, value, file] of sources) {
+        const copies = Predicate.isObject(value) ? value : {}
+        const disclosed = keysOf(copies)
+        for (const name of new Set([...pkg.entryAgents, ...disclosed])) {
+          const definition = pkg.entryAgents.includes(name) ? registry.entryAgent(pkg, name) : undefined
+          // An entry agent that failed to load has its own issue, and its parentHooks cannot be compared.
+          if (definition !== undefined && definition.value === undefined) continue
+          const entry = definition?.value
+          const hooks = Predicate.isObject(entry) ? entry.parentHooks : undefined
+          if (hooks === undefined ? !disclosed.includes(name) : sameValue(copies[name], hooks)) continue
+          const message =
+            hooks === undefined
+              ? `${label} discloses parentHooks for ${name}, which has no entry-agent declaration to reproduce`
+              : `${pkg.signature.packageId} must reproduce the parentHooks of entry agent ${name} in ${label}`
+          issues.push(issue("package_parent_hooks_mismatch", file, `${field}.${name}`, message))
         }
       }
     } catch (cause) {

@@ -260,7 +260,7 @@ const invalid: ReadonlyArray<Case> = [
     "rejects malformed tools, handlers, and effects",
     "definition-shapes",
     [
-      error("effect_invalid", "agents/effects/array_args.ts"),
+      error("effect_invalid", "agents/effects/array_args.ts:[1]"),
       error("definition_export_missing", "agents/effects/no_default.ts"),
       error("effect_invalid", "agents/effects/not_a_tuple.ts"),
       error("handler_invalid", "agents/handlers/no_execute.ts:execute"),

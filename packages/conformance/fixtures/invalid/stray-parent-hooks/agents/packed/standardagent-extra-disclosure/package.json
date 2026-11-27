@@ -1,0 +1,22 @@
+{
+  "name": "standardagent-extra-disclosure",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": [
+      "opener"
+    ],
+    "parentHooks": {
+      "opener": [
+        {
+          "hook": "share_context",
+          "reason": "Shows the context to the parent."
+        }
+      ]
+    }
+  }
+}

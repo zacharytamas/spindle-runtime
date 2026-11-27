@@ -1,4 +1,4 @@
-export const __meta = { packageId: "before", version: "1", entryAgents: ["relay"], packedAt: 0 }
+export const __meta = { packageId: "before", version: "1.0.0", entryAgents: ["relay"], packedAt: 0 }
 
 export const agents = {
   relay: async () => ({ name: "relay", sideA: { human: true }, sideB: { handler: "reply" } }),
