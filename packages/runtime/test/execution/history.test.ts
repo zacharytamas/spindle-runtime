@@ -4,6 +4,7 @@ import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
@@ -11,6 +12,9 @@ import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
+import { external } from "../../src/store/model.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
@@ -22,10 +26,10 @@ const inMemory = () => Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filenam
 // A store that counts the reads of a thread's whole history that it serves.
 const countingStore = (reads: { count: number }) =>
   Layer.effect(
-    ThreadStore,
+    MessageStore,
     Effect.gen(function* () {
-      const store = yield* ThreadStore
-      return ThreadStore.of({
+      const store = yield* MessageStore
+      return MessageStore.of({
         ...store,
         history: (threadId) =>
           Effect.suspend(() => {
@@ -34,7 +38,7 @@ const countingStore = (reads: { count: number }) =>
           }),
       })
     }),
-  ).pipe(Layer.provide(inMemory()))
+  ).pipe(Layer.provideMerge(inMemory()))
 
 const runOnce = (setup: Setup, reads: { count: number }, outside?: (state: ThreadState) => void) =>
   Effect.gen(function* () {
@@ -214,24 +218,61 @@ describe("the history an execution keeps", () => {
     }),
   )
 
+  it.effect("keeps each own insert and its caller sequence in the new snapshot only", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadStore
+      const messages = yield* MessageStore
+      const thread = yield* threads.createThread({ agentId: "assistant" })
+      const runs = yield* RunStore
+      yield* runs.admit(
+        thread.id,
+        { kind: "message", message: { role: "user", content: "go" } },
+        { flowId: "f", holder: "h" },
+        external,
+      )
+      const history = makeHistory(thread.id)
+      const empty = yield* history.read
+      const caller = yield* messages.insertMessage(
+        thread.id,
+        { role: "assistant", id: "call", created_at: 1 },
+        { kind: "flow", flowId: "f" },
+      )
+      history.inserted(caller)
+      const first = yield* history.read
+      const result = yield* messages.insertMessage(
+        thread.id,
+        { role: "tool", id: "result", created_at: 2 },
+        { kind: "flow", flowId: "f" },
+        { callerSeq: caller.seq },
+      )
+      history.inserted(result)
+      expect(empty.rows).toHaveLength(0)
+      expect(first.rows).toHaveLength(1)
+      expect((yield* history.read).rows.map(({ seq, callerSeq }) => [seq, callerSeq])).toEqual([
+        [caller.seq, null],
+        [result.seq, caller.seq],
+      ])
+    }).pipe(Effect.provide(inMemory())),
+  )
+
   it.effect("never holds an insert of the execution's that a caller's transaction rolled back", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore
       const thread = yield* store.createThread({ agentId: "assistant" })
-      yield* store.appendMessages(thread.id, [{ role: "user", content: "first" }])
+      yield* appendMessages(thread.id, [{ role: "user", content: "first" }])
       const history = makeHistory(thread.id)
-      expect(contents(yield* history.read)).toEqual(["first"])
+      expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first"])
       const hooks: HookScope = {
         set: { source: { kind: "agent", agentName: "assistant" }, byPosition: new Map() },
         stateFor: () => {
           throw new Error("no hook is selected")
         },
       }
-      const write = { threadId: thread.id, hooks, secrets: newSecrets(), call: undefined, history }
+      const write = { origin: external, threadId: thread.id, hooks, secrets: newSecrets(), call: undefined, history }
       const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
       expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
-      yield* store.appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
-      expect(contents(yield* history.read)).toEqual(["first", "from another writer"])
+      yield* appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
+      expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "from another writer"])
     }).pipe(Effect.provide(inMemory())),
   )
 
@@ -240,20 +281,20 @@ describe("the history an execution keeps", () => {
       const store = yield* ThreadStore
       for (const savepoint of [false, true]) {
         const thread = yield* store.createThread({ agentId: "assistant" })
-        const append = (content: string) => store.appendMessages(thread.id, [{ role: "user", content }])
+        const append = (content: string) => appendMessages(thread.id, [{ role: "user", content }])
         const history = makeHistory(thread.id)
         yield* append("first")
-        expect(contents(yield* history.read)).toEqual(["first"])
+        expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first"])
         const inner = store.transaction(
           Effect.gen(function* () {
             yield* append("rolled back")
-            expect(contents(yield* history.read)).toEqual(["first", "rolled back"])
+            expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "rolled back"])
             return yield* Effect.fail("crash")
           }),
         )
         expect(yield* savepoint ? store.transaction(Effect.flip(inner)) : Effect.flip(inner)).toBe("crash")
         yield* append("committed")
-        expect(contents(yield* history.read)).toEqual(["first", "committed"])
+        expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "committed"])
       }
     }).pipe(Effect.provide(inMemory())),
   )
@@ -286,7 +327,7 @@ describe("the history an execution keeps", () => {
         const thread = yield* createThread("assistant")
         elsewhere = yield* stateAtRest(thread.id)
         yield* sendMessage(thread.id, "go", { observe })
-        return (yield* (yield* ThreadStore).history(thread.id)).messages
+        return (yield* (yield* MessageStore).history(thread.id)).rows.map((row) => row.message)
       }).pipe(
         Effect.provide(Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), inMemory()))),
       )
@@ -312,10 +353,10 @@ it.effect("runs the committed claim when its sender is interrupted before execut
   const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }])
   let cut = true
   const store = Layer.effect(
-    ThreadStore,
+    RunStore,
     Effect.gen(function* () {
-      const original = yield* ThreadStore
-      return ThreadStore.of({
+      const original = yield* RunStore
+      return RunStore.of({
         ...original,
         admit: (...args) =>
           original.admit(...args).pipe(
@@ -330,7 +371,7 @@ it.effect("runs the committed claim when its sender is interrupted before execut
           ),
       })
     }),
-  ).pipe(Layer.provide(inMemory()))
+  ).pipe(Layer.provideMerge(inMemory()))
   return Effect.gen(function* () {
     const thread = yield* createThread("assistant")
     const sender = yield* Effect.forkChild(sendMessage(thread.id, "one"))

@@ -1,7 +1,7 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import type { NewMessage } from "../store/ThreadStore.ts"
+import type { NewMessage } from "../store/model.ts"
 import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"

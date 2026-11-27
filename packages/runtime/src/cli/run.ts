@@ -14,8 +14,9 @@ import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
-import { layer as sqliteStore } from "../store/sqlite.ts"
-import { ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
+import { ThreadTerminated } from "../store/model.ts"
+import { type Stores, layer as sqliteStore } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 
 export class RunFailed extends Data.TaggedError("RunFailed")<{ readonly message: string }> {
   // runMain logs a failure and its stack unless this is false. The run already printed a plain message.
@@ -100,8 +101,7 @@ export const openDatabase = (filename: string) =>
     }
     return Layer.provide(sqliteStore, SqliteLive({ filename })).pipe(
       Layer.catchTag("SqlError", (error) =>
-        Layer.effect(
-          ThreadStore,
+        Layer.effectContext<Stores, RunFailed, never>(
           problem(error.cause.cause instanceof Error ? error.cause.cause.message : error.message),
         ),
       ),
@@ -162,7 +162,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
         if (Option.isSome(value) && !(value.value > 0)) return yield* fail(`${flag} takes a number of seconds above 0`)
       // The thread names the agent that send runs, so send reads it before it validates the definitions.
       let agent: string
-      let store: Layer.Layer<ThreadStore, unknown> | undefined
+      let store: Layer.Layer<Stores, unknown> | undefined
       if ("agent" in target) agent = target.agent
       else {
         const { thread } = target

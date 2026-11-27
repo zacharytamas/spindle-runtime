@@ -1,19 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
-import { admitEntry, drainEntries } from "../../scripts/store-fixtures.ts"
+import { admitEntry, drainEntries, settleRun, startRun } from "../../scripts/store-fixtures.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
-import { claim, inMemory, settleRun, storeAt, withDatabaseFile } from "./contract-fixtures.ts"
-
-const startRun = (threadId: string) =>
-  ThreadStore.use((store) =>
-    Effect.gen(function* () {
-      if (!(yield* store.claim(threadId, claim)))
-        yield* store.admit(threadId, { kind: "message", message: { role: "user", content: "trigger" } }, claim)
-      return (yield* store.getThread(threadId)).status
-    }),
-  )
+import { claim, inMemory, storeAt, withDatabaseFile } from "./contract-fixtures.ts"
 
 describe("ThreadStore", () => {
   describe("run status", () => {
@@ -22,18 +13,18 @@ describe("ThreadStore", () => {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "assistant" })
         yield* TestClock.adjust("1 second")
-        const running = yield* startRun(thread.id)
+        const running = yield* startRun(thread.id, claim)
         expect(running).toEqual({ state: "running", since: 1_000_000, reason: null })
         yield* TestClock.adjust("1 second")
-        expect(yield* startRun(thread.id)).toEqual(running)
+        expect(yield* startRun(thread.id, claim)).toEqual(running)
         yield* TestClock.adjust("1 second")
-        const idle = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
+        const idle = yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_on_response" })
         expect(idle).toEqual({ state: "idle", since: 3_000_000, reason: "stop_on_response" })
         yield* TestClock.adjust("1 second")
-        expect(yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })).toEqual(idle)
+        expect(yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_on_response" })).toEqual(idle)
         yield* TestClock.adjust("1 second")
-        yield* startRun(thread.id)
-        const stopTool = yield* settleRun(thread.id, { state: "idle", reason: "stop_tool" })
+        yield* startRun(thread.id, claim)
+        const stopTool = yield* settleRun(thread.id, claim, { state: "idle", reason: "stop_tool" })
         expect(stopTool).toEqual({ state: "idle", since: 5_000_000, reason: "stop_tool" })
         expect((yield* store.getThread(thread.id)).status).toEqual(stopTool)
       }).pipe(Effect.provide(inMemory)),
@@ -46,9 +37,9 @@ describe("ThreadStore", () => {
             const store = yield* ThreadStore
             const thread = yield* store.createThread({ agentId: "assistant" })
             yield* TestClock.adjust("1 second")
-            yield* startRun(thread.id)
+            yield* startRun(thread.id, claim)
             yield* TestClock.adjust("1 second")
-            const status = yield* settleRun(thread.id, { state: "failed", reason: "execution_lost" })
+            const status = yield* settleRun(thread.id, claim, { state: "failed", reason: "execution_lost" })
             return { threadId: thread.id, status }
           }).pipe(Effect.provide(storeAt(filename)))
           expect(written.status).toEqual({ state: "failed", since: 2_000_000, reason: "execution_lost" })

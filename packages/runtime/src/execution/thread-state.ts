@@ -8,9 +8,11 @@ import type {
 } from "@standardagents/spec"
 import { Cause, Context, Data, Effect, Exit } from "effect"
 import { type Definition, Registry } from "../registry/Registry.ts"
-import { toJson } from "../store/schema.ts"
-import type { Thread } from "../store/ThreadStore.ts"
-import { HandleExpired, ThreadStore, ValueNotJson, WritingHandle } from "../store/ThreadStore.ts"
+import { toJson } from "../store/json.ts"
+import { MessageStore } from "../store/MessageStore.ts"
+import { HandleExpired, type Thread, ValueNotJson, type WriteOrigin } from "../store/model.ts"
+import type { Stores } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import type { Callback, PendingCallbacks } from "./callback.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
@@ -59,14 +61,16 @@ export interface ThreadControl {
   readonly queueMessage: (
     input: QueueMessageInput,
     secrets: Secrets,
-  ) => Effect.Effect<void, unknown, Registry | ThreadStore>
+    origin: WriteOrigin,
+  ) => Effect.Effect<void, unknown, Registry | Stores>
   // The target is the qualified name of a function tool that queueTarget allowed.
   readonly queueTool: (
     target: string,
     args: Record<string, unknown>,
-  ) => Effect.Effect<void, unknown, Registry | ThreadStore>
+    origin: WriteOrigin,
+  ) => Effect.Effect<void, unknown, Registry | Stores>
   readonly status: Effect.Effect<ThreadStatus, unknown>
-  readonly terminate: Effect.Effect<number, unknown>
+  readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, unknown>
 }
 
 export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
@@ -88,7 +92,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export interface StateContext {
   readonly thread: Thread
-  readonly services: Context.Context<Registry | ThreadStore>
+  readonly services: Context.Context<Registry | Stores>
   readonly callback?: Callback
   readonly owner?: Run
   readonly execution: ExecutionRecord | undefined
@@ -189,20 +193,22 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     check()
     return notYetAsync(member, arrival)()
   }
-  const services = Context.add(state.services, WritingHandle, {
-    flowId: owner?.flowId,
+  const services = state.services
+  const origin: WriteOrigin = {
+    kind: "handle",
+    flowId: owner?.flowId ?? null,
     terminated: state.thread.terminated,
     expired: () => expired() !== undefined,
-  })
+  }
   const runPromise = Effect.runPromiseWith(services)
   // A call from a ThreadState of an execution ends when the execution is aborted, so terminate stops what it started.
   const signal = owner === undefined ? undefined : { signal: owner.abort.signal }
-  const run = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): Promise<A> => {
+  const run = <A, E>(effect: Effect.Effect<A, E, Registry | Stores>): Promise<A> => {
     const refused = expired()
     return refused === undefined ? runPromise(effect, signal) : Promise.reject(refused)
   }
   // queueTool returns void, so its work is done when it returns, and a refusal is thrown.
-  const runSync = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): A => {
+  const runSync = <A, E>(effect: Effect.Effect<A, E, Registry | Stores>): A => {
     const refused = expired()
     if (refused !== undefined) throw refused
     const exit = Effect.runSyncExitWith(services)(effect)
@@ -210,14 +216,15 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     throw Cause.squash(exit.cause)
   }
   const registry = Context.get(state.services, Registry)
-  const store = Context.get(state.services, ThreadStore)
+  const messageStore = Context.get(state.services, MessageStore)
+  const threadStore = Context.get(state.services, ThreadStore)
   const threadId = state.thread.id
   // A read of the store finishes in the call that starts it, because no transaction spans an await. Each read gets
   // its own copy, so a tool or a hook that changes it changes nothing that a later read sees.
   const readHistory = (history: History) => () => {
     const refused = expired()
     if (refused !== undefined) throw refused
-    return Effect.runSyncWith(state.services)(history.read).map(copyMessage)
+    return Effect.runSyncWith(state.services)(history.read).rows.map(({ message }) => copyMessage(message))
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
@@ -239,7 +246,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     secrets: state.secrets,
     call,
     history: state.execution?.history,
-    ...(owner === undefined ? {} : { flowId: owner.flowId }),
+    origin,
   }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
@@ -263,8 +270,8 @@ export const makeThreadState = (state: StateContext): ThreadState => {
         ? null
         : executionState(state.execution, readHistory(state.execution.history), check),
 
-    getMessages: (options) => run(store.getMessages(threadId, options)),
-    getMessage: (messageId) => run(store.getMessage(threadId, messageId)),
+    getMessages: (options) => run(messageStore.getMessages(threadId, options)),
+    getMessage: (messageId) => run(messageStore.getMessage(threadId, messageId)),
     injectMessage: (input) =>
       run(
         createMessage(
@@ -277,11 +284,11 @@ export const makeThreadState = (state: StateContext): ThreadState => {
             ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
           },
           "injection",
-        ),
+        ).pipe(Effect.map((inserted) => inserted.message)),
       ),
     updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
-    deleteMessage: (messageId) => run(store.deleteMessage(threadId, messageId)),
-    queueMessage: (input) => run(state.control.queueMessage(input, state.secrets)),
+    deleteMessage: (messageId) => run(messageStore.deleteMessage(threadId, messageId, origin)),
+    queueMessage: (input) => run(state.control.queueMessage(input, state.secrets, origin)),
 
     loadModel: load("model"),
     loadPrompt: load("prompt"),
@@ -332,7 +339,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
             mapStrings(plain, check, check)
             if (found) return yield* new SecretInArguments()
           }
-          yield* state.control.queueTool(target, plain)
+          yield* state.control.queueTool(target, plain, origin)
         }),
       ),
     invokeTool: (toolName, args) => run(state.invoke(toolName, args)),
@@ -343,14 +350,14 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     runAgent: unavailableAsync("runAgent", "M2"),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: () =>
-      runPromise(state.control.terminate).then((time) => {
+      runPromise(state.control.terminate(origin)).then((time) => {
         terminated = time
       }),
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,
 
-    getValue: (key) => run(store.getValue(threadId, key)) as Promise<never>,
-    setValue: (key, value) => run(store.setValue(threadId, key, value)),
+    getValue: (key) => run(threadStore.getValue(threadId, key)) as Promise<never>,
+    setValue: (key, value) => run(threadStore.setValue(threadId, key, value, origin)),
     getUserValue: unavailableAsync("getUserValue", "the Users page, which is a Draft"),
     setUserValue: unavailableAsync("setUserValue", "the Users page, which is a Draft"),
     listUserValues: unavailableAsync("listUserValues", "the Users page, which is a Draft"),

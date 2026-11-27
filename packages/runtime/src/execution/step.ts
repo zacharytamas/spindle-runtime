@@ -12,14 +12,10 @@ import type {
 import { Cause, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import { Registry } from "../registry/Registry.ts"
-import {
-  callerSequence,
-  type NewMessage,
-  positions,
-  type Queued,
-  type Settlement,
-  ThreadStore,
-} from "../store/ThreadStore.ts"
+import type { NewMessage, Queued, Settlement } from "../store/model.ts"
+import { RunStore } from "../store/RunStore.ts"
+import type { Stores } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import {
   buildRequest,
   checkSystemMessages,
@@ -27,6 +23,7 @@ import {
   fromLLMMessage,
   pastOf,
   promptScope,
+  type RequestRow,
   renderSystemPrompt,
   toLLMMessage,
   toProviderMessages,
@@ -253,9 +250,10 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
 
 export const runExecution = (threadId: string, run: Run, control: ThreadControl, options: ExecutionOptions = {}) =>
   Effect.gen(function* () {
-    const store = yield* ThreadStore
+    const runStore = yield* RunStore
+    const threadStore = yield* ThreadStore
     const registry = yield* Registry
-    const services = yield* Effect.context<Registry | ThreadStore>()
+    const services = yield* Effect.context<Registry | Stores>()
     const retries = options.retries ?? DEFAULT_RETRIES
     const stepCap = options.stepCap ?? DEFAULT_STEP_CAP
     const flowId = run.flowId
@@ -293,7 +291,12 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
     // Once the run settles, every ThreadState of the execution refuses its calls.
     const release = (state: RunOutcome["status"], reason: string, continueIfQueued: boolean, closing: string) =>
       Effect.tap(
-        store.settle(threadId, flowId, { state, reason }, { continueIfQueued, closing, atCap: steps >= stepCap }),
+        runStore.settle(
+          threadId,
+          { flowId },
+          { state, reason },
+          { continueIfQueued, closing, atCap: steps >= stepCap },
+        ),
         (settlement) =>
           Effect.sync(() => {
             if (settlement !== "continue") run.ended = true
@@ -335,7 +338,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       extra: { readonly error?: RunError; readonly stopTool?: StopToolOutcome } = {},
     ) =>
       settlement === "superseded"
-        ? Effect.flatMap(store.getThread(threadId), (thread) =>
+        ? Effect.flatMap(threadStore.getThread(threadId), (thread) =>
             thread.terminated === null ? settle("failed", "execution_lost") : settle("idle", "aborted"),
           )
         : settlement === "capped"
@@ -343,7 +346,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           : settle(status, reason, extra)
 
     const loop = Effect.gen(function* () {
-      const thread = yield* store.getThread(threadId)
+      const thread = yield* threadStore.getThread(threadId)
       const turn = yield* prepareTurn(thread.agentId)
       const hookSet = yield* turnHooks(turn)
       const history = makeHistory(threadId)
@@ -379,7 +382,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         hooks,
         control,
       }
-      const write = { threadId, hooks, secrets, call: undefined, history, flowId }
+      const write = { threadId, hooks, secrets, call: undefined, history, origin: { kind: "flow" as const, flowId } }
       // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
       // turn. The agent's hooks apply to it and see no execution, as they do at rest.
       const inbound: HookScope = {
@@ -460,9 +463,9 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
       // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the stored
       // message, then tool_call_done with what was stored.
       const runCall = (
-        caller: Message,
+        callerSeq: number,
         call: ToolCall,
-        outcome: Effect.Effect<ToolResult, never, Registry | ThreadStore>,
+        outcome: Effect.Effect<ToolResult, never, Registry | Stores>,
       ) =>
         Effect.gen(function* () {
           const returned = run.stop !== undefined ? notRun : yield* outcome
@@ -483,11 +486,11 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
               catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
             }).pipe(
               Effect.flatMap((message) =>
-                createMessage({ ...write, callerSeq: callerSequence(caller) }, message, skipped ? "skipped" : "result"),
+                createMessage({ ...write, callerSeq }, message, skipped ? "skipped" : "result"),
               ),
             )
           // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
-          const stored = yield* save(final).pipe(
+          const { message: stored } = yield* save(final).pipe(
             Effect.catchTag(["ValueNotJson", "ResultUnreadable"], (error) =>
               save(unstorableResult(final, error.message)),
             ),
@@ -521,7 +524,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             argumentsText,
             problem: tool === undefined ? `The queued tool ${entry.toolName} is no longer defined` : undefined,
           }
-          const message = yield* createMessage(
+          const { message, seq } = yield* createMessage(
             write,
             {
               role: roleOf(turn.side),
@@ -540,7 +543,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           yield* observe({ type: "message", message })
           yield* runHooks(hooks, "tool_call_started", [hookCall(call, argumentsText)], undefined)
           yield* runCall(
-            message,
+            seq,
             call,
             tool === undefined
               ? Effect.succeed(failed(call.problem ?? ""))
@@ -562,7 +565,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         let prompted = false
         let count = 0
         while (run.stop === undefined) {
-          const entry = yield* store.nextQueued(threadId, flowId)
+          const entry = yield* runStore.nextQueued(threadId, { flowId })
           if (entry === undefined) break
           count += 1
           if (entry.kind === "tool") {
@@ -571,7 +574,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             prompted = true
             continue
           }
-          const message = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
+          const { message } = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
           first ??= message.id
           yield* record("drain", `message ${message.id}`)
           yield* observe({ type: "message", message })
@@ -605,7 +608,14 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
             return yield* ended(settlement, "idle", "awaiting_human")
           }
           // The turn starts at the other side's latest message, and everything before it is past history.
-          view = { ...view, past: pastOf(yield* history.read, turn.side, count > 1 ? first : undefined) }
+          view = {
+            ...view,
+            past: pastOf(
+              (yield* history.read).rows.map((row) => row.message),
+              turn.side,
+              count > 1 ? first : undefined,
+            ),
+          }
           turnStart = false
           turnSteps = 0
         }
@@ -618,18 +628,22 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
         // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
         // the trace, runs between the read and the first hook.
-        const snapshot = yield* history.read
-        const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
-        yield* record("assemble", `snapshot, ${snapshot.length} messages`)
-        yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
-        if (filtered !== snapshot) {
-          const original = new Map(snapshot.map((m) => [m.id, positions.get(m)]))
-          for (const message of filtered) {
-            const position = original.get(message.id)
-            if (position) positions.set(message, position)
+        const { rows } = yield* history.read
+        let historyRows: ReadonlyArray<RequestRow> = rows
+        if (has(hooks, "filter_messages")) {
+          const snapshot = rows.map((row) => row.message)
+          const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
+          if (filtered !== snapshot) {
+            const byId = new Map(rows.map((row) => [row.message.id, row]))
+            historyRows = filtered.map((message) => {
+              const row = byId.get(message.id)
+              return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
+            })
           }
         }
-        const transformed = toProviderMessages(filtered, view)
+        yield* record("assemble", `snapshot, ${rows.length} messages`)
+        yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
+        const transformed = toProviderMessages(historyRows, view)
         yield* record("assemble", `transform, ${transformed.length} provider messages`)
         const prefiltered = has(hooks, "prefilter_llm_history")
           ? (yield* runHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
@@ -666,7 +680,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
         if (turn.side === "a") execution.sideAStepCount += 1
         else execution.sideBStepCount += 1
         const calls = toolCallsOf(response)
-        const assistant = yield* createMessage(write, responseMessage(turn, response, calls), "turn")
+        const { message: assistant, seq } = yield* createMessage(write, responseMessage(turn, response, calls), "turn")
         yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
         yield* observe({ type: "message", message: assistant })
         if (calls.length === 0) {
@@ -678,7 +692,7 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           // A call after a stop request never runs. It still gets a result, so that the next request is valid.
           const skipped = run.stop !== undefined
           yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
-          results.push(yield* runCall(assistant, call, runToolCall(toolContext, call)))
+          results.push(yield* runCall(seq, call, runToolCall(toolContext, call)))
         }
         if (run.stop !== undefined) return yield* stopHere
         // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
@@ -762,7 +776,8 @@ export const runExecution = (threadId: string, run: Run, control: ThreadControl,
           Effect.orDie(
             Effect.tap(release("idle", run.stop?.reason ?? "aborted", false, CLOSING.aborted), (settlement) =>
               Effect.gen(function* () {
-                if (settlement === "superseded") run.displaced = (yield* store.getThread(threadId)).terminated === null
+                if (settlement === "superseded")
+                  run.displaced = (yield* threadStore.getThread(threadId)).terminated === null
                 run.resumeQueued = settlement === "settled" && run.waitForCallbacks === true
               }),
             ),

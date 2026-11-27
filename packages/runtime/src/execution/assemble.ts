@@ -12,7 +12,6 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import { positions } from "../store/ThreadStore.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
 
@@ -182,22 +181,29 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDeliver
 // order is undefined when the stored order already is the request order, which is the usual case.
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
-const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+// A hook can add a message that has no stored position.
+export interface RequestRow {
+  readonly message: Message
+  readonly seq?: number
+  readonly callerSeq?: number | null
+}
+
+const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
   const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
-  const holderOf = (message: Message, index: number) => {
-    const position = positions.get(message)
+  const holderOf = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     if (message.role === "tool")
-      return position?.callerSeq != null ? bySeq.get(position.callerSeq) : holder.get(message.tool_call_id ?? "")
-    if (position) bySeq.set(position.seq, index)
+      return callerSeq != null ? bySeq.get(callerSeq) : holder.get(message.tool_call_id ?? "")
+    if (seq !== undefined) bySeq.set(seq, index)
     for (const call of parsed[index] ?? []) holder.set(call.id, index)
     return undefined
   }
   let last = -1
   let position = -1
   let stored = true
-  history.forEach((message, index) => {
-    const at = holderOf(message, index)
+  history.forEach((row, index) => {
+    const { message } = row
+    const at = holderOf(row, index)
     if (message.role !== "tool") {
       last = index
       position = -1
@@ -222,7 +228,7 @@ const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Arr
     if (moved.has(index)) return
     order.push(index)
     const ids = (parsed[index] ?? []).map((call) => call.id)
-    const at = (result: number) => ids.indexOf(history[result]?.tool_call_id ?? "")
+    const at = (result: number) => ids.indexOf(history[result]?.message.tool_call_id ?? "")
     order.push(...(results.get(index) ?? []).sort((a, b) => at(a) - at(b)))
   })
   return order
@@ -231,25 +237,24 @@ const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Arr
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
 // includeChat and includePastTools admit. A call and its result are shown or hidden together.
-export const toProviderMessages = (history: ReadonlyArray<Message>, view: HistoryView): Array<ProviderMessage> => {
+export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryView): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
   const shownBySeq = new Map<number, ReadonlyArray<ProviderToolCallPart>>()
   const messages: Array<ProviderMessage> = []
-  const parsed = history.map((message) =>
+  const parsed = history.map(({ message }) =>
     (message.role === "user" || message.role === "assistant") && message.tool_calls != null
       ? toolCallsOf(message)
       : NO_CALLS,
   )
-  const visit = (message: Message, index: number) => {
+  const visit = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
-      const seq = positions.get(message)?.callerSeq
       const visible =
-        seq == null
+        callerSeq == null
           ? shownCalls.get(message.tool_call_id ?? "")
-          : shownBySeq.get(seq)?.some((call) => call.id === message.tool_call_id)
+          : shownBySeq.get(callerSeq)?.some((call) => call.id === message.tool_call_id)
       if (!visible) return
       const text = textOf(message)
       messages.push({
@@ -266,8 +271,7 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
-      const position = positions.get(message)
-      if (position && showCalls) shownBySeq.set(position.seq, calls)
+      if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
       if (past && !showCalls && (content ?? "") === "") return
@@ -281,7 +285,7 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   }
   const order = requestOrder(history, parsed)
   if (order === undefined) history.forEach(visit)
-  else for (const index of order) visit(history[index] as Message, index)
+  else for (const index of order) visit(history[index] as RequestRow, index)
   return messages
 }
 

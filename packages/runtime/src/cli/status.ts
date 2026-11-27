@@ -1,5 +1,6 @@
 import { Cause, Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
+import { RunStore } from "../store/RunStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { fail, openDatabase, RunFailed } from "./run.ts"
 
@@ -19,16 +20,17 @@ export const statusCommand = Command.make(
       const filename = path.resolve(args.db)
       const database = yield* openDatabase(filename)
       yield* Effect.gen(function* () {
-        const store = yield* ThreadStore
-        yield* store.recover(args.thread)
-        const thread = yield* store
+        const runStore = yield* RunStore
+        const threadStore = yield* ThreadStore
+        yield* runStore.recoverLost(args.thread)
+        const thread = yield* threadStore
           .getThread(args.thread)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${args.thread} in ${filename}`)))
         const { state, since, reason } = thread.status
         yield* Console.log(`${state} ${reason ?? "none"} since ${time(since)}`)
-        const holder = yield* store.holderOf(thread.id)
+        const holder = yield* runStore.holderOf(thread.id)
         if (holder !== null) yield* Console.log(`held by process ${holder.pid}`)
-        yield* Console.log(`queued ${yield* store.queueLength(thread.id)}`)
+        yield* Console.log(`queued ${yield* runStore.queueLength(thread.id)}`)
         if (thread.terminated !== null) yield* Console.log(`terminated ${time(thread.terminated)}`)
       }).pipe(Effect.provide(database))
     }).pipe(
@@ -55,26 +57,23 @@ export const recoverCommand = Command.make(
   ({ thread, db, force }) =>
     Effect.gen(function* () {
       const database = yield* openDatabase(db)
-      const line = yield* ThreadStore.use((store) =>
-        store.transaction(
-          Effect.gen(function* () {
-            const before = yield* store
-              .getThread(thread)
-              .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)))
-            const holder = yield* store.holderOf(thread)
-            if (before.status.state !== "running")
-              return `thread ${thread} is not running (${before.status.state} ${before.status.reason ?? "none"}). Nothing changed.`
-            const recovered = yield* store.recover(thread, force)
-            if (recovered.length === 0)
-              return `thread ${thread} is running in process ${holder?.pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`
-            if (holder === null)
-              return `thread ${thread} had no recorded holder. Settled it as failed (execution_lost).`
-            if (force)
-              return `thread ${thread} was running in process ${holder.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
-            return `thread ${thread} was running in process ${holder.pid}, which is gone. Settled it as failed (execution_lost).`
-          }),
-        ),
-      ).pipe(Effect.provide(database))
+      const result = yield* RunStore.use((store) => store.recoverThread(thread, force)).pipe(
+        Effect.provide(database),
+        Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)),
+      )
+      if (result.kind === "atRest")
+        return yield* Console.log(
+          `thread ${thread} is not running (${result.thread.status.state} ${result.thread.status.reason ?? "none"}). Nothing changed.`,
+        )
+      if (result.kind === "alive")
+        return yield* Console.log(
+          `thread ${thread} is running in process ${result.pid}, which is alive. Nothing changed. Run again with --force to settle the thread as failed (execution_lost).`,
+        )
+      if (result.kind === "missingHolder")
+        return yield* Console.log(`thread ${thread} had no recorded holder. Settled it as failed (execution_lost).`)
+      const line = force
+        ? `thread ${thread} was running in process ${result.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
+        : `thread ${thread} was running in process ${result.pid}, which is gone. Settled it as failed (execution_lost).`
       yield* Console.log(line)
     }),
 ).pipe(Command.withDescription("Settle a thread whose execution was lost"))

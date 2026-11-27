@@ -118,10 +118,9 @@ export const O15: Scenario = {
   },
 }
 
-export const O16: Scenario = {
-  name: "O16 gives two open callers that reuse one call id a closing result each, and the next request pairs each with its caller",
-  requirements: ["41278e5e"],
-  run: async (driver) => {
+const pairAfterRecovery =
+  (copy: boolean): Scenario["run"] =>
+  async (driver) => {
     const entered = gate()
     const leave = gate()
     const first = stubTool("Answer the first call", "first answer")
@@ -140,9 +139,22 @@ export const O16: Scenario = {
       { toolCalls: [{ id: "dup", name: "second", arguments: {} }] },
       { text: "after the recovery" },
     ])
+    const filter = defineHook({
+      hook: "filter_messages",
+      id: "copy",
+      execute: async (_state, messages) =>
+        structuredClone(messages).map((message) =>
+          message.content === "again" ? { ...message, content: "copied" } : message,
+        ),
+    })
     await usingPeer(
       driver,
-      { provider, tools: { first, second }, prompt: { includeChat: true, includePastTools: true } },
+      {
+        provider,
+        tools: { first, second },
+        hooks: copy ? [filter] : [],
+        prompt: { includeChat: true, includePastTools: true, hooks: copy ? ["copy"] : [] },
+      },
       async (session, thread, peer) => {
         const run = quiet(session.send(thread, "go")).catch(() => undefined)
         await entered.opened
@@ -162,11 +174,22 @@ export const O16: Scenario = {
           ["tool", "dup"],
           ["assistant", null, ["dup"]],
           ["tool", "dup"],
-          ["user", "again"],
+          ["user", copy ? "copied" : "again"],
         ])
       },
     )
-  },
+  }
+
+export const O16: Scenario = {
+  name: "O16 gives two open callers that reuse one call id a closing result each, and the next request pairs each with its caller",
+  requirements: ["41278e5e"],
+  run: pairAfterRecovery(false),
+}
+
+export const O16b: Scenario = {
+  name: "O16b pairs copied results with their own callers after filter_messages replaces the messages",
+  requirements: ["41278e5e", "d2ff2793"],
+  run: pairAfterRecovery(true),
 }
 
 export const O17: Scenario = {

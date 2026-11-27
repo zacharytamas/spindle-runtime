@@ -1,6 +1,8 @@
 import type { Message, MessageUpdates } from "@standardagents/spec"
-import { Clock, Effect } from "effect"
-import { type NewMessage, ThreadStore } from "../store/ThreadStore.ts"
+import { Effect } from "effect"
+import { nowMicros } from "../store/database.ts"
+import { MessageStore } from "../store/MessageStore.ts"
+import type { NewMessage, WriteOrigin } from "../store/model.ts"
 import type { Secrets } from "./env.ts"
 import type { History } from "./history.ts"
 import {
@@ -23,9 +25,8 @@ export interface WriteContext {
   readonly call: HookCall | undefined
   // The history of the execution that writes, when an execution writes.
   readonly history: History | undefined
-  // The flow of the execution that writes. Its writes fail once that flow no longer holds the thread.
   readonly callerSeq?: number
-  readonly flowId?: string
+  readonly origin: WriteOrigin
 }
 
 // A write from a hook is one level deeper than the write or the step that called the hook.
@@ -41,8 +42,6 @@ const depthOf = Effect.fnUntraced(function* (write: WriteContext) {
   }
   return call.depth
 })
-
-const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -145,7 +144,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   // The queue entry that this message delivers, removed when the message is stored.
   dequeue?: number,
 ) {
-  const store = yield* ThreadStore
+  const store = yield* MessageStore
   const depth = yield* depthOf(write)
   const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
@@ -183,29 +182,22 @@ export const createMessage = Effect.fn("createMessage")(function* (
     yield* Effect.logWarning(`Hook ${idOwner} (before_create_message) ${problem}. Spindle kept the generated id.`)
     redacted = { ...redacted, id: original.id }
   }
-  const options =
-    write.flowId === undefined
-      ? {}
-      : {
-          ...(write.callerSeq === undefined ? {} : { callerSeq: write.callerSeq }),
-          flowId: write.flowId,
-          ...(dequeue === undefined ? {} : { dequeue }),
-        }
+  const link = { callerSeq: write.callerSeq, dequeue }
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
   // stored once under an id from the runtime, and its hooks, which have already run, do not run again.
-  const inserted = yield* store.insertMessage(write.threadId, redacted, options).pipe(
+  const inserted = yield* store.insertMessage(write.threadId, redacted, write.origin, link).pipe(
     Effect.catchTag("MessageIdTaken", (error) => {
       if (!essential) return Effect.fail(error)
       const id = crypto.randomUUID()
       return Effect.logWarning(
         `Message id ${JSON.stringify(redact(error.messageId))} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
-      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id }, options)))
+      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id }, write.origin, link)))
     }),
   )
   write.history?.inserted(inserted)
   const stored = inserted.message
   yield* runHooks(write.hooks, "after_create_message", [], stored, { depth })
-  return stored
+  return inserted
 })
 
 // Threads section 2.3: text that user code writes is redacted before it is stored, as tool output is.
@@ -222,11 +214,11 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   messageId: string,
   updates: MessageUpdates,
 ) {
-  const store = yield* ThreadStore
+  const store = yield* MessageStore
   const depth = yield* depthOf(write)
   const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
-  const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates)
+  const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates, write.origin)
   yield* runHooks(write.hooks, "after_update_message", [], message, { depth })
   return message
 })

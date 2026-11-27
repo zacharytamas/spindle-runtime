@@ -27,7 +27,10 @@ import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
-import { type Thread, ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
+import { MessageStore } from "../store/MessageStore.ts"
+import { type Thread, ThreadTerminated } from "../store/model.ts"
+import { RunStore } from "../store/RunStore.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import { deliveryFlags, fail, openDatabase, operatorNotes, RunFailed } from "./run.ts"
 
 const shellWord = (word: string) =>
@@ -99,7 +102,9 @@ const openThread = (
   clean: (text: string) => string,
 ) =>
   Effect.gen(function* () {
-    const store = yield* ThreadStore
+    const threadStore = yield* ThreadStore
+    const runStore = yield* RunStore
+    const messageStore = yield* MessageStore
     if (Option.isNone(requested)) {
       const { id } = yield* createThread(agent, secrets)
       yield* identify(`thread ${id}`)
@@ -107,9 +112,9 @@ const openThread = (
       return { id, cursor: 0 }
     }
     const id = requested.value
-    const opened = yield* store.transaction(
+    const opened = yield* threadStore.transaction(
       Effect.gen(function* () {
-        const thread = yield* store
+        const thread = yield* threadStore
           .getThread(id)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
         if (thread.agentId !== agent)
@@ -118,16 +123,18 @@ const openThread = (
             Effect.fail(new RunFailed({ message: "wrong agent" })),
           )
         yield* requireOpen(thread)
-        yield* store.recover(id)
-        const { status } = yield* store.getThread(id)
-        const holder = yield* store.holderOf(id)
-        return { status, holder, cursor: yield* store.latestMessageSeq(id) }
+        const run = thread.status.state === "running" ? yield* runStore.recoverThread(id, false) : undefined
+        return {
+          status: run?.thread.status ?? thread.status,
+          pid: run?.kind === "alive" ? run.pid : null,
+          cursor: yield* messageStore.latestMessageSeq(id),
+        }
       }),
     )
     yield* identify(`thread ${id}`)
     yield* note(
-      opened.holder
-        ? `running in process ${opened.holder.pid}, so a line you type waits in its queue`
+      opened.pid !== null
+        ? `running in process ${opened.pid}, so a line you type waits in its queue`
         : `${opened.status.state} (${opened.status.reason ?? "none"})`,
     )
     return { id, cursor: opened.cursor }
@@ -151,7 +158,8 @@ interface Conversation {
 const converse = (chat: Conversation) =>
   Effect.gen(function* () {
     const terminal = yield* openChatTerminal
-    const store = yield* ThreadStore
+    const messageStore = yield* MessageStore
+    const threadStore = yield* ThreadStore
     const supervisor = yield* ThreadSupervisor
     const interrupts = yield* Queue.make<void>()
     yield* Effect.acquireRelease(
@@ -166,7 +174,7 @@ const converse = (chat: Conversation) =>
     const output = yield* Semaphore.make(1)
     const flush = output.withPermit(
       Effect.gen(function* () {
-        for (const row of yield* store.messagesAfter(chat.id, cursor)) {
+        for (const row of yield* messageStore.messagesAfter(chat.id, cursor)) {
           const sent = row.admission !== null && own.delete(row.admission)
           for (const line of messageLines(row.message, chat, sent)) yield* terminal.write(`${line}\n`)
           cursor = row.seq
@@ -245,7 +253,7 @@ const converse = (chat: Conversation) =>
             if (Exit.isSuccess(event.exit)) {
               yield* finishPrevious
               yield* flush
-              yield* requireOpen(yield* store.getThread(chat.id))
+              yield* requireOpen(yield* threadStore.getThread(chat.id))
               yield* report(event.exit.value.outcome ?? event.exit.value.status)
               return "continue" as const
             }
@@ -282,7 +290,7 @@ const converse = (chat: Conversation) =>
       if (read.kind === "interrupt" || read.line === null) break
       if (!terminal.isTerminal) yield* write(`${read.line}\n`)
       if (read.line.trim() === "") {
-        yield* requireOpen(yield* store.getThread(chat.id))
+        yield* requireOpen(yield* threadStore.getThread(chat.id))
         continue
       }
       atPrompt = false
@@ -384,9 +392,10 @@ export const chatCommand = Command.make(
               const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
               if (filename !== ":memory:" && !(yield* fs.exists(filename)))
                 return yield* fail(`the database ${db} is gone`)
-              const store = yield* ThreadStore
-              yield* requireOpen(yield* store.getThread(thread.id))
-              if (lastAdmission !== undefined && (yield* store.isQueued(thread.id, lastAdmission)))
+              const threadStore = yield* ThreadStore
+              const runStore = yield* RunStore
+              yield* requireOpen(yield* threadStore.getThread(thread.id))
+              if (lastAdmission !== undefined && (yield* runStore.isQueued(thread.id, lastAdmission)))
                 yield* note("your last line is still queued, and the next run of the thread delivers it")
               if (filename !== ":memory:") {
                 const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""

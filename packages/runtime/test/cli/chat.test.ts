@@ -397,6 +397,15 @@ describe("spindle chat", () => {
         ])
         expect(yield* made.exit).toBe(0)
         const thread = yield* threadOf(made)
+        yield* query(
+          db,
+          "UPDATE threads SET run_state = 'running', run_reason = NULL, holder_id = 'lost', flow_id = 'old' WHERE id = ?",
+          [thread],
+        )
+        yield* query(
+          db,
+          "CREATE TRIGGER no_recovery BEFORE UPDATE OF flow_id ON threads BEGIN SELECT RAISE(ABORT, 'recovery refused'); END",
+        )
         const before = yield* stored(db, thread)
         const session = yield* chat(gate, [
           "assistant",

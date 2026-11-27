@@ -954,6 +954,26 @@ The store contract has separate files for threads and key-value data, message wr
 
 The queue and chat tests share command startup, signals, and output draining in `test/cli/processes.ts`. Queue tests read complete lines. Chat tests retain partial output so they can wait for a prompt before typing into the child's input.
 
+### Settled in M1-10
+
+One SQLite layer sets the connection pragmas, runs the migrations, and gives three Effect services the same SQL client. A caller can compose their operations in one transaction.
+
+- `ThreadStore` creates and reads threads, reads and writes thread values, and supplies the transaction used to resume chat.
+- `MessageStore` owns message reads and writes, revisions, history and chat cursors. Delivery deletes the pending queue entry and inserts its message in one transaction. Deleting a caller and its results is also one transaction.
+- `RunStore` owns claims, admission, queue inspection, holders, settlement, termination and recovery. Admission inserts the queue entry and claims an available thread together. Settlement checks the queue, writes receipts for open calls and releases the claim together. Termination belongs here because its marker and the settlement of a running thread must commit together. The store modules share SQL lookups for thread rows, pending entries and unanswered calls.
+
+Every writer passes a tagged origin. An external caller names that role, the loop names its flow, and a handle carries its expiry check, termination marker and flow id or null at rest. Message insertion takes the caller sequence and queue entry separately from the writer. The transaction checks the flow, handle lifetime and termination marker in their original order. Repeat termination returns the original time. A superseded settlement and an obsolete attempt to quarantine a bad queue entry keep their existing no-work results. A supervisor acquires its holder in a scope and interrupts its executions before releasing the holder. All connections in the process can see a locally registered holder, including a second connection to the same file. When the scope closes, the process forgets the holder even if deleting its row fails. Recovery then settles its running threads as failed with `execution_lost` because the closed supervisor cannot settle them.
+
+An insert returns its sequence and caller sequence. A history snapshot holds each message together with its sequence and caller sequence. The cache appends each new row to a persistent Chunk. Reading a snapshot materializes its array once, and later inserts share the earlier rows. Assembly reads positions directly from those rows. Only a filter that returns a different array needs a lookup by message id to pair its copies with their stored positions. Batch inserts and read-only queue peeks used by tests and probes live in the script fixture. Their callers still get one commit and timestamp for a batch.
+
+The background loss check can scan all threads or one named thread. It takes a write transaction only after observing a lost holder, then checks liveness and the observed flow again under the lock. A forced recovery requires one thread id. Targeted recovery returns the thread and a named outcome. A live or recovered holder supplies its process id. Chat checks the agent and termination marker first so a failed recovery cannot hide a rejected resume. It calls recovery only for a running thread and reads its cursor after the closing receipts in the same outer transaction.
+
+Effect Schema checks stored attachment references, queue payloads and pagination counts. The decoder retains the parsed payload so extra fields and own JSON keys survive. Thread and message projections still read NUL-bearing text from bytes and decode trusted JSON columns directly. Adding full row schemas would duplicate those projections and change malformed-column errors. The strict JSON encoder keeps the path of the first unrepresentable value and reads each property once. Queue decoding returns an absent value on malformed input. Only the owning flow can mark that entry as failed delivery.
+
+Every store operation disables scheduler yields while it holds the shared connection. The guard stays on the typed methods, including the generic transaction. One test exercises every member of each service and reads the scheduler setting as its SQL runs. Adding a method requires adding its call to that test.
+
+The standalone store probe shares the store fixtures. Its crash lanes read the child's native exit code and signal to verify and report a SIGKILL. The Effect process API exposes a platform error for that exit.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

@@ -2,8 +2,18 @@ import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardag
 import { Cause, Context, Data, Deferred, Duration, Effect, Exit, Fiber, Layer, Scheduler, Scope } from "effect"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
+import {
+  external,
+  type Holder,
+  originFlow,
+  type QueueEntry,
+  ThreadTerminated,
+  type WriteOrigin,
+} from "../store/model.ts"
+import { RunStore } from "../store/RunStore.ts"
 import { isAttachmentRef } from "../store/schema.ts"
-import { type Holder, type QueueEntry, ThreadStore, ThreadTerminated, WritingHandle } from "../store/ThreadStore.ts"
+import type { Stores } from "../store/sqlite.ts"
+import { ThreadStore } from "../store/ThreadStore.ts"
 import type { Secrets } from "./env.ts"
 import { redactMetadata } from "./messages.ts"
 import { redactor } from "./redact.ts"
@@ -48,7 +58,7 @@ export class ThreadSupervisor extends Context.Service<
       threadId: string,
       content: string,
       options?: SendOptions,
-    ) => Effect.Effect<Delivery, unknown, Registry | ThreadStore>
+    ) => Effect.Effect<Delivery, unknown, Registry | Stores>
     readonly control: (threadId: string) => ThreadControl
     // Asks the execution that this process runs for the thread to stop at its next boundary, for the human side.
     readonly stop: (threadId: string) => Effect.Effect<boolean>
@@ -117,7 +127,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
   Layer.effect(
     ThreadSupervisor,
     Effect.gen(function* () {
-      const store = yield* ThreadStore
+      const runStore = yield* RunStore
+      const threadStore = yield* ThreadStore
       const scope = yield* Scope.fork(yield* Effect.scope, "sequential")
       let closing = false
       const holder = { id: crypto.randomUUID(), pid: processId }
@@ -128,15 +139,15 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       const statusOf = (threadId: string) =>
         Effect.andThen(
-          store.recover(threadId),
-          Effect.map(store.getThread(threadId), (thread) => thread.status),
+          runStore.recoverLost(threadId),
+          Effect.map(threadStore.getThread(threadId), (thread) => thread.status),
         )
 
       const start = (
         threadId: string,
         run: Run,
         options: ExecutionOptions,
-      ): Effect.Effect<Live, never, ThreadStore | Registry> =>
+      ): Effect.Effect<Live, never, Stores | Registry> =>
         Effect.gen(function* () {
           const entry: Live = { run, done: yield* Deferred.make<RunOutcome, unknown>(), fiber: undefined }
           const previous = live.get(threadId)
@@ -149,7 +160,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           // An execution yields to other fibers only where it waits, for a model, a tool, or a hook, so its store calls
           // take the writer lock without a scheduler yield. The outcome is recorded in a finalizer, which an interrupt cannot cut short.
           const execution = runExecution(threadId, run, control(threadId), { ...defaults, ...options }).pipe(
-            Effect.provideService(WritingHandle, undefined),
             Effect.provideService(Scheduler.PreventSchedulerYield, true),
             Effect.onExit((exit) =>
               Effect.gen(function* () {
@@ -160,7 +170,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                   return yield* Deferred.failCause(entry.done, exit.cause)
                 const outcome: RunOutcome = Exit.isSuccess(exit)
                   ? exit.value
-                  : yield* store.getThread(threadId).pipe(
+                  : yield* threadStore.getThread(threadId).pipe(
                       Effect.map((stored) => stored.status),
                       Effect.onError((cause) => Deferred.failCause(entry.done, cause)),
                       Effect.map((status) => ({
@@ -177,7 +187,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                   const next = newRun()
                   flows.add(next.flowId)
                   if (
-                    yield* store
+                    yield* runStore
                       .claim(threadId, { holder: holder.id, flowId: next.flowId })
                       .pipe(Effect.orElseSucceed(() => false))
                   )
@@ -224,18 +234,21 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
-      const admit = (threadId: string, entry: QueueEntry, options: SendOptions) =>
+      const admit = (threadId: string, entry: QueueEntry, options: SendOptions, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          if ((yield* WritingHandle)?.flowId === undefined) yield* store.recover(threadId)
+          if (originFlow(origin) === null) yield* runStore.recoverLost(threadId)
           let seq = 0
           const started = yield* claimWith(
             threadId,
             (run) =>
-              Effect.map(store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }), (admitted) => {
-                seq = admitted.queued.seq
-                options.onAdmitted?.(seq)
-                return admitted.claimed
-              }),
+              Effect.map(
+                runStore.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }, origin),
+                (admitted) => {
+                  seq = admitted.queued.seq
+                  options.onAdmitted?.(seq)
+                  return admitted.claimed
+                },
+              ),
             options,
           )
           return { seq, started }
@@ -243,9 +256,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime section 10: the thread is marked and its run settled in one transaction. The execution that ran it
       // here is interrupted, and one in another process stops at its next write or its next control poll.
-      const terminate = (threadId: string) =>
+      const terminate = (threadId: string, origin: WriteOrigin) =>
         Effect.gen(function* () {
-          const time = yield* store.terminate(threadId)
+          const time = yield* runStore.terminate(threadId, origin)
           const local = live.get(threadId)
           if (local?.fiber !== undefined) {
             local.run.releaseWait.abort()
@@ -255,13 +268,14 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         })
 
       const control = (threadId: string): ThreadControl => ({
-        queueMessage: (input, secrets) =>
+        queueMessage: (input, secrets, origin) =>
           Effect.flatMap(queuedMessage(input, secrets), (message) =>
-            Effect.asVoid(admit(threadId, { kind: "message", message }, {})),
+            Effect.asVoid(admit(threadId, { kind: "message", message }, {}, origin)),
           ),
-        queueTool: (target, args) => Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args }, {})),
+        queueTool: (target, args, origin) =>
+          Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args }, {}, origin)),
         status: statusOf(threadId),
-        terminate: terminate(threadId),
+        terminate: (origin) => terminate(threadId, origin),
       })
 
       // Waits until no execution holds the thread. A holder in another process is watched through the store.
@@ -279,35 +293,34 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Each poll also settles the runs whose holders died, settles a claim of this holder that has no execution
       // behind it, and interrupts an execution here whose run another process settled, by terminate or as lost.
       const tick = Effect.gen(function* () {
-        yield* store.recover()
+        yield* runStore.recoverLost()
         const running = [...live]
-        const owned = yield* store.owned(holder.id)
+        const owned = yield* runStore.owned(holder.id)
         for (const [threadId, flowId] of owned)
           if (!flows.has(flowId))
-            yield* store.settle(
+            yield* runStore.settle(
               threadId,
-              flowId,
+              { flowId },
               { state: "failed", reason: "execution_lost" },
               { continueIfQueued: false, closing: CLOSING.lost },
             )
         for (const [threadId, entry] of running)
           if (!entry.run.ended && owned.get(threadId) !== entry.run.flowId && entry.fiber !== undefined) {
-            entry.run.displaced = (yield* store.getThread(threadId)).terminated === null
+            entry.run.displaced = (yield* threadStore.getThread(threadId)).terminated === null
             entry.run.releaseWait.abort()
             yield* Fiber.interrupt(entry.fiber)
           }
       })
 
       // A process that shuts down aborts its executions, which settle, and drops its holder record last.
+      yield* runStore.acquireHolder(holder)
       yield* Effect.addFinalizer(() => {
         closing = true
         for (const { run } of live.values()) run.releaseWait.abort()
-        return Effect.andThen(
-          Fiber.interruptAll([...live.values()].flatMap((entry) => (entry.fiber === undefined ? [] : [entry.fiber]))),
-          Effect.ignore(store.dropHolder(holder.id)),
+        return Fiber.interruptAll(
+          [...live.values()].flatMap((entry) => (entry.fiber === undefined ? [] : [entry.fiber])),
         )
       })
-      yield* store.registerHolder(holder)
       yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
 
       const abortExecution = (threadId: string, exiting = false) =>
@@ -330,10 +343,10 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           Effect.gen(function* () {
             const invalid = checkOptions(options)
             if (invalid !== undefined) return yield* invalid
-            const thread = yield* store.getThread(threadId)
+            const thread = yield* threadStore.getThread(threadId)
             const { human } = yield* sidesOf(thread.agentId)
             const message: QueueMessageInput = { role: roleOf(human), content }
-            const admitted = yield* admit(threadId, { kind: "message", message }, options)
+            const admitted = yield* admit(threadId, { kind: "message", message }, options, external)
             let started = admitted.started
             let elsewhere: Holder | undefined
             while (true) {
@@ -353,7 +366,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                   local = local.successor
                 }
               } else {
-                const holderNow = yield* store.holderOf(threadId)
+                const holderNow = yield* runStore.holderOf(threadId)
                 if (holderNow !== null) {
                   elsewhere = holderNow
                   if (options.onWaiting) yield* options.onWaiting(holderNow)
@@ -364,22 +377,22 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               const status = yield* awaitRest(threadId).pipe(
                 Effect.onInterrupt(() =>
                   Effect.gen(function* () {
-                    if (options.observe && (yield* store.isQueued(threadId, admitted.seq)))
+                    if (options.observe && (yield* runStore.isQueued(threadId, admitted.seq)))
                       yield* options.observe({ type: "interrupted_while_queued" })
                   }),
                 ),
               )
-              const current = yield* store.getThread(threadId)
+              const current = yield* threadStore.getThread(threadId)
               if (current.terminated !== null)
                 return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
-              const stillQueued = yield* store.isQueued(threadId, admitted.seq)
+              const stillQueued = yield* runStore.isQueued(threadId, admitted.seq)
               if (status.reason === "execution_lost" || !stillQueued) {
                 const delivery = { status, stillQueued, ...(elsewhere === undefined ? {} : { elsewhere }) }
                 return outcome === undefined ? delivery : { ...delivery, outcome }
               }
               started = yield* claimWith(
                 threadId,
-                (run) => store.claim(threadId, { holder: holder.id, flowId: run.flowId }),
+                (run) => runStore.claim(threadId, { holder: holder.id, flowId: run.flowId }),
                 options,
               )
             }
