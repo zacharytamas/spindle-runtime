@@ -318,27 +318,34 @@ async function* eventLines(body: ReadableStream<Uint8Array>): AsyncGenerator<str
   if (buffer !== "") yield buffer.replace(/\r$/, "")
 }
 
+const isJson = (text: string) => {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Data that is complete JSON is delivered at once, because some endpoints send no blank line between events and an
+// event must not wait for the one after it. Data that is not complete yet is joined to the next data line with a
+// newline, as the event-stream standard says, until it is complete or a blank line, the sentinel, or the end of
+// the stream delivers what there is.
 async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   let pending: string | undefined
   for await (const line of eventLines(body)) {
-    if (line === "") {
+    if (line !== "" && !line.startsWith("data:")) continue
+    const data = line === "" ? undefined : line.slice(5).trimStart()
+    if (data === undefined || data === "[DONE]") {
       if (pending !== undefined) yield pending
       pending = undefined
-    } else if (line.startsWith("data:")) {
-      const data = line.slice(5).trimStart()
-      // Blank lines and EOF dispatch the event. At the next data line, dispatch complete JSON for
-      // endpoints that omit blank lines, or join the unfinished JSON with a newline.
-      if (pending !== undefined) {
-        try {
-          JSON.parse(pending)
-        } catch {
-          pending += `\n${data}`
-          continue
-        }
-        yield pending
-      }
-      if (data === "[DONE]") return
-      pending = data
+      if (data !== undefined) return
+      continue
+    }
+    pending = pending === undefined ? data : `${pending}\n${data}`
+    if (isJson(pending)) {
+      yield pending
+      pending = undefined
     }
   }
   if (pending !== undefined) yield pending

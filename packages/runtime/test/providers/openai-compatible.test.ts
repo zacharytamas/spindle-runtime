@@ -715,6 +715,21 @@ describe("openaiCompatible event stream", () => {
     for (const body of forms) expect(await streamOf(() => new Response(body))).toEqual(whole)
   })
 
+  // An endpoint that sends no blank lines must not make each event wait for the one after it. A chat shows a delta
+  // when it arrives, and the last event of a held-open connection has no successor at all.
+  it("delivers an event as soon as its data is complete, before the next line arrives", async () => {
+    const event = { choices: [{ delta: { content: "now" } }] }
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n`)),
+    })
+    const { fetch } = transport(() => new Response(body))
+    const chunks = (await openaiCompatible({ apiKey: "", fetch }).stream(request))[Symbol.asyncIterator]()
+    const late = new Promise<"late">((resolve) => setTimeout(() => resolve("late"), 500))
+    const first = await Promise.race([chunks.next(), late])
+    expect(first).toEqual({ done: false, value: { type: "content-delta", delta: "now" } })
+    await chunks.return?.()
+  })
+
   // Tolerant neighbor. TCP may cut an event anywhere, inside a field name, a line ending, or a multi-byte character.
   it("reads one small event split across network chunks at every byte position", async () => {
     const event = { choices: [{ delta: { content: "héllo ☃" }, finish_reason: "stop" }] }
