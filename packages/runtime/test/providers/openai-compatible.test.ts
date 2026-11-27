@@ -965,3 +965,33 @@ describe("openaiCompatible extra_content", () => {
     ])
   })
 })
+
+describe("openaiCompatible request fields", () => {
+  // ProviderRequest.user in @standardagents/spec 0.45.13: "Providers that support it (OpenAI-compatible `user`; ...)
+  // should forward it". The spec text's ProviderRequest has no user, and DIVERGENCES.md records that the runtime sets
+  // none yet. This tests the provider: a request that carries user sends it as the chat completions user field.
+  it("forwards the request's user as the chat completions user field", () => {
+    for (const stream of [false, true])
+      expect(requestBody({ ...request, user: "thread-1" }, stream)).toMatchObject({ user: "thread-1" })
+  })
+
+  // Tolerant neighbor. A request without user sends none, and a user that only providerOptions names still goes out
+  // as Providers section 2.1 merges providerOptions.
+  it("sends no user when the request has none, and keeps one that providerOptions sets", () => {
+    expect(requestBody({ model: "m", messages: [] }, true)).not.toHaveProperty("user")
+    expect(requestBody({ model: "m", messages: [], providerOptions: { user: "operator" } }, false)).toMatchObject({
+      user: "operator",
+    })
+  })
+
+  // Providers section 2.1: the merged providerOptions apply as they are, and a key the provider sets itself replaces
+  // only that key. The provider needs stream_options.include_usage to read usage from a stream, and a sibling that
+  // providerOptions puts in stream_options, such as include_obfuscation, must survive beside it.
+  it("keeps a providerOptions stream_options sibling beside include_usage", () => {
+    const body = requestBody(
+      { model: "m", messages: [], providerOptions: { stream_options: { include_obfuscation: false } } },
+      true,
+    )
+    expect(body.stream_options).toEqual({ include_obfuscation: false, include_usage: true })
+  })
+})
