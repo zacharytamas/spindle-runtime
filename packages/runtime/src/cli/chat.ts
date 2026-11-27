@@ -115,7 +115,8 @@ const openThread = (
 type SendError = Effect.Error<ReturnType<ThreadSupervisor["Service"]["send"]>>
 type Turn = Fiber.Fiber<Delivery, SendError>
 type Event =
-  | { kind: "interrupt" | "closed" | "poll" }
+  | { kind: "interrupt" | "closed" }
+  | { kind: "poll"; ack: Deferred.Deferred<void> }
   | { kind: "line"; line: string | null }
   | { kind: "admitted"; seq: number }
   | { kind: "waiting"; holder: WaitingHolder }
@@ -223,12 +224,20 @@ const converse = (chat: Conversation, events: Queue.Queue<Event>, own: Set<numbe
           )
           if (holder.kind === "remote" && !poll)
             poll = yield* Effect.forkScoped(
-              Effect.forever(Effect.andThen(Effect.sleep("50 millis"), offer({ kind: "poll" }))),
+              Effect.forever(
+                Effect.gen(function* () {
+                  yield* Effect.sleep("50 millis")
+                  const ack = yield* Deferred.make<void>()
+                  yield* offer({ kind: "poll", ack })
+                  yield* Deferred.await(ack)
+                }),
+              ),
             )
           break
         }
         case "poll":
           if (phase.kind === "waiting") yield* flush
+          yield* Deferred.succeed(event.ack, undefined)
           break
         case "settled":
           if (previous?.settlement === event.settlement) {
