@@ -1,7 +1,7 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
 import { Cause, Effect, Exit, Fiber, FileSystem, Option, Queue, Semaphore } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
-import { onInterrupt, openChatTerminal } from "#platform"
+import { Interrupts, openChatTerminal } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
 import type { Execution } from "../execution/Execution.ts"
 import type { ExecutionEvent, RunOutcome } from "../execution/step.ts"
@@ -136,12 +136,8 @@ const converse = (chat: Conversation) =>
     const messageStore = yield* MessageStore
     const threadStore = yield* ThreadStore
     const supervisor = yield* ThreadSupervisor
-    const interrupts = yield* Queue.make<void>()
-    yield* Effect.acquireRelease(
-      Effect.sync(() => onInterrupt(() => Queue.offerUnsafe(interrupts, undefined))),
-      (remove) => Effect.sync(remove),
-    )
-    const interrupt = Effect.as(Queue.take(interrupts), { kind: "interrupt" } as const)
+    const take = Queue.take(yield* (yield* Interrupts).listen)
+    const interrupt = Effect.as(take, { kind: "interrupt" } as const)
     const closed = Effect.as(terminal.outputClosed, { kind: "closed" } as const)
     const write = (text: string) => terminal.write(chat.clean(text))
     const own = new Set<number>()

@@ -1,7 +1,7 @@
 import type { Message } from "@standardagents/spec"
-import { Console, Duration, Effect, Option } from "effect"
+import { Console, Duration, Effect, Option, Queue } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
-import { onInterrupt } from "#platform"
+import { Interrupts } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
 import { HookTimeout } from "../execution/hooks.ts"
 import type { ExecutionEvent } from "../execution/step.ts"
@@ -94,31 +94,19 @@ const answerInterrupts =
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | ThreadSupervisor> =>
     Effect.gen(function* () {
       const supervisor = yield* ThreadSupervisor
-      const context = yield* Effect.context<never>()
-      const sender = yield* Effect.fiber
-      let stopping = false
-      const remove = onInterrupt(() => {
-        Effect.runForkWith(context)(
-          Effect.gen(function* () {
-            const controlled = yield* stopping ? supervisor.abort(threadId, true) : supervisor.stop(threadId)
-            if (!controlled) return sender.interruptUnsafe(sender.id)
-            if (stopping) {
-              remove()
-              yield* identify(`aborting thread ${threadId}`)
-            } else {
-              stopping = true
-              yield* identify(
-                `stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`,
-              )
-            }
-          }),
-        )
+      const take = Queue.take(yield* (yield* Interrupts).listen)
+      const signals = Effect.gen(function* () {
+        yield* take
+        if (!(yield* supervisor.stop(threadId))) return yield* Effect.interrupt
+        yield* identify(`stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`)
+        yield* take
+        if (!(yield* supervisor.abort(threadId, true))) return yield* Effect.interrupt
+        yield* identify(`aborting thread ${threadId}`)
+        yield* take
+        return yield* Effect.interrupt
       })
-      return yield* Effect.ensuring(
-        effect,
-        Effect.sync(() => remove()),
-      )
-    })
+      return yield* Effect.raceFirst(effect, signals)
+    }).pipe(Effect.scoped)
 
 export const runCommand = Command.make(
   "run",
