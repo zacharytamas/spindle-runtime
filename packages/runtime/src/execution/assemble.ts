@@ -14,7 +14,7 @@ import type { Execution } from "./Execution.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { countHooks, has, transformHooks } from "./hooks.ts"
-import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
+import { copyRequestMessages, fromLLMMessage, toLLMMessage } from "./llm-history.ts"
 import type { WriteContext } from "./messages.ts"
 import type { StepEvents } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
@@ -385,9 +385,13 @@ export const assembleRequest = Effect.fnUntraced(function* (
       copyInitial: (messages) => messages.map(copyMessage),
     })
     if (filtered !== snapshot) {
-      const byId = new Map(rows.map((row) => [row.message.id, row]))
-      historyRows = filtered.map((message) => {
-        const row = byId.get(message.id)
+      let byId: Map<string, (typeof rows)[number]> | undefined
+      historyRows = filtered.map((message, index) => {
+        let row = rows[index]
+        if (row?.message.id !== message.id) {
+          byId ??= new Map(rows.map((row) => [row.message.id, row]))
+          row = byId.get(message.id)
+        }
         return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
       })
     }
@@ -397,7 +401,9 @@ export const assembleRequest = Effect.fnUntraced(function* (
   const transformed = toProviderMessages(historyRows, view)
   yield* record("assemble", `transform, ${transformed.length} provider messages`)
   const prefiltered = has(hooks, "prefilter_llm_history")
-    ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
+    ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage), {
+        copyInitial: copyRequestMessages,
+      })).map(fromLLMMessage)
     : transformed
   // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
   // put back.

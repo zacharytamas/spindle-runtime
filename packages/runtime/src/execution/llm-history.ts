@@ -85,6 +85,21 @@ export const toLLMMessage = (message: ProviderMessage): RequestMessage => {
   }
 }
 
+// toLLMMessage creates each outer record. Clone the nested records together since two calls can share extra content.
+export function copyRequestMessages(messages: RequestMessage[]) {
+  const nested = new Map<number, RequestMessage>()
+  const copies = messages.map((message, index) => {
+    if (
+      Array.isArray(message.content) ||
+      (message.role === "assistant" && (message.tool_calls || message.reasoning_details))
+    )
+      nested.set(index, message)
+    return { ...message }
+  })
+  for (const [index, message] of structuredClone(nested)) copies[index] = message
+  return copies
+}
+
 const callFrom = (entry: typeof call.Type): ProviderToolCallPart => ({
   id: entry.id,
   name: entry.function.name,
