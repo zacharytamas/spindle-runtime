@@ -302,6 +302,9 @@ async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
     yield* events
     events.length = 0
   }
+  // An endpoint may end its last event without the blank line. The response is complete, so the event counts.
+  parser.feed(`${decoder.decode()}\n\n`)
+  yield* events
 }
 
 interface WireCall {

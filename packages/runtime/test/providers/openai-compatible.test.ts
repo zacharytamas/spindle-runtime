@@ -301,6 +301,17 @@ describe("openaiCompatible", () => {
     ])
   })
 
+  it("delivers a final event that the endpoint did not end with a blank line", async () => {
+    const whole = await collect(
+      await openaiCompatible({ apiKey: "", fetch: transport(() => sse(streamed)).fetch }).stream(request),
+    )
+    for (const ending of ["", "\n", "\r\n", "\r"]) {
+      const body = streamed.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n") + ending
+      const { fetch } = transport(() => new Response(body))
+      expect(await collect(await openaiCompatible({ apiKey: "", fetch }).stream(request))).toEqual(whole)
+    }
+  })
+
   it("ends a stream cut off before a finish reason with a retryable error and no tool-call-done", async () => {
     const cut = streamed.slice(0, 5).map((event) => `data: ${JSON.stringify(event)}\n\n`)
     for (const ending of ["data: [DONE]\n\n", ""]) {
