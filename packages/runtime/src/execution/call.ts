@@ -8,7 +8,7 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Predicate, Result, Stream } from "effect"
+import { Data, Effect, type Fiber, Predicate, Schedule, Stream } from "effect"
 import { isTimeout } from "../providers/timeout.ts"
 import type { SetupError } from "./turn.ts"
 
@@ -305,13 +305,7 @@ export interface ModelCall {
   finishReason?: ProviderFinishReason
   usage?: ProviderUsage
   // Providers section 7: origin and upstream are for logs, so each attempt keeps them, a recovered one included.
-  error?: {
-    readonly message: string
-    readonly code: ProviderErrorCode
-    readonly statusCode?: number
-    readonly origin?: string
-    readonly upstream?: string
-  }
+  error?: Pick<ProviderFailure, "message" | "code" | "statusCode" | "origin" | "upstream">
   rejected?: string
   images?: number
   providerTools?: number
@@ -321,6 +315,7 @@ export interface ModelCall {
 
 export interface CallContext {
   readonly stopped: () => boolean
+  readonly waitForStop: Effect.Effect<void>
   readonly step: number
   // Yields the provider for one backend request. Infrastructure Providers, Per-request Transport: an extension
   // with createFetch is built again for every request, and a retry is a request.
@@ -332,9 +327,6 @@ export interface CallContext {
   readonly record: (detail: string) => Effect.Effect<void>
   readonly streamed?: StreamedCalls
 }
-
-const backoff = (failure: ProviderFailure, attempt: number) =>
-  failure.retryAfter === undefined ? 500 * 2 ** (attempt - 1) : Math.min(failure.retryAfter, 60) * 1000
 
 const violation = (response: ModelResponse, toolChoice: CallContext["toolChoice"]) => {
   if (toolChoice === "required" && response.calls.size === 0)
@@ -368,7 +360,8 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
 }
 
 export const callModel = Effect.fn("callModel")(function* (context: CallContext, request: ProviderRequest) {
-  for (let attempt = 1; ; attempt++) {
+  const requestOnce = Effect.gen(function* () {
+    const attempt = (yield* Schedule.CurrentMetadata).attempt + 1
     if (context.stopped()) return undefined
     const provider = yield* context.provider
     yield* context.record(`${provider.name} ${request.model} attempt ${attempt}`)
@@ -378,24 +371,21 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     const started: Array<StreamedCall> = []
     const abandon = () =>
       started.length === 0 || context.streamed === undefined ? Effect.void : context.streamed.abandoned(started)
-    const result = yield* Effect.result(streamResponse(provider, request, context.streamed, started))
-    if (Result.isFailure(result)) {
-      yield* abandon()
-      const failure = result.failure
-      const { message, code, statusCode, origin, upstream } = failure
-      log.error = {
-        message,
-        code,
-        ...(statusCode === undefined ? {} : { statusCode }),
-        ...(origin === undefined ? {} : { origin }),
-        ...(upstream === undefined ? {} : { upstream }),
-      }
-      if (context.stopped()) return undefined
-      if (!failure.retryable || attempt > context.retries) return yield* failure
-      yield* Effect.sleep(backoff(failure, attempt))
-      continue
-    }
-    const response = result.success
+    const response = yield* streamResponse(provider, request, context.streamed, started).pipe(
+      Effect.tapError((failure) =>
+        Effect.gen(function* () {
+          yield* abandon()
+          const { message, code, statusCode, origin, upstream } = failure
+          log.error = {
+            message,
+            code,
+            ...(statusCode === undefined ? {} : { statusCode }),
+            ...(origin === undefined ? {} : { origin }),
+            ...(upstream === undefined ? {} : { upstream }),
+          }
+        }),
+      ),
+    )
     const { finish } = response
     log.finishReason = finish.finishReason
     log.usage = finish.usage
@@ -415,8 +405,27 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     if (rejected === undefined) return response
     log.rejected = rejected
     yield* abandon()
-    if (context.stopped()) return undefined
-    if (attempt > context.retries)
-      return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
-  }
+    return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
+  })
+  const policy = Schedule.exponential(500).pipe(
+    Schedule.upTo({ times: context.retries }),
+    Schedule.while(
+      ({ input }) =>
+        !context.stopped() &&
+        (input instanceof ResponseRejected || (input instanceof ProviderFailure && input.retryable)),
+    ),
+    Schedule.modifyDelay(({ input, duration }) => {
+      if (!(input instanceof ProviderFailure)) return Effect.succeed(0)
+      const delay = input.retryAfter === undefined ? duration : Math.min(input.retryAfter, 60) * 1000
+      // A graceful stop wakes the backoff, but lets a request already streaming reach its boundary.
+      return Effect.as(Effect.raceFirst(Effect.sleep(delay), context.waitForStop), 0)
+    }),
+  )
+  return yield* requestOnce.pipe(
+    Effect.retry(policy),
+    Effect.catchIf(
+      (error) => error._tag !== "SetupError" && context.stopped(),
+      () => Effect.succeed(undefined),
+    ),
+  )
 })

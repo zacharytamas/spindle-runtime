@@ -272,6 +272,7 @@ function advance(side: SideScope, thread: ThreadScope, retries: number, stepCap:
   const model = {
     provider,
     stopped: () => run.stopAtBoundary() !== undefined,
+    waitForStop: run.waitForStop,
     retries,
     calls: modelCalls,
     pending,
