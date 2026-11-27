@@ -8,14 +8,14 @@ Milestone 1 closes when none of its ledger statements is `planned`, and every `p
 
 - A box is checked only when the thing it names is true on `main`.
 - The seven rules of `docs/plans/milestones.md` apply. The ones that shape this plan are short stacks, tests before the build, and review depth by risk.
-- The four pull requests are independent of each other. None is stacked on another.
+- The five pull requests are independent of each other. None is stacked on another.
 
 ## Program checklist
 
 ### Order and limits
 
 - [ ] At most three pull requests are open at a time. The trail pull request, #9, is not counted, because it holds no code and nothing is stacked on it.
-- [ ] M1c-1, M1c-2 and M1c-3 start together from `main`. M1c-4 starts when one of them has landed.
+- [ ] M1c-1, M1c-2 and M1c-3 start together from `main`. M1c-4 and M1c-5 start when one of them has landed.
 - [ ] A pull request that lands second or third is rebased onto `main` by its owner or by the root. `ledger.json` is the one file all four touch.
 
 ### Roles
@@ -88,6 +88,17 @@ Each item is a test against a local server that sends the bytes named, with no r
 - [ ] Tests for the four rules exist and fail before the build.
 - [ ] The build passes them, and scenarios O11 and O12 still pass unchanged.
 - [ ] An Opus reading review of thirty minutes finds no stored data lost or changed, no tool that runs twice, no two executions of one thread, and no thread that cannot continue.
+
+## Close the gaps the sweep found (M1c-5)
+
+M1c-1 could change no runtime source. Its tests showed that eleven statements need code, and its ledger reasons name each gap. This pull request takes the five that need no decision from the operator.
+
+- [ ] `specification:threads:b97f0023`. `getMessages` refuses an unknown order. A message id or a value key that is not a string is refused. `injectMessage(null)` rejects through its promise and does not throw.
+- [ ] `specification:threads:86d51bef`. `instanceEnv` rejects when its source fails, and still resolves to undefined for a key that is absent. The divergence entry and `docs/design/secrets.md` change with it.
+- [ ] `distribution:packaging:3b8a316c`. A packed tool whose `uses` names an entry agent of a package it does not include is rejected.
+- [ ] `specification:threads/messages:778b4467`. The caller message of a programmatic `queueTool` call records no prompt, because no prompt produced it.
+- [ ] `specification:threads/execution-state:04d1538b`. The create hooks of an inbound queued message see the execution that delivers it.
+- [ ] Left for the operator, and not built here. Direct execution from a hook or on a handle at rest (`39260b1a`, `a1ac0a36`, `dc7d7df0`, `9090af10`), and whether a user-role `injectMessage` at rest starts an execution (`6e443a4c`).
 
 ## Close the program
 
