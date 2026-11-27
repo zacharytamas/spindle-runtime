@@ -19,7 +19,7 @@ The lead wrote this section on 2026-11-26, after reading the rest of the note. W
    - A process that exits in an orderly way settles its aborting flows as `idle` with the abort's reason before it exits, because its callbacks end with it. `spindle run` after a second Ctrl-C does this.
    - A flow that lost its thread to a recovery no longer holds anything back. The recovery was another process's decision, or the operator's with `--force`, and rule 1 refuses the old flow's writes.
 
-   Before settling a success or failure, or continuing with queued work, the flow waits for every callback it started to return or time out. This includes nested tools and hooks started by writes the caller did not await. A nested tool can still write through its live handle during the wait, and an abort follows the rules above.
+   Before settling a success or failure, or continuing with queued work, the flow waits for every callback it started to return or time out. This includes nested tools and hooks started by writes the caller did not await. A nested tool can still write through its live handle during the wait, and an abort follows the rules above. A nested call counts from the moment its tool code is entered, so one that is still checking its arguments when the flow ends is not waited for.
 
    If the process is killed while it waits, the thread reads `failed` with `execution_lost` and the queue waits for the next trigger. Nothing is persisted to wake it.
 6. A handle given to a tool or a hook stops working when that tool or hook returns, rejects, times out, or is aborted. A write that was submitted before that moment and commits after it is checked again at commit, and is refused. **Operator's choice, question 1 of the note.**
