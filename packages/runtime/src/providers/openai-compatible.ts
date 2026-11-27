@@ -168,6 +168,7 @@ export const requestBody = (request: ProviderRequest, stream: boolean): Json => 
 }
 
 const codeForStatus = (status: number): ProviderErrorCode => {
+  if (status === 408) return "timeout"
   if (status === 429) return "rate_limit"
   if (status === 401 || status === 403) return "auth_error"
   if (status === 400 || status === 404 || status === 422) return "invalid_request"
