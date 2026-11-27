@@ -12,6 +12,7 @@ Spindle reports a failed or timed-out load and continues checking the other defi
 A call to `process.exit`, an uncaught exception, or an unhandled rejection during loading also counts as an error.
 Spindle listens through one more event-loop turn after loading, then restores the exit function and removes its listeners.
 A load error makes validation fail and prevents a run from starting.
+The guard covers loading only. It is there for a mistake, such as a script that exits when it is done. A definition that calls `process.exit` from a getter, which Spindle reads later while it checks the definition, still ends the command.
 A timeout ends the wait. Code that blocks the JavaScript thread can still block the command, and work scheduled by a definition may outlive the load.
 
 ## What can cross the boundary
