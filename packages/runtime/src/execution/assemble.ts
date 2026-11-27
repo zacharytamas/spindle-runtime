@@ -1,6 +1,5 @@
 import type {
   AttachmentRef,
-  LLMMessage,
   Message,
   PromptDefinition,
   ProviderAssistantMessage,
@@ -8,7 +7,6 @@ import type {
   ProviderReasoningDetail,
   ProviderRequest,
   ProviderToolCallPart,
-  ProviderUserMessage,
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
@@ -16,6 +14,7 @@ import type { Execution } from "./Execution.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import type { History } from "./history.ts"
 import { countHooks, has, transformHooks } from "./hooks.ts"
+import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
 import type { WriteContext } from "./messages.ts"
 import type { StepEvents } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
@@ -41,7 +40,7 @@ export const promptScope = (turn: Turn): EnvScope => ({
 // against the variables and env of the prompt being rendered, never those of the included one. Prompts section
 // 2.1: a system prompt holds no secret. An env part may name only a variable that the rendered prompt declares as
 // text, that nothing marks secret, and that a definition supplies, and the finished text may hold no barred value.
-export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: Secrets) {
+const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: Secrets) {
   const root = turn.prompt
   const variables = root.value.variables ?? []
   const scope = promptScope(turn)
@@ -97,21 +96,25 @@ const holdsSecret = (text: string, secrets: Secrets) =>
   [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
 
 // Runs on the finished system prompt, after after_system_message, so that a hook cannot put a secret into it either.
-export const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
+const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
   holdsSecret(text, secrets)
-    ? new SetupError({
-        message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
-      })
+    ? Effect.fail(
+        new SetupError({
+          message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
+        }),
+      )
     : Effect.void
 
 // Runs after the last request hook, so that a system message that filter_messages or prefilter_llm_history adds is
 // held to the rule of the system prompt.
-export const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
+const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
   messages.some((message) => message.role === "system" && holdsSecret(message.content, secrets))
-    ? new SetupError({
-        message:
-          "A system message in the request to the model holds a secret value. A system message never holds a secret.",
-      })
+    ? Effect.fail(
+        new SetupError({
+          message:
+            "A system message in the request to the model holds a secret value. A system message never holds a secret.",
+        }),
+      )
     : Effect.void
 
 export interface HistoryView {
@@ -294,95 +297,13 @@ export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: His
   return messages
 }
 
-// Hooks section 3.3 hands prefilter_llm_history the history in chat completion format, the shape of LLMMessage.
-// A tool error keeps its kind in tool_status, the field a stored tool message uses for it.
-export const toLLMMessage = (message: ProviderMessage): LLMMessage => {
-  switch (message.role) {
-    case "system":
-    case "user":
-      return { role: message.role, content: message.content }
-    case "assistant":
-      return {
-        role: "assistant",
-        content: message.content ?? null,
-        ...(message.toolCalls === undefined
-          ? {}
-          : {
-              tool_calls: message.toolCalls.map((call) => ({
-                id: call.id,
-                type: "function",
-                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
-              })),
-            }),
-        ...(message.reasoning == null ? {} : { reasoning_content: message.reasoning }),
-        ...(message.reasoningDetails === undefined ? {} : { reasoning_details: message.reasoningDetails }),
-      }
-    case "tool": {
-      const content = message.content
-      return {
-        role: "tool",
-        tool_call_id: message.toolCallId,
-        name: message.toolName,
-        ...(typeof content === "string" || Array.isArray(content)
-          ? { content }
-          : content.type === "text"
-            ? { content: content.text }
-            : { content: content.error, tool_status: "error" }),
-      }
-    }
-  }
-}
-
-const callFrom = (entry: Record<string, unknown>): ProviderToolCallPart => {
-  const fn = entry.function as Record<string, unknown>
-  return {
-    id: entry.id as string,
-    name: fn.name as string,
-    arguments: (typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments) as Record<string, unknown>,
-    ...(isRecord(entry.extra_content) ? { extraContent: entry.extra_content } : {}),
-  }
-}
-
-// The way back from LLMMessage, for the array prefilter_llm_history returns. hooks.ts has checked each message
-// against the provider message types, so every field one of them holds is kept as it is. A field that no provider
-// message type has, such as the name of a user message, has nowhere to go.
-export const fromLLMMessage = (message: LLMMessage): ProviderMessage => {
-  switch (message.role) {
-    case "system":
-      return { role: "system", content: message.content as string }
-    case "user":
-      return { role: "user", content: message.content as ProviderUserMessage["content"] }
-    case "assistant":
-      return {
-        role: "assistant",
-        content: (message.content as string | null | undefined) ?? null,
-        ...(Array.isArray(message.tool_calls) ? { toolCalls: message.tool_calls.map(callFrom) } : {}),
-        ...(message.reasoning_content === undefined ? {} : { reasoning: message.reasoning_content }),
-        ...(Array.isArray(message.reasoning_details)
-          ? { reasoningDetails: message.reasoning_details as Array<ProviderReasoningDetail> }
-          : {}),
-      }
-    default:
-      return {
-        role: "tool",
-        toolCallId: message.tool_call_id as string,
-        toolName: message.name ?? "",
-        content:
-          message.tool_status === "error"
-            ? { type: "error", error: message.content as string }
-            : (message.content as ProviderUserMessage["content"]),
-      }
-  }
-}
-
-export const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
+const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
   if (message.role !== "assistant") return message
   const { reasoning: _reasoning, reasoningDetails: _details, ...rest } = message
   return rest
 }
 
-export const buildRequest = (
+const buildRequest = (
   turn: Turn,
   system: string,
   messages: ReadonlyArray<ProviderMessage>,

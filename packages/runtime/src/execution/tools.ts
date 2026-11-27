@@ -55,7 +55,7 @@ export const scopeFor = (turn: Turn, entry: PromptToolConfig | undefined): EnvSc
 
 const optionalString = (value: unknown) => value === undefined || typeof value === "string"
 
-const isToolResult = (value: unknown): value is ToolResult =>
+export const isToolResult = (value: unknown): value is ToolResult =>
   isRecord(value) &&
   (value.status === "success" || value.status === "error") &&
   optionalString(value.result) &&
@@ -124,24 +124,19 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }),
   )
   if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${returned.failure}`)
-  const read = yield* Effect.result(Effect.try({ try: () => fieldsOf(returned.success), catch: describe }))
+  const read = yield* Effect.result(Effect.try({ try: () => readResult(returned.success), catch: describe }))
   if (Result.isFailure(read)) return failed(`Reading the result of tool ${name} threw: ${read.failure}`)
   const result = read.success
-  if (!isToolResult(result))
+  if (result === undefined)
     return failed(
       `Tool ${name} returned a value that is not a ToolResult. A tool returns an object with status "success" or "error".`,
     )
   return result
 })
 
-// A ToolResult read once into a plain object, or undefined when the value is not one or reading it throws.
 export const readResult = (value: unknown): ToolResult | undefined => {
-  try {
-    const result = fieldsOf(value)
-    return isToolResult(result) ? result : undefined
-  } catch {
-    return undefined
-  }
+  const result = fieldsOf(value)
+  return isToolResult(result) ? result : undefined
 }
 
 export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {

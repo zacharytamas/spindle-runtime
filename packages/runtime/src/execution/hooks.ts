@@ -2,18 +2,18 @@ import type {
   AgentDefinition,
   HookExecutionSource,
   HookToolCall,
-  LLMMessage,
   Message,
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
-import { Clock, Context, Data, Duration, Effect } from "effect"
+import { Clock, Context, Data, Duration, Effect, Schema } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
-import { readResult } from "./tools.ts"
+import { isRequestHistory, type RequestMessage } from "./llm-history.ts"
+import { isToolResult, readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
 // Hooks section 1.2 asks for a timeout and names none. One setting covers every hook call.
@@ -36,7 +36,7 @@ interface ObserverArgs {
 interface Values {
   after_system_message: string
   filter_messages: ReadonlyArray<Message>
-  prefilter_llm_history: Array<LLMMessage>
+  prefilter_llm_history: Array<RequestMessage>
   before_create_message: Message
   before_update_message: Record<string, unknown>
   before_store_tool_result: ToolResult
@@ -63,8 +63,6 @@ interface Transform<V> {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
-
-const ROLES: ReadonlyArray<unknown> = ["system", "user", "assistant", "tool"]
 
 // A hook's return is user data. Reading it once into plain JSON data runs every getter here, so a getter that throws
 // fails that hook, no later read can throw, and the store can hold what is left.
@@ -98,29 +96,40 @@ export const TEXT_FIELDS = [
   "parent_id",
 ] as const
 
-const isText = (value: unknown) => value === undefined || value === null || typeof value === "string"
-const oneOf = (value: unknown, allowed: ReadonlyArray<unknown>) => value === undefined || allowed.includes(value)
-const optional = (value: unknown, test: (value: unknown) => boolean) => value === undefined || test(value)
-const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-const isString = (value: unknown) => typeof value === "string"
 // An id is a key that the store, a log line, and every reader hold as it is. Node's SQLite driver ends a string at a
 // NUL character, and UTF-8 has no encoding for a lone surrogate.
 const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}\uD800-\uDFFF]/u.test(id)
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
-const isMessage = (value: unknown): value is Message =>
-  isRecord(value) &&
-  isString(value.id) &&
-  isCount(value.created_at) &&
-  ROLES.includes(value.role) &&
-  (value.content === null || isString(value.content)) &&
-  TEXT_FIELDS.every((field) => isText(value[field])) &&
-  oneOf(value.tool_status, ["success", "error", null]) &&
-  oneOf(value.status, ["pending", "completed", "failed", null]) &&
-  optional(value.depth, isCount) &&
-  optional(value.silent, (silent) => typeof silent === "boolean") &&
-  optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
-  optional(value.metadata, isRecord)
+const text = Schema.optional(Schema.NullOr(Schema.String))
+const matchesMessage = Schema.is(
+  Schema.Struct({
+    id: Schema.String,
+    role: Schema.Literals(["system", "user", "assistant", "tool"]),
+    created_at: Schema.Natural,
+    content: Schema.NullOr(Schema.String),
+    name: text,
+    tool_calls: text,
+    tool_call_id: text,
+    reasoning_content: text,
+    reasoning_details: text,
+    prompt: text,
+    parent_id: text,
+    tool_status: Schema.optional(Schema.NullOr(Schema.Literals(["success", "error"]))),
+    status: Schema.optional(Schema.NullOr(Schema.Literals(["pending", "completed", "failed"]))),
+    depth: Schema.optional(Schema.Natural),
+    silent: Schema.optional(Schema.Boolean),
+    metadata: Schema.optional(Schema.declare(isRecord)),
+    attachments: Schema.optional(
+      Schema.NullOr(
+        Schema.declare(
+          (list): list is NonNullable<Message["attachments"]> => Array.isArray(list) && list.every(isAttachmentRef),
+        ),
+      ),
+    ),
+  }),
+)
+const isMessage = (value: unknown): value is Message => matchesMessage(value)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
 // change which message a record is, so the role, the tool calls, and a tool result's call id stay as the hook was
@@ -138,87 +147,6 @@ const acceptMessage = (returned: unknown, current: Message): Message | typeof IN
     (current.role !== "tool" || message.tool_call_id === current.tool_call_id)
     ? message
     : INVALID
-}
-
-const parses = (text: string) => {
-  try {
-    return isRecord(JSON.parse(text))
-  } catch {
-    return false
-  }
-}
-
-const DETAIL = ["auto", "low", "high"]
-
-// The ContentPart union of the package's provider types.
-const isContentPart = (value: unknown) => {
-  if (!isRecord(value)) return false
-  switch (value.type) {
-    case "text":
-      return isString(value.text)
-    case "image":
-      return isString(value.data) && isString(value.mediaType) && oneOf(value.detail, DETAIL)
-    case "image_url":
-      return isRecord(value.image_url) && isString(value.image_url.url) && oneOf(value.image_url.detail, DETAIL)
-    case "file":
-      return isString(value.data) && isString(value.mediaType) && optional(value.filename, isString)
-    default:
-      return false
-  }
-}
-
-// Array.prototype.every skips a hole in an array, and the request conversion reads a hole as undefined.
-const isListOf = (value: unknown, test: (item: unknown) => boolean) =>
-  Array.isArray(value) && Array.from(value).every(test)
-
-const isParts = (value: unknown) => isListOf(value, isContentPart)
-
-const isCall = (value: unknown) =>
-  isRecord(value) &&
-  isString(value.id) &&
-  isRecord(value.function) &&
-  isString(value.function.name) &&
-  ((isRecord(value.function.arguments) && isString(toJson(value.function.arguments))) ||
-    (isString(value.function.arguments) && parses(value.function.arguments))) &&
-  optional(value.extra_content, (extra) => isRecord(extra) && isString(toJson(extra)))
-
-const DETAIL_TYPES: ReadonlyArray<unknown> = ["text", "summary", "encrypted"]
-
-// The ProviderReasoningDetail type of the package, the shape every provider reads a detail in.
-const isReasoningDetail = (value: unknown) =>
-  isRecord(value) &&
-  DETAIL_TYPES.includes(value.type) &&
-  optional(value.id, isString) &&
-  optional(value.text, isString) &&
-  optional(value.data, isString) &&
-  optional(value.format, isString)
-
-// Hooks section 3.3 makes the returned array the provider request history, so each message must be one that a
-// provider message type of the package holds as it is. Only a user or a tool message may hold content parts.
-const isLLMMessage = (value: unknown) => {
-  if (!isRecord(value)) return false
-  switch (value.role) {
-    case "system":
-      return isString(value.content)
-    case "user":
-      return isString(value.content) || isParts(value.content)
-    case "assistant":
-      return (
-        optional(value.content, (content) => content === null || isString(content)) &&
-        optional(value.tool_calls, (calls) => isListOf(calls, isCall)) &&
-        optional(value.reasoning_content, isString) &&
-        optional(value.reasoning_details, (details) => isListOf(details, isReasoningDetail))
-      )
-    case "tool":
-      return (
-        isString(value.tool_call_id) &&
-        optional(value.name, isString) &&
-        oneOf(value.tool_status, ["success", "error"]) &&
-        (isString(value.content) || (value.tool_status !== "error" && isParts(value.content)))
-      )
-    default:
-      return false
-  }
 }
 
 // The array a request hook returns shapes one request and is never stored, so a structured clone, which is cheaper
@@ -245,24 +173,23 @@ const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
   return patch
 }
 
-const isNewFile = (value: unknown) =>
-  isRecord(value) &&
-  isString(value.name) &&
-  isString(value.mimeType) &&
-  isString(value.data) &&
-  optional(value.width, isCount) &&
-  optional(value.height, isCount)
+const isNewFile = Schema.is(
+  Schema.Struct({
+    name: Schema.String,
+    mimeType: Schema.String,
+    data: Schema.String,
+    width: Schema.optional(Schema.Natural),
+    height: Schema.optional(Schema.Natural),
+  }),
+)
 
-// Hooks section 6.3: each attachment is a new file or a reference to a stored one.
 const acceptResult = (returned: unknown) => {
   const result = readResult(returned)
-  const value = result === undefined ? INVALID : plain(result)
-  return isRecord(value) &&
-    optional(
-      value.attachments,
-      (list) => Array.isArray(list) && list.every((item) => isAttachmentRef(item) || isNewFile(item)),
-    )
-    ? (value as unknown as ToolResult)
+  if (result === undefined) return INVALID
+  const value = plain(result)
+  return isToolResult(value) &&
+    (value.attachments === undefined || value.attachments.every((item) => isAttachmentRef(item) || isNewFile(item)))
+    ? value
     : INVALID
 }
 
@@ -299,7 +226,7 @@ const transforms: { [K in keyof Values]: Transform<Values[K]> } = {
     where: "after the history becomes provider messages, before the request",
     accept: (returned) => {
       const value: unknown = structuredClone(returned)
-      return isListOf(value, isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
+      return isRequestHistory(value) ? value : INVALID
     },
     expects: "an array of messages that provider messages can hold",
     kept: "kept the provider messages the hook was given",
