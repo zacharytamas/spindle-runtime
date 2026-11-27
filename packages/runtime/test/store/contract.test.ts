@@ -29,6 +29,7 @@ const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason
   )
 const claim = { holder: "fixture", flowId: "fixture-flow" }
 const inMemory = storeAt(":memory:")
+const epochDate = new Date(0)
 
 const withDatabaseFile = <A, E, R>(use: (filename: string) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -507,8 +508,10 @@ describe("ThreadStore", () => {
           }).pipe(Effect.provide(storeAt(filename)))
           const contents = yield* Effect.gen(function* () {
             const store = yield* ThreadStore
-            return yield* Effect.forEach(ids, (id) =>
-              Effect.map(store.getMessages(id, { order: "asc" }), (r) => r.messages.map((m) => m.content)),
+            return yield* Effect.forEach(
+              ids,
+              (id) => Effect.map(store.getMessages(id, { order: "asc" }), (r) => r.messages.map((m) => m.content)),
+              { concurrency: 1 },
             )
           }).pipe(Effect.provide(storeAt(filename)))
           expect(contents).toEqual([
@@ -1040,7 +1043,7 @@ describe("ThreadStore", () => {
             () => 1,
             Symbol("s"),
             [1, undefined],
-            new Date(0),
+            epochDate,
             new Map(),
             circular,
           ]
@@ -1093,7 +1096,7 @@ describe("ThreadStore", () => {
             },
           ),
         )
-        for (const value of [new Money(), inherited, new Date(0), new Map(), rootWithToJson, throwingPrototype]) {
+        for (const value of [new Money(), inherited, epochDate, new Map(), rootWithToJson, throwingPrototype]) {
           const error = yield* Effect.flip(store.setValue(thread.id, "odd", value))
           expect(error._tag).toBe("ValueNotJson")
         }

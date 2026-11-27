@@ -32,6 +32,31 @@
   },
   "overrides": [
     {
+      "includes": ["**", "!packages/runtime/src/platform/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "./**/src/platform",
+                      "./**/src/platform/**",
+                      "../**/src/platform",
+                      "../**/src/platform/**"
+                    ],
+                    "message": "Use #platform to select the adapter for the current runtime."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/runtime/**", "!packages/runtime/src/platform/**", "!packages/runtime/scripts/**"],
       "linter": {
         "rules": {
@@ -42,6 +67,10 @@
                 "patterns": [
                   {
                     "group": [
+                      "./**/platform",
+                      "./**/platform/**",
+                      "../**/platform",
+                      "../**/platform/**",
                       "node:*",
                       "node:*/**",
                       "bun",

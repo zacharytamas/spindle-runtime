@@ -371,12 +371,12 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
   if (getResponseMetadata === undefined) return Effect.void
   return Effect.tryPromise({
     try: (signal) => getResponseMetadata(summary, signal),
-    catch: (cause) => cause,
+    catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
   }).pipe(
     Effect.timeoutOption("30 seconds"),
     Effect.match({
-      onFailure: (cause) => {
-        log.metadataError = cause instanceof Error ? cause.message : String(cause)
+      onFailure: (message) => {
+        log.metadataError = message
       },
       onSuccess: (option) => {
         if (option._tag === "Some") log.metadata = option.value

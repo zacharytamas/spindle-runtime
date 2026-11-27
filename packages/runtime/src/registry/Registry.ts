@@ -276,23 +276,23 @@ export const fieldIssues = (
     : [issue(location.path, whole)]
 }
 
-export const importFile = (file: string, url: Effect.Effect<URL, unknown>) =>
-  url.pipe(
+export const importFile = (file: string, url: Effect.Effect<URL, unknown>) => {
+  const failure = (cause: unknown) =>
+    new LoadError({
+      issues: fieldIssues(
+        cause,
+        { file, path: "" },
+        (message) => `The file failed to load. ${message}`,
+        describeImportFailure(cause),
+      ),
+    })
+  return url.pipe(
+    Effect.mapError(failure),
     Effect.flatMap((href) =>
       Effect.tryPromise({
         try: (): Promise<Record<string, unknown>> => import(href.href),
-        catch: (cause) => cause,
+        catch: failure,
       }),
     ),
-    Effect.mapError(
-      (cause) =>
-        new LoadError({
-          issues: fieldIssues(
-            cause,
-            { file, path: "" },
-            (message) => `The file failed to load. ${message}`,
-            describeImportFailure(cause),
-          ),
-        }),
-    ),
   )
+}

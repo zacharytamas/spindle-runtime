@@ -70,7 +70,7 @@ const bench = Effect.gen(function* () {
   const supervisor = yield* ThreadSupervisor
   const ids: Array<string> = []
   for (let index = 0; index < threads; index++) ids.push((yield* createThread("assistant")).id)
-  const states = yield* Effect.forEach(ids, stateAtRest)
+  const states = yield* Effect.forEach(ids, stateAtRest, { concurrency: 1 })
   const sequential = args.includes("--sequential")
   const rest = (id: string) =>
     Effect.gen(function* () {
@@ -125,10 +125,14 @@ const main = Effect.gen(function* () {
   }
   const threadId = required("thread")
   const state = yield* stateAtRest(threadId)
-  const done = yield* Effect.exit(Effect.tryPromise(() => act(state)))
+  const done = yield* Effect.exit(
+    Effect.tryPromise({
+      try: () => act(state),
+      catch: (cause) => (cause instanceof Error ? cause.message : "An error occurred in Effect.tryPromise"),
+    }),
+  )
   if (Exit.isFailure(done)) {
-    const error = Cause.squash(done.cause)
-    const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error
+    const cause = Cause.squash(done.cause)
     console.log(`refused ${cause instanceof Error ? cause.message : String(cause)}`)
     process.exitCode = 1
     return

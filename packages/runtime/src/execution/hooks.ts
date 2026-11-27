@@ -469,7 +469,7 @@ export const runHooks = <K extends Position>(
     if (hooks === undefined) return value
     const row = POSITIONS[position] as Row<Values[K]>
     const timeout = yield* HookTimeout
-    const check = options.check ?? (() => Effect.succeed(undefined))
+    const check = options.check ?? (() => Effect.undefined)
     let current = value
     for (const hook of hooks) {
       const call: HookCall = { hook: hook.id, position, depth: (options.depth ?? 0) + 1, expired: false }

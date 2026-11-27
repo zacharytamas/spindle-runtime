@@ -1,7 +1,46 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "classSelfMismatch": "error",
+          "duplicatePackage": "error",
+          "effectFnImplicitAny": "error",
+          "effectInFailure": "error",
+          "effectInVoidSuccess": "error",
+          "floatingEffect": "error",
+          "floatingEffectInVitest": "error",
+          "layerMergeAllWithDependencies": "error",
+          "lazyPromiseInEffectSync": "error",
+          "missingEffectContext": "error",
+          "missingEffectError": "error",
+          "missingLayerContext": "error",
+          "missingReturnYieldStar": "error",
+          "missingStarInYieldEffectGen": "error",
+          "nonObjectEffectServiceType": "error",
+          "overriddenSchemaConstructor": "error",
+          "promiseInEffectSuccess": "error",
+          "schemaLiteralNonFinite": "error",
+          "schemaOpaqueInstanceMember": "error",
+          "scopeInLayerEffect": "error",
+          "effectTryWithoutCatch": "warning",
+          "globalDateInEffect": "warning",
+          "globalErrorInEffectCatch": "warning",
+          "globalErrorInEffectFailure": "suggestion",
+          "missingConcurrencyOption": "warning",
+          "preferTypedSchemaDecoder": "warning",
+          "returnEffectInGen": "suggestion",
+          "schemaNumber": "suggestion",
+          "tryCatchInEffectGen": "suggestion",
+          "unknownInEffectCatch": "warning",
+          "unsafeEffectTypeAssertion": "suggestion",
+          "unstableApiUsage": "off"
+        }
+      }
+    ]
   },
   "include": ["packages/*/src", "packages/*/test", "packages/*/scripts", "vitest.config.ts"]
 }

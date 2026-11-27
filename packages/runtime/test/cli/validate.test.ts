@@ -3,9 +3,7 @@ import { Console, Effect, Exit, FileSystem, Path } from "effect"
 import { Command } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { PlatformLive, platformName } from "#platform"
-import { validateCommand } from "../../src/cli/validate.ts"
-
-const spindle = Command.make("spindle").pipe(Command.withSubcommands([validateCommand]))
+import { spindle } from "../../src/cli/main.ts"
 
 const run = (...args: ReadonlyArray<string>) =>
   Effect.gen(function* () {

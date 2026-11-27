@@ -1,13 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
+import { Clock, ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
 import { PlatformLive, SqliteLive } from "#platform"
-import { runCommand } from "../../src/cli/run.ts"
+import { spindle } from "../../src/cli/main.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
-
-const spindle = Command.make("spindle").pipe(Command.withSubcommands([runCommand]))
 
 const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
   Effect.gen(function* () {
@@ -88,14 +86,14 @@ describe("spindle run", () => {
 
   it.live("goes on after --hook-timeout and prints the hook's id on standard error without the message", () =>
     Effect.gen(function* () {
-      const started = Date.now()
+      const started = yield* Clock.currentTimeMillis
       const { exit, out, err } = yield* run(
         ["stuck", "-m", "private words", "--script", "@text-reply.json", "--hook-timeout", "0.2"],
         {},
         "hooks",
       )
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(Date.now() - started).toBeLessThan(5000)
+      expect((yield* Clock.currentTimeMillis) - started).toBeLessThan(5000)
       expect(out).toEqual(["Hello! How can I help?"])
       expect(err[0]).toBe(
         "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means.",
@@ -249,6 +247,19 @@ describe("spindle run", () => {
     }),
   )
 
+  it.effect("redacts a secret learned only by a thread creation hook", () =>
+    Effect.gen(function* () {
+      const { exit, out, err } = yield* run(
+        ["creation_secret", "-m", "hi", "--script", "@text-reply.json"],
+        { SPINDLE_CREATION_SECRET: "Hello!" },
+        "hooks",
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(out).toEqual(["[redacted] How can I help?"])
+      expect(err.join("\n")).not.toContain("Hello!")
+    }),
+  )
+
   it.effect("redacts the endpoint key and a three-character token from every printed line and the database", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
@@ -269,7 +280,7 @@ describe("spindle run", () => {
         ["assistant", null, null, "done"],
       ])
       const files = (yield* fs.readDirectory(path.dirname(db))).map((name) => path.join(path.dirname(db), name))
-      const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file))).map((bytes) =>
+      const stored = (yield* Effect.forEach(files, (file) => fs.readFile(file), { concurrency: 1 })).map((bytes) =>
         new TextDecoder().decode(bytes),
       )
       for (const secret of Object.values(secrets))
@@ -343,7 +354,7 @@ describe("spindle run", () => {
       const fetch = async (_input: string | URL | Request, _init?: RequestInit) => new Response(answers.shift() ?? "")
       const { exit, err } = yield* run(["assistant", "-m", "save", "--db", db], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       const messages = yield* storedMessages(db, err)
       expect(messages.map((m) => [m.role, m.content, m.tool_calls])).toEqual([
@@ -369,7 +380,7 @@ describe("spindle run", () => {
       }
       const { exit, out, err } = yield* run(["assistant", "-m", "hi", "--trace"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(sends).toBe(2)
       expect(out.filter((line) => line.startsWith("step 1 call "))).toEqual([
@@ -407,7 +418,7 @@ describe("spindle run", () => {
       }
       const { exit } = yield* run(["assistant", "-m", "save"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(bodies[1]?.messages[2]).toMatchObject({
         role: "assistant",
@@ -428,7 +439,7 @@ describe("spindle run", () => {
       const { exit, out, err } = yield* run(["assistant", "-m", "hi"], {
         SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1",
         SPINDLE_TEST_API_KEY: key,
-      }).pipe(Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)))
+      }).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch))
       expect(Exit.isFailure(exit)).toBe(true)
       expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Rejected Bearer [redacted] and [redacted]")
       expect([...out, ...err].join("\n")).not.toContain(key)

@@ -64,8 +64,8 @@ export const spawn = (gate: string, script: string, args: ReadonlyArray<string>,
       err,
       exit: handle.exitCode.pipe(
         Effect.map(Number),
-        Effect.catch(() => Effect.succeed(-1)),
-        Effect.flatMap((code) => Effect.as(Fiber.join(reading), code)),
+        Effect.orElseSucceed(() => -1),
+        Effect.tap(() => Fiber.join(reading)),
       ),
       // kill waits until the process exits, so it runs on its own fiber.
       signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
@@ -111,18 +111,14 @@ export const freeze = (child: Child) =>
 
 export const resume = (child: Child) => Effect.asVoid(command("kill", ["-CONT", String(child.pid)]))
 
-const fileSystem = Effect.gen(function* () {
-  return yield* FileSystem.FileSystem
-})
+export const exists = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(file))
 
-export const exists = (file: string) => Effect.flatMap(fileSystem, (fs) => fs.exists(file))
+export const touch = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(file, ""))
 
-export const touch = (file: string) => Effect.flatMap(fileSystem, (fs) => fs.writeFileString(file, ""))
-
-export const entries = (dir: string) => Effect.flatMap(fileSystem, (fs) => fs.readDirectory(dir))
+export const entries = (dir: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(dir))
 
 export const lines = (file: string) =>
-  Effect.flatMap(fileSystem, (fs) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
     Effect.map(fs.readFileString(file), (text) => text.split("\n").filter((line) => line !== "")),
   )
 

@@ -100,11 +100,8 @@ export const executeTool = Effect.fn("executeTool")(function* (
   const schema = tool.value.args ?? null
   let args: unknown
   if (schema !== null) {
-    const parsed = yield* Effect.result(
-      Effect.tryPromise({ try: () => schema.safeParseAsync(input), catch: (cause) => cause }),
-    )
-    if (Result.isFailure(parsed))
-      return failed(`Validating the arguments of ${name} threw: ${describe(parsed.failure)}`)
+    const parsed = yield* Effect.result(Effect.tryPromise({ try: () => schema.safeParseAsync(input), catch: describe }))
+    if (Result.isFailure(parsed)) return failed(`Validating the arguments of ${name} threw: ${parsed.failure}`)
     if (!parsed.success.success) {
       const issues = parsed.success.error.issues
         .map((issue) => `${issue.path.length === 0 ? "(arguments)" : issue.path.join(".")}: ${issue.message}`)
@@ -122,10 +119,10 @@ export const executeTool = Effect.fn("executeTool")(function* (
         invokeCallback(callback, pending, `tool ${name}`, () =>
           schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
         ),
-      catch: (cause) => cause,
+      catch: describe,
     }),
   )
-  if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${describe(returned.failure)}`)
+  if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${returned.failure}`)
   let result: unknown
   try {
     result = fieldsOf(returned.success)

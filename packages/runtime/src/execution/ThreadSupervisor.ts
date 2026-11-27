@@ -398,7 +398,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         settled: (threadId) =>
           Effect.suspend(() => {
             const local = live.get(threadId)
-            return local === undefined ? Effect.succeed(undefined) : Deferred.await(local.done)
+            return local === undefined ? Effect.undefined : Deferred.await(local.done)
           }),
         status: statusOf,
       })

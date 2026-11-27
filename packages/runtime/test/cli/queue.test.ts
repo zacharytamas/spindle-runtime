@@ -50,8 +50,8 @@ const spawn = (gate: string, script: string, args: ReadonlyArray<string>) =>
       err,
       exit: handle.exitCode.pipe(
         Effect.map(Number),
-        Effect.catch(() => Effect.succeed(-1)),
-        Effect.flatMap((code) => Effect.as(Fiber.join(reading), code)),
+        Effect.orElseSucceed(() => -1),
+        Effect.tap(() => Fiber.join(reading)),
       ),
       // kill waits until the process exits, so it runs on its own fiber.
       signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
@@ -70,22 +70,14 @@ const until = <E, R>(what: string, check: Effect.Effect<boolean, E, R>) =>
     return yield* Effect.die(new Error(`timed out waiting for ${what}`))
   })
 
-const fileSystem = Effect.gen(function* () {
-  return yield* FileSystem.FileSystem
-})
+const exists = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(file))
 
-const threadStore = Effect.gen(function* () {
-  return yield* ThreadStore
-})
+const touch = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(file, ""))
 
-const exists = (file: string) => Effect.flatMap(fileSystem, (fs) => fs.exists(file))
-
-const touch = (file: string) => Effect.flatMap(fileSystem, (fs) => fs.writeFileString(file, ""))
-
-const entries = (dir: string) => Effect.flatMap(fileSystem, (fs) => fs.readDirectory(dir))
+const entries = (dir: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(dir))
 
 const lines = (file: string) =>
-  Effect.flatMap(fileSystem, (fs) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
     Effect.map(fs.readFileString(file), (text) => text.split("\n").filter((line) => line !== "")),
   )
 
@@ -146,7 +138,7 @@ describe("spindle across processes", () => {
             (name) => name.startsWith(`request-${owner.pid}-`) || name.startsWith(`request-${first.pid}-`),
           ),
         ).toBe(true)
-        const messages = yield* Effect.flatMap(threadStore, (store) =>
+        const messages = yield* Effect.flatMap(ThreadStore, (store) =>
           Effect.map(store.getMessages(thread, { order: "asc", includeSilent: true }), (result) => result.messages),
         ).pipe(Effect.provide(storeAt(db)))
         const human = messages.filter((message) => message.role === "user").map((message) => message.content)
@@ -173,7 +165,7 @@ describe("spindle across processes", () => {
         )
         // An observer that opened the file before the crash, and two senders whose messages wait in the queue.
         const observer = yield* Layer.build(storeAt(db))
-        const store = yield* Effect.provide(threadStore, observer)
+        const store = yield* Effect.provide(ThreadStore, observer)
         const x = yield* spindle(gate, ["send", thread, "-m", "x", ...project, "--db", db])
         yield* until(
           "x to queue",
@@ -239,7 +231,7 @@ describe("spindle across processes", () => {
         yield* run.signal("SIGKILL")
         yield* run.exit
         expect(yield* token.exit).toBe(1)
-        const store = yield* Effect.provide(threadStore, yield* Layer.build(storeAt(db)))
+        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
         const stored = (yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages
         expect(shape(stored)).toEqual([
           ["user", `call:${calls}`],
@@ -353,7 +345,7 @@ describe("spindle across processes", () => {
           "the sender to queue its message",
           Effect.sync(() => waiter.err.some((line) => line.includes("waits in its queue"))),
         )
-        const store = yield* Effect.provide(threadStore, yield* Layer.build(storeAt(db)))
+        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
         const claim = yield* store.holderOf(thread)
         const entry = yield* store.nextQueued(thread)
         expect(claim?.pid).toBe(owner.pid)
@@ -418,7 +410,7 @@ describe("spindle across processes", () => {
           `spindle: aborting thread ${thread}`,
           `spindle: idle (aborted_by_user) after 1 step, thread ${thread}`,
         ])
-        const store = yield* Effect.provide(threadStore, yield* Layer.build(storeAt(db)))
+        const store = yield* Effect.provide(ThreadStore, yield* Layer.build(storeAt(db)))
         const stored = (yield* store.getMessages(thread, { order: "asc", includeSilent: true })).messages
         expect(stored.at(-1)).toMatchObject({ role: "tool", tool_status: "error", content: CLOSING.aborted })
         expect((yield* store.getThread(thread)).terminated).toBeNull()

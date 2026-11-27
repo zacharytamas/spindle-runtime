@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, FileSystem } from "effect"
+import { Clock, Effect, FileSystem } from "effect"
 import { PlatformLive } from "#platform"
 import {
   call,
@@ -27,11 +27,8 @@ const queue = fixture("queue")
 const stepLoop = fixture("step-loop")
 const hooks = fixture("hooks")
 
-const fileSystem = Effect.gen(function* () {
-  return yield* FileSystem.FileSystem
-})
-
-const write = (file: string, text: string) => Effect.flatMap(fileSystem, (fs) => fs.writeFileString(file, text))
+const write = (file: string, text: string) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(file, text))
 
 const threadsIn = (db: string) =>
   Effect.gen(function* () {
@@ -189,10 +186,10 @@ describe("spindle chat", () => {
     () =>
       Effect.gen(function* () {
         const { gate, db } = yield* setup
-        const started = Date.now()
+        const started = yield* Clock.currentTimeMillis
         const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
         yield* prompt(session, 1)
-        const waited = Date.now() - started
+        const waited = (yield* Clock.currentTimeMillis) - started
         expect(session.out()).toBe("> ")
         expect(linesOf(session.err())).toEqual([note.thread(yield* threadOf(session))])
         expect(waited).toBeLessThan(5000)
