@@ -40,7 +40,8 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts parent hook disclosures whose object keys are in another order",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields",
+			"packages/runtime/test/registry/validate-shapes.test.ts > validate shapes > rejects a parent hook disclosure for no entry agent or for an entry agent without parentHooks"
 		],
 		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, read index by index and key by key, so a missing element is a difference. It also rejects a required hook that the package does not define. M3b owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
 	},
@@ -1346,7 +1347,8 @@
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate-shapes.test.ts > validate shapes > rejects effect args that are not a Zod object schema or null and accepts both"
 		],
 		"reason": "M1-2 rejects an effect file with no default export and a default export that is not the [description, args, handler] tuple. defineEffect returns that tuple with no brand, so the registry cannot tell whether defineEffect made it."
 	},
@@ -1899,7 +1901,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/registry/validate-shapes.test.ts > validate shapes > rejects a model capability of the wrong type and accepts every capability with a legal value"
 		],
 		"reason": "Spindle reads reasoningLevels. M3a supplies image attachments for vision checks and M7 handles the remaining model capabilities."
 	},
