@@ -1109,6 +1109,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - Package validation reports package_meta_invalid if an index in __meta.entryAgents has no element.
 
+- Model call logs redact a plain JSON copy of provider metadata. Metadata that cannot be serialized, including a circular object, becomes null.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
