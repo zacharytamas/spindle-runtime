@@ -24,7 +24,7 @@ it.live(
         { cmd: ["run", "assistant", "-m", "go"], limits: ["hold=1=2"], issue: /NAME=SECONDS/ },
         { cmd: ["run", "assistant", "-m", "go"], limits: ["NaN"], issue: /finite/ },
         { cmd: ["run", "assistant", "-m", "go"], limits: ["Infinity"], issue: /finite/ },
-        { cmd: ["run", "assistant", "-m", "go"], limits: ["-Infinity"], issue: /finite/ },
+        { cmd: ["run", "assistant", "-m", "go"], limits: ["hold=-Infinity"], issue: /finite/ },
       ]
       for (const { cmd, limits, issue } of cases) {
         const child = yield* spindle(gate, [...cmd, ...flags, ...limits.flatMap((v) => ["--tool-timeout", v])])
