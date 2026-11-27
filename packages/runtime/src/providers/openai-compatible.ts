@@ -177,9 +177,18 @@ const codeForStatus = (status: number): ProviderErrorCode => {
 
 const retryAfterSeconds = (response: Response): number | undefined => {
   const header = response.headers.get("retry-after")
-  if (header === null) return undefined
+  if (header === null || header.trim() === "") return undefined
   const seconds = Number(header)
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+  if (!Number.isNaN(seconds)) return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+  // Date.parse accepts unrelated strings such as "wait 5" and treats an asctime date as local time.
+  const asctime = /^[A-Za-z]{3} [A-Za-z]{3} [ \d]\d \d{2}:\d{2}:\d{2} \d{4}$/.test(header)
+  if (
+    !asctime &&
+    !/^[A-Za-z]+, (?:\d{2} [A-Za-z]{3} \d{4}|\d{2}-[A-Za-z]{3}-\d{2}) \d{2}:\d{2}:\d{2} GMT$/i.test(header)
+  )
+    return undefined
+  const date = Date.parse(asctime ? `${header} GMT` : header)
+  return Number.isNaN(date) ? undefined : Math.max(0, (date - Date.now()) / 1000)
 }
 
 const httpError = async (response: Response): Promise<ProviderError> => {
