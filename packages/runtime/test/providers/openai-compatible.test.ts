@@ -994,4 +994,19 @@ describe("openaiCompatible request fields", () => {
     )
     expect(body.stream_options).toEqual({ include_obfuscation: false, include_usage: true })
   })
+
+  // Prompts section 6.1 lets a prompt set reasoning.maxTokens, and chat completions has no common field for a reasoning
+  // token budget. The ledger reason for specification:prompts:132940db says "openaiCompatible sends none". This pins
+  // that: the budget appears nowhere in the body, alone or beside a level.
+  it("sends no reasoning token budget", () => {
+    for (const reasoning of [
+      { maxTokens: 4093 },
+      { level: 66, levels: { 33: "low", 66: "medium" }, maxTokens: 4093 },
+    ]) {
+      const body = requestBody({ model: "m", messages: [], reasoning }, true)
+      expect(JSON.stringify(body)).not.toContain("4093")
+      expect(body).not.toHaveProperty("reasoning")
+      expect(body).not.toHaveProperty("max_tokens")
+    }
+  })
 })
