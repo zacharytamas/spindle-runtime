@@ -364,6 +364,14 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "reports a tool that replaces its package id with a throwing getter and checks the following tool",
+    "signature-getter",
+    [
+      error("tool_invalid", "agents/packed/standardagent-signature/index.js:tools.following.execute"),
+      error("definition_load_failed", "agents/packed/standardagent-signature/index.js:tools.trap"),
+    ],
+  ],
+  [
     "keeps the entry agent after an identifier getter renames its package and reports a later content getter failure",
     "registry-read-order",
     [error("definition_load_failed", "agents/packed/standardagent-reads/index.js:prompts.example")],

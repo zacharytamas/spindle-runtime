@@ -206,12 +206,13 @@ export const loadPackages = Effect.fn("loadPackages")(function* (
     }
     const listed: unknown = Array.isArray(meta.entryAgents) ? [...meta.entryAgents] : undefined
     const entryAgents = isStringArray(listed) ? listed : []
-    const signature: PackageSignature = {
+    // Definitions may rename a package, but its shared signature must keep plain data properties.
+    const signature: PackageSignature = Object.seal({
       packageId,
       version: String(meta.version),
       source,
       packedAt: Number(meta.packedAt),
-    }
+    })
     const pkg: Package = { signature, entryAgents, file, manifestFile: relativeManifest, manifest, meta }
     packages.push(pkg)
     collectDefinitions(pkg, name, exports, definitions, issues)

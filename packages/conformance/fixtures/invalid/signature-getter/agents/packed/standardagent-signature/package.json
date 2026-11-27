@@ -1,0 +1,8 @@
+{
+  "name": "standardagent-signature",
+  "type": "module",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {}
+}

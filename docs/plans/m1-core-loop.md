@@ -1129,6 +1129,10 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - In a macOS pseudo-terminal on Node and Bun, a typed or pasted line of 1,024 bytes or more never reached `spindle chat`, and chat waited for input. A reviewer reported truncation at 4,095 bytes on Linux (Linux not measured). Pipe longer lines into chat or pass them to `spindle send -m`.
 
+### Settled in M1-20
+
+- Packed definitions share a sealed signature. A definition can rename its package. If it tries to replace a signature field with a getter, validation reports the error on that definition and continues.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
