@@ -72,6 +72,7 @@ const openThread = (
   agent: string,
   filename: string,
   requested: Option.Option<string>,
+  reportId: (id: string) => Effect.Effect<void>,
   secrets: Set<string>,
   identify: typeof note,
   clean: (text: string) => string,
@@ -81,8 +82,7 @@ const openThread = (
     const runStore = yield* RunStore
     const messageStore = yield* MessageStore
     if (Option.isNone(requested)) {
-      const { id } = yield* createThread(agent, secrets)
-      yield* identify(`thread ${id}`)
+      const { id } = yield* createThread(agent, secrets, reportId)
       if (filename === ":memory:") yield* note("no --db, so the thread lives in memory and ends with this chat")
       return { id, cursor: 0 }
     }
@@ -103,7 +103,7 @@ const openThread = (
         }
       }),
     )
-    yield* identify(`thread ${id}`)
+    yield* reportId(id)
     yield* note(
       opened.pid !== null
         ? `running in process ${opened.pid}, so a line you type waits in its queue`
@@ -343,7 +343,12 @@ export const chatCommand = Command.make(
         (role, filename) =>
           Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem
-            const thread = yield* openThread(args.agent, filename, args.thread, secrets, identify, clean)
+            let openedId: string | undefined
+            const reportId = (id: string) => {
+              openedId = id
+              return identify(`thread ${id}`)
+            }
+            const open = openThread(args.agent, filename, args.thread, reportId, secrets, identify, clean)
             return yield* Effect.uninterruptibleMask((restore) =>
               Effect.gen(function* () {
                 // A transcript acknowledgement must not give pending OS signals an extra event-loop turn.
@@ -352,23 +357,29 @@ export const chatCommand = Command.make(
                 )
                 const own = new Set<number>()
                 const conversation = yield* Effect.exit(
-                  restore(converse({ ...args, ...thread, role, identify, clean }, events, own).pipe(Effect.scoped)),
+                  restore(
+                    Effect.flatMap(open, (thread) =>
+                      converse({ ...args, ...thread, role, identify, clean }, events, own).pipe(Effect.scoped),
+                    ),
+                  ),
                 )
-                // The scope joins admission even if a signal arrived during its transaction.
-                for (const event of yield* Queue.clear(events)) if (event.kind === "admitted") own.add(event.seq)
-                const lastAdmission = [...own].at(-1)
-                if (filename !== ":memory:" && !(yield* fs.exists(filename)))
-                  return yield* fail(`the database ${db} is gone`)
-                const threadStore = yield* ThreadStore
-                const runStore = yield* RunStore
-                yield* requireOpen(yield* threadStore.getThread(thread.id))
-                if (lastAdmission !== undefined && (yield* runStore.isQueued(thread.id, lastAdmission)))
-                  yield* note("your last line is still queued, and the next run of the thread delivers it")
-                if (filename !== ":memory:") {
-                  const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
-                  yield* identify(
-                    `resume with spindle chat ${shellWord(clean(args.agent))} --thread ${shellWord(thread.id)} --db ${shellWord(clean(db))}${dir}`,
-                  )
+                if (openedId !== undefined) {
+                  // The scope joins admission even if a signal arrived during its transaction.
+                  for (const event of yield* Queue.clear(events)) if (event.kind === "admitted") own.add(event.seq)
+                  const lastAdmission = [...own].at(-1)
+                  if (filename !== ":memory:" && !(yield* fs.exists(filename)))
+                    return yield* fail(`the database ${db} is gone`)
+                  const threadStore = yield* ThreadStore
+                  const runStore = yield* RunStore
+                  yield* requireOpen(yield* threadStore.getThread(openedId))
+                  if (lastAdmission !== undefined && (yield* runStore.isQueued(openedId, lastAdmission)))
+                    yield* note("your last line is still queued, and the next run of the thread delivers it")
+                  if (filename !== ":memory:") {
+                    const dir = Option.isSome(args.dir) ? ` --dir ${shellWord(clean(args.dir.value))}` : ""
+                    yield* identify(
+                      `resume with spindle chat ${shellWord(clean(args.agent))} --thread ${shellWord(openedId)} --db ${shellWord(clean(db))}${dir}`,
+                    )
+                  }
                 }
                 if (Exit.isFailure(conversation)) return yield* Effect.failCause(conversation.cause)
                 if (conversation.value === "closed") return yield* new CommandFailed()

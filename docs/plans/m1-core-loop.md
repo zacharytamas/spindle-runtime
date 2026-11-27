@@ -1103,6 +1103,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - A history hook that changes only a caller's message id keeps the stored pairing in the model request, even when another caller uses the same tool call id.
 
+- Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

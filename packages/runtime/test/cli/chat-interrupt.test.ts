@@ -53,6 +53,35 @@ const abort = (session: Session) =>
   })
 
 describe("spindle chat and Ctrl-C", () => {
+  for (const [command, signal] of [
+    ["chat", "SIGINT"],
+    ["chat", "SIGTERM"],
+    ["chat", "SIGHUP"],
+    ["run", "SIGTERM"],
+  ] as const) {
+    it.live(`${command} reports its committed thread on ${signal} during the creation hook`, () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const args = ["creating", "--dir", queue, "--db", db]
+        const terminal = signal === "SIGINT"
+        const session =
+          command === "chat"
+            ? yield* chat(gate, args, { view: terminal ? "terminal" : "streams" })
+            : yield* spindleWith(gate, ["run", ...args, "-m", "hi"])
+        yield* until("the creation hook to start", exists(at("creation-entered")))
+        const [row] = yield* query(db, "SELECT id FROM threads", [])
+        const id = String(row?.id)
+        if (terminal) yield* session.type("\u0003")
+        else yield* session.signal(signal)
+        expect(yield* session.exit).toBe(130)
+        expect(linesOf(screen(terminal ? session.out() : session.err()))).toEqual([
+          note.thread(id),
+          ...(command === "chat" ? [note.resume("creating", id, db, queue)] : []),
+        ])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+  }
+
   it.live(
     "two consecutive aborted tools release both queued turns",
     () =>

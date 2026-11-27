@@ -55,9 +55,9 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
       secrets,
       (_, filename) =>
         Effect.gen(function* () {
-          const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
-          // Another command can name a thread in a database file, so the id comes first, before any reply.
-          if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
+          const reportId = (id: string) => (filename === ":memory:" ? Effect.void : identify(`thread ${id}`))
+          const threadId = "agent" in target ? (yield* createThread(target.agent, secrets, reportId)).id : target.thread
+          if ("thread" in target) yield* reportId(threadId)
           const supervisor = yield* ThreadSupervisor
           const send = supervisor.send(threadId, args.message, {
             onWaiting: (holder) =>
