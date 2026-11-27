@@ -352,6 +352,23 @@ const checkPrompt = (at: Site, prompt: unknown) => {
   )
 }
 
+const checkCapabilities = (at: Site, capabilities: unknown) => {
+  if (capabilities === undefined) return
+  const invalid = (field: string, expected: string) =>
+    at.report("model_property_invalid", `capabilities.${field}`, `${field} must be ${expected}`)
+  if (!Predicate.isObject(capabilities))
+    return at.report("model_property_invalid", "capabilities", "capabilities must be an object")
+  for (const field of ["supportsImages", "supportsToolCalls", "supportsStreaming", "supportsJsonMode"])
+    if (capabilities[field] !== undefined && typeof capabilities[field] !== "boolean") invalid(field, "a boolean")
+  for (const field of ["maxContextTokens", "maxOutputTokens"])
+    if (capabilities[field] !== undefined && typeof capabilities[field] !== "number") invalid(field, "a number")
+  const levels = capabilities.reasoningLevels
+  if (levels === undefined) return
+  if (!Predicate.isObject(levels)) return invalid("reasoningLevels", "an object of reasoning levels")
+  for (const [level, value] of Object.entries(levels))
+    if (typeof value !== "string" && value !== null) invalid(`reasoningLevels.${level}`, "a string or null")
+}
+
 const checkModel = (at: Site, model: unknown) => {
   if (!Predicate.isObject(model)) return at.report("model_property_invalid", "", "A model definition must be an object")
   if (!isNonEmptyString(model.name) || /\s/.test(model.name))
@@ -368,8 +385,7 @@ const checkModel = (at: Site, model: unknown) => {
     if (model[field] !== undefined && !isStringArray(model[field]))
       at.report("model_property_invalid", field, `${field} must be an array of strings`)
   }
-  if (model.capabilities !== undefined && !Predicate.isObject(model.capabilities))
-    at.report("model_property_invalid", "capabilities", "capabilities must be an object")
+  checkCapabilities(at, model.capabilities)
   if (isStringArray(model.fallbacks))
     model.fallbacks.forEach((name, index) => {
       const target = at.reference("model", () => name, "model_fallback_undefined", `fallbacks[${index}]`)
