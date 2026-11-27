@@ -1107,6 +1107,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON. Direct writes to process.stdout still reach standard output.
 
+- Package validation reports package_meta_invalid if an index in __meta.entryAgents has no element.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

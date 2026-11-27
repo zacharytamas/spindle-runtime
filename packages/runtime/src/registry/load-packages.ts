@@ -6,8 +6,13 @@ import { packageEntry } from "./package-entry.ts"
 
 type Source = PackageSignature["source"]
 
-const isStringArray = (value: unknown): value is Array<string> =>
-  Array.isArray(value) && value.every((item) => typeof item === "string")
+const isStringArray = (value: unknown): value is Array<string> => {
+  if (!Array.isArray(value)) return false
+  for (let index = 0; index < value.length; index++) {
+    if (!Object.hasOwn(value, index) || typeof value[index] !== "string") return false
+  }
+  return true
+}
 
 // PackedMeta.packageId is the npm name or a local identifier, so it may differ from the package.json name.
 const metaProblem = (meta: unknown): string | undefined => {

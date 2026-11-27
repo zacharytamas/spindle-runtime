@@ -35,6 +35,11 @@ type Case = readonly [title: string, fixture: string, expected: ReadonlyArray<Re
 
 const invalid: ReadonlyArray<Case> = [
   [
+    "rejects a hole in the packed entry agent list",
+    "sparse-entry-agents",
+    [error("package_meta_invalid", "agents/packed/example/index.js")],
+  ],
+  [
     "rejects an agent whose two sides are both human",
     "both-sides-human",
     [error("agent_both_sides_human", "agents/agents/both_human.ts:sideB")],
