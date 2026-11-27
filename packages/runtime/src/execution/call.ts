@@ -9,20 +9,8 @@ import type {
   ResponseSummary,
 } from "@standardagents/spec"
 import { Data, Effect, type Fiber, Predicate, Schedule, Stream } from "effect"
-import { isTimeout } from "../providers/timeout.ts"
+import { isTimeout, providerErrorCode } from "../providers/errors.ts"
 import type { SetupError } from "./turn.ts"
-
-const CODES: ReadonlyArray<ProviderErrorCode> = [
-  "rate_limit",
-  "invalid_request",
-  "auth_error",
-  "server_error",
-  "timeout",
-  "unknown",
-]
-const RETRYABLE: ReadonlyArray<ProviderErrorCode> = ["rate_limit", "server_error", "timeout"]
-
-const isCode = (value: unknown): value is ProviderErrorCode => CODES.includes(value as ProviderErrorCode)
 
 export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   readonly message: string
@@ -33,7 +21,7 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   readonly upstream?: string
 }> {
   get retryable() {
-    return RETRYABLE.includes(this.code)
+    return this.code === "rate_limit" || this.code === "server_error" || this.code === "timeout"
   }
 }
 
@@ -48,7 +36,7 @@ const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFail
   const statusCode = number(fields.statusCode)
   const retryAfter = number(fields.retryAfter)
   const upstream = typeof fields.upstream === "string" ? fields.upstream : undefined
-  const code = isCode(fields.code) ? fields.code : "unknown"
+  const code = providerErrorCode(fields.code)
   return new ProviderFailure({
     message:
       cause instanceof Error ? cause.message : typeof fields.message === "string" ? fields.message : String(cause),
@@ -128,7 +116,7 @@ const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk): Provid
       if (chunk.reasoningDetails !== undefined) response.reasoningDetails = chunk.reasoningDetails
       return
     case "error":
-      return new ProviderFailure({ message: chunk.error, code: isCode(chunk.code) ? chunk.code : "unknown" })
+      return new ProviderFailure({ message: chunk.error, code: providerErrorCode(chunk.code) })
     default:
       return
   }

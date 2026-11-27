@@ -21,7 +21,7 @@ import {
 } from "@standardagents/spec"
 import { Predicate } from "effect"
 import * as Sse from "effect/encoding/Sse"
-import { isTimeout } from "./timeout.ts"
+import { isTimeout } from "./errors.ts"
 
 const NAME = "openai_compatible"
 const ORIGIN = `provider:${NAME}` as const
