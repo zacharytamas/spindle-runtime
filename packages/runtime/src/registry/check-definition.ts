@@ -1,5 +1,6 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
 import { Predicate } from "effect"
+import { ZodObject } from "zod"
 import { type Definition, type Issue, issue, type Kind, namespaceOf } from "./definition.ts"
 import { describeCause } from "./load-error.ts"
 import type { Registry } from "./Registry.ts"
@@ -465,6 +466,8 @@ const checkTool = (at: Site, tool: unknown) => {
     return at.report("tool_invalid", "", "A tool definition must be an object from defineTool()")
   if (typeof tool.execute !== "function") at.report("tool_invalid", "execute", "execute must be a function")
   if (typeof tool.description !== "string") at.report("tool_invalid", "description", "description must be a string")
+  if (tool.args != null && !(tool.args instanceof ZodObject))
+    at.report("tool_invalid", "args", "args must be a Zod object schema or null")
   if (tool.uses === undefined || tool.uses === null) return
   if (!isStringArray(tool.uses)) return at.report("tool_invalid", "uses", "uses must be an array of names")
   tool.uses.forEach((name, index) => {
