@@ -346,6 +346,15 @@ const buildRequest = (
   }
 }
 
+// A hook's value may be too deep to compare. Then it is not the stored message.
+const sameButId = (stored: Message, returned: Message) => {
+  try {
+    return Equal.equals(stored, { ...returned, id: stored.id })
+  } catch {
+    return false
+  }
+}
+
 export const assembleRequest = Effect.fnUntraced(function* (
   { turn, view, write: { hooks } }: SideScope,
   { history, secrets, run, record, observe }: ThreadScope,
@@ -375,12 +384,7 @@ export const assembleRequest = Effect.fnUntraced(function* (
           byId ??= new Map(rows.map((row) => [row.message.id, row]))
           const stored = byId.get(message.id)
           // A caller renamed in place keeps its stored position and past visibility. A copy alongside the original is new.
-          if (
-            !stored &&
-            row &&
-            message.tool_calls != null &&
-            Equal.equals(row.message, { ...message, id: row.message.id })
-          ) {
+          if (!stored && row && message.tool_calls != null && sameButId(row.message, message)) {
             retainedIds ??= new Set(filtered.map((entry) => entry.id))
             if (!retainedIds.has(row.message.id)) return row
           }
