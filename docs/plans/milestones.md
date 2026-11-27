@@ -14,7 +14,7 @@ The plan named seven pull requests. Building it took twenty-three.
 | Structure, after the code quality review | 9 | M1-8 to M1-16 |
 | A feature the operator added | 1 | M1-17, the tool time limit |
 | Fixes from review threads and audits | 3 | M1-18, M1-19, M1-20 |
-| Plan and trail | 2 | #1, #9 |
+| Plan and trail | 3 | #1, #9, and this revision |
 
 - The runtime is 8,803 lines of source. Tests and conformance scenarios are 20,579 lines, and 594 tests pass on Node and on Bun.
 - The ledger assigns 440 requirement statements to milestone 1. 357 are covered, 58 are partial, 12 are still planned, and 13 are not testable.
@@ -43,7 +43,7 @@ The statement counts come from the ledger. Each is a floor. Only the Runtime, Ho
 
 | Order | Milestone | Scope | Statements | Main risk |
 |---|---|---|---|---|
-| 1 | M1c, close milestone 1 | What milestone 1 still owes. No new spec page. | 25 of M1's | Scope creep from the follow-up list |
+| 1 | M1c, close milestone 1 | What milestone 1 still owes. No new spec page. | 22 of M1's | Scope creep from the follow-up list |
 | 2 | M2a, sides and turns | Handler sides, two prompt sides, session turns, `forceTurn` | about 30 | The step loop and the drain assume one prompt side |
 | 3 | M2b, tools between sides and thread values | Prompt tools, handoff tools, session tools, thread environment values with types | about 30 | How a typed value is classified as secret |
 | 4 | M3a, the thread filesystem | Files, attachments that are new files, attachment copying | about 50 | A second kind of durable state beside SQLite |
@@ -67,7 +67,12 @@ Version 1 is M1 through M4, as before.
 
 ### M1c, close milestone 1
 
-- **Ledger.** Seven planned statements that milestone 1 owes, all on the Threads page, which need one sweep of every `ThreadState` method. Eighteen partial statements whose reason names no later milestone. The other five planned statements belong to M2, M5 and M7 and move there.
+- **Ledger, planned.** Seven planned statements that milestone 1 owes, all on the Threads page, which need one sweep of every `ThreadState` method. The other five planned statements belong to M2, M4 and M7 and move there.
+- **Ledger, partial.** 23 of milestone 1's 58 partial statements name no later milestone in their reason. Eight of them wait on a later feature that the reason describes without a milestone number, and M1c gives each its milestone. That leaves fifteen.
+  - Ten that M1c closes with code or a test: `distribution:packaging:3b8a316c`, `infrastructure:runtime:3b19a524`, `infrastructure:runtime:6e443a4c`, `infrastructure:runtime:dc7d7df0`, `specification:threads/messages:778b4467`, `specification:threads/execution-state:04d1538b`, `specification:threads/execution-state:da3295e2`, `specification:threads:39260b1a`, `specification:threads:a1ac0a36`, `specification:threads:9090af10`.
+  - Five that Spindle cannot close, because they wait on the spec package or no test can show them. M1c records each as a divergence or as not testable: `specification:effects:b7593fb4`, `specification:hooks:f3dc7790`, `specification:hooks:ebcb97e7`, `specification:hooks:5cf7c4b6`, `specification:agents:13907439`.
+  - The eight that move: `specification:models:57723af5`, `infrastructure:runtime:cca93b6d`, `specification:threads/messages:e551bf33`, `specification:providers:6eb61992`, `specification:threads:ac0df6bc`, `specification:threads/execution-state:ff3ed10f`, `specification:threads/execution-state:d0569ee5`, `specification:threads:b7c8285e`.
+  - The ledger still uses the old milestone numbers, where M5 was code execution and M6 the client API. M1c renumbers them.
 - **`spindle validate`.** The shape checks it does not make yet. A definition file that throws from a timer, calls `process.exit`, or never finishes loading. An agent whose `stopTool` names a package that does not exist.
 - **The OpenAI-compatible provider.** Multi-line event data, an HTTP-date `Retry-After`, status 408, zero usage when the endpoint sends none, the dropped `extra_content`, and the fields it does not forward.
 - **The queue and the holder table.** Nothing reads or removes an entry marked `failed_delivery`, and nothing removes the holder row of a killed process.
