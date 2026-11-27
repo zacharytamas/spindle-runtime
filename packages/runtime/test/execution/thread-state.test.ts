@@ -434,6 +434,10 @@ describe("ThreadState", () => {
         "updateMessage(id, number content)": () =>
           Reflect.apply(state.updateMessage, state, [message.id, { content: 42 }]),
         "updateMessage(id, null)": () => Reflect.apply(state.updateMessage, state, [message.id, null]),
+        "injectMessage(metadata array)": () =>
+          Reflect.apply(state.injectMessage, state, [{ role: "user", content: "x", metadata: ["x"] }]),
+        "updateMessage(id, metadata array)": () =>
+          Reflect.apply(state.updateMessage, state, [message.id, { metadata: ["x"] }]),
         "updateMessage(id, metadata number)": () =>
           Reflect.apply(state.updateMessage, state, [message.id, { metadata: 42 }]),
       }
@@ -489,6 +493,7 @@ describe("ThreadState", () => {
           "invokeTool(42, {})": () => Reflect.apply(state.invokeTool, state, [42, {}]),
           "invokeTool(noop, null)": () => Reflect.apply(state.invokeTool, state, ["noop", null]),
           "invokeTool(noop, 42)": () => Reflect.apply(state.invokeTool, state, ["noop", 42]),
+          "invokeTool(noop, [])": () => Reflect.apply(state.invokeTool, state, ["noop", []]),
           "invokeTool(noop, text)": () => Reflect.apply(state.invokeTool, state, ["noop", "text"]),
         })
         legal = [await state.invokeTool("noop", {}), await Reflect.apply(state.invokeTool, state, ["noop"])]
@@ -506,6 +511,7 @@ describe("ThreadState", () => {
             "invokeTool(42, {})": 0,
             "invokeTool(noop, null)": 0,
             "invokeTool(noop, 42)": 0,
+            "invokeTool(noop, [])": 0,
             "invokeTool(noop, text)": 0,
           }),
         )
