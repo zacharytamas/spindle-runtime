@@ -20,6 +20,7 @@ import {
   type ProviderUsage,
 } from "@standardagents/spec"
 import { Predicate } from "effect"
+import * as Sse from "effect/encoding/Sse"
 import { isTimeout } from "./timeout.ts"
 
 const NAME = "openai_compatible"
@@ -287,20 +288,19 @@ const reasoningText = (delta: Json): string | undefined => {
 }
 
 async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const decoder = new TextDecoder()
-  let buffer = ""
-  for await (const bytes of body) {
-    buffer += decoder.decode(bytes, { stream: true })
-    let end = buffer.indexOf("\n")
-    while (end !== -1) {
-      const line = buffer.slice(0, end).replace(/\r$/, "")
-      buffer = buffer.slice(end + 1)
-      if (line.startsWith("data:")) yield line.slice(5).trimStart()
-      end = buffer.indexOf("\n")
-    }
+  const events: Array<string> = []
+  const parser = Sse.makeParser(
+    (event) => {
+      if (event._tag === "Event") events.push(event.data)
+    },
+    { maxEventSize: Infinity },
+  )
+  // The parser consumes the leading BOM. Leave it in the decoded text so only one BOM is stripped.
+  for await (const text of body.pipeThrough(new TextDecoderStream("utf-8", { ignoreBOM: true }))) {
+    parser.feed(text)
+    yield* events
+    events.length = 0
   }
-  buffer += decoder.decode()
-  if (buffer.startsWith("data:")) yield buffer.slice(5).trimStart()
 }
 
 interface WireCall {
