@@ -8,7 +8,8 @@ import type {
 } from "@standardagents/spec"
 import { Cause, Context, Data, Effect, Exit, Predicate } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
-import { type Definition, Registry } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
+import { Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { MessageStore } from "../store/MessageStore.ts"
 import {

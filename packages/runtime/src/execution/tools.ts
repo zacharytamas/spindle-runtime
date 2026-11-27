@@ -1,6 +1,6 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Predicate, Result } from "effect"
-import type { Definition } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
 import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"

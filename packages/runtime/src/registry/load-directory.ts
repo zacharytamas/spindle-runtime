@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Path } from "effect"
-import { type Definition, type Issue, importFile, KINDS, LoadError, PLURAL, reportDefects } from "./Registry.ts"
+import { type Definition, type Issue, KINDS, PLURAL } from "./definition.ts"
+import { importFile, LoadError, reportDefects } from "./import-file.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 

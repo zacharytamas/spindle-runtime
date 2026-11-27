@@ -10,7 +10,8 @@ import type {
   VariableDefinition,
 } from "@standardagents/spec"
 import { Data, Effect } from "effect"
-import { type Definition, type Kind, namespaceOf, Registry } from "../registry/Registry.ts"
+import { type Definition, type Kind, namespaceOf } from "../registry/definition.ts"
+import { Registry } from "../registry/Registry.ts"
 
 export class SetupError extends Data.TaggedError("SetupError")<{ readonly message: string }> {}
 

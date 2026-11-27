@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import type { Definition, Kind, Package } from "../../src/registry/Registry.ts"
+import type { Definition, Kind, Package } from "../../src/registry/definition.ts"
 import { resolver } from "../../src/registry/resolve.ts"
 
 const pkg = (packageId: string, entryAgents: ReadonlyArray<string>): Package => ({

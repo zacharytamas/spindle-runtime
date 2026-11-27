@@ -1,6 +1,7 @@
 import { Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
-import { type Definition, type Issue, KINDS, PLURAL, Registry } from "../registry/Registry.ts"
+import { type Definition, type Issue, KINDS, PLURAL } from "../registry/definition.ts"
+import { Registry } from "../registry/Registry.ts"
 import { counts, type Validation, validate } from "../registry/validate.ts"
 
 import { CommandFailed, commandErrors, plural } from "./shared.ts"

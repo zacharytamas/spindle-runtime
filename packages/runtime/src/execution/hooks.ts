@@ -7,7 +7,7 @@ import type {
   ToolResult,
 } from "@standardagents/spec"
 import { Clock, Context, Data, Duration, Effect, Predicate, Schema } from "effect"
-import type { Definition } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
 import { parseJson, toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import { Callback } from "./callback.ts"

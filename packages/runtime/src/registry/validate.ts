@@ -1,15 +1,8 @@
 import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
 import { Effect } from "effect"
-import {
-  type Definition,
-  describeCause,
-  type Issue,
-  type IssueCode,
-  KINDS,
-  type Kind,
-  namespaceOf,
-  Registry,
-} from "./Registry.ts"
+import { type Definition, type Issue, type IssueCode, KINDS, type Kind, namespaceOf } from "./definition.ts"
+import { describeCause } from "./import-file.ts"
+import { Registry } from "./Registry.ts"
 import type { Resolution } from "./resolve.ts"
 
 const THREAD_HOOKS = [

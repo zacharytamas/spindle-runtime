@@ -1,17 +1,7 @@
 import type { PackageSignature } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Result } from "effect"
-import {
-  type Definition,
-  describeCause,
-  fieldIssues,
-  type Issue,
-  importFile,
-  KINDS,
-  LoadError,
-  type Package,
-  PLURAL,
-  reportDefects,
-} from "./Registry.ts"
+import { type Definition, type Issue, KINDS, type Package, PLURAL } from "./definition.ts"
+import { describeCause, fieldIssues, importFile, LoadError, reportDefects } from "./import-file.ts"
 
 type Source = PackageSignature["source"]
 

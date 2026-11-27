@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Path } from "effect"
 import { PlatformLive } from "#platform"
-import { describeImportFailure, type Issue, Registry } from "../../src/registry/Registry.ts"
+import type { Issue } from "../../src/registry/definition.ts"
+import { describeImportFailure } from "../../src/registry/import-file.ts"
+import { Registry } from "../../src/registry/Registry.ts"
 import { counts, validate } from "../../src/registry/validate.ts"
 
 const fixture = (name: string) =>

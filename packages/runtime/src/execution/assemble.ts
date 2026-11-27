@@ -9,7 +9,7 @@ import type {
   ProviderToolCallPart,
 } from "@standardagents/spec"
 import { Effect, Predicate } from "effect"
-import type { Definition } from "../registry/Registry.ts"
+import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { copyMessage } from "./history.ts"

@@ -1,5 +1,5 @@
 import { isVisibleInNamespace, type NamespaceContext, parseQualifiedName } from "@standardagents/spec"
-import type { Definition, Kind } from "./Registry.ts"
+import type { Definition, Kind } from "./definition.ts"
 
 export type Resolution =
   | { readonly _tag: "Found"; readonly definition: Definition }
