@@ -726,3 +726,60 @@ describe("openaiCompatible event stream", () => {
     expect(await streamOf(() => chunked(single))).toEqual(expected)
   })
 })
+
+describe("openaiCompatible HTTP failures", () => {
+  const failure = (status: number, headers: Record<string, string> = {}) =>
+    openaiCompatible({ apiKey: "", fetch: async () => new Response("busy", { status, headers }) })
+      .generate(request)
+      .then(
+        (response): ProviderError => {
+          throw new Error(`generate resolved with ${JSON.stringify(response)}`)
+        },
+        (cause: ProviderError) => cause,
+      )
+
+  // RFC 9110 section 10.2.3: Retry-After = HTTP-date / delay-seconds, and HTTP-date is normally the IMF-fixdate that
+  // Date.prototype.toUTCString writes. ProviderError.retryAfter is in seconds, which callModel turns into its delay.
+  // The test reads the error and never sleeps. A date already past means no wait.
+  it("turns a Retry-After that holds an HTTP date into the seconds until that date", async () => {
+    const ahead = await failure(429, { "retry-after": new Date(Date.now() + 30_000).toUTCString() })
+    expect([ahead.code, ahead.statusCode]).toEqual(["rate_limit", 429])
+    expect(ahead.retryAfter).toBeGreaterThanOrEqual(25)
+    expect(ahead.retryAfter).toBeLessThanOrEqual(30)
+    const past = await failure(503, { "retry-after": new Date(Date.now() - 60_000).toUTCString() })
+    expect(past.retryAfter).toBe(0)
+  })
+
+  // RFC 9110 section 10.2.3 allows only a date or a number of seconds. Anything else carries no delay, so retryAfter
+  // stays unset and callModel falls back to its exponential backoff. An empty header is neither.
+  it("ignores a Retry-After that holds neither a number nor a date", async () => {
+    for (const value of ["soon", "", "later today", "-5"]) {
+      const error = await failure(429, { "retry-after": value })
+      expect([value, error.code, error.retryAfter]).toEqual([value, "rate_limit", undefined])
+    }
+  })
+
+  // Tolerant neighbor of the two tests above. The numeric form keeps working, a fractional count included, which
+  // RFC 9110 does not allow and which costs nothing to honor. A bare number must not be read as a date: Date.parse
+  // reads "7" as a year.
+  it("keeps a Retry-After that holds a number of seconds", async () => {
+    for (const [value, seconds] of [
+      ["0", 0],
+      ["7", 7],
+      ["1.5", 1.5],
+    ] as const)
+      expect([value, (await failure(429, { "retry-after": value })).retryAfter]).toEqual([value, seconds])
+  })
+
+  // HTTP 408 Request Timeout (RFC 9110 section 15.5.9) says the server gave up waiting for the request, so a repeat
+  // may succeed. Providers section 7.1 names the timeout code "Request timed out" and marks it retryable.
+  it("treats status 408 as a retryable timeout", async () => {
+    const error = await failure(408)
+    expect([error.code, error.statusCode, error.isRetryable, error.origin]).toEqual([
+      "timeout",
+      408,
+      true,
+      "provider:openai_compatible",
+    ])
+  })
+})
