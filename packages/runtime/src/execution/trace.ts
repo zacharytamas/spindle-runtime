@@ -1,4 +1,4 @@
-export const PHASES = ["drain", "assemble", "call", "persist-response", "tools", "persist-results", "stop"] as const
+const PHASES = ["drain", "assemble", "call", "persist-response", "tools", "persist-results", "stop"] as const
 
 export type Phase = (typeof PHASES)[number]
 
