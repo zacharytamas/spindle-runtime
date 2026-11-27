@@ -157,6 +157,8 @@ const checkAgent = (at: Site, agent: unknown) => {
     const backing = backingOf(side)
     if (side.label !== undefined && typeof side.label !== "string")
       at.report("agent_side_invalid", `${sideKey}.label`, "label must be a string")
+    if (backing === "prompt" && side.stopOnResponse !== undefined && typeof side.stopOnResponse !== "boolean")
+      at.report("agent_side_invalid", `${sideKey}.stopOnResponse`, "stopOnResponse must be a boolean")
     if (backing === "human") {
       for (const key of Object.keys(side)) {
         if (HUMAN_SIDE_KEYS.includes(key) || REPORTED_BY_SPEC_PACKAGE.includes(key)) continue
