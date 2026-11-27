@@ -49,7 +49,7 @@ export const Q11: Scenario = {
           const run = session.send(thread, "go")
           await held.opened
           const active = execution as ExecutionState | null
-          expect(active?.stopped).toBe(false)
+          expect([active?.stopped, active?.stoppedBy]).toEqual([false, undefined])
           expect(active?.stop()).toBeUndefined()
           expect([active?.stopped, active?.stoppedBy, active?.abortSignal.aborted]).toEqual([
             true,

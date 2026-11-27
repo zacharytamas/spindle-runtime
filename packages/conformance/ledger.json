@@ -1,11 +1,11 @@
 {
 	"distribution:packaging:3b8a316c": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
 		],
-		"reason": "M1-2 rejects a packed agent whose handler the package does not define and a packed tool whose uses target resolves to nothing the package can see. It accepts a uses target that resolves to another package's entry agent, which the package does not include. A later M1 packaging PR owes the rule for that case."
+		"reason": "The validator rejects a missing uses target, but accepts a packed tool naming another installed package’s entry agent. It must check that the declaring package includes the dependency."
 	},
 	"distribution:packaging:149aa7e2": {
 		"status": "not-testable",
@@ -729,7 +729,7 @@
 	},
 	"infrastructure:runtime:1a18a5ea": {
 		"status": "planned",
-		"milestone": "M2b",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -1188,16 +1188,17 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:3b19a524": {
-		"status": "partial",
-		"milestone": "M1",
+		"status": "covered",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
 			"packages/runtime/test/conformance.test.ts > queue > Q25 leaves work queued when the step cap ends an execution, and the next send delivers it once and in order",
-			"packages/runtime/test/cli/chat-interrupt.test.ts > spindle chat and Ctrl-C > Ctrl-C while a line waits exits 0 with the queued note, and the next chat delivers the line once (O13, F19)"
+			"packages/runtime/test/cli/chat-interrupt.test.ts > spindle chat and Ctrl-C > Ctrl-C while a line waits exits 0 with the queued note, and the next chat delivers the line once (O13, F19)",
+			"packages/runtime/test/cli/ownership.test.ts > spindle ownership across processes > a process killed in the middle of a drain leaves each queued entry once, in the queue or in the history"
 		],
-		"reason": "Q25 delivers an undrained tool after the step cap. The crash tests cover pending messages. Delivery of an undrained tool after process loss still lacks a witness."
+		"reason": ""
 	},
 	"infrastructure:runtime:65371315": {
 		"status": "planned",
@@ -2660,7 +2661,7 @@
 	},
 	"specification:threads:6a8e34ca": {
 		"status": "planned",
-		"milestone": "M2b",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -4626,13 +4627,13 @@
 	},
 	"infrastructure:runtime:6e443a4c": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records"
 		],
-		"reason": "Human sends start execution. An explicit history injection starts none."
+		"reason": "Human sends start an idle execution. A user-role injectMessage at rest persists the message but starts no execution. Runtime §2 lists injection as a trigger, while Messages §3 describes a persisted record available before the next run."
 	},
 	"infrastructure:runtime:d0f4d8de": {
 		"status": "covered",
@@ -4781,7 +4782,7 @@
 	},
 	"infrastructure:runtime:dc7d7df0": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
@@ -4789,7 +4790,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
 			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": "Send and queue admissions are covered. Direct execution still lacks a live-thread control."
+		"reason": "Send and queue admissions reject on a terminated thread. A live thread cannot run an agent directly via runAgent or invoke a function at rest, so the terminated-thread refusal for direct execution has no working control."
 	},
 	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
@@ -6308,11 +6309,11 @@
 	},
 	"specification:threads/messages:778b4467": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
 		],
-		"reason": "The active prompt is recorded for a programmatic queued call, even though it did not produce that call."
+		"reason": "A model response records its producing prompt. A programmatic queueTool call also records the active prompt on its synthetic caller message although no prompt produced it."
 	},
 	"specification:threads/messages:61c7bee3": {
 		"status": "covered",
@@ -6335,14 +6336,14 @@
 	},
 	"specification:threads/execution-state:04d1538b": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
 			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
 			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
 			"packages/runtime/test/conformance.test.ts > ownership > O10 refuses a handle that a hook of an inbound message kept, after the hook returned and after the thread was terminated"
 		],
-		"reason": "Inbound delivery hooks see null execution while a flow owns the thread."
+		"reason": "A tool and request hooks see the active execution. The create hooks for an inbound queued message receive execution: null even while status() reports running and the delivery flow holds the claim."
 	},
 	"specification:threads/execution-state:048a4525": {
 		"status": "covered",
@@ -6411,12 +6412,12 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:da3295e2": {
-		"status": "partial",
-		"milestone": "M1",
+		"status": "covered",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle"
 		],
-		"reason": "The tests check the stopping side after stop. Its value before stop lacks an assertion."
+		"reason": ""
 	},
 	"specification:threads/execution-state:18655cf1": {
 		"status": "covered",
@@ -6578,12 +6579,12 @@
 	},
 	"specification:threads:39260b1a": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
 		],
-		"reason": "Direct invocation is implemented only for a calling tool."
+		"reason": "A calling tool can invoke another function and await its result. A hook and a handle at rest receive an error result for the same valid target because neither gets an invocation context."
 	},
 	"specification:threads:c544edac": {
 		"status": "covered",
@@ -6791,11 +6792,11 @@
 	},
 	"specification:threads:a1ac0a36": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
 		],
-		"reason": "A calling tool can invoke another tool. Direct invocation from hooks and at rest is incomplete."
+		"reason": "invokeTool supports a calling tool and enforces its uses list. A hook and a handle at rest cannot invoke a known target. The package also specifies a minimal execution at rest (see DIVERGENCES.md)."
 	},
 	"specification:threads:d0a36934": {
 		"status": "covered",
@@ -6817,7 +6818,7 @@
 	},
 	"specification:threads:9090af10": {
 		"status": "partial",
-		"milestone": "M1",
+		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
@@ -6825,7 +6826,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
 			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": "Send and queued work are refused after termination. A direct execution attempt lacks a live-thread control."
+		"reason": "queueMessage rejects on a terminated thread. runAgent and invokeTool at rest already refuse on a live thread, so direct execution still lacks a termination-specific refusal."
 	},
 	"specification:threads:b83b63ca": {
 		"status": "planned",
