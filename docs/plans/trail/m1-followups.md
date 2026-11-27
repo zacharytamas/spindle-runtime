@@ -193,3 +193,12 @@ From the short Opus read of PR 22 (the hold at an ordinary end). Two of its four
 - Nothing is printed when a hook that holds the thread is given up at its limit. The hook-note wording has no test of its own.
 - O11 and O12 now test a write that lands while the run is held. A write that commits after settlement, from a hook that expired, has no test.
 
+
+## Found while M1c was built, 2026-11-27
+
+- A hook started by an unawaited nested write, such as `injectMessage`, counts as pending only once the hook is entered. A run can end before that, and the hook then runs late. The store refuses its write, but the hook's own outside actions happen. M1c-4 closed the same gap for a nested tool and left this one. The probe was `hook-gap.test.ts` of the M1c-4 builder.
+- Direct execution from a hook or on a handle at rest (`invokeTool`, `runAgent`), four statements. The operator has not decided whether it moves to M2a.
+- Whether a user-role `injectMessage` at rest starts an execution. Runtime section 2 and Messages section 3 disagree.
+- `Number("0x10")` is accepted as a `Retry-After` of 16 seconds.
+- A definition whose getter calls `process.exit` when Spindle reads it after loading still ends `spindle validate`. Declined on PR 28, and stated in `docs/design/user-code-at-the-edge.md`.
+- A value that cannot be read when secrets are learned is not redacted if a later read of it succeeds. Stated in `docs/design/secrets.md`.
