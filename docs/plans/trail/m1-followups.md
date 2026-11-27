@@ -178,3 +178,11 @@ After them. The tool timeout setting is built, as PR 20. What remains is the upd
 - A tool call whose arguments are not valid JSON is stored as `{"invalid_json": "<raw text>"}` and never runs.
 - A secret has no minimum length for redaction.
 - An execution that reaches the step cap ends, and work left in the queue waits for the next trigger.
+
+From the ten bot threads that the rebase of 2026-11-27 produced. An Opus reviewer judged each at the stack tip; the report was `/tmp/structure/threads/rebase/report.md`. Three fixes and two tests went to M1-20. These are true and not fixed:
+
+- An abort does not wait for a custom provider's `stream()` or `next()` that ignores the request signal, so the next execution's request can start before it settles. The thread's messages are unaffected. It is failure mode 15 in `docs/design/thread-ownership.md`. A fix is about 40 to 60 lines in `execution/call.ts`, `step.ts` and `Execution.ts`, and has to track the detached iterator cleanup too. Thread on PR 8, answered and resolved.
+- In `spindle chat`, Ctrl-C does nothing while a transcript write is blocked on a stdout pipe that nobody reads and nobody closes. Only SIGKILL ends the process until the reader drains. A fix moves output off the single event consumer, about 40 to 80 lines in `cli/chat.ts`, and reopens the event ordering PR 16 settled. Thread on PR 16, answered and resolved.
+- No test stalls the reader during a remote wait to show that at most one poll is outstanding. The bound holds by construction. About 60 lines in `test/cli/chat-shared.test.ts`, and sensitive to timing.
+- One tool call can give a `before_create_message` hook two drafts, the unstorable result and its replacement. That is intended, and the plan could say it to hook authors in one sentence.
+
