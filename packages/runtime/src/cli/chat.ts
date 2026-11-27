@@ -1,11 +1,11 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
-import { Cause, Effect, Exit, Fiber, FileSystem, Option, Queue, Semaphore } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Option, Queue } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { Interrupts, openChatTerminal } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
 import type { Execution } from "../execution/Execution.ts"
 import type { ExecutionEvent, RunOutcome } from "../execution/step.ts"
-import { type Delivery, ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
+import { type Delivery, ThreadSupervisor, type WaitingHolder } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
 import { createThread } from "../execution/trigger.ts"
 import { MessageStore } from "../store/MessageStore.ts"
@@ -93,10 +93,7 @@ const openThread = (
           .getThread(id)
           .pipe(Effect.catchTag("ThreadNotFound", () => fail(`no thread ${id} in ${filename}`)))
         if (thread.agentId !== agent)
-          return yield* Effect.andThen(
-            identify(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`),
-            Effect.fail(new CommandFailed()),
-          )
+          return yield* fail(`thread ${id} belongs to agent ${clean(thread.agentId)}, not ${clean(agent)}`, identify)
         yield* requireOpen(thread)
         const run = thread.status.state === "running" ? yield* runStore.recoverThread(id, false) : undefined
         return {
@@ -115,14 +112,25 @@ const openThread = (
     return { id, cursor: opened.cursor }
   })
 
-type Ending = "input" | "closed"
-type Turn = Fiber.Fiber<Delivery, unknown>
+type SendError = Effect.Error<ReturnType<ThreadSupervisor["Service"]["send"]>>
+type Turn = Fiber.Fiber<Delivery, SendError>
+type Event =
+  | { kind: "interrupt" | "closed" | "poll" }
+  | { kind: "line"; line: string | null }
+  | { kind: "admitted"; seq: number }
+  | { kind: "waiting"; holder: WaitingHolder }
+  | { kind: "record"; event: ExecutionEvent; ack: Deferred.Deferred<void> }
+  | { kind: "settled"; settlement: Execution["settlement"] }
+  | { kind: "done"; turn: Turn; exit: Exit.Exit<Delivery, SendError> }
+
+type Phase =
+  | { kind: "prompt" }
+  | { kind: "running" | "waiting" | "stopping" | "closing"; turn: Turn; admitted: boolean }
 
 interface Conversation {
   readonly id: string
   readonly cursor: number
   readonly role: Message["role"]
-  readonly onAdmitted: (seq: number) => void
   readonly identify: typeof note
   readonly clean: (text: string) => string
   readonly fullResults: boolean
@@ -130,160 +138,171 @@ interface Conversation {
   readonly dumpRequests: boolean
 }
 
-const converse = (chat: Conversation) =>
+const converse = (chat: Conversation, events: Queue.Queue<Event>, own: Set<number>) =>
   Effect.gen(function* () {
     const terminal = yield* openChatTerminal
     const messageStore = yield* MessageStore
     const threadStore = yield* ThreadStore
     const supervisor = yield* ThreadSupervisor
-    const take = Queue.take(yield* (yield* Interrupts).listen)
-    const interrupt = Effect.as(take, { kind: "interrupt" } as const)
-    const closed = Effect.as(terminal.outputClosed, { kind: "closed" } as const)
+    const interrupts = yield* (yield* Interrupts).listen
+    const offer = (event: Event) => Queue.offer(events, event)
+    yield* Effect.forkScoped(Effect.forever(Effect.andThen(Queue.take(interrupts), offer({ kind: "interrupt" }))))
+    yield* Effect.forkScoped(Effect.andThen(terminal.outputClosed, offer({ kind: "closed" })))
     const write = (text: string) => terminal.write(chat.clean(text))
-    const own = new Set<number>()
     let cursor = chat.cursor
-    const output = yield* Semaphore.make(1)
-    const flush = output.withPermit(
+    const flush = Effect.gen(function* () {
+      for (const row of yield* messageStore.messagesAfter(chat.id, cursor)) {
+        const sent = row.admission !== null && own.delete(row.admission)
+        for (const line of messageLines(row.message, chat, sent)) yield* terminal.write(`${line}\n`)
+        cursor = row.seq
+      }
+    })
+    const open = Effect.flatMap(threadStore.getThread(chat.id), requireOpen)
+    const prompt = Effect.gen(function* () {
+      yield* write("> ")
+      yield* Effect.forkScoped(Effect.flatMap(terminal.readLine, (line) => offer({ kind: "line", line })))
+      return { kind: "prompt" } as const
+    })
+    const ended = yield* Deferred.make<void>()
+    yield* Effect.addFinalizer(() => Deferred.succeed(ended, undefined))
+    const observe = (event: ExecutionEvent) =>
       Effect.gen(function* () {
-        for (const row of yield* messageStore.messagesAfter(chat.id, cursor)) {
-          const sent = row.admission !== null && own.delete(row.admission)
-          for (const line of messageLines(row.message, chat, sent)) yield* terminal.write(`${line}\n`)
-          cursor = row.seq
-        }
-      }),
-    )
-    yield* flush
-    let previous: Execution["settlement"] | undefined
-    let waiting = false
-    let atPrompt = true
+        const ack = yield* Deferred.make<void>()
+        yield* offer({ kind: "record", event, ack })
+        yield* Effect.raceFirst(Deferred.await(ack), Deferred.await(ended))
+      })
+    let previous: { settlement: Execution["settlement"]; ready: boolean } | undefined
     const finishPrevious = Effect.gen(function* () {
       if (!previous) return
-      const turn = previous
+      const outcome = yield* previous.settlement.await
       previous = undefined
-      const outcome = yield* turn.await
       yield* flush
       yield* report(outcome)
     })
-    const observe = (event: ExecutionEvent) =>
-      Effect.gen(function* () {
-        if (atPrompt) return
-        waiting = false
-        yield* finishPrevious
-        if (event.type === "message") yield* flush
-        if (event.type === "trace" && chat.trace) yield* write(`${formatTraceEntry(event.entry)}\n`)
-        if (event.type === "request" && chat.dumpRequests) {
-          yield* write(`${requestText(event.request)}\n`)
+    yield* flush
+    let phase: Phase = yield* prompt
+    let poll: Fiber.Fiber<never> | undefined
+    while (true) {
+      const event = yield* Queue.take(events)
+      switch (event.kind) {
+        case "line": {
+          if (event.line === null) return yield* finish("input")
+          if (!terminal.isTerminal) yield* write(`${event.line}\n`)
+          if (event.line.trim() === "") {
+            yield* open
+            phase = yield* prompt
+            break
+          }
+          if (previous?.ready) yield* finishPrevious
+          yield* flush
+          const turn = yield* Effect.forkScoped(
+            supervisor.send(chat.id, event.line, {
+              observe,
+              onAdmitted: (seq) => {
+                Queue.offerUnsafe(events, { kind: "admitted", seq })
+              },
+              onWaiting: (holder) => Effect.asVoid(offer({ kind: "waiting", holder })),
+            }),
+          )
+          turn.addObserver((exit) => Queue.offerUnsafe(events, { kind: "done", turn, exit }))
+          phase = { kind: "running", turn, admitted: false }
+          break
         }
-      }).pipe(Effect.orDie)
-
-    const prompt = Effect.gen(function* () {
-      atPrompt = true
-      yield* write("> ")
-      return yield* Effect.raceAllFirst([
-        closed,
-        interrupt,
-        Effect.map(terminal.readLine, (line) => ({ kind: "line", line }) as const),
-      ])
-    })
-    const send = (line: string, onAdmitted: () => void) =>
-      supervisor.send(chat.id, line, {
-        observe,
-        onAdmitted: (seq) => {
-          onAdmitted()
-          own.add(seq)
-          chat.onAdmitted(seq)
-        },
-        onWaiting: (holder) =>
-          Effect.gen(function* () {
-            waiting = true
-            // A remote holder cannot call our observer. Read its committed records until this send finishes.
-            yield* Effect.forkChild(
-              Effect.forever(
-                Effect.andThen(
-                  Effect.sleep("50 millis"),
-                  Effect.suspend(() => (waiting && !atPrompt ? flush : Effect.void)),
-                ),
-              ),
+        case "admitted":
+          own.add(event.seq)
+          if (phase.kind !== "prompt") phase.admitted = true
+          break
+        case "waiting": {
+          if (phase.kind !== "running" && phase.kind !== "waiting") break
+          phase.kind = "waiting"
+          const { holder } = event
+          yield* chat.identify(
+            holder.kind === "local" && holder.abortedOperation
+              ? `${chat.clean(holder.abortedOperation)} has not returned since the abort, so the line waits in the queue until it does`
+              : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
+          )
+          if (holder.kind === "remote" && !poll)
+            poll = yield* Effect.forkScoped(
+              Effect.forever(Effect.andThen(Effect.sleep("50 millis"), offer({ kind: "poll" }))),
             )
-            yield* chat.identify(
-              holder.kind === "local" && holder.abortedOperation
-                ? `${chat.clean(holder.abortedOperation)} has not returned since the abort, so the line waits in the queue until it does`
-                : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
-            )
-          }),
-      })
-
-    const waitForTurn = (turn: Turn, wasAdmitted: () => boolean) =>
-      Effect.gen(function* () {
-        let stopping = false
-        const done = Effect.map(Fiber.await(turn), (exit) => ({ kind: "done", exit }) as const)
-        while (true) {
-          const event = yield* Effect.raceAllFirst([closed, interrupt, done])
-          if (event.kind === "done") {
-            if (Exit.isSuccess(event.exit)) {
-              yield* finishPrevious
-              yield* flush
-              yield* requireOpen(yield* threadStore.getThread(chat.id))
-              yield* report(event.exit.value.outcome ?? event.exit.value.status)
-              return "continue" as const
-            }
+          break
+        }
+        case "poll":
+          if (phase.kind === "waiting") yield* flush
+          break
+        case "settled":
+          if (previous?.settlement === event.settlement) {
+            previous.ready = true
+            if (phase.kind !== "prompt") yield* finishPrevious
+          }
+          break
+        case "record": {
+          if (phase.kind !== "prompt" && phase.kind !== "closing") {
+            if (phase.kind === "waiting") phase.kind = "running"
+            yield* finishPrevious
+            const record = event.event
+            if (record.type === "message") yield* flush
+            if (record.type === "trace" && chat.trace) yield* write(`${formatTraceEntry(record.entry)}\n`)
+            if (record.type === "request" && chat.dumpRequests) yield* write(`${requestText(record.request)}\n`)
+            if ((yield* terminal.isOutputClosed) && (yield* supervisor.stop(chat.id))) phase.kind = "closing"
+          }
+          yield* Deferred.succeed(event.ack, undefined)
+          break
+        }
+        case "done":
+          if (phase.kind === "prompt" || phase.turn !== event.turn) break
+          if (phase.kind === "closing") return yield* finish("closed")
+          if (Exit.isSuccess(event.exit)) {
+            yield* finishPrevious
+            yield* flush
+            yield* open
+            yield* report(event.exit.value.outcome ?? event.exit.value.status)
+          } else {
             const error = Cause.squash(event.exit.cause)
             if (error instanceof ThreadTerminated) return yield* error
-            const problem = wasAdmitted() ? "the line was sent, but the run could not finish" : "the line was not sent"
+            const problem = phase.admitted ? "the line was sent, but the run could not finish" : "the line was not sent"
             yield* note(`${problem}: ${describe(error)}`)
-            return "continue" as const
           }
-          if (event.kind === "closed") {
-            if (!waiting && (yield* supervisor.stop(chat.id))) yield* Fiber.await(turn)
-            return "closed" as const
-          }
-          if (waiting || !(yield* supervisor.stop(chat.id))) return "input" as const
-          if (stopping) {
-            atPrompt = true
+          phase = yield* prompt
+          break
+        case "closed":
+        case "interrupt": {
+          if (phase.kind === "closing") break
+          const ending = event.kind === "closed" ? "closed" : "input"
+          if (phase.kind === "prompt" || phase.kind === "waiting" || !(yield* supervisor.stop(chat.id)))
+            return yield* finish(ending)
+          if (event.kind === "closed") phase.kind = "closing"
+          else if (phase.kind === "stopping") {
             yield* note("aborting the run")
-            previous = yield* supervisor.abort(chat.id)
-            yield* Fiber.interrupt(turn)
-            return "continue" as const
+            const settlement = yield* supervisor.abort(chat.id)
+            if (settlement) {
+              previous = { settlement, ready: false }
+              yield* Effect.forkScoped(
+                Effect.andThen(Effect.exit(settlement.await), offer({ kind: "settled", settlement })),
+              )
+            }
+            yield* Fiber.interrupt(phase.turn)
+            phase = yield* prompt
+          } else {
+            phase.kind = "stopping"
+            yield* note("stopping after the current operation. Press Ctrl-C again to abort.")
           }
-          stopping = true
-          yield* note("stopping after the current operation. Press Ctrl-C again to abort.")
+          break
         }
-      })
-
-    let ending: Ending = "input"
-    while (true) {
-      const read = yield* prompt
-      if (read.kind === "closed") {
-        ending = "closed"
-        break
       }
-      if (read.kind === "interrupt" || read.line === null) break
-      if (!terminal.isTerminal) yield* write(`${read.line}\n`)
-      if (read.line.trim() === "") {
-        yield* requireOpen(yield* threadStore.getThread(chat.id))
-        continue
-      }
-      atPrompt = false
-      if (previous?.isDone()) yield* finishPrevious
-      yield* flush
-      waiting = false
-      let admitted = false
-      const turn = yield* Effect.forkScoped(
-        send(read.line, () => {
-          admitted = true
-        }),
-      )
-      const result = yield* waitForTurn(turn, () => admitted)
-      if (result !== "continue") {
-        ending = result
-        break
+      if (poll && phase.kind !== "waiting") {
+        yield* Fiber.interrupt(poll)
+        poll = undefined
       }
     }
-    atPrompt = true
-    if (ending === "input") yield* write("\n")
-    if (yield* terminal.isOutputClosed) ending = "closed"
-    if (ending === "closed") yield* note("standard output is closed")
-    return ending
+    function finish(reason: "input" | "closed") {
+      return Effect.gen(function* () {
+        if (reason === "input") yield* write("\n")
+        if (yield* terminal.isOutputClosed) reason = "closed"
+        if (reason === "closed") yield* note("standard output is closed")
+        return reason
+      })
+    }
   })
 
 export const chatCommand = Command.make(
@@ -316,25 +335,14 @@ export const chatCommand = Command.make(
             const thread = yield* openThread(args.agent, filename, args.thread, secrets, identify, clean)
             return yield* Effect.uninterruptibleMask((restore) =>
               Effect.gen(function* () {
-                let lastAdmission: number | undefined
+                const events = yield* Queue.make<Event>()
+                const own = new Set<number>()
                 const conversation = yield* Effect.exit(
-                  restore(
-                    converse({
-                      ...thread,
-                      role,
-                      identify,
-                      onAdmitted: (seq) => {
-                        lastAdmission = seq
-                      },
-                      clean,
-                      fullResults: args.fullResults,
-                      trace: args.trace,
-                      dumpRequests: args.dumpRequests,
-                    }).pipe(Effect.scoped),
-                  ),
+                  restore(converse({ ...args, ...thread, role, identify, clean }, events, own).pipe(Effect.scoped)),
                 )
-                // A conversation that a signal or an error ended still says how to resume the thread.
-                const ending = Exit.isSuccess(conversation) ? conversation.value : "input"
+                // The scope joins admission even if a signal arrived during its transaction.
+                for (const event of yield* Queue.clear(events)) if (event.kind === "admitted") own.add(event.seq)
+                const lastAdmission = [...own].at(-1)
                 if (filename !== ":memory:" && !(yield* fs.exists(filename)))
                   return yield* fail(`the database ${db} is gone`)
                 const threadStore = yield* ThreadStore
@@ -349,7 +357,7 @@ export const chatCommand = Command.make(
                   )
                 }
                 if (Exit.isFailure(conversation)) return yield* Effect.failCause(conversation.cause)
-                if (ending === "closed") return yield* new CommandFailed()
+                if (conversation.value === "closed") return yield* new CommandFailed()
               }),
             )
           }),

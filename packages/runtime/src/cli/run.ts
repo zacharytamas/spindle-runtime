@@ -45,42 +45,50 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
   withOutput(({ secrets, clean, identify }) => {
     if (Option.isSome(args.hookTimeout) && !(args.hookTimeout.value > 0))
       return fail("--hook-timeout takes a number of seconds above 0")
-    const run = withProject(args.dir, args.db, target, args.script, secrets, (role, filename) =>
-      Effect.gen(function* () {
-        const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
-        // Another command can name a thread in a database file, so the id comes first, before any reply.
-        if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
-        const supervisor = yield* ThreadSupervisor
-        const delivery = yield* supervisor
-          .send(threadId, args.message, {
-            observe: printer(role, args),
-            onWaiting: (holder) =>
-              holder.kind === "remote"
-                ? identify(`thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`)
-                : Effect.void,
-            interruptedWhileQueued: note(stillQueued),
-          })
-          .pipe(answerInterrupts(threadId, identify))
-        const { outcome } = delivery
-        const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
-        if (outcome !== undefined) {
-          if (outcome.reason === "execution_lost")
-            return yield* reject(
-              `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
-            )
-          yield* identify(
-            `${outcome.status} (${clean(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
-          )
-          if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
-          return
-        }
-        const { status } = delivery
-        yield* identify(`${status.state} (${clean(status.reason ?? "none")}), thread ${threadId}`)
-        if (status.state === "failed")
-          return yield* reject(`the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`)
-      }),
-    )
     const reject = (message: string) => fail(message, identify)
+    const run = withProject(
+      args.dir,
+      args.db,
+      target,
+      args.script,
+      secrets,
+      (_, filename) =>
+        Effect.gen(function* () {
+          const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
+          // Another command can name a thread in a database file, so the id comes first, before any reply.
+          if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
+          const supervisor = yield* ThreadSupervisor
+          const delivery = yield* supervisor
+            .send(threadId, args.message, {
+              onWaiting: (holder) =>
+                holder.kind === "remote"
+                  ? identify(
+                      `thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`,
+                    )
+                  : Effect.void,
+              interruptedWhileQueued: note(stillQueued),
+            })
+            .pipe(answerInterrupts(threadId, identify))
+          const { outcome } = delivery
+          const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
+          if (outcome !== undefined) {
+            if (outcome.reason === "execution_lost")
+              return yield* reject(
+                `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
+              )
+            yield* identify(
+              `${outcome.status} (${clean(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
+            )
+            if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
+            return
+          }
+          const { status } = delivery
+          yield* identify(`${status.state} (${clean(status.reason ?? "none")}), thread ${threadId}`)
+          if (status.state === "failed")
+            return yield* reject(`the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`)
+        }),
+      (role) => printer(role, args),
+    )
     return Option.isSome(args.hookTimeout)
       ? run.pipe(Effect.provideService(HookTimeout, Duration.millis(args.hookTimeout.value * 1000)))
       : run

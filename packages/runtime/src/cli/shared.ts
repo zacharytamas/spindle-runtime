@@ -4,7 +4,7 @@ import { Flag } from "effect/cli"
 import { SqliteLive } from "#platform"
 import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
-import { learnSecrets } from "../execution/step.ts"
+import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
 import { layer as supervisorLayer } from "../execution/ThreadSupervisor.ts"
 import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
@@ -123,6 +123,7 @@ export const withProject = <A, E, R>(
   script: Option.Option<string>,
   secrets: Set<string>,
   body: (role: Message["role"], filename: string) => Effect.Effect<A, E, R>,
+  observer?: (role: Message["role"]) => (event: ExecutionEvent) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
     const path = yield* Path.Path
@@ -152,7 +153,12 @@ export const withProject = <A, E, R>(
       if (errors.length) return yield* fail(`${root} has ${plural(errors.length, "definition error")}`)
       const { side } = yield* sidesOf(agent)
       const provider = Option.isSome(script) ? yield* loadScript(path.resolve(script.value)) : undefined
-      const supervisor = supervisorLayer({ secrets, ...(provider ? { provider } : {}) })
-      return yield* body(roleOf(side), filename).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
+      const role = roleOf(side)
+      const supervisor = supervisorLayer({
+        secrets,
+        ...(observer && { observe: observer(role) }),
+        ...(provider ? { provider } : {}),
+      })
+      return yield* body(role, filename).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
     }).pipe(Effect.provide(Registry.layer(root)))
   }).pipe(Effect.scoped)
