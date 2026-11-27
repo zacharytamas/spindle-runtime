@@ -1025,7 +1025,7 @@ The review's clock change would compare nanoseconds at a boundary previously mea
 
 Stored hook returns pass through the JSON writer before shape checks. Request hook returns go through structured cloning so aliases, extra fields and cloneable non-JSON metadata stay available to subsequent hooks. The first history filter receives copies of stored message records and their mutable JSON fields. Provider history copies the scalar records and clones nested call and content records together to preserve shared references. A later filter receiving synthetic data uses a full structured clone. Schema supplies the request-message union and validates new file shapes. The shorter stored-message predicate also avoids the measured cost of running a struct decoder on every row. The update check still compares keys to the previous patch. Raw tool output keeps its historical file-identity check because tightening it would change the stored error or drop an accepted file.
 
-Assembly skips argument decoding for excluded calls. Legacy and synthetic results can still require hidden call ids for shadowing. A hidden list whose name may be an object or array still gets its name conversion, including its original failure on malformed input. Each reordered result group grows in place.
+Assembly skips argument decoding for excluded calls. Legacy and synthetic results can still require hidden call ids for shadowing. Assembly reads only the ids it needs from hidden calls, so a malformed name on a hidden call cannot end the run. Each reordered result group grows in place.
 
 ## Appendix B. Alternatives rejected
 

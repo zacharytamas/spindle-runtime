@@ -4,8 +4,8 @@ import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { runTurn } from "../../../conformance/src/scenarios/harness.ts"
 import { spindleDriver } from "../spindle-driver.ts"
 
-it("keeps the conversion failure for a hidden tool call with a malformed name", async () => {
-  const provider = new ScriptedProvider([{ text: "unreachable" }])
+it("dispatches the request when a hidden tool call has a malformed name", async () => {
+  const provider = new ScriptedProvider([{ text: "done" }])
   const filter = defineHook({
     id: "hidden_call",
     hook: "filter_messages",
@@ -17,9 +17,8 @@ it("keeps the conversion failure for a hidden tool call with a malformed name", 
       })),
   })
   const outcome = await runTurn(spindleDriver, { provider, hooks: [filter], prompt: { hooks: ["hidden_call"] } }, "go")
-  expect(outcome?.reason).toBe("fatal_error")
-  expect(() => String({ toString: 0 })).toThrow(new TypeError(outcome?.error?.message))
-  expect(provider.requests).toHaveLength(0)
+  expect(outcome?.reason).toBe("stop_on_response")
+  expect(provider.requests[0]?.messages.at(-1)).toEqual({ role: "user", content: "go" })
 })
 
 it("keeps shared call metadata shared inside a prefilter and isolates its failed edits from dispatch", async () => {
