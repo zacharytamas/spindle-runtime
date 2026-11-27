@@ -197,8 +197,14 @@ From the short Opus read of PR 22 (the hold at an ordinary end). Two of its four
 ## Found while M1c was built, 2026-11-27
 
 - A hook started by an unawaited nested write, such as `injectMessage`, counts as pending only once the hook is entered. A run can end before that, and the hook then runs late. The store refuses its write, but the hook's own outside actions happen. M1c-4 closed the same gap for a nested tool and left this one. The probe was `hook-gap.test.ts` of the M1c-4 builder.
-- Direct execution from a hook or on a handle at rest (`invokeTool`, `runAgent`), four statements. The operator has not decided whether it moves to M2a.
-- Whether a user-role `injectMessage` at rest starts an execution. Runtime section 2 and Messages section 3 disagree.
+- Direct execution from a hook or on a handle at rest (`invokeTool`, `runAgent`), four statements. The operator moved it to M2a on 2026-11-27.
+- Decided on 2026-11-27: `injectMessage` starts no execution and gets no option to. `queueMessage` is the call that does. Whether to report the spec's wording is issue #31.
 - `Number("0x10")` is accepted as a `Retry-After` of 16 seconds.
 - A definition whose getter calls `process.exit` when Spindle reads it after loading still ends `spindle validate`. Declined on PR 28, and stated in `docs/design/user-code-at-the-edge.md`.
 - A value that cannot be read when secrets are learned is not redacted if a later read of it succeeds. Stated in `docs/design/secrets.md`.
+
+## Closed by M1c, 2026-11-27
+
+These items above are done and stay only as history: the fifteen untested behaviours of the M1-6 fix round; the `failed_delivery` entries and the holder row of a killed process; the planned threads rows; the shape checks of `spindle validate`, the definition file that throws from a timer, exits, or never settles, the `stopTool` in a missing package, the `word: text` message and the broken symlink; the provider items under "A provider PR, or milestone 7", except that usage stays zero and no reasoning budget is sent; the abort during the wait that lost a failed step's error; and the nested tool counted only once its code was entered.
+
+Still open from the M1-7 list, and not owed to a ledger statement: what `spindle send` prints when another process ran the message, `--dump-requests` with a quote in a secret and its help text, the scripted provider's `reasoning.exclude`, and the silent win of a definition default over an instance value.
