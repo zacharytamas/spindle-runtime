@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Definition, Kind, Package } from "../../src/registry/definition.ts"
-import { DefinitionIndex } from "../../src/registry/resolve.ts"
+import { definitionIndex } from "../../src/registry/resolve.ts"
 
 const pkg = (packageId: string, entryAgents: ReadonlyArray<string>): Package => ({
   signature: { packageId, version: "1.0.0", source: "npm", packedAt: 0 },
@@ -38,9 +38,7 @@ const definitions = [
   definition("tool", "@scope/name"),
 ]
 
-const index = new DefinitionIndex()
-for (const definition of definitions) index.add(definition)
-const { resolve } = index
+const { resolve } = definitionIndex(definitions, [packedA, packedB, scoped], [])
 const global = { type: "global" } as const
 const insideA = { type: "packed", packageId: "packed-a" } as const
 

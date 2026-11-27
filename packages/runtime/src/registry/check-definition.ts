@@ -116,26 +116,26 @@ export const site = (registry: Registry["Service"], issues: Array<Issue>, defini
     if (found._tag === "Found") return found.definition
     report(code, path, describe(kind, read(), found) + suffix)
   }
-  const tool = (name: string): Resolution => {
-    let missing: Resolution = { _tag: "Missing" }
+  const tool = (name: string, search: "first" | "all"): Resolution => {
+    let match: Resolution = { _tag: "Missing" }
     for (const kind of ["tool", "prompt", "agent"] as const) {
       const result = resolve(kind, name)
-      if (result._tag === "Found") return result
-      if (missing._tag === "Missing") missing = result
+      if (match._tag === "Missing" || (match._tag === "Hidden" && result._tag === "Found")) match = result
+      if (match._tag === "Found" && search === "first") break
     }
-    return missing
+    return match
   }
-  return { definition, report, resolve, reference, tool, describe, snakeCase, hookList }
+  const edgesTo = (targets: ReadonlyArray<readonly [name: unknown, path: string]>): ReadonlyArray<Edge> =>
+    targets.flatMap(([name, path]) => {
+      if (!isNonEmptyString(name)) return []
+      const resolution = registry.resolve(definition.kind, name, namespaceOf(definition))
+      return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
+    })
+
+  return { definition, report, resolve, reference, tool, describe, snakeCase, hookList, edgesTo }
 }
 
 type Site = ReturnType<typeof site>
-
-const edgesTo = (at: Site, targets: ReadonlyArray<readonly [name: unknown, path: string]>): ReadonlyArray<Edge> =>
-  targets.flatMap(([name, path]) => {
-    if (!isNonEmptyString(name)) return []
-    const resolution = at.resolve(at.definition.kind, name)
-    return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
-  })
 
 const toolNames = (prompt: unknown): Array<string> =>
   Predicate.isObject(prompt) && Array.isArray(prompt.tools)
@@ -301,7 +301,7 @@ const checkPrompt = (at: Site, prompt: unknown) => {
         )
         continue
       }
-      const tool = at.tool(name)
+      const tool = at.tool(name, "first")
       if (tool._tag === "Found") {
         const target = tool.definition.value
         if (tool.definition.kind === "agent" && Predicate.isObject(target) && target.exposeAsTool !== true)
@@ -324,8 +324,8 @@ const checkPrompt = (at: Site, prompt: unknown) => {
       at.report("prompt_tool_undefined", path, at.describe("tool", name, tool))
     }
   at.hookList("hooks", prompt.hooks)
-  return edgesTo(
-    at,
+  if (!Predicate.isObject(prompt)) return
+  return at.edgesTo(
     Array.isArray(prompt.prompt)
       ? prompt.prompt.map(
           (part: unknown, i) =>
@@ -379,8 +379,8 @@ const checkModel = (at: Site, model: unknown) => {
       )
   } else if (model.providerOptions !== undefined && !Predicate.isObject(model.providerOptions))
     at.report("model_property_invalid", "providerOptions", "providerOptions must be an object")
-  return edgesTo(
-    at,
+  if (!Predicate.isObject(model)) return
+  return at.edgesTo(
     isStringArray(model.fallbacks) ? model.fallbacks.map((name, i) => [name, `fallbacks[${i}]`] as const) : [],
   )
 }
@@ -400,7 +400,7 @@ const checkTool = (at: Site, tool: unknown) => {
   if (tool.uses === undefined || tool.uses === null) return
   if (!isStringArray(tool.uses)) return at.report("tool_invalid", "uses", "uses must be an array of names")
   tool.uses.forEach((name, index) => {
-    const target = at.tool(name)
+    const target = at.tool(name, "all")
     if (target._tag !== "Found") at.report("tool_uses_undefined", `uses[${index}]`, at.describe("tool", name, target))
   })
 }
@@ -439,7 +439,7 @@ const checkEffect = (at: Site, effect: unknown) => {
     )
 }
 
-export const checks: Record<Kind, (at: Site, value: unknown) => void | ReadonlyArray<Edge>> = {
+export const checks = {
   agent: checkAgent,
   prompt: checkPrompt,
   tool: checkTool,
@@ -447,4 +447,4 @@ export const checks: Record<Kind, (at: Site, value: unknown) => void | ReadonlyA
   hook: checkHook,
   handler: checkHandler,
   effect: checkEffect,
-}
+} satisfies Record<Kind, (at: Site, value: unknown) => unknown>

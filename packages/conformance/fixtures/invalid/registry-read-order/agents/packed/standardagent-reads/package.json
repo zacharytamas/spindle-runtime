@@ -1,0 +1,8 @@
+{
+  "name": "standardagent-reads",
+  "type": "module",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {}
+}

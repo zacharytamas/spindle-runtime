@@ -359,6 +359,11 @@ const invalid: ReadonlyArray<Case> = [
     ],
   ],
   [
+    "keeps the entry agent after an identifier getter renames its package and reports a later content getter failure",
+    "registry-read-order",
+    [error("definition_load_failed", "agents/packed/standardagent-reads/index.js:prompts.example")],
+  ],
+  [
     "reports each definition or package that throws while Spindle reads it and goes on",
     "throwing-reads",
     [

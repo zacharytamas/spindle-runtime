@@ -1,6 +1,6 @@
 import type { PackageSignature } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Predicate, Result } from "effect"
-import { type Issue, KINDS, type Package, pluralKind } from "./definition.ts"
+import { type Issue, issue, KINDS, type Package, pluralKind } from "./definition.ts"
 import { type Discovered, describeCause, type ImportFile, loadFailure } from "./load-error.ts"
 import { packageEntry } from "./package-entry.ts"
 
@@ -83,49 +83,54 @@ const collectDefinitions = (
   }
 }
 
-export const loadPackages = Effect.fn("loadPackages")(function* (root: string, importFile: ImportFile) {
+export const packageDirs = Effect.fn(function* (root: string, source: Source) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const dir = source === "npm" ? path.join(root, "node_modules") : path.join(root, "agents", "packed")
+  const issues: Array<Issue> = []
+  const directories: Array<string> = []
+  const entriesOf = (directory: string) =>
+    fs.readDirectory(directory).pipe(
+      Effect.map((entries) => entries.sort()),
+      Effect.catch((error) => {
+        const file = path.relative(root, directory)
+        issues.push(issue("package_invalid", file, "", `Spindle cannot read ${file} as a directory. ${error.message}`))
+        return Effect.succeed([])
+      }),
+    )
+  if (yield* fs.exists(dir).pipe(Effect.orElseSucceed(() => true))) {
+    for (const entry of yield* entriesOf(dir)) {
+      if (entry.startsWith(".")) continue
+      const full = path.join(dir, entry)
+      if (entry.startsWith("@")) {
+        for (const child of yield* entriesOf(full)) directories.push(path.join(full, child))
+      } else directories.push(full)
+    }
+  }
+  return { directories, issues }
+})
+
+export const loadPackages = Effect.fn("loadPackages")(function* (
+  root: string,
+  importFile: ImportFile,
+  npm: ReadonlyArray<string>,
+) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const definitions: Array<Discovered> = []
   const packages: Array<Package> = []
   const issues: Array<Issue> = []
-  const issue = (code: Issue["code"], file: string, message: string, severity: Issue["severity"] = "error") =>
+  const report = (code: Issue["code"], file: string, message: string, severity: Issue["severity"] = "error") =>
     issues.push({ code, severity, message, file, path: "" })
 
   // A failed check counts as present, so the read that follows reports the cause as an issue.
   const exists = (target: string) => fs.exists(target).pipe(Effect.orElseSucceed(() => true))
 
-  const entriesOf = (dir: string) =>
-    fs.readDirectory(dir).pipe(
-      Effect.map((entries) => entries.sort()),
-      Effect.catch((error) => {
-        issue(
-          "package_invalid",
-          path.relative(root, dir),
-          `Spindle cannot read ${path.relative(root, dir)} as a directory. ${error.message}`,
-        )
-        return Effect.succeed([])
-      }),
-    )
-
-  const packageDirs = Effect.fn(function* (dir: string) {
-    if (!(yield* exists(dir))) return []
-    const found: Array<string> = []
-    for (const entry of yield* entriesOf(dir)) {
-      if (entry.startsWith(".")) continue
-      const full = path.join(dir, entry)
-      if (entry.startsWith("@")) {
-        for (const scoped of yield* entriesOf(full)) found.push(path.join(full, scoped))
-      } else found.push(full)
-    }
-    return found
-  })
-
   const readManifest = Effect.fn(function* (dir: string, source: Source) {
     const manifestFile = path.join(dir, "package.json")
     const relativeManifest = path.relative(root, manifestFile)
     if (!(yield* exists(manifestFile))) {
-      if (source === "local") issue("package_invalid", relativeManifest, `${relativeManifest} does not exist`)
+      if (source === "local") report("package_invalid", relativeManifest, `${relativeManifest} does not exist`)
       return
     }
     const read = yield* fs.readFileString(manifestFile).pipe(
@@ -135,7 +140,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     )
     if (Result.isFailure(read) || !Predicate.isObject(read.success)) {
       const reason = Result.isFailure(read) ? read.failure : "It holds JSON that is not an object."
-      issue(
+      report(
         "package_invalid",
         relativeManifest,
         `${relativeManifest} is not a JSON object. ${reason}`,
@@ -146,18 +151,18 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     const manifest = read.success
     if (manifest.standardagent === undefined) {
       if (source === "local")
-        issue("package_invalid", relativeManifest, `${relativeManifest} has no standardagent field`)
+        report("package_invalid", relativeManifest, `${relativeManifest} has no standardagent field`)
       return
     }
     const name = typeof manifest.name === "string" ? manifest.name : path.relative(root, dir)
     if (!isStringArray(manifest.keywords) || !manifest.keywords.includes("standardagent"))
-      issue(
+      report(
         "package_keyword_missing",
         relativeManifest,
         `${name} must list "standardagent" in its package.json keywords`,
       )
     if (!(name.startsWith("@") ? name.slice(name.indexOf("/") + 1) : name).startsWith("standardagent-"))
-      issue(
+      report(
         "package_name_prefix",
         relativeManifest,
         `${name} should have a name that starts with standardagent-`,
@@ -172,7 +177,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     const { manifest, name, relativeManifest } = info
     const located = yield* Effect.result(packageEntry(dir, manifest))
     if (Result.isFailure(located)) {
-      issue("package_invalid", relativeManifest, `${name} ${located.failure}`)
+      report("package_invalid", relativeManifest, `${name} ${located.failure}`)
       return
     }
     const entry = located.success
@@ -185,13 +190,13 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     const exports = loaded.success
     const problem = metaProblem(exports.__meta)
     if (problem !== undefined || !Predicate.isObject(exports.__meta)) {
-      issue("package_meta_invalid", file, `${name} ${problem}`)
+      report("package_meta_invalid", file, `${name} ${problem}`)
       return
     }
     const meta = exports.__meta
     const packageId = String(meta.packageId)
     if (packages.some((existing) => existing.signature.packageId === packageId)) {
-      issue("package_duplicate", relativeManifest, `${packageId} is installed more than once`)
+      report("package_duplicate", relativeManifest, `${packageId} is installed more than once`)
       return
     }
     const listed: unknown = Array.isArray(meta.entryAgents) ? [...meta.entryAgents] : undefined
@@ -211,7 +216,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
     loadPackage(dir, source).pipe(
       Effect.catchDefect((cause) =>
         Effect.sync(() =>
-          issue(
+          report(
             "package_invalid",
             path.relative(root, path.join(dir, "package.json")),
             `The package in ${path.relative(root, dir)} threw while Spindle read it. ${describeCause(cause)}`,
@@ -220,7 +225,9 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string, i
       ),
     )
 
-  for (const dir of yield* packageDirs(path.join(root, "node_modules"))) yield* inspect(dir, "npm")
-  for (const dir of yield* packageDirs(path.join(root, "agents", "packed"))) yield* inspect(dir, "local")
+  for (const dir of npm) yield* inspect(dir, "npm")
+  const local = yield* packageDirs(root, "local")
+  issues.push(...local.issues)
+  for (const dir of local.directories) yield* inspect(dir, "local")
   return { definitions, packages, issues }
 })
