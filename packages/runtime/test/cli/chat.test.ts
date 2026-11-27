@@ -336,6 +336,23 @@ describe("spindle chat", () => {
     60_000,
   )
 
+  it.live("opens a chat when the project has only naming warnings", () =>
+    Effect.gen(function* () {
+      const { gate, at } = yield* setup
+      const fs = yield* FileSystem.FileSystem
+      const dir = at("project")
+      yield* fs.copy(fixture("invalid/naming-warnings"), dir)
+      yield* write(
+        `${dir}/agents/agents/chat.ts`,
+        'export default {name:"chat",sideA:{prompt:"MainPrompt"},sideB:{human:true}}',
+      )
+      const session = yield* chat(gate, ["chat", "--dir", dir])
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      expect(linesOf(session.err())).toEqual([note.thread(yield* threadOf(session)), note.memory])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.live(
     "an unknown agent prints one line, exits 1, and creates no thread (O15, F01)",
     () =>
@@ -460,6 +477,18 @@ describe("spindle chat", () => {
         expect(yield* requesters(gate)).toHaveLength(1)
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
+  )
+
+  it.live("preserves leading and trailing whitespace in a nonblank line", () =>
+    Effect.gen(function* () {
+      const { gate, db } = yield* setup
+      const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
+      const text = "  padded\t "
+      yield* session.type(`${text}\n`)
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      expect((yield* messagesOf(db, yield* threadOf(session)))[0]).toEqual(["user", text])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.live(
