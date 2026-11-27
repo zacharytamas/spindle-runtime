@@ -77,7 +77,7 @@ class InvalidArguments extends Data.TaggedError("InvalidArguments")<{ readonly m
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-export interface StateContext {
+interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | Stores>
   readonly callback?: Callback
