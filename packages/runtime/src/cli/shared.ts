@@ -14,6 +14,12 @@ import { ThreadTerminated } from "../store/model.ts"
 import { type Stores, layer as sqliteStore } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 
+// A hook always has a time limit. A tool has one only when the operator sets it.
+export const holdNote = (threadId: string, operation: string, exit: string) =>
+  operation.startsWith("tool ")
+    ? `${operation} has not returned. Thread ${threadId} stays held until it returns. Press Ctrl-C twice to ${exit}. Use --tool-timeout to bound tool calls.`
+    : `${operation} has not returned. Thread ${threadId} stays held until it returns or reaches its time limit. Press Ctrl-C twice to ${exit}.`
+
 export const note = (text: string) => Console.error(`spindle: ${text}`)
 export const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
 export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`

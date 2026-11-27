@@ -53,6 +53,44 @@ const abort = (session: Session) =>
   })
 
 describe("spindle chat and Ctrl-C", () => {
+  for (const command of ["run", "send", "chat"] as const)
+    it.live(`${command} explains a nested tool hold once and exits after the documented interrupts`, () =>
+      Effect.gen(function* () {
+        const { gate, db } = yield* setup
+        const flags = ["--dir", queue, "--db", db]
+        const line = call("hold", { name: "forever", detached: true })
+        let target = "assistant"
+        if (command === "send") {
+          const seed = yield* spindleWith(gate, ["run", target, "-m", "seed", ...flags])
+          expect(yield* seed.exit).toBe(0)
+          expect(seed.err()).not.toContain("--tool-timeout")
+          target = yield* threadOf(seed)
+        }
+        const session =
+          command === "chat"
+            ? yield* chat(gate, [target, ...flags])
+            : yield* spindleWith(gate, [command, target, "-m", line, ...flags])
+        if (command === "chat") yield* session.type(`${line}\n`)
+        const id = yield* threadOf(session)
+        const instruction = command === "chat" ? "abort, then once at the prompt to exit" : "abort and exit"
+        const held = `spindle: tool hold has not returned. Thread ${id} stays held until it returns. Press Ctrl-C twice to ${instruction}. Use --tool-timeout to bound tool calls.`
+        yield* printed("explaining the hold", session.err, held)
+        yield* session.signal("SIGINT")
+        yield* printed("acknowledging the stop request", session.err, /stopping .*current operation/)
+        expect(yield* statusOf(db, id)).toEqual(["running", null])
+        yield* session.signal("SIGINT")
+        if (command === "chat") {
+          yield* prompt(session, 2)
+          expect(yield* statusOf(db, id)).toEqual(["running", null])
+          yield* session.signal("SIGINT")
+        }
+        expect(yield* session.exit).toBe(0)
+        expect(yield* statusOf(db, id)).toEqual(["idle", "aborted_by_user"])
+        expect(linesOf(session.err()).filter((line) => line.includes("--tool-timeout"))).toEqual([held])
+        expect(session.out()).not.toContain("--tool-timeout")
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    )
+
   for (const [command, signal] of [
     ["chat", "SIGINT"],
     ["chat", "SIGTERM"],
@@ -148,7 +186,7 @@ describe("spindle chat and Ctrl-C", () => {
           Effect.sync(() => session.err().includes("so the line waits")),
         )
         expect(linesOf(session.err()).at(-1)).toBe(
-          "spindle: hook gate_store has not returned since the abort, so the line waits in the queue until it does",
+          "spindle: hook gate_store has not returned, so the line waits in the queue until it does",
         )
         yield* touch(at("release-hook"))
         yield* prompt(session, 3)

@@ -1119,6 +1119,16 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - The conformance harness fails the scenario when admission has not occurred after 500 polls.
 
+### Settled in M1-19
+
+- A run that finishes or fails keeps the thread while a tool it started through `invokeTool` is still running or a hook started by an unawaited write is still pending. The nested tool can write through its own handle until it returns, reaches its own `--tool-timeout` limit, or the run is aborted. New sends wait in the queue. The command names the operation holding the thread and explains how to exit.
+
+- A graceful stop taken during that wait keeps the run's own outcome and leaves queued work in the queue. A sender that is waiting behind the run then runs its line in a flow of its own.
+
+- Three limits of the wait remain. An abort during the wait settles the run as `idle` with reason `aborted_by_user`, even when its last step had failed, so the step's error is not reported. A nested tool whose argument check is still running when the run ends is not yet counted, so it can start after the thread is released; its writes are refused. A hook that holds the thread is given up at its time limit, 30 seconds by default, and nothing is printed when that happens.
+
+- In a macOS pseudo-terminal on Node and Bun, a typed or pasted line of 1,024 bytes or more never reached `spindle chat`, and chat waited for input. A reviewer reported truncation at 4,095 bytes on Linux (Linux not measured). Pipe longer lines into chat or pass them to `spindle send -m`.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

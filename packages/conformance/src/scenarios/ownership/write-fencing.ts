@@ -424,7 +424,7 @@ export const O10: Scenario = {
 }
 
 export const O11: Scenario = {
-  name: "O11 refuses at commit an update that a hook submitted before it returned and that would land after the run settled",
+  name: "O11 refuses a submitted update at commit after its parent hook returned while the nested hook holds the thread",
   requirements: [],
   run: async (driver) => {
     const inUpdate = gate()
@@ -456,10 +456,15 @@ export const O11: Scenario = {
       driver,
       { provider, hooks: [submit, pause], prompt: { hooks: ["submit", "pause"] } },
       async (session, thread, peer) => {
-        expect(await session.send(thread, "A")).toMatchObject({ status: "idle", reason: "stop_on_response" })
+        const held = Promise.withResolvers<string>()
+        const sent = quiet(session.send(thread, "A", { onHold: held.resolve }))
+        expect(await held.promise).toBe("hook pause")
         const before = await peer.inspect(thread)
+        expect(before.status.state).toBe("running")
+        expect(before.messages.map((m) => m.content)).toEqual(["A", "done"])
         releaseUpdate.release()
         const outcome = await submitted
+        expect(await sent).toMatchObject({ status: "idle", reason: "stop_on_response" })
         const after = await peer.inspect(thread)
         expect({ outcome, first: after.messages[0]?.content, revision: after.revision }).toEqual({
           outcome: expect.stringMatching(/^(HandleExpired|FlowEnded|ExecutionEnded)$/),
@@ -472,7 +477,7 @@ export const O11: Scenario = {
 }
 
 export const O12: Scenario = {
-  name: "O12 refuses at commit an injection that a hook of an inbound message submitted before the thread was terminated",
+  name: "O12 refuses a submitted injection at commit after a peer terminates the thread held by its nested hook",
   requirements: [],
   run: async (driver) => {
     const inCreate = gate()
@@ -503,12 +508,16 @@ export const O12: Scenario = {
       driver,
       { provider, hooks: [submit, pause], agent: { hooks: ["submit", "pause"] } },
       async (session, thread, peer) => {
-        expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
-        await (await session.state(thread)).terminate()
+        const held = Promise.withResolvers<string>()
+        const sent = quiet(session.send(thread, "first", { onHold: held.resolve }))
+        expect(await held.promise).toBe("hook pause")
+        expect(await contents(peer, thread)).toEqual(["first", "done"])
+        await (await peer.state(thread)).terminate()
         const before = await peer.inspect(thread)
         releaseCreate.release()
         const outcome = await submitted
         expect(outcome).toMatch(/^(HandleExpired|FlowEnded|ThreadTerminated)$/)
+        expect(await sent).toMatchObject({ status: "idle", reason: "aborted" })
         expect(await peer.inspect(thread)).toEqual(before)
         expect(await contents(peer, thread)).toEqual(["first", "done"])
       },

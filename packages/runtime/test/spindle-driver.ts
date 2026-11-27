@@ -126,12 +126,12 @@ const openSession = (
     createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
     state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
     logs: () => [...logs],
-    send: (threadId, content, sendOptions = {}) =>
+    send: (threadId, content, { onHold, ...options } = {}) =>
       runtime
         .runPromise(
           sendMessage(threadId, content, {
-            ...(sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
-            ...(sendOptions.stepCap === undefined ? {} : { stepCap: sendOptions.stepCap }),
+            ...options,
+            ...(onHold && { onHold: (operation) => Effect.sync(() => onHold(operation)) }),
           }),
         )
         .then(

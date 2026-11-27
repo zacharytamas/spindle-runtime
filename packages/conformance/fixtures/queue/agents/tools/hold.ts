@@ -7,8 +7,12 @@ import { z } from "zod"
 
 export default defineTool({
   description: "Wait until the test releases the named gate",
-  args: z.object({ name: z.string(), watch: z.boolean().optional() }),
-  execute: async (state, { name, watch }) => {
+  args: z.object({ name: z.string(), watch: z.boolean().optional(), detached: z.boolean().optional() }),
+  execute: async (state, { name, watch, detached }) => {
+    if (detached) {
+      void state.invokeTool("hold", { name }).catch(() => {})
+      return { status: "success", result: "started nested hold" }
+    }
     const dir = process.env.SPINDLE_GATE_DIR ?? "."
     const signal = state.execution?.abortSignal
     const recordAbort = () => fs.writeFileSync(path.join(dir, `tool-aborted-${name}`), "")
