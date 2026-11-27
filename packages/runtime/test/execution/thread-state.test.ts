@@ -336,6 +336,7 @@ describe("ThreadState", () => {
       // The package declares getMessage(messageId: string), deleteMessage(messageId: string),
       // updateMessage(messageId: string, ...), getValue(key: string) and setValue(key: string, value).
       const calls = {
+        "getMessage()": () => Reflect.apply(state.getMessage, state, []),
         "getMessage(42)": () => Reflect.apply(state.getMessage, state, [42]),
         "getMessage(null)": () => Reflect.apply(state.getMessage, state, [null]),
         "deleteMessage(42)": () => Reflect.apply(state.deleteMessage, state, [42]),
@@ -382,13 +383,19 @@ describe("ThreadState", () => {
       // 'assistant' | 'system', content: string, silent?: boolean, metadata?: Record<string, unknown> }, and
       // MessageUpdates { content?: string, metadata?: Record<string, unknown> }.
       const calls = {
+        "getMessages(null)": () => Reflect.apply(state.getMessages, state, [null]),
         "getMessages(text)": () => Reflect.apply(state.getMessages, state, ["recent"]),
         "getMessages(includeSilent text)": () => Reflect.apply(state.getMessages, state, [{ includeSilent: "yes" }]),
+        "injectMessage(role wrong)": () => Reflect.apply(state.injectMessage, state, [{ role: "wrong", content: "x" }]),
+        "injectMessage(number content)": () =>
+          Reflect.apply(state.injectMessage, state, [{ role: "user", content: 42 }]),
         "injectMessage(role tool)": () => Reflect.apply(state.injectMessage, state, [{ role: "tool", content: "x" }]),
         "injectMessage(silent text)": () =>
           Reflect.apply(state.injectMessage, state, [{ role: "user", content: "x", silent: "yes" }]),
         "injectMessage(metadata number)": () =>
           Reflect.apply(state.injectMessage, state, [{ role: "user", content: "x", metadata: 42 }]),
+        "updateMessage(id, number content)": () =>
+          Reflect.apply(state.updateMessage, state, [message.id, { content: 42 }]),
         "updateMessage(id, null)": () => Reflect.apply(state.updateMessage, state, [message.id, null]),
         "updateMessage(id, metadata number)": () =>
           Reflect.apply(state.updateMessage, state, [message.id, { metadata: 42 }]),
@@ -410,6 +417,10 @@ describe("ThreadState", () => {
       // The package declares getChildThread(referenceId: string), instanceEnv?(propertyName: string),
       // envType(propertyName: string) and setStatus(status: string).
       const calls = {
+        "loadModel(42)": () => Reflect.apply(state.loadModel, state, [42]),
+        "loadAgent(null)": () => Reflect.apply(state.loadAgent, state, [null]),
+        "env(42)": () => Reflect.apply(state.env, state, [42]),
+        "instanceEnv(42)": () => Reflect.apply(state.instanceEnv ?? (() => undefined), state, [42]),
         "getChildThread(42)": () => Reflect.apply(state.getChildThread, state, [42]),
         "getChildThread()": () => Reflect.apply(state.getChildThread, state, []),
         "instanceEnv(null)": () => Reflect.apply(state.instanceEnv ?? (() => undefined), state, [null]),
@@ -436,6 +447,7 @@ describe("ThreadState", () => {
         // lets a tool with a uses list leave the arguments out. Tools section 2.1 (specification/tools.md:44) turns
         // only an undeclared target into an error result, so wrong-typed arguments reject.
         outcomes = await refusals({
+          "invokeTool(42, {})": () => Reflect.apply(state.invokeTool, state, [42, {}]),
           "invokeTool(noop, null)": () => Reflect.apply(state.invokeTool, state, ["noop", null]),
           "invokeTool(noop, 42)": () => Reflect.apply(state.invokeTool, state, ["noop", 42]),
           "invokeTool(noop, text)": () => Reflect.apply(state.invokeTool, state, ["noop", "text"]),
@@ -451,7 +463,12 @@ describe("ThreadState", () => {
       async (session, thread) => {
         await session.send(thread, "go")
         expect(outcomes).toEqual(
-          allRefused({ "invokeTool(noop, null)": 0, "invokeTool(noop, 42)": 0, "invokeTool(noop, text)": 0 }),
+          allRefused({
+            "invokeTool(42, {})": 0,
+            "invokeTool(noop, null)": 0,
+            "invokeTool(noop, 42)": 0,
+            "invokeTool(noop, text)": 0,
+          }),
         )
         expect(legal).toEqual([
           { status: "success", result: "ok" },

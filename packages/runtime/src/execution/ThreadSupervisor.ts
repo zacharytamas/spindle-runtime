@@ -1,5 +1,5 @@
-import type { AttachmentRef, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
-import { Context, Data, Duration, Effect, Layer, Predicate, Scope } from "effect"
+import type { QueueMessageInput, ThreadStatus } from "@standardagents/spec"
+import { Context, Data, Duration, Effect, Layer, Scope } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
@@ -12,17 +12,12 @@ import {
   type WriteOrigin,
 } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
-import { isAttachmentRef } from "../store/schema.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { Execution } from "./Execution.ts"
-import type { Secrets } from "./env.ts"
-import { redactMetadata } from "./messages.ts"
-import { redactor } from "./redact.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
-import type { AdmissionError, ThreadControl } from "./thread-state.ts"
-import { QueueRefused, redactAttachment } from "./tools.ts"
+import { type AdmissionError, queuedMessage, type ThreadControl } from "./thread-state.ts"
 import { roleOf, type SetupError, sidesOf } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
@@ -76,44 +71,6 @@ const checkOptions = (options: ExecutionOptions) => {
     return new InvalidOption({ message: `stepCap must be a whole number above 0, got ${options.stepCap}` })
   return undefined
 }
-
-// Messages section 4. A queued message is user code's text, so it is redacted before the queue stores it. A new file
-// needs the thread file system, which arrives in M3.
-const queuedMessage = (input: QueueMessageInput, secrets: Secrets) =>
-  Effect.gen(function* () {
-    const refuse = (problem: string) => new QueueRefused({ message: `queueMessage ${problem}` })
-    if (!Predicate.isObject(input)) return yield* refuse("takes an object with a role and content")
-    if (input.role !== "user" && input.role !== "assistant")
-      return yield* refuse(`takes the role user or assistant, got ${JSON.stringify(input.role)}`)
-    if (typeof input.content !== "string") return yield* refuse("takes content that is a string")
-    if (input.silent !== undefined && typeof input.silent !== "boolean")
-      return yield* refuse("takes silent as a boolean")
-    if (input.metadata !== undefined && !Predicate.isObject(input.metadata))
-      return yield* refuse("takes metadata as an object")
-    const attachments: ReadonlyArray<unknown> = input.attachments ?? []
-    if (!Array.isArray(attachments)) return yield* refuse("takes attachments as an array")
-    for (const item of attachments)
-      if (!isAttachmentRef(item))
-        return yield* refuse(
-          Predicate.isObject(item) && typeof item.data === "string"
-            ? "cannot store a new file in this version of Spindle. The thread file system arrives in M3, so pass a reference to a stored file."
-            : "takes attachments that are references to stored files",
-        )
-    const redact = redactor(secrets.values)
-    return {
-      role: input.role,
-      content: redact(input.content),
-      ...(input.silent === undefined ? {} : { silent: input.silent }),
-      ...(input.metadata === undefined ? {} : { metadata: redactMetadata(input.metadata, redact) }),
-      ...(attachments.length === 0
-        ? {}
-        : {
-            attachments: attachments.map((item) =>
-              redactAttachment(item as Record<string, unknown>, redact),
-            ) as Array<AttachmentRef>,
-          }),
-    } satisfies QueueMessageInput
-  })
 
 export const layer = (defaults: ExecutionOptions = {}) =>
   Layer.effect(

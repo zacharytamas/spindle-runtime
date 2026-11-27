@@ -2698,12 +2698,18 @@
 		"reason": ""
 	},
 	"specification:threads:b97f0023": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects invalid pagination, keys, non-JSON values and unknown definition names"
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects invalid pagination, keys, non-JSON values and unknown definition names",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses an unknown message order and reads each legal order",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses a message id or a value key that is not a string",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects injectMessage(null) through its promise instead of throwing",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses wrong-typed message options, inputs and updates and stores nothing for them",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses wrong-typed names on getChildThread, instanceEnv, envType and setStatus",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses invokeTool arguments that are not an object inside a calling tool"
 		],
-		"reason": "Invalid counts, malformed Unicode keys and non-JSON values reject. getMessages accepts an unknown order, numeric message ids and value keys resolve, and injectMessage(null) throws before returning a promise. The parameter checks at the ThreadState boundary are incomplete."
+		"reason": ""
 	},
 	"specification:threads:86d51bef": {
 		"status": "partial",
