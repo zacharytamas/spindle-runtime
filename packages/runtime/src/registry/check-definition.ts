@@ -59,8 +59,9 @@ const isNonEmptyString = (value: unknown): value is string => typeof value === "
 
 const isOneOf = (allowed: ReadonlyArray<string>, value: unknown) => typeof value === "string" && allowed.includes(value)
 
+// Array.from visits a missing element, which every would skip.
 const isStringArray = (value: unknown): value is Array<string> =>
-  Array.isArray(value) && value.every((item) => typeof item === "string")
+  Array.isArray(value) && Array.from(value).every((item) => typeof item === "string")
 
 const hasName = <K extends string>(object: Shape, key: K): object is Shape & Record<K, string> =>
   isNonEmptyString(object[key])

@@ -29,6 +29,8 @@ export default {
       { agent: "helper", as: "bad_optional", optional: true },
       // subagents.md:29 hidden?: boolean
       { agent: "helper", as: "bad_hidden", hidden: "true" },
+      // subagents.md:24 scopedEnv?: string[]. An array with a missing element holds something that is not a string.
+      { agent: "helper", as: "sparse_scoped_env", scopedEnv: new Array(1) },
     ],
   },
   sideB: { human: true },
