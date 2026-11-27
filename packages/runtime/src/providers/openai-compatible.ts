@@ -20,7 +20,6 @@ import {
   type ProviderUsage,
 } from "@standardagents/spec"
 import { Predicate } from "effect"
-import * as Sse from "effect/encoding/Sse"
 import { isTimeout } from "./errors.ts"
 
 const NAME = "openai_compatible"
@@ -288,23 +287,20 @@ const reasoningText = (delta: Json): string | undefined => {
 }
 
 async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const events: Array<string> = []
-  const parser = Sse.makeParser(
-    (event) => {
-      if (event._tag === "Event") events.push(event.data)
-    },
-    { maxEventSize: Infinity },
-  )
-  // The parser consumes the leading BOM. Leave it in the decoded text so only one BOM is stripped.
-  const decoder = new TextDecoder("utf-8", { ignoreBOM: true })
+  const decoder = new TextDecoder()
+  let buffer = ""
   for await (const bytes of body) {
-    parser.feed(decoder.decode(bytes, { stream: true }))
-    yield* events
-    events.length = 0
+    buffer += decoder.decode(bytes, { stream: true })
+    let end = buffer.indexOf("\n")
+    while (end !== -1) {
+      const line = buffer.slice(0, end).replace(/\r$/, "")
+      buffer = buffer.slice(end + 1)
+      if (line.startsWith("data:")) yield line.slice(5).trimStart()
+      end = buffer.indexOf("\n")
+    }
   }
-  // An endpoint may end its last event without the blank line. The response is complete, so the event counts.
-  parser.feed(`${decoder.decode()}\n\n`)
-  yield* events
+  buffer += decoder.decode()
+  if (buffer.startsWith("data:")) yield buffer.slice(5).trimStart()
 }
 
 interface WireCall {
