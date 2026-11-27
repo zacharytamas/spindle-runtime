@@ -97,9 +97,13 @@ export const executeTool = Effect.fn("executeTool")(function* (
 ) {
   const scope = scopeFor(context.turn, entry)
   const name = tool.qualifiedName
-  for (const variable of tool.value.variables ?? [])
-    if (variable.required && (yield* resolveEnv(scope, variable.name)) === undefined)
+  for (const variable of tool.value.variables ?? []) {
+    if (!variable.required) continue
+    const value = yield* Effect.result(resolveEnv(scope, variable.name))
+    if (Result.isFailure(value)) return failed(value.failure.message)
+    if (value.success === undefined)
       return failed(`Tool ${name} requires variable ${variable.name}, which has no value`)
+  }
   const schema = tool.value.args ?? null
   let args: unknown
   if (schema !== null) {

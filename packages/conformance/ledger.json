@@ -2712,12 +2712,13 @@
 		"reason": ""
 	},
 	"specification:threads:86d51bef": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > propagates SQLite failures through every M1 storage-backed operation"
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > propagates SQLite failures through every M1 storage-backed operation",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > instanceEnv rejects when its configuration source fails and resolves undefined for an absent key"
 		],
-		"reason": "The SQLite-backed methods surface storage failures. instanceEnv resolves to undefined when its configuration source fails, masking the error as an absent key. See Instance environment read failures in DIVERGENCES.md."
+		"reason": ""
 	},
 	"specification:threads:a22d57c1": {
 		"status": "partial",

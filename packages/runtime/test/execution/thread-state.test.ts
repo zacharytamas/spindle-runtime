@@ -289,6 +289,8 @@ describe("ThreadState", () => {
         expect(await settle("SPINDLE_PRESENT")).toEqual({ resolved: "present value" })
         expect(await settle("SPINDLE_ABSENT")).toEqual({ resolved: undefined })
         expect(await settle("SPINDLE_UNREADABLE")).toEqual({ rejected: true })
+        await expect(state.env("SPINDLE_UNREADABLE")).rejects.toThrow("read failed")
+        await expect(state.env("SPINDLE_ABSENT")).rejects.toThrow("has no value")
       })
     }).pipe(
       Effect.provide(

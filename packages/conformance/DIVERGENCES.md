@@ -172,12 +172,6 @@ Runtime section 14.2 lets a runtime cap key length, value size, and the number o
 
 Standard Agent Specification 0.2.0 defines no tool deadline. Spindle adds an operator setting on `run`, `send` and `chat`. With no flag, a tool call has no timer. `--tool-timeout 60` sets a general limit in seconds, and `--tool-timeout lookup=10` overrides it for the tool listed as `lookup`. An expired call gives the ordinary failure hooks a timeout error. Its thread handle expires, the execution stops waiting for it, and the run continues. Tools section 8 reserves annotations for information that leaves execution and results unchanged.
 
-## Instance environment read failures
-
-- **Spec.** Threads section 2.3 (`specification:threads:6a7a34b7`) and Users section 2.3 (`specification:users:b08da811`) require `instanceEnv` to reject when the runtime cannot read its instance environment.
-- **Package.** `ThreadState.instanceEnv?` in `@standardagents/spec` 0.45.13 returns `Promise<string | undefined>`.
-- **Spindle.** An instance configuration read failure resolves to `undefined`, the same value as a missing key. An embedder using a fallible configuration provider can therefore receive a default after a read failure. The M1 behavior is recorded in `docs/design/secrets.md`.
-
 ## Identifying effects and hooks made by their definition helpers
 
 - **Spec.** Effects §1.2 requires the default export to be made by `defineEffect` (`specification:effects:b7593fb4`). Hooks §1.2 requires `defineHook`, a recognized hook position, and a unique snake_case id (`specification:hooks:f3dc7790`, `specification:hooks:ebcb97e7`).

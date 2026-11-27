@@ -40,7 +40,11 @@ const fromSlot = Effect.fn("fromSlot")(function* (key: string, slot: ProviderCon
 
 // Providers section 1.3, Config Slots: an extension's value source wins, then the base slot's defaultEnv, then
 // its default. A nested map resolves leaf by leaf, and a leaf with no value is left out.
-const fromSource = (source: unknown, slot: ProviderConfigSlot | undefined, found: Resolution): Effect.Effect<unknown> =>
+const fromSource = (
+  source: unknown,
+  slot: ProviderConfigSlot | undefined,
+  found: Resolution,
+): Effect.Effect<unknown, SetupError> =>
   Effect.gen(function* () {
     if (isSource(source)) {
       if (source.type === "const") {
