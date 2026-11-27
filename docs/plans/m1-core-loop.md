@@ -1111,6 +1111,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - Model call logs redact a plain JSON copy of provider metadata. Metadata that cannot be serialized, including a circular object, becomes null.
 
+- The model sees attachment descriptions on its own side, including past messages containing only an attachment when chat history is enabled. A tool call with no text or attachments keeps null content.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
