@@ -4,20 +4,12 @@ import type { Registry } from "../registry/Registry.ts"
 import type { Stores } from "../store/sqlite.ts"
 import type { StreamedCalls } from "./call.ts"
 import { type HookScope, has, observeHooks, transformHooks } from "./hooks.ts"
-import { commitMessage, type WriteContext } from "./messages.ts"
+import { commitMessage } from "./messages.ts"
 import { argumentsOf } from "./response.ts"
-import type { StepEvents } from "./step.ts"
-import {
-  describe,
-  notRun,
-  ResultUnreadable,
-  resultOf,
-  storedResult,
-  type ToolCall,
-  type ToolContext,
-  unstorableResult,
-} from "./tools.ts"
+import type { SideScope, ThreadScope } from "./step.ts"
+import { describe, notRun, ResultUnreadable, resultOf, storedResult, type ToolCall, unstorableResult } from "./tools.ts"
 import type { Turn } from "./turn.ts"
+
 export const hookCall = (call: { readonly id: string; readonly name: string }, args: string): HookToolCall => ({
   id: call.id,
   type: "function",
@@ -51,18 +43,17 @@ export const streamedHooks = (hooks: HookScope, turn: Turn): StreamedCalls | und
           ),
       }
     : undefined
+
 // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the stored
 // message, then tool_call_done with what was stored.
 export const completeCall = (
-  context: ToolContext,
-  write: WriteContext,
-  { record, observe }: StepEvents,
+  { turn, write }: SideScope,
+  { run, record, observe }: ThreadScope,
   callerSeq: number,
   call: ToolCall,
   outcome: Effect.Effect<ToolResult | undefined, never, Registry | Stores>,
 ) =>
   Effect.gen(function* () {
-    const { turn, execution: run } = context
     const { hooks } = write
     const result = run.stopAtBoundary() ? undefined : yield* outcome
     const skipped = result === undefined

@@ -1,17 +1,18 @@
 import type { LLMProviderInterface, Message, ProviderRequest, ToolResult } from "@standardagents/spec"
-import { Effect, Fiber } from "effect"
+import { type Context, Effect, Fiber } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
+import type { Thread } from "../store/model.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { assembleRequest, pastOf, promptScope } from "./assemble.ts"
-import { callModel, type ModelCall, type ModelResponse } from "./call.ts"
+import { assembleRequest, type HistoryView, pastOf, promptScope } from "./assemble.ts"
+import { type CallContext, callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { drainQueue } from "./drain.ts"
 import type { End, Execution } from "./Execution.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
-import { makeHistory } from "./history.ts"
-import { agentHooks, type HookScope, turnHooks } from "./hooks.ts"
-import { commitMessage } from "./messages.ts"
+import { type History, makeHistory } from "./history.ts"
+import { agentHooks, type HookScope, type HookSet, turnHooks } from "./hooks.ts"
+import { commitMessage, type WriteContext } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { reasoningSource, responseMessage, stopToolOutcome, toolCallsOf } from "./response.ts"
 import { stopReason } from "./stop-rules.ts"
@@ -29,7 +30,27 @@ export type ExecutionEvent =
   | { readonly type: "queued"; readonly threadId: string; readonly pid: number | null }
   | { readonly type: "interrupted_while_queued" }
 
-export interface StepEvents {
+export interface SideScope {
+  readonly turn: Turn
+  readonly write: WriteContext
+  readonly toolContext: ToolContext
+  readonly view: HistoryView
+  readonly provider: CallContext["provider"]
+  readonly streamed: CallContext["streamed"]
+}
+
+export interface ThreadScope {
+  readonly thread: Thread
+  readonly services: Context.Context<Registry | Stores>
+  readonly control: ThreadControl
+  readonly secrets: Secrets
+  readonly run: Execution
+  readonly history: History
+  readonly delivery: WriteContext
+  readonly counter: { step: number }
+  readonly modelCalls: Array<ModelCall>
+  readonly pending: Array<Fiber.Fiber<void>>
+  readonly redact: (text: string) => string
   record: (phase: Phase, detail: string) => Effect.Effect<void>
   observe: (event: ExecutionEvent) => Effect.Effect<void>
 }
@@ -151,60 +172,30 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
   return { record, observe, report, modelCalls, pending, counter, redact }
 }
 
-const prepareSession = Effect.fnUntraced(function* (
-  threadId: string,
-  run: Execution,
-  control: ThreadControl,
-  secrets: Secrets,
-  options: ExecutionOptions,
+const prepareSide = Effect.fnUntraced(function* (
+  thread: ThreadScope,
+  turn: Turn,
+  set: HookSet,
+  override?: LLMProviderInterface,
 ) {
-  const thread = yield* (yield* ThreadStore).getThread(threadId)
-  const services = yield* Effect.context<Registry | Stores>()
-  const turn = yield* prepareTurn(thread.agentId)
-  const hookSet = yield* turnHooks(turn)
-  const history = makeHistory(threadId)
-  const context: Record<string, unknown> = {}
+  const { run, history, secrets, services } = thread
   const hooks: HookScope = {
     execution: run,
-    set: hookSet,
+    set,
     stateFor: (hook, call) => makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, call }),
   }
   const base = {
-    thread,
-    services,
+    ...thread,
     execution: {
       side: turn.side,
       promptPath: [turn.prompt.definition.qualifiedName],
       history,
       run,
     },
-    context,
-    secrets,
+    context: {},
     hooks,
-    control,
   }
-  const write = {
-    threadId,
-    hooks,
-    secrets,
-    call: undefined,
-    history,
-    origin: { kind: "flow" as const, flowId: run.flowId },
-  }
-  // Hooks section 1.3: a message that arrives from outside, the human's included, does not belong to the prompt's
-  // turn. The agent's hooks apply to it and see no execution, as they do at rest.
-  const inbound = atRestHooks(
-    {
-      thread,
-      services,
-      secrets,
-      control,
-      owner: run,
-      scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined },
-    },
-    yield* agentHooks(turn.agent),
-  )
-  const delivery = { ...write, hooks: inbound }
+  const write = { ...thread.delivery, hooks }
   const toolContext: ToolContext = {
     execution: run,
     turn,
@@ -226,11 +217,18 @@ const prepareSession = Effect.fnUntraced(function* (
   // A scripted run still learns the secret values of the model's real provider config.
   yield* learnSecrets(turn, secrets)
   const configured =
-    options.provider === undefined
+    override === undefined
       ? yield* providerFor(turn.model, promptState, secrets)
-      : { lifetime: "shared" as const, provider: options.provider }
+      : { lifetime: "shared" as const, provider: override }
   const provider = configured.lifetime === "shared" ? Effect.succeed(configured.provider) : configured.build
-  return { turn, history, write, delivery, toolContext, provider }
+  return {
+    turn,
+    write,
+    toolContext,
+    provider,
+    view: historyView(turn),
+    streamed: streamedHooks(hooks, turn),
+  } satisfies SideScope
 })
 
 function historyView(turn: Turn) {
@@ -250,10 +248,9 @@ function historyView(turn: Turn) {
   }
 }
 
-const storeResponse = Effect.fnUntraced(function* (session: Session, response: ModelResponse, events: StepEvents) {
-  const { toolContext, turn, write } = session
-  const { record, observe } = events
-  const run = toolContext.execution
+const storeResponse = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope, response: ModelResponse) {
+  const { toolContext, turn, write } = side
+  const { run, record, observe } = thread
   const calls = toolCallsOf(response)
   const { message: assistant, seq } = yield* commitMessage(write, responseMessage(turn, response, calls))
   yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
@@ -267,19 +264,14 @@ const storeResponse = Effect.fnUntraced(function* (session: Session, response: M
     // A call after a stop request never runs. It still gets a result, so that the next request is valid.
     const skipped = run.stopAtBoundary()
     yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
-    results.push(yield* completeCall(toolContext, write, events, seq, call, runToolCall(toolContext, call)))
+    results.push(yield* completeCall(side, thread, seq, call, runToolCall(toolContext, call)))
   }
   return { calls, results }
 })
 
-type Session = Effect.Success<ReturnType<typeof prepareSession>>
-
-function advance(session: Session, events: ReturnType<typeof stepLog>, retries: number, stepCap: number) {
-  const { turn, history, write, delivery, toolContext, provider } = session
-  const run = toolContext.execution
-  const { record, modelCalls, pending, counter, redact } = events
-  let view = historyView(turn)
-  const streamed = streamedHooks(write.hooks, turn)
+function advance(side: SideScope, thread: ThreadScope, retries: number, stepCap: number) {
+  const { turn, provider, streamed, view } = side
+  const { run, history, record, modelCalls, pending, counter, redact } = thread
   const model = {
     provider,
     stopped: () => run.stopAtBoundary() !== undefined,
@@ -289,7 +281,7 @@ function advance(session: Session, events: ReturnType<typeof stepLog>, retries: 
     record: (detail: string) => record("call", detail),
     ...(streamed && { streamed }),
   }
-  const drain = drainQueue(toolContext, write, delivery, events)
+  const drain = drainQueue(side, thread)
   // Execution State section 3: a stop takes effect at the boundary between two operations. The run settles idle,
   // and the work still queued waits for the next trigger.
   const recordStop = (end: End) => Effect.as(record("stop", end.reason), end)
@@ -310,18 +302,15 @@ function advance(session: Session, events: ReturnType<typeof stepLog>, retries: 
           return { status: "idle", reason: "awaiting_human", continueIfQueued: true } satisfies End
         }
         // The turn starts at the other side's latest message, and everything before it is past history.
-        view = {
-          ...view,
-          past: pastOf(
-            (yield* history.read).rows.map((row) => row.message),
-            turn.side,
-            count > 1 ? first : undefined,
-          ),
-        }
+        view.past = pastOf(
+          (yield* history.read).rows.map((row) => row.message),
+          turn.side,
+          count > 1 ? first : undefined,
+        )
         turnStart = false
         turnSteps = 0
       }
-      const request = yield* assembleRequest(turn, view, history, write, run, events)
+      const request = yield* assembleRequest(side, thread)
       if (!request) return yield* recordStop(run.abortEnd)
       const response = yield* callModel(
         { ...model, step: counter.step, toolChoice: turn.prompt.value.toolChoice },
@@ -330,7 +319,7 @@ function advance(session: Session, events: ReturnType<typeof stepLog>, retries: 
       if (response === undefined) return yield* recordStop(run.abortEnd)
       run.recordStep()
       turnSteps += 1
-      const { calls, results } = yield* storeResponse(session, response, events)
+      const { calls, results } = yield* storeResponse(side, thread, response)
       const afterTools = run.stopAtBoundary()
       if (afterTools) return yield* recordStop(afterTools)
       // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
@@ -364,9 +353,30 @@ export const prepareSteps = Effect.fnUntraced(function* (
   const retries = options.retries ?? 2
   const stepCap = options.stepCap ?? 1000
   const setup = yield* Effect.cached(
-    Effect.map(prepareSession(threadId, run, control, secrets, options), (session) =>
-      advance(session, log, retries, stepCap),
-    ),
+    Effect.gen(function* () {
+      const thread = yield* (yield* ThreadStore).getThread(threadId)
+      const services = yield* Effect.context<Registry | Stores>()
+      const turn = yield* prepareTurn(thread.agentId)
+      const set = yield* turnHooks(turn)
+      const history = makeHistory(threadId)
+      const base = { thread, services, secrets, control, history, run }
+      // Inbound messages use the agent's hooks and see no active prompt.
+      const hooks = atRestHooks(
+        { ...base, owner: run, scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined } },
+        yield* agentHooks(turn.agent),
+      )
+      const delivery: WriteContext = {
+        threadId,
+        hooks,
+        secrets,
+        call: undefined,
+        history,
+        origin: { kind: "flow", flowId: run.flowId },
+      }
+      const scope: ThreadScope = { ...base, ...log, delivery }
+      const side = yield* prepareSide(scope, turn, set, options.provider)
+      return { advance: advance(side, scope, retries, stepCap) }
+    }),
   )
-  return { advance: Effect.flatten(setup), report: log.report, stepCap }
+  return { advance: Effect.flatMap(setup, (session) => session.advance), report: log.report, stepCap }
 })

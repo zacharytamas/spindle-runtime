@@ -10,13 +10,11 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import type { Execution } from "./Execution.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
-import { copyMessage, type History } from "./history.ts"
+import { copyMessage } from "./history.ts"
 import { countHooks, has, transformHooks } from "./hooks.ts"
 import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
-import type { WriteContext } from "./messages.ts"
-import type { StepEvents } from "./step.ts"
+import type { SideScope, ThreadScope } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -117,11 +115,11 @@ const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: 
       )
     : Effect.void
 
-interface HistoryView {
+export interface HistoryView {
   readonly side: Side
   // The ids of the messages before the one from the other side that started this turn. A message that filter_messages
   // adds has no such id, so it belongs to the current exchange.
-  readonly past: ReadonlySet<string>
+  past: ReadonlySet<string>
   readonly includeChat: boolean
   readonly includePastTools: boolean
   readonly includeReasoning: boolean
@@ -355,12 +353,8 @@ const buildRequest = (
 }
 
 export const assembleRequest = Effect.fnUntraced(function* (
-  turn: Turn,
-  view: HistoryView,
-  history: History,
-  { hooks, secrets }: WriteContext,
-  run: Execution,
-  { record, observe }: StepEvents,
+  { turn, view, write: { hooks } }: SideScope,
+  { history, secrets, run, record, observe }: ThreadScope,
 ) {
   // Runtime section 4 orders the seven steps of an assembly.
   const rendered = yield* renderSystemPrompt(turn, secrets)

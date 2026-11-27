@@ -3,11 +3,11 @@ import { Effect } from "effect"
 import { Registry } from "../registry/Registry.ts"
 import type { NewMessage, Queued } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
-import { commitMessage, type WriteContext } from "./messages.ts"
-import { mapStrings, redactor } from "./redact.ts"
-import type { StepEvents } from "./step.ts"
+import { commitMessage } from "./messages.ts"
+import { mapStrings } from "./redact.ts"
+import type { SideScope, ThreadScope } from "./step.ts"
 import { callStarted, completeCall, hookCall } from "./tool-lifecycle.ts"
-import { executeTool, failed, type ToolCall, type ToolContext } from "./tools.ts"
+import { executeTool, failed, type ToolCall } from "./tools.ts"
 import { isFunctionTool, roleOf } from "./turn.ts"
 
 // Messages section 4: a queued message is stored with its own perspective and payload. Admission let only attachment
@@ -23,17 +23,11 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
 
 // Threads section 3.1: a queued tool runs without a model response that asks for it. Spindle stores it as a
 // call of the prompt side with its result after it, so the next request shows both, and marks the call queued.
-const runQueuedTool = (
-  toolContext: ToolContext,
-  write: WriteContext,
-  events: StepEvents,
-  entry: Queued & { readonly kind: "tool" },
-) =>
+const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { readonly kind: "tool" }) =>
   Effect.gen(function* () {
     const registry = yield* Registry
-    const { turn } = toolContext
-    const { record, observe } = events
-    const redact = redactor(write.secrets.values)
+    const { turn, toolContext, write } = side
+    const { record, observe, redact } = thread
     const definition = registry.definitions.find(
       (candidate) => candidate.kind === "tool" && candidate.qualifiedName === entry.toolName,
     )
@@ -73,9 +67,8 @@ const runQueuedTool = (
     yield* observe({ type: "message", message })
     yield* callStarted(write.hooks, call)
     yield* completeCall(
-      toolContext,
-      write,
-      events,
+      side,
+      thread,
       seq,
       call,
       tool === undefined
@@ -84,27 +77,22 @@ const runQueuedTool = (
     )
     return message.id
   })
+
 // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
 // leaves the queue in the transaction that stores what it delivers. The result says whether the prompt side got
 // something to act on: a queued tool, or a message from the other side's perspective.
-export const drainQueue = Effect.fnUntraced(function* (
-  toolContext: ToolContext,
-  write: WriteContext,
-  delivery: WriteContext,
-  events: StepEvents,
-) {
-  const { record, observe } = events
-  const { execution: run, turn } = toolContext
+export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope) {
+  const { record, observe, run, delivery } = thread
   const runStore = yield* RunStore
   let first: string | undefined
   let prompted = false
   let count = 0
   while (!run.stopAtBoundary()) {
-    const entry = yield* runStore.nextQueued(write.threadId, { flowId: run.flowId })
+    const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
     if (entry === undefined) break
     count += 1
     if (entry.kind === "tool") {
-      const id = yield* runQueuedTool(toolContext, write, events, entry)
+      const id = yield* runQueuedTool(side, thread, entry)
       first ??= id
       prompted = true
       continue
@@ -113,7 +101,7 @@ export const drainQueue = Effect.fnUntraced(function* (
     first ??= message.id
     yield* record("drain", `message ${message.id}`)
     yield* observe({ type: "message", message })
-    if (message.role !== roleOf(turn.side)) prompted = true
+    if (message.role !== roleOf(side.turn.side)) prompted = true
   }
   if (count === 0) yield* record("drain", "none")
   return { prompted, first, count }
