@@ -287,6 +287,8 @@ const checkPromptContent = (at: Site, prompt: Shape) => {
 }
 
 const checkPromptOptions = (at: Site, prompt: Shape) => {
+  if (prompt.requiredSchema !== undefined && !(prompt.requiredSchema instanceof ZodObject))
+    at.report("prompt_content_invalid", "requiredSchema", "requiredSchema must be a Zod object schema")
   if (prompt.includeChat !== undefined && typeof prompt.includeChat !== "boolean")
     at.report("prompt_content_invalid", "includeChat", "includeChat must be a boolean")
   if (prompt.toolChoice !== undefined && !isOneOf(["auto", "none", "required"], prompt.toolChoice))
