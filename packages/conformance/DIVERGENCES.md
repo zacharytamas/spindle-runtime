@@ -177,3 +177,9 @@ Standard Agent Specification 0.2.0 defines no tool deadline. Spindle adds an ope
 - **Spec.** Threads section 2.3 (`specification:threads:6a7a34b7`) and Users section 2.3 (`specification:users:b08da811`) require `instanceEnv` to reject when the runtime cannot read its instance environment.
 - **Package.** `ThreadState.instanceEnv?` in `@standardagents/spec` 0.45.13 returns `Promise<string | undefined>`.
 - **Spindle.** An instance configuration read failure resolves to `undefined`, the same value as a missing key. An embedder using a fallible configuration provider can therefore receive a default after a read failure. The M1 behavior is recorded in `docs/design/secrets.md`.
+
+## Identifying effects and hooks made by their definition helpers
+
+- **Spec.** Effects requires the default export to be made by `defineEffect` (`specification:effects:b7593fb4`). Hooks requires `defineHook`, a recognized hook position, and a unique snake_case id (`specification:hooks:f3dc7790`, `specification:hooks:ebcb97e7`).
+- **Package.** The MIT helpers return an unbranded tuple and an unbranded object respectively. An author can export the same values directly.
+- **Spindle.** The loader checks the exported shape, hook position and id. The export carries no record of the function that constructed it.

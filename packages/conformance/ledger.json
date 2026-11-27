@@ -42,7 +42,7 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields"
 		],
-		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, read index by index and key by key, so a missing element is a difference. It also rejects a required hook that the package does not define. M3 owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
+		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, read index by index and key by key, so a missing element is a difference. It also rejects a required hook that the package does not define. M3b owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
 	},
 	"distribution:packaging:dcf81bec": {
 		"status": "covered",
@@ -343,7 +343,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
 			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches"
 		],
-		"reason": "S19 and S20 enforce maxSteps, the runtime step cap, and the stop rules of one prompt side. M2 adds session tools and maxSessionTurns, which owe the rest."
+		"reason": "S19 and S20 enforce maxSteps, the runtime step cap, and the stop rules of one prompt side. M2a adds maxSessionTurns and M2b adds session tools."
 	},
 	"infrastructure:runtime:f448a4e6": {
 		"status": "covered",
@@ -537,25 +537,25 @@
 	},
 	"infrastructure:runtime:0496b9da": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:fc8c359f": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c8fcd64f": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:022219f5": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -587,149 +587,149 @@
 			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match",
 			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_total_steps matches once the execution reaches the runtime step cap"
 		],
-		"reason": "maxSteps and the runtime step cap are evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2."
+		"reason": "maxSteps and the runtime step cap are evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2a."
 	},
 	"infrastructure:runtime:f4e7b1f2": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:ccbb1047": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:fc8cb7d6": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:b987b6e8": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:7e19608c": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:e32d5b36": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:d9092106": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:d58efebf": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c146d0dd": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:d93cf063": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a7507250": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:54b1505b": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:71c24464": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:8e8fb06b": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a3334b21": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:021cec7c": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:aa3bc01f": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:875c2e22": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:100eb1d6": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:128dcfef": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:ad46a01d": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:927e781c": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:ec175c0b": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:1a18a5ea": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -744,7 +744,7 @@
 	},
 	"infrastructure:runtime:86cae814": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -773,205 +773,205 @@
 	},
 	"infrastructure:runtime:0b96b66a": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:6247b82f": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:7e1edb2b": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a9ebea0f": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:21fdd674": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:37675589": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:15c880a1": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:e64ada3a": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:5c46f75f": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:4d0f7ec5": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a847c733": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a2cceddd": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:bd5bf2a9": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:2f6d9aa3": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:f1ebba0a": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:0a02fc48": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:befa1891": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:41113299": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:576d49ca": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:3495cc92": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c15410d8": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:a7ee273b": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:bda84728": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:24ef6b3c": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:d8957155": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:b87bff5e": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:71c95571": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:7bb2e9b6": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:5f7d550e": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:d6754022": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:02abbde9": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:1f5aaa2b": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:ce4e09ef": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:8e291e08": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -1055,7 +1055,7 @@
 	},
 	"infrastructure:runtime:eb83472c": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -1073,79 +1073,79 @@
 	},
 	"infrastructure:runtime:2e5c4cd4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:6ec74e8f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:6276e36c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:1018e374": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:ef2bea18": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:1ead943d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:39a42f3c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:07d79ad5": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:f88cd91d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:af14c82f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:e797a756": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:51d9e7cd": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:144d6193": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
@@ -1165,7 +1165,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
 			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > orders the rules stopTool, stopOnResponse, maxSteps, then the runtime step cap"
 		],
-		"reason": "S20 and the stop-rule table enforce stopTool, stopOnResponse, maxSteps, and the runtime step cap of one prompt side. M2 adds session bindings and maxSessionTurns, which owe the rest."
+		"reason": "S20 and the stop-rule table enforce stopTool, stopOnResponse, maxSteps, and the runtime step cap of one prompt side. M2a adds maxSessionTurns and M2b adds session tools."
 	},
 	"infrastructure:runtime:43d5659d": {
 		"status": "covered",
@@ -1201,13 +1201,13 @@
 	},
 	"infrastructure:runtime:65371315": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:0ddeb438": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -1222,7 +1222,7 @@
 	},
 	"infrastructure:runtime:af9b4b76": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
@@ -1237,29 +1237,29 @@
 	},
 	"specification:agents:6b09f66f": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:33001fe2": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:fd653f22": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:0e84ace1": {
 		"status": "partial",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks"
 		],
-		"reason": "M1-2 rejects a required parent hook that is missing from the child's namespace at load time. M3 owes failing composition closed when a parent composes the child."
+		"reason": "M1-2 rejects a required parent hook that is missing from the child's namespace at load time. M3b owes failing composition closed when a parent composes the child."
 	},
 	"specification:agents:ccc22c6c": {
 		"status": "covered",
@@ -1406,43 +1406,43 @@
 	},
 	"specification:handlers:0747a620": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:ab2038a6": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:78f43349": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:dea03971": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:2c8bc235": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:00d791ec": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:handlers:ea88514a": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
@@ -1527,13 +1527,13 @@
 	},
 	"specification:hooks:e1f01e0b": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:hooks:44aec096": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -1701,7 +1701,7 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds",
 			"packages/runtime/test/conformance.test.ts > hooks > H9c fails the hook that gives the human's message, the model's response, or a tool result a taken id, and keeps the later hooks' changes"
 		],
-		"reason": "The message that before_create_message returns is what Spindle inserts, for every field the store keeps. The store leaves the nine subagent_* fields null until M3 adds the child registry they project from, so a subagent_id that a hook returns reads back as null. M3 owes those fields."
+		"reason": "The message that before_create_message returns is what Spindle inserts, for every field the store keeps. The store leaves the nine subagent_* fields null until M3b adds the child registry they project from, so a subagent_id that a hook returns reads back as null. M3b owes those fields."
 	},
 	"specification:hooks:765e84ae": {
 		"status": "covered",
@@ -1794,7 +1794,7 @@
 	},
 	"specification:hooks:cf1fb96d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
@@ -1825,7 +1825,7 @@
 	},
 	"specification:hooks:eaca9825": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
@@ -1835,7 +1835,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > hooks > H14 lets the result hooks keep, replace, or add attachment references and stores the references they return"
 		],
-		"reason": "H14 shows the result hooks keeping, replacing, and adding attachment references, and the stored message keeps the references the hooks return. A new ToolAttachment reaches the hooks, and M3 owes storing it in the thread file system. This version drops it with a note."
+		"reason": "H14 shows the result hooks keeping, replacing, and adding attachment references, and the stored message keeps the references the hooks return. A new ToolAttachment reaches the hooks, and M3a owes storing it in the thread file system. This version drops it with a note."
 	},
 	"specification:models:28c62dc0": {
 		"status": "covered",
@@ -1872,7 +1872,7 @@
 	},
 	"specification:models:66258b26": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": "No test shows yet that a model definition with includedProviders loads. Spindle passes the preference to no provider, and routing across providers arrives with model fallbacks in M7."
 	},
@@ -1900,7 +1900,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
 		],
-		"reason": "Spindle reads capabilities.reasoningLevels. The other capabilities steer features of later milestones."
+		"reason": "Spindle reads reasoningLevels. M3a supplies image attachments for vision checks and M7 handles the remaining model capabilities."
 	},
 	"specification:models:d7549987": {
 		"status": "covered",
@@ -1912,7 +1912,7 @@
 	},
 	"specification:models:53ae9744": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": "A prompt that lists a provider tool fails before its first request in milestone 1, and no test cites this row yet. Provider-executed tools arrive in M7."
 	},
@@ -2063,9 +2063,9 @@
 	},
 	"specification:prompts:23ec065b": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "requiredSchema applies when the prompt is called as a tool, which M2 adds."
+		"reason": "requiredSchema applies when the prompt is called as a tool, which M2b adds."
 	},
 	"specification:prompts:59cc8ad5": {
 		"status": "partial",
@@ -2073,7 +2073,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
 		],
-		"reason": "Function tools are offered and run. Sub-prompts and handoff agents arrive with M2."
+		"reason": "Function tools are offered and run. Sub-prompts and handoff agents arrive with M2b."
 	},
 	"specification:prompts:5522b650": {
 		"status": "covered",
@@ -2106,7 +2106,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S24 keeps stored attachment references intact and describes them in the request"
 		],
-		"reason": "Spindle accepts the property. Until M3 adds attachment bytes no image reaches the model as image content, so the threshold changes nothing yet."
+		"reason": "Spindle accepts the property. Until M3a adds attachment bytes no image reaches the model as image content, so the threshold changes nothing yet."
 	},
 	"specification:prompts:216a047a": {
 		"status": "covered",
@@ -2127,7 +2127,7 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H22 redacts the text a hook writes into the thread and fails a run whose system prompt a hook gives a secret",
 			"packages/runtime/test/conformance.test.ts > hooks > H22b redacts a write with the secrets that its hooks learned before the write was stored"
 		],
-		"reason": "A system prompt interpolates only declared text variables whose value a definition supplies. The run fails before a request when a declaration or the provider config marks an interpolated name secret, when an interpolated value comes from the instance environment, or when the finished prompt holds a secret value the execution knows by then. An instance value that nothing declares is checked only after a tool reads it. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
+		"reason": "A system prompt interpolates only declared text variables whose value a definition supplies. The run fails before a request when a declaration or the provider config marks an interpolated name secret, when an interpolated value comes from the instance environment, or when the finished prompt holds a secret value the execution knows by then. An instance value that nothing declares is checked only after a tool reads it. No untrusted input reaches a system prompt before M2b adds thread arguments to interpolation, so the sanitizing half waits for M2b."
 	},
 	"specification:prompts:97e0539c": {
 		"status": "covered",
@@ -2149,13 +2149,13 @@
 	},
 	"specification:prompts:bf53f925": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:prompts:949d0585": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -2217,27 +2217,27 @@
 	},
 	"specification:prompts:64c83f9a": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2b adds."
 	},
 	"specification:prompts:551cdfc5": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2b adds."
 	},
 	"specification:prompts:8ccbefff": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2b adds."
 	},
 	"specification:prompts:61b7d2b3": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "No user input reaches a prompt in M1-4. M2 adds thread arguments to prompt interpolation."
+		"reason": "No user input reaches a prompt in M1-4. M2b adds thread arguments to prompt interpolation."
 	},
 	"specification:prompts:06ac343e": {
 		"status": "covered",
@@ -2344,19 +2344,19 @@
 	},
 	"specification:providers:8b317fb8": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": "Spindle never calls getTools, because no prompt can offer a provider tool before M7, which owes this row."
 	},
 	"specification:subagents:fe1c0e17": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:c2501258": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -2371,151 +2371,151 @@
 	},
 	"specification:subagents:34e53437": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:149f2374": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:bf140dbe": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:2adf940e": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:f90a913f": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:33e1b504": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:d5c2f061": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:acaa04fa": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:0d1b886d": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:d4f8fd38": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:48abb804": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:3890a235": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:d1a641f8": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:c300b4f1": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:1c066041": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:33a03ae5": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:ce7cb361": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:5898017d": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:72d479f3": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:caab9448": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:6900ef7a": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:f3d43096": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:332f8028": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:subagents:99c0788e": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:6a7a34b7": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -2536,59 +2536,59 @@
 			"packages/runtime/test/conformance.test.ts > hooks > H22b redacts a write with the secrets that its hooks learned before the write was stored",
 			"packages/runtime/test/cli/chat.test.ts > spindle chat > a secret prints as [redacted] in a typed line, a reply, call arguments, and a provider error, and the stored text keeps it (F12)"
 		],
-		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle replaces each secret wherever it appears in the text of a stored tool result, property names included, and in the content and metadata of each message a tool or a hook injects or edits, every line spindle run prints, and run errors, and it stores the model's response as returned. It redacts a write after its create or update hooks run, with every secret known by then. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2."
+		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle replaces each secret wherever it appears in the text of a stored tool result, property names included, and in the content and metadata of each message a tool or a hook injects or edits, every line spindle run prints, and run errors, and it stores the model's response as returned. It redacts a write after its create or update hooks run, with every secret known by then. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2b."
 	},
 	"specification:threads:4e919532": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:274ed7a7": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:682ba8c5": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:3568b54d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:b1cf2198": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:ef0531e9": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:9b4acd53": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:2ea40632": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:c487ef3f": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
@@ -2630,37 +2630,37 @@
 	},
 	"specification:threads:e674679a": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:fd9152b3": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:d5168724": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:d5d4f874": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:9e3d249c": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:6a8e34ca": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -2716,811 +2716,811 @@
 	},
 	"specification:threads/client-api:0d171793": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a6f77933": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:14da923f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:3514aab2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d9e56a97": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e2fedec8": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a7366fa9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:83720726": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:8e022256": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:9a043b83": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b37e6cf3": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d2250172": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:2487b55b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:653f5213": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1ea80aea": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ed8c882c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b1e4959b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ed42eb87": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d2541211": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:2a2f9fd1": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:94aefc38": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:cb8915ae": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:76165de4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:05456b1a": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:addf6b15": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e9f2105f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:88e7aab4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:5a80f0da": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c86417e2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:7039e594": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:6cd3f1b4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d1689dce": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1f9ebd0b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d20086c5": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:af32a454": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b64f2c5d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:64e9475a": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ab532b8e": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e5f1d82b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:11431545": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ca9671fc": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:03bfe8e9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:baf2d169": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:232cf635": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:9ad8428e": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:3011d2e9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d66968a2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:6a1b58e9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:76181117": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e0e1a6f8": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:88ebcfdb": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:28e98c0a": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d2c66a1f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d7aab1fa": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:cbc7f792": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1add4340": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:125360de": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c4bb5bc7": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:3aea4143": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:abe0349f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:8e35c14c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b88f2dde": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:fb290bf7": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:6ee6fb3c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:99f5854d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:94092bde": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:5cd8dd4a": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1c39a775": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:8f95c019": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:5d858ef9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:feb89bde": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:7c3f9961": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1d85bce4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:8ab33159": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e268a214": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:de04092f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4567764e": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4aa88156": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4c848cde": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:2eb0a98d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:f6c28f2c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:421dad93": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b7e4c457": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:fef869c6": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:24f2a5a5": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:dc2f17e8": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ed1f93c8": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:87e7bcf2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4a694666": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c147b37c": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:bef0bff6": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:9d152e8d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:89edd5c2": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:2f26853f": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:ec74a201": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:d5f22ead": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a1216d28": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:84e9d49d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4cb1d1f4": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:6fcdbb1d": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:7e381f67": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:8907e008": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e482b1ab": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c3567c46": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:f46bce0b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a467d50b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:4f3c02b1": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:51d6adb6": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:619c19d7": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:50378f53": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:e735b5ce": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:06170ebe": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c07bbddf": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:92083966": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:b7a6d058": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:f0bf1cf3": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a294b6e9": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:a3b04d2b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:cd4fdfcf": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:555fec05": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:c2f310b3": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:edede3a6": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:1daf26ce": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:9d1546ba": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:cc0a9b81": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/client-api:593ff806": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:d9cd8ba5": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:c7c7ea94": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:3078901f": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:8fd2f274": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:41b5c0e4": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:6de9e914": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:b2b8f858": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:2bf0e39c": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/code-execution:d5dbd0e2": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -3716,7 +3716,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
 			"packages/runtime/test/conformance.test.ts > queue > Q23 ends an execution at the step cap although a hook queues a message on every response, and the next send delivers it"
 		],
-		"reason": "The runtime settles with stop_on_response, stop_tool, max_side_steps, awaiting_human, aborted, and aborted_by_user where they apply. The clause for clients belongs to the Thread Client API in M6, and the session and handler codes arrive with sessions and handlers in M2."
+		"reason": "The runtime settles with stop_on_response, stop_tool, max_side_steps, awaiting_human, aborted, and aborted_by_user where they apply. The clause for clients belongs to the Thread Client API in M5, and the session and handler codes arrive with sessions and handlers in M2a."
 	},
 	"specification:threads/execution-state:7029c151": {
 		"status": "partial",
@@ -3725,7 +3725,7 @@
 			"packages/runtime/test/conformance.test.ts > run status > R16 settles each run with the stop reason code that applies",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on"
 		],
-		"reason": "The runtime settles with step_error, fatal_error, and execution_lost where they apply. The clause for clients belongs to the Thread Client API in M6, and repeated_tool_error and session_fail arrive with sessions in M2."
+		"reason": "The runtime settles with step_error, fatal_error, and execution_lost where they apply. The clause for clients belongs to the Thread Client API in M5, and session tools and their terminal reasons arrive in M2b."
 	},
 	"specification:threads/execution-state:37e4432c": {
 		"status": "covered",
@@ -3772,61 +3772,61 @@
 	},
 	"specification:threads/execution-state:bc901e39": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/execution-state:0b742b09": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/filesystem:d68feaee": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/filesystem:d3e6aa89": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/filesystem:8d80337e": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/filesystem:a77524c1": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/filesystem:108c7bf5": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/messages:eef7a3ba": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/messages:4f934f65": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads/messages:5199f30e": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -3921,7 +3921,7 @@
 			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
 			"packages/runtime/test/cli/chat.test.ts > spindle chat > a silent message never prints, and a human-side message the chat did not send prints as elsewhere (O4, O7)"
 		],
-		"reason": "ThreadState.getMessages and the store hide silent messages unless includeSilent is true, and M3 shows it for injected messages. M6 owes the ordinary lists of the client API. The terminal client hides the stored silent injection."
+		"reason": "ThreadState.getMessages and the store hide silent messages unless includeSilent is true, and M3 shows it for injected messages. M5 owes the ordinary lists of the client API. The terminal client hides the stored silent injection."
 	},
 	"specification:threads/messages:b93f89a4": {
 		"status": "covered",
@@ -4071,7 +4071,7 @@
 	},
 	"specification:tools:3a5a790d": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -4082,7 +4082,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
 			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
 		],
-		"reason": "A tool invokes and queues a function tool by name, with and without uses. Prompts and agents as targets arrive with M2."
+		"reason": "A tool invokes and queues a function tool by name, with and without uses. Prompts and agents as targets arrive with M2b."
 	},
 	"specification:tools:a403d2a5": {
 		"status": "partial",
@@ -4093,29 +4093,29 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
 			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
 		],
-		"reason": "M1-2 checks the uses of packed tools at load, and Q10 shows that queueTool throws and invokeTool returns an error result for a function tool outside a supplied uses list, that an empty list permits none, and that an omitted list permits any. A prompt or an agent that a uses list names becomes a target in M2, which owes the rule for those targets."
+		"reason": "M1-2 checks the uses of packed tools at load, and Q10 shows that queueTool throws and invokeTool returns an error result for a function tool outside a supplied uses list, that an empty list permits none, and that an omitted list permits any. A prompt or an agent that a uses list names becomes a target in M2b, which owes the rule for those targets."
 	},
 	"specification:tools:462ec47b": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:tools:f50277e6": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:tools:70b6bb88": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:tools:1bd04cf2": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
@@ -4649,7 +4649,7 @@
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > two processes that send to one thread at once run one execution and store each message once",
 			"packages/runtime/test/cli/chat-shared.test.ts > spindle chat beside other processes > a chat started on a thread that another process runs says so, queues its line, and prints the reply that process made (O2, O11, F03)"
 		],
-		"reason": "Scheduled effects are planned."
+		"reason": "Message and tool admissions queue or start a run. M4 adds scheduled effects as another source of work."
 	},
 	"infrastructure:runtime:176f7205": {
 		"status": "covered",
@@ -4690,55 +4690,55 @@
 	},
 	"infrastructure:runtime:a3bd2fbf": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
-		"reason": "Until M3 adds the thread file system no attachment bytes exist, so every attachment reaches the model as a text description."
+		"reason": "Until M3a adds the thread file system no attachment bytes exist, so every attachment reaches the model as a text description."
 	},
 	"infrastructure:runtime:e65dd4b8": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:561548ef": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:df77dcf4": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:f89eb38a": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c36ba9d1": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:e96197b3": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:9a6fefbb": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:2d21d911": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -4777,49 +4777,49 @@
 	},
 	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:432ac56a": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:357abc64": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:c6e2208e": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:66f327d6": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:93c019a9": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:5ca4defd": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:571a34a2": {
 		"status": "planned",
-		"milestone": "M5",
+		"milestone": "M6",
 		"tests": [],
 		"reason": ""
 	},
@@ -4858,7 +4858,7 @@
 	},
 	"specification:hooks:118d0ec4": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -4868,11 +4868,11 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > hooks > H8 runs the prompt's hook list as the whole set, the agent's list when the prompt lists none, and nothing else"
 		],
-		"reason": "H8 shows that only the active prompt's list, or the agent's list when the prompt lists none, selects hooks, and that a defined hook no list names never runs. M3 owes the hooks that a child relationship adds to the parent composition."
+		"reason": "H8 shows that only the active prompt's list, or the agent's list when the prompt lists none, selects hooks, and that a defined hook no list names never runs. M3b owes the hooks that a child relationship adds to the parent composition."
 	},
 	"specification:hooks:9633e5d2": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -4894,7 +4894,7 @@
 	},
 	"specification:hooks:b7d23996": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5023,7 +5023,7 @@
 			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages keeps each lifecycle status it receives",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
-		"reason": "Spindle stores a message once the model finishes it and keeps a queued message in its queue until the drain stores it as completed, so no stored message is pending. A message stored while it is still being generated arrives with streaming in M6."
+		"reason": "Spindle stores a message once the model finishes it and keeps a queued message in its queue until the drain stores it as completed, so no stored message is pending. A message stored while it is still being generated arrives with streaming in M5."
 	},
 	"specification:threads/messages:37e69561": {
 		"status": "covered",
@@ -5096,11 +5096,11 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
 			"packages/runtime/test/cli/chat.test.ts > spindle chat > an agent whose prompt is side B prints the reply and stores the line in the human side's role (O4)"
 		],
-		"reason": "Q05 shows the mapping with a prompt on either side and the human on the other. A handler-backed side arrives in M2, which owes the mapping for it."
+		"reason": "Q05 shows the mapping with a prompt on either side and the human on the other. A handler-backed side arrives in M2a, which owes the mapping for it."
 	},
 	"specification:threads/messages:3170d519": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5201,19 +5201,19 @@
 	},
 	"specification:agents:8fb03a6e": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:cda6e847": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:2f2416ed": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5237,7 +5237,7 @@
 	},
 	"specification:agents:b3f24116": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
@@ -5261,19 +5261,19 @@
 	},
 	"specification:agents:47d9e86c": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:afee8031": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:6e269b7f": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5286,34 +5286,32 @@
 		"reason": ""
 	},
 	"specification:agents:13907439": {
-		"status": "partial",
+		"status": "not-testable",
 		"milestone": "M1",
-		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts packaging metadata on an agent"
-		],
-		"reason": "M1-2 accepts packageName, version, author, and license on an agent and keeps them on the loaded value. Spindle does not pack agents, so no Spindle code consumes the fields, and no test can show that they are consumed only when an agent is packed."
+		"tests": [],
+		"reason": "Only the packer consumes optional author metadata. Spindle loads definitions and does not pack them."
 	},
 	"specification:agents:e7466e70": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:050c4e51": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:38b9d170": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:3df00a7e": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
@@ -5327,47 +5325,47 @@
 	},
 	"specification:agents:5585bfa6": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:a9937a20": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:2d27cbb9": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:b7f504f1": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:ad921477": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:agents:3df5dfaf": {
 		"status": "partial",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
 		],
-		"reason": "M1-2 resolves each required hook in the child's own namespace, so a packed child cannot require a hook that only the host defines, and it rejects user-scoped hook types. M3 owes running the hook with the parent's ThreadState."
+		"reason": "M1-2 resolves each required hook in the child's own namespace, so a packed child cannot require a hook that only the host defines, and it rejects user-scoped hook types. M3b owes running the hook with the parent's ThreadState."
 	},
 	"specification:agents:695692ce": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5382,15 +5380,15 @@
 	},
 	"specification:agents:f990f511": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
 	"infrastructure:runtime:853d2427": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
-		"reason": "43bbb05d holds the same sentence for M1. M2 adds the case with two prompt sides."
+		"reason": "43bbb05d holds the same sentence for M1. M2a adds the case with two prompt sides."
 	},
 	"infrastructure:runtime:ec3b4b7f": {
 		"status": "covered",
@@ -5457,7 +5455,7 @@
 			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
 			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
 		],
-		"reason": "The store defaults depth to 0 and keeps a deeper depth it receives. The PR that adds sub-prompts owes setting it."
+		"reason": "The store defaults depth to 0 and preserves an explicit depth. M2b must set it when a sub-prompt produces a message."
 	},
 	"specification:agents:65d917e9": {
 		"status": "covered",
@@ -5657,7 +5655,7 @@
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
 		],
-		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M2, which runs handler sides, owes the decision."
+		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M2a, which runs handler sides, owes the decision."
 	},
 	"specification:handlers:6ce44191": {
 		"status": "partial",
@@ -5665,7 +5663,7 @@
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
 		],
-		"reason": "M1-2 rejects a handler whose execute is not a function. M2, which runs handler sides, owes calling execute with the ThreadState and the persisted message."
+		"reason": "M1-2 rejects a handler whose execute is not a function. M2a, which runs handler sides, owes calling execute with the ThreadState and the persisted message."
 	},
 	"specification:handlers:16efc360": {
 		"status": "partial",
@@ -5732,27 +5730,27 @@
 	},
 	"specification:threads:e1c56064": {
 		"status": "partial",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [
 			"packages/runtime/test/store/threads.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0"
 		],
-		"reason": "The store keeps the arguments a thread was created with. M2 owes exposing them read-only on ThreadState.arguments on every run, and the arguments supplied when a thread is invoked."
+		"reason": "The store keeps the arguments a thread was created with. M2b owes exposing them read-only on ThreadState.arguments on every run, and the arguments supplied when a thread is invoked."
 	},
 	"specification:threads:357c07d0": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:c2a80b35": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:threads:d4e23481": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2a",
 		"tests": [],
 		"reason": ""
 	},
@@ -5813,7 +5811,7 @@
 	},
 	"specification:threads:318dc3fd": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3b",
 		"tests": [],
 		"reason": ""
 	},
@@ -5939,7 +5937,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
 		],
-		"reason": "The model call log in the run outcome holds the metadata of each response. Durable log records arrive with a later milestone."
+		"reason": "Provider metadata reaches the in-memory model call log. M7 owes durable provider log records."
 	},
 	"specification:providers:a0076042": {
 		"status": "covered",
@@ -5959,9 +5957,9 @@
 	},
 	"specification:providers:da82bb5b": {
 		"status": "planned",
-		"milestone": "M6",
+		"milestone": "M5",
 		"tests": [],
-		"reason": "Spindle has no source of a runtime request option, and the spec names none. S06a covers the model and prompt tiers. The first interface that can carry request options owes this tier, at the latest the Thread Client API in M6."
+		"reason": "Spindle has no source of a runtime request option, and the spec names none. S06a covers the model and prompt tiers. The first interface that can carry request options owes this tier, at the latest the Thread Client API in M5."
 	},
 	"specification:providers:8fd04a52": {
 		"status": "covered",
@@ -6128,7 +6126,7 @@
 			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
 			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match"
 		],
-		"reason": "maxSteps is evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2."
+		"reason": "maxSteps is evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2a."
 	},
 	"specification:prompts:f46d5136": {
 		"status": "covered",
@@ -6233,15 +6231,15 @@
 	},
 	"specification:prompts:49f402d9": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
-		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3."
+		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3a."
 	},
 	"specification:prompts:aac9da80": {
 		"status": "planned",
-		"milestone": "M3",
+		"milestone": "M3a",
 		"tests": [],
-		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3."
+		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3a."
 	},
 	"specification:tools:b7cd3b54": {
 		"status": "covered",
@@ -6453,7 +6451,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
 		],
-		"reason": "A Spindle thread has no user, and S28 shows userId as null. Users arrive later, when the Users page leaves Draft, and that milestone owes a thread with a user."
+		"reason": "S28 sees null for a thread without a user. A non-null userId awaits the later Users milestone, after the page leaves Draft."
 	},
 	"specification:threads:bc63a67f": {
 		"status": "covered",
@@ -6480,7 +6478,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
 		],
-		"reason": "S28 shows the empty arguments of a thread created without any. Thread arguments arrive in M2 and subagent arguments in M3, and each owes its part."
+		"reason": "S28 shows the empty arguments of a thread created without any. Thread arguments arrive in M2b and subagent arguments in M3b, and each owes its part."
 	},
 	"specification:threads:31e057f3": {
 		"status": "covered",
@@ -6552,7 +6550,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
 		],
-		"reason": "Agent, prompt, and instance values resolve in that order. Thread values arrive with setEnv in M2, and user values with the Users page."
+		"reason": "Agent, prompt, and instance values resolve in that order. Thread values arrive with setEnv in M2b, and user values with the Users page."
 	},
 	"specification:threads:a01f5667": {
 		"status": "partial",
@@ -6560,7 +6558,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
 		],
-		"reason": "A value from any source but the thread is secret. Thread values and their text classification arrive with setEnv in M2."
+		"reason": "A value from any source but the thread is secret. Thread values and their text classification arrive with setEnv in M2b."
 	},
 	"specification:threads:39260b1a": {
 		"status": "partial",
@@ -6581,9 +6579,9 @@
 	},
 	"specification:threads:4495359b": {
 		"status": "planned",
-		"milestone": "M2",
+		"milestone": "M2b",
 		"tests": [],
-		"reason": "Thread values arrive with setEnv in M2."
+		"reason": "Thread values arrive with setEnv in M2b."
 	},
 	"specification:threads:65b3e24e": {
 		"status": "covered",
@@ -6621,7 +6619,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S24 keeps stored attachment references intact and describes them in the request"
 		],
-		"reason": "S24 shows that stored references survive and reach the request as text descriptions. M3 adds attachment bytes, which owes image parts and their filtering for a model without vision."
+		"reason": "S24 shows that stored references survive and reach the request as text descriptions. M3a adds attachment bytes, which owes image parts and their filtering for a model without vision."
 	},
 	"specification:tools:8f7b59dd": {
 		"status": "covered",
@@ -6647,7 +6645,7 @@
 			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/store/messages.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
 		],
-		"reason": "The store keeps parent_id on every message and returns null when nothing sets it. M2 owes the sub-prompt messages that name a parent."
+		"reason": "The store keeps parent_id on every message and returns null when nothing sets it. M2b owes the sub-prompt messages that name a parent."
 	},
 	"specification:agents:4029d475": {
 		"status": "covered",
@@ -6703,7 +6701,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q19 does not retry a model attempt that was cut off after stop was called",
 			"packages/runtime/test/conformance.test.ts > queue > Q21 keeps the result of a call that a stop left unstarted an error that says it did not run, whatever a hook returns"
 		],
-		"reason": "Q11 and Q12 show that stop ends the current execution loop at the next boundary. A session and stopSession arrive in M2, which owes the rule that stop alone does not end a session."
+		"reason": "Q11 and Q12 show that stop ends the current execution loop at the next boundary. A session and stopSession arrive in M2b, which owes the rule that stop alone does not end a session."
 	},
 	"specification:threads/execution-state:ff3ed10f": {
 		"status": "partial",
@@ -6711,7 +6709,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
-		"reason": "The curated excerpt covers ThreadState access. The rest of the sentence requires clients to receive status without polling. The separate client delivery requirement specification:threads/execution-state:bc901e39 awaits the stream API."
+		"reason": "ThreadState exposes status at rest and during execution. M5 owes delivery of status changes to connected clients without polling."
 	},
 	"specification:threads/execution-state:b9a39da8": {
 		"status": "covered",
@@ -6727,7 +6725,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
-		"reason": "Run status is independent of termination. Parent registry propagation awaits linked threads."
+		"reason": "Thread run status is independent of termination. M3b must propagate setStatus labels to the parent registry."
 	},
 	"specification:threads:b7c8285e": {
 		"status": "partial",
@@ -6735,7 +6733,7 @@
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q06 starts a turn from a message queued to an idle thread, with its perspective and payload, and parks for the human"
 		],
-		"reason": "Stored attachment references are supported. New file data awaits the thread file system."
+		"reason": "Queued messages accept stored attachment references. M3a must persist new file data in the thread filesystem."
 	},
 	"specification:threads:304b015d": {
 		"status": "covered",
@@ -6815,9 +6813,9 @@
 	},
 	"specification:threads:b83b63ca": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M4",
 		"tests": [],
-		"reason": "Thread endpoints arrive in M6."
+		"reason": "Thread endpoints arrive with the M4 server."
 	},
 	"specification:threads:9a66b438": {
 		"status": "covered",
