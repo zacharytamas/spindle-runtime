@@ -8,7 +8,7 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Predicate, Schedule, Stream } from "effect"
+import { Data, Effect, type Fiber, Predicate, Schedule, Scope, Stream } from "effect"
 import { isTimeout, providerErrorCode } from "../providers/errors.ts"
 import type { SetupError } from "./turn.ts"
 
@@ -48,7 +48,7 @@ const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFail
   })
 }
 
-export interface StreamedCall {
+interface StreamedCall {
   readonly id: string
   name: string
   argumentsText: string
@@ -250,6 +250,10 @@ const streamResponse = (
   started: Array<StreamedCall>,
 ) =>
   Effect.gen(function* () {
+    // A provider can reject or stall in cleanup. Start closing its scope without holding the next attempt.
+    const cleanup = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
+      Effect.forkDetach(Scope.close(scope, exit), { startImmediately: true }),
+    )
     const scoped = yield* Effect.abortSignal
     const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])
     const onError = (cause: unknown) => failureOf(cause, provider)
@@ -264,7 +268,8 @@ const streamResponse = (
       finish: undefined,
     }
     const watchers = new Map<string, (delta: string) => { readonly value: unknown } | undefined>()
-    yield* Stream.runForEach(Stream.fromAsyncIterable(iterable, onError), (chunk) => {
+    const pull = Stream.toPull(Stream.fromAsyncIterable(iterable, onError))
+    yield* Stream.runForEach(Stream.fromPull(Scope.provide(pull, cleanup)), (chunk) => {
       const failure = applyChunk(response, chunk)
       if (failure !== undefined) return Effect.fail(failure)
       return hooks === undefined ? Effect.void : startCalls(response, chunk, hooks, started, watchers)
@@ -406,14 +411,14 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
       if (!(input instanceof ProviderFailure)) return Effect.succeed(0)
       const delay = input.retryAfter === undefined ? duration : Math.min(input.retryAfter, 60) * 1000
       // A graceful stop wakes the backoff, but lets a request already streaming reach its boundary.
-      return Effect.as(Effect.raceFirst(Effect.sleep(delay), context.waitForStop), 0)
+      return Effect.as(Effect.timeoutOption(context.waitForStop, delay), 0)
     }),
   )
   return yield* requestOnce.pipe(
     Effect.retry(policy),
     Effect.catchIf(
       (error) => error._tag !== "SetupError" && context.stopped(),
-      () => Effect.succeed(undefined),
+      () => Effect.undefined,
     ),
   )
 })
