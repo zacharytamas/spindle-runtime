@@ -22,11 +22,20 @@ class Found implements NotJson {
   }
 }
 
+// A thrown value with no prototype has no string form, and String throws for it.
+const printed = (cause: unknown) => {
+  try {
+    return String(cause)
+  } catch {
+    return "a value that has no string form"
+  }
+}
+
 const read = <A>(path: string, get: () => A): A => {
   try {
     return get()
   } catch (cause) {
-    throw new Found(path, `a property that threw ${String(cause)}`)
+    throw new Found(path, `a property that threw ${printed(cause)}`)
   }
 }
 
