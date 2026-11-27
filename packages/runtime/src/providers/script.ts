@@ -24,15 +24,15 @@ const Response = Schema.Struct({
       code: Schema.optionalKey(
         Schema.Literals(["rate_limit", "invalid_request", "auth_error", "server_error", "timeout", "unknown"]),
       ),
-      statusCode: Schema.optionalKey(Schema.Number),
-      retryAfter: Schema.optionalKey(Schema.Number),
+      statusCode: Schema.optionalKey(Schema.Finite),
+      retryAfter: Schema.optionalKey(Schema.Finite),
     }),
   ),
 })
 
 // A script lists the model's responses in order. With repeat, the last response answers every later request.
-export const Script = Schema.Struct({ responses: Schema.Array(Response), repeat: Schema.optionalKey(Schema.Boolean) })
-export type Script = typeof Script.Type
+const Script = Schema.Struct({ responses: Schema.Array(Response), repeat: Schema.optionalKey(Schema.Boolean) })
+type Script = typeof Script.Type
 
 export const decodeScript = Schema.decodeUnknownEffect(Schema.fromJsonString(Script))
 

@@ -7,25 +7,16 @@ import { HookTimeout } from "../execution/hooks.ts"
 import type { ExecutionEvent } from "../execution/step.ts"
 import { ThreadSupervisor } from "../execution/ThreadSupervisor.ts"
 import { formatTraceEntry } from "../execution/trace.ts"
-import { createThread, sendMessage } from "../execution/trigger.ts"
-import { deliveryFlags, fail, type note, plural, requestText, toolCallLine, withOutput, withProject } from "./shared.ts"
+import { createThread } from "../execution/trigger.ts"
+import { deliveryFlags, fail, note, plural, requestText, toolCallLine, withOutput, withProject } from "./shared.ts"
 
 const stillQueued = "Your message is still queued and the next run of this thread will deliver it."
 
 const printer =
-  (
-    modelRole: Message["role"],
-    options: { readonly trace: boolean; readonly dumpRequests: boolean },
-    identify: typeof note,
-  ) =>
+  (modelRole: Message["role"], options: { readonly trace: boolean; readonly dumpRequests: boolean }) =>
   (event: ExecutionEvent): Effect.Effect<void> => {
     const print = (line: string) => Console.log(line)
     if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
-    if (event.type === "interrupted_while_queued") return Console.error(`spindle: ${stillQueued}`)
-    if (event.type === "queued")
-      return identify(
-        `thread ${event.threadId} is running in ${event.pid === null ? "another process" : `process ${event.pid}`}, so the message waits in its queue`,
-      )
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
       return print(requestText(event.request))
@@ -59,9 +50,17 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
         const threadId = "agent" in target ? (yield* createThread(target.agent, secrets)).id : target.thread
         // Another command can name a thread in a database file, so the id comes first, before any reply.
         if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
-        const delivery = yield* sendMessage(threadId, args.message, { observe: printer(role, args, identify) }).pipe(
-          answerInterrupts(threadId, identify),
-        )
+        const supervisor = yield* ThreadSupervisor
+        const delivery = yield* supervisor
+          .send(threadId, args.message, {
+            observe: printer(role, args),
+            onWaiting: (holder) =>
+              holder.kind === "remote"
+                ? identify(`thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`)
+                : Effect.void,
+            interruptedWhileQueued: note(stillQueued),
+          })
+          .pipe(answerInterrupts(threadId, identify))
         const { outcome } = delivery
         const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
         if (outcome !== undefined) {

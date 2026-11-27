@@ -166,7 +166,7 @@ const converse = (chat: Conversation) =>
     })
     const observe = (event: ExecutionEvent) =>
       Effect.gen(function* () {
-        if (atPrompt || event.type === "queued") return
+        if (atPrompt) return
         waiting = false
         yield* finishPrevious
         if (event.type === "message") yield* flush
@@ -206,7 +206,7 @@ const converse = (chat: Conversation) =>
               ),
             )
             yield* chat.identify(
-              holder.abortedOperation
+              holder.kind === "local" && holder.abortedOperation
                 ? `${chat.clean(holder.abortedOperation)} has not returned since the abort, so the line waits in the queue until it does`
                 : `thread ${chat.id} is running in process ${holder.pid}, so the line waits in its queue`,
             )
