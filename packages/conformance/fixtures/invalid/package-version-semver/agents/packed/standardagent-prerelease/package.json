@@ -1,0 +1,14 @@
+{
+  "name": "standardagent-prerelease",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": [
+      "opener"
+    ]
+  }
+}
