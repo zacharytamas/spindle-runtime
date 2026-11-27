@@ -163,7 +163,22 @@ export const H12e: Scenario = {
     const tools = {
       diagnostic: defineTool({
         description: "Returns an uncloneable diagnostic",
-        execute: async () => ({ status: "error", result: "original", error_data: { callback: () => 0 } }),
+        // Error data is checked before any hook, so the value no hook can copy rides on an attachment.
+        execute: async () => ({
+          status: "error",
+          result: "original",
+          attachments: [
+            {
+              id: "att_1",
+              type: "file",
+              path: "/a.txt",
+              name: "a.txt",
+              mimeType: "text/plain",
+              size: 1,
+              callback: () => 0,
+            },
+          ],
+        }),
       }),
     }
     const provider = new ScriptedProvider([

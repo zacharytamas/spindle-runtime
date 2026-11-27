@@ -204,7 +204,7 @@ const converse = (chat: Conversation, events: Queue.Queue<Event>, own: Set<numbe
             supervisor.send(chat.id, event.line, {
               observe,
               onHold: (operation) =>
-                chat.identify(holdNote(chat.id, chat.clean(operation), "abort, then once at the prompt to exit")),
+                chat.identify(holdNote(chat.id, operation, chat.clean, "abort, then once at the prompt to exit")),
               onAdmitted: (seq) => {
                 Queue.offerUnsafe(events, { kind: "admitted", seq })
               },

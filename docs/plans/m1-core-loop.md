@@ -1129,6 +1129,16 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - In a macOS pseudo-terminal on Node and Bun, a typed or pasted line of 1,024 bytes or more never reached `spindle chat`, and chat waited for input. A reviewer reported truncation at 4,095 bytes on Linux (Linux not measured). Pipe longer lines into chat or pass them to `spindle send -m`.
 
+### Settled in M1-20
+
+- Packed definitions share a sealed signature. A definition can rename its package. If it tries to replace a signature field with a getter, validation reports the error on that definition and continues.
+
+- A failed or interrupted model attempt starts closing its iterator and aborts its request even if the iterator is still closing. A completed attempt keeps its request signal live.
+
+- Spindle checks the prototype of nested objects while copying tool error data. A nested class instance in an object field or array element produces the same stored error and dropped-data note as a top-level instance.
+
+- Between reading the history snapshot and starting the first `filter_messages` hook, the scheduler does not hand the thread to another fiber, so a message stored before the hook starts is in that assembly. A stop is checked in the same synchronous step that starts a tool. Neither has a test of its own. The first shows only with Effect's operation budget lowered through an internal key, and the second needs the budget to run out at one instruction.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

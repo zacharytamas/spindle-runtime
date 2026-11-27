@@ -70,7 +70,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           if ("thread" in target) yield* reportId(threadId)
           const supervisor = yield* ThreadSupervisor
           const send = supervisor.send(threadId, args.message, {
-            onHold: (operation) => identify(holdNote(threadId, clean(operation), "abort and exit")),
+            onHold: (operation) => identify(holdNote(threadId, operation, clean, "abort and exit")),
             onWaiting: (holder) =>
               holder.kind === "remote"
                 ? identify(`thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`)

@@ -261,6 +261,15 @@ describe("ThreadStore", () => {
           const getter = yield* Effect.flip(store.setValue(thread.id, "getter", throwing, external))
           expect(getter).toMatchObject({ _tag: "ValueNotJson", path: "$" })
           expect(getter.message).toContain("boom")
+          const unprintable = {
+            get broken(): never {
+              throw Object.create(null)
+            },
+          }
+          expect(yield* Effect.flip(store.setValue(thread.id, "getter", unprintable, external))).toMatchObject({
+            _tag: "ValueNotJson",
+            path: "$",
+          })
           const deep = yield* Effect.flip(store.setValue(thread.id, "deep", nest(20_000), external))
           expect(deep).toMatchObject({ _tag: "ValueNotJson" })
           expect(deep.message).toContain("1000 levels")

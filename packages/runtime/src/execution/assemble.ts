@@ -8,7 +8,7 @@ import type {
   ProviderRequest,
   ProviderToolCallPart,
 } from "@standardagents/spec"
-import { Effect, Equal, Predicate } from "effect"
+import { Effect, Equal, Predicate, Scheduler } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
@@ -366,15 +366,19 @@ export const assembleRequest = Effect.fnUntraced(function* (
   yield* checkSystemPrompt(turn, system, secrets)
   yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
   // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
-  // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
-  // the trace, runs between the read and the first hook.
-  const { rows } = yield* history.read
-  let historyRows: ReadonlyArray<RequestRow> = rows
-  if (countHooks(hooks, "filter_messages") > 0) {
+  // wrote it. A message written later belongs to the next assembly. The scheduler may not hand the thread to
+  // another fiber between the read and the first hook, because that fiber could write a message the snapshot lacks.
+  const { rows, snapshot, filtered } = yield* Effect.gen(function* () {
+    const { rows } = yield* history.read
+    if (countHooks(hooks, "filter_messages") === 0) return { rows }
     const snapshot = rows.map((row) => row.message)
     const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
       copyInitial: (messages) => messages.map(copyMessage),
     })
+    return { rows, snapshot, filtered }
+  }).pipe(Effect.provideService(Scheduler.PreventSchedulerYield, true))
+  let historyRows: ReadonlyArray<RequestRow> = rows
+  if (filtered !== undefined) {
     if (filtered !== snapshot) {
       let byId: Map<string, (typeof rows)[number]> | undefined
       let retainedIds: Set<string> | undefined

@@ -7,7 +7,16 @@ import { countHooks, type HookScope, observeHooks, transformHooks } from "./hook
 import { commitMessage } from "./messages.ts"
 import { argumentsOf } from "./response.ts"
 import type { SideScope, ThreadScope } from "./step.ts"
-import { describe, notRun, ResultUnreadable, resultOf, storedResult, type ToolCall, unstorableResult } from "./tools.ts"
+import {
+  checkedResult,
+  describe,
+  notRun,
+  ResultUnreadable,
+  resultOf,
+  storedResult,
+  type ToolCall,
+  unstorableResult,
+} from "./tools.ts"
 import type { Turn } from "./turn.ts"
 
 export const hookCall = (call: { readonly id: string; readonly name: string }, args: string): HookToolCall => ({
@@ -57,13 +66,14 @@ export const completeCall = (
     const { hooks } = write
     const result = run.stopAtBoundary() ? undefined : yield* outcome
     const skipped = result === undefined
-    const returned = result ?? notRun
+    const returned = result === undefined ? notRun : checkedResult(result)
     const toolCall = hookCall(call, argumentsOf(call))
     const branched = skipped
       ? returned
       : yield* transformHooks(
           hooks,
-          returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
+          // The tool's own status picks the branch, even when its error data could not be kept.
+          result.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
           [toolCall],
           returned,
         )

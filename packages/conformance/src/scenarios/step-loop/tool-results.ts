@@ -1,4 +1,4 @@
-import { defineTool, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
 import { z } from "zod"
 import { ScriptedProvider } from "../../ScriptedProvider.ts"
@@ -326,22 +326,85 @@ export const S14c: Scenario = {
         return { summary: "public detail" }
       }
     }
+    let reads = 0
+    const shared = {
+      get code() {
+        return ++reads
+      },
+    }
+    Object.setPrototypeOf(shared, null)
+    const data = {
+      top: new Details(),
+      nested: { list: [{ details: new Details() }] },
+      plain: {
+        list: Object.assign([shared, shared, null, false, 0, ""], { annotation: new Details() }),
+        ["__proto__"]: "ordinary key",
+        absent: undefined,
+      },
+      succeeded: new Details(),
+    }
     const diagnostic = defineTool({
-      description: "Return diagnostic data with a prototype",
-      execute: async () => ({ status: "error", error: "denied", error_code: "quota", error_data: new Details() }),
+      description: "Return diagnostic data",
+      args: z.object({ variant: z.enum(["top", "nested", "plain", "succeeded"]) }),
+      execute: async (_state, { variant }) => ({
+        status: variant === "succeeded" ? "success" : "error",
+        error: "denied",
+        error_code: "quota",
+        error_data: data[variant],
+      }),
     })
-    const provider = new ScriptedProvider([
-      { toolCalls: [{ id: "c", name: "diagnostic", arguments: {} }] },
-      { text: "done" },
-    ])
-    await using(driver, { provider, tools: { diagnostic } }, async (session, thread) => {
-      await session.send(thread, "go")
-      const results = toolResults(await session.messages(thread))
-      expect(results).toMatchObject([
-        { tool_status: "error", content: expect.stringContaining("denied\n\nSpindle dropped the error data") },
+    // A hook receives a structured clone, which strips a prototype, so the second run passes each result through one.
+    const passThrough = defineHook({
+      hook: "before_store_tool_result",
+      id: "pass_through",
+      execute: async (_state, _call, result) => result,
+    })
+    // Hooks sections 5.3 and 5.4: the tool's own status picks the branch, whatever becomes of its data.
+    const branches: Array<unknown> = []
+    const branch = (hook: "after_tool_call_success" | "after_tool_call_failure") =>
+      defineHook({
+        hook,
+        id: hook,
+        execute: async (_state, call) => {
+          branches.push([hook, call.id])
+          return null
+        },
+      })
+    for (const hooks of [[], [passThrough, branch("after_tool_call_success"), branch("after_tool_call_failure")]]) {
+      reads = 0
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: Object.keys(data).map((variant) => ({ id: variant, name: "diagnostic", arguments: { variant } })),
+        },
+        { text: "done" },
       ])
-      expect(results[0]?.metadata).toEqual({ error_code: "quota" })
-    })
+      await using(
+        driver,
+        { provider, tools: { diagnostic }, hooks, prompt: { hooks: hooks.map((hook) => hook.id) } },
+        async (session, thread) => {
+          await session.send(thread, "go")
+          const results = toolResults(await session.messages(thread))
+          expect(reads).toBe(1)
+          expect(results[2]?.metadata).toEqual({
+            error_code: "quota",
+            error_data: { list: [{ code: 1 }, { code: 1 }, null, false, 0, ""], ["__proto__"]: "ordinary key" },
+          })
+          for (const row of results.slice(0, 2)) {
+            expect(row.tool_status).toBe("error")
+            expect(row.content).toContain("denied\n\nSpindle dropped the error data")
+            expect(row.metadata).toEqual({ error_code: "quota" })
+          }
+          expect(results[3]?.tool_status).toBe("error")
+          expect(results[3]?.content).toContain("Spindle dropped the error data")
+        },
+      )
+    }
+    expect(branches).toEqual([
+      ["after_tool_call_failure", "top"],
+      ["after_tool_call_failure", "nested"],
+      ["after_tool_call_failure", "plain"],
+      ["after_tool_call_success", "succeeded"],
+    ])
   },
 }
 

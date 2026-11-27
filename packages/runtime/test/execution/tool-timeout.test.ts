@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest"
-import { defineHook, defineTool, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type ThreadState, type ToolResult } from "@standardagents/spec"
 import { Clock, Duration, Effect, Fiber, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import { SqliteLive } from "#platform"
@@ -384,6 +384,55 @@ it.effect("leaves the execution abort signal live for a sibling after a tool tim
   }).pipe(Effect.provide(live))
 })
 
+it.effect("refuses a write at commit when its tool times out inside the message hook", () => {
+  const entered = gate()
+  const leave = gate()
+  const hook = defineHook({
+    id: "paused",
+    hook: "before_create_message",
+    execute: async (_state, message) => {
+      if (message.content === "pending write") {
+        entered.release()
+        await leave.opened
+      }
+      return message
+    },
+  })
+  let write: Promise<unknown>
+  const wait = defineTool({
+    description: "Inject a message through the paused hook",
+    execute: async (state: ThreadState) => {
+      write = state.injectMessage({ role: "user", content: "pending write" })
+      await write
+      return ok("wrote")
+    },
+  })
+  const { live } = fixture(
+    { wait },
+    {
+      hooks: [hook],
+      steps: [
+        { toolCalls: [call] },
+        async () => {
+          // Keep the flow active through the insert so only the tool's deadline can refuse it.
+          await write.catch(() => {})
+          return { text: "done" }
+        },
+      ],
+    },
+  )
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(entered)
+    yield* TestClock.adjust("11 millis")
+    expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+    leave.release()
+    yield* Effect.promise(() => expect(write).rejects.toMatchObject({ _tag: "HandleExpired" }))
+    yield* Fiber.join(sent)
+    expect((yield* messages(id)).messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["go"])
+  }).pipe(Effect.ensuring(Effect.sync(leave.release)), Effect.provide(live))
+})
+
 it.effect("refuses a tool write past its deadline even before the event loop can run its timer", () =>
   Effect.gen(function* () {
     const clock = yield* Clock.Clock
@@ -534,6 +583,62 @@ for (const fail of [false, true])
       })
     },
   )
+
+it.effect("concurrent nested tools keep their own handles and deadlines past sibling and parent timeouts", () => {
+  const short = waitingTool()
+  const long = waitingTool()
+  let shortResult: Promise<ToolResult>
+  const parent = defineTool({
+    description: "Start both children",
+    execute: async (state: ThreadState) => {
+      shortResult = state.invokeTool("short", {})
+      await Promise.all([shortResult, state.invokeTool("long", {})])
+      return ok("both finished")
+    },
+  })
+  const { live } = fixture({ wait: parent, short: short.tool, long: long.tool })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    const limits = new Map([
+      ["short", Duration.millis(5)],
+      ["wait", limit],
+      ["long", Duration.millis(20)],
+    ])
+    const sent = yield* Effect.forkChild(supervisor.send(id, "go", { toolTimeout: (name) => limits.get(name) }))
+    yield* waitFor(short.entered)
+    yield* waitFor(long.entered)
+    yield* TestClock.adjust("4 millis")
+    yield* Effect.promise(() => short.state().setValue("short", "live"))
+    yield* TestClock.adjust("1 millis")
+    expect(yield* Effect.promise(() => shortResult)).toEqual({
+      status: "error",
+      error: "Tool short timed out after 5ms",
+    })
+    yield* Effect.promise(() =>
+      expect(short.state().setValue("short", "late")).rejects.toMatchObject({ _tag: "HandleExpired" }),
+    )
+    yield* Effect.promise(() => long.state().setValue("long", "sibling timed out"))
+    yield* TestClock.adjust("5 millis")
+    expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+    yield* TestClock.adjust("9 millis")
+    yield* Effect.promise(() => long.state().setValue("long", "parent timed out"))
+    yield* TestClock.adjust("1 millis")
+    yield* Effect.promise(() =>
+      expect(long.state().setValue("long", "late")).rejects.toMatchObject({ _tag: "HandleExpired" }),
+    )
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("stop_on_response")
+    expect(yield* ThreadStore.use((store) => store.getValue(id, "long"))).toBe("parent timed out")
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        short.leave.release()
+        long.leave.release()
+      }),
+    ),
+    Effect.provide(live),
+  )
+})
 
 for (const deadline of ["general", "inner", "outer"] as const)
   it.effect(`uses each nested callback's own deadline with a ${deadline} limit`, () => {

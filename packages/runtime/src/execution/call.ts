@@ -250,18 +250,13 @@ const streamResponse = (
   started: Array<StreamedCall>,
 ) =>
   Effect.gen(function* () {
-    // A provider can reject or stall in cleanup. Start closing its scope without holding the next attempt.
+    // Start closing the iterator first, but let the failed attempt abort even if return() is still pending.
+    const attempt = yield* Effect.acquireRelease(
+      Effect.sync(() => new AbortController()),
+      (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
+    )
     const cleanup = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
       Effect.forkDetach(Scope.close(scope, exit), { startImmediately: true }),
-    )
-    // The attempt's signal fires only when the attempt fails or is interrupted. A provider may keep using the
-    // request's signal after a response that completed.
-    const attempt = yield* Scope.provide(
-      Effect.acquireRelease(
-        Effect.sync(() => new AbortController()),
-        (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
-      ),
-      cleanup,
     )
     const scoped = attempt.signal
     const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])

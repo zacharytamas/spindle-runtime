@@ -95,3 +95,35 @@ it.effect("a provider's request signal fires after an attempt that failed and no
     expect(signals.map((signal) => signal?.aborted)).toEqual([true, false])
   }),
 )
+
+it.effect("aborts a failed request while its iterator is waiting for that signal to close", () =>
+  Effect.gen(function* () {
+    const scripted = new ScriptedProvider([])
+    const release = Promise.withResolvers<void>()
+    const events: string[] = []
+    const provider = {
+      ...scripted,
+      generate: scripted.generate.bind(scripted),
+      stream: async ({ signal }: Parameters<typeof scripted.stream>[0]) =>
+        (async function* (): AsyncGenerator<ProviderStreamChunk> {
+          signal?.addEventListener("abort", () => release.resolve(), { once: true })
+          try {
+            yield { type: "error", code: "invalid_request", error: "bad request" }
+          } finally {
+            events.push("return")
+            await release.promise
+            events.push("closed")
+          }
+        })(),
+    }
+    const call = context(Effect.succeed(provider), new Execution("flow"))
+    try {
+      yield* Effect.result(callModel(call, request))
+      expect(call.calls.map((log) => log.error?.code)).toEqual(["invalid_request"])
+      yield* Effect.yieldNow
+      expect([...events]).toEqual(["return", "closed"])
+    } finally {
+      release.resolve()
+    }
+  }),
+)

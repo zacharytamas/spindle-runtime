@@ -85,6 +85,8 @@ const isAttachmentRef = (value: unknown): value is AttachmentRef =>
 const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
   Predicate.isObject(value) && typeof value.data === "string"
 
+const skipped = Symbol("skipped")
+
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
 export const executeTool = Effect.fn("executeTool")(function* (
@@ -113,11 +115,15 @@ export const executeTool = Effect.fn("executeTool")(function* (
   }
   const callback = new Callback()
   const state = context.stateFor(tool, entry, callback)
-  if (state.execution?.stopped) return undefined
   const work = Effect.tryPromise({
     try: () =>
       context.execution.call(callback, `tool ${name}`, () =>
-        schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
+        // Checked in the same synchronous step that starts the tool, so no stop can arrive in between.
+        state.execution?.stopped
+          ? skipped
+          : schema === null
+            ? tool.value.execute(state)
+            : tool.value.execute(state, args),
       ),
     catch: (cause) => `Tool ${name} threw: ${describe(cause)}`,
   })
@@ -128,6 +134,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
       : callback.within(work, timeout, () => `Tool ${name} timed out after ${Duration.format(timeout)}`, context.scope)
   const returned = yield* Effect.result(bounded)
   if (Result.isFailure(returned)) return failed(returned.failure)
+  if (returned.success === skipped) return undefined
   const read = yield* Effect.result(Effect.try({ try: () => readResult(returned.success), catch: describe }))
   if (Result.isFailure(read)) return failed(`Reading the result of tool ${name} threw: ${read.failure}`)
   const result = read.success
@@ -223,12 +230,49 @@ const contentOf = (result: ToolResult) =>
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
 
+// Check prototypes before copying fields. Remember each copy so shared getters run once and cycles reach the store.
+const copyErrorData = (value: unknown, copies = new Map<object, object>()): unknown => {
+  if (value === null || typeof value !== "object") return structuredClone(value)
+  const existing = copies.get(value)
+  if (existing !== undefined) return existing
+  if (!isPlain(value)) throw new TypeError("error_data must be a plain JSON object")
+  if (Array.isArray(value)) {
+    const copy = new Array<unknown>(value.length)
+    copies.set(value, copy)
+    // Only indexed elements contribute to the stored JSON array.
+    Array.prototype.forEach.call(value, (item: unknown, index: number) => {
+      copy[index] = copyErrorData(item, copies)
+    })
+    return copy
+  }
+  const copy = {}
+  copies.set(value, copy)
+  for (const key of Object.keys(value)) {
+    Object.defineProperty(copy, key, {
+      value: copyErrorData(Reflect.get(value, key), copies),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  }
+  return copy
+}
+
+// A hook receives a structured clone, which strips a prototype. Checking here, before any hook, keeps a class
+// instance from reaching the store as its own fields, and reads each getter of the tool's data once.
+export const checkedResult = (result: ToolResult): ToolResult => {
+  if (result.error_data === undefined) return result
+  try {
+    return { ...result, error_data: copyErrorData(result.error_data) as typeof result.error_data }
+  } catch (cause) {
+    return unstorableResult(result, `reading it threw: ${describe(cause)}`)
+  }
+}
+
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
 export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
-  if (result.error_data !== undefined && !isPlain(result.error_data))
-    throw new TypeError("error_data must be a plain JSON object")
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
   const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
@@ -256,9 +300,7 @@ export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): Ne
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
-      // A copy runs every getter of the error data here, inside the caller's try, so one that throws makes the
-      // result unstorable rather than failing the write that redacts it.
-      ...(result.error_data === undefined ? {} : { error_data: structuredClone(result.error_data) }),
+      ...(result.error_data === undefined ? {} : { error_data: copyErrorData(result.error_data) }),
     },
   }
 }
