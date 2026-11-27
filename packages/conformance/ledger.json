@@ -1,11 +1,11 @@
 {
 	"distribution:packaging:3b8a316c": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
 		],
-		"reason": "The validator rejects a missing uses target, but accepts a packed tool naming another installed package’s entry agent. It must check that the declaring package includes the dependency."
+		"reason": ""
 	},
 	"distribution:packaging:149aa7e2": {
 		"status": "not-testable",

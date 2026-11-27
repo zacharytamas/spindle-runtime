@@ -191,3 +191,7 @@ Standard Agent Specification 0.2.0 defines no tool deadline. Spindle adds an ope
 - **Package.** `ThreadState` in `@standardagents/spec` 0.45.13 additionally declares `getUserValue`, `listUserValues`, and `setUserValue`.
 - **Disagreement.** The package specifies a null lookup and an empty list on a user-less thread, even though the spec does not define these two reads.
 - **Spindle.** `user()` resolves to null. The package-only user-value operations reject pending the Users milestone. The `ThreadState` member test checks the signatures' names, and the empty-root-thread test checks `user()`.
+
+## Packed invocation dependencies
+
+Packaging §1 assigns dependency inclusion to the packer. Under the Visibility Rules, packed code can reference its own definitions and another package's entry agents. Spindle rejects a packed agent whose handler is missing and a packed tool whose `uses` target cannot resolve within that visibility.
