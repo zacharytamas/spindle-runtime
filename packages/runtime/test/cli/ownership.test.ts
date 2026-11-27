@@ -344,3 +344,106 @@ describe("spindle ownership across processes", () => {
     60_000,
   )
 })
+
+// M1c-4 rule 1: an entry marked failed_delivery is listed by status and removed only by an operator who names it.
+describe("spindle and a queue entry that could not be delivered", () => {
+  const queuedAt = 1_700_000_000_000_000
+  const at = `2023-11-14T22:13:20.000Z (${queuedAt})`
+  // A thread at rest with two failed entries whose bytes no decoder reads, one of them with a terminal control code.
+  const withFailedEntries = Effect.gen(function* () {
+    const { gate, db } = yield* setup
+    const first = yield* spindle(gate, ["run", "assistant", "-m", "setup", ...project, "--db", db])
+    expect(yield* first.exit).toBe(0)
+    const thread = yield* threadIn(first)
+    const failed = (kind: string, payload: string) =>
+      Effect.map(
+        query(
+          db,
+          "INSERT INTO queue (thread_id, kind, payload, queued_at, disposition) VALUES (?, ?, ?, ?, 'failed_delivery') RETURNING seq",
+          [thread, kind, payload, queuedAt],
+        ),
+        (rows) => Number(rows[0]?.seq),
+      )
+    const message = yield* failed("message", "private words \u001b[2J")
+    const tool = yield* failed("tool", "{not json")
+    return { gate, db, thread, message, tool }
+  })
+
+  it.live(
+    "status prints one line for each failed delivery after the queued line, and never its payload",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, thread, message, tool } = yield* withFailedEntries
+        const read = yield* status(gate, db, thread)
+        expect([read.exit, read.out]).toEqual([
+          0,
+          [
+            expect.stringMatching(/^idle stop_on_response since /),
+            "queued 0",
+            `failed delivery ${message} message queued ${at}`,
+            `failed delivery ${tool} tool queued ${at}`,
+          ],
+        ])
+        expect(read.out.join("\n")).not.toMatch(/private words|not json/)
+        expect(read.out.join("\n").includes(String.fromCharCode(27))).toBe(false)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "recover --discard-failed removes the one entry it names and changes nothing else",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, thread, message, tool } = yield* withFailedEntries
+        const before = yield* stored(db, thread)
+        const discard = yield* spindle(gate, ["recover", thread, "--discard-failed", String(message), "--db", db])
+        expect([yield* discard.exit, discard.out, discard.err]).toEqual([
+          0,
+          [`thread ${thread}: removed failed delivery ${message} (message). Nothing else changed.`],
+          [],
+        ])
+        expect(yield* stored(db, thread)).toEqual({ ...before, queue: [["tool", "{not json"]] })
+        const remaining = yield* query(db, "SELECT seq, disposition FROM queue WHERE thread_id = ?", [thread])
+        expect(remaining).toEqual([{ seq: tool, disposition: "failed_delivery" }])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "recover --discard-failed refuses a pending entry and any entry of a terminated thread, and changes nothing",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, thread, message } = yield* withFailedEntries
+        const [pending] = yield* query(
+          db,
+          "INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, 'message', ?, ?) RETURNING seq",
+          [thread, JSON.stringify({ role: "user", content: "waiting" }), queuedAt],
+        )
+        const before = yield* stored(db, thread)
+        const notFailed = yield* spindle(gate, [
+          "recover",
+          thread,
+          "--discard-failed",
+          String(pending?.seq),
+          "--db",
+          db,
+        ])
+        expect([yield* notFailed.exit, notFailed.out, notFailed.err]).toEqual([
+          1,
+          [],
+          [`spindle: thread ${thread} has no failed delivery ${pending?.seq}`],
+        ])
+        expect(yield* stored(db, thread)).toEqual(before)
+        yield* query(db, "UPDATE threads SET terminated_at = ? WHERE id = ?", [queuedAt, thread])
+        const terminated = yield* stored(db, thread)
+        const kept = yield* spindle(gate, ["recover", thread, "--discard-failed", String(message), "--db", db])
+        expect([yield* kept.exit, kept.out, kept.err]).toEqual([
+          1,
+          [],
+          [`spindle: thread ${thread} is terminated, so its queue is kept`],
+        ])
+        expect(yield* stored(db, thread)).toEqual(terminated)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+})

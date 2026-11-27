@@ -85,7 +85,8 @@ describe("spindle chat and Ctrl-C", () => {
           yield* session.signal("SIGINT")
         }
         expect(yield* session.exit).toBe(0)
-        expect(yield* statusOf(db, id)).toEqual(["idle", "aborted_by_user"])
+        // The run had already ended with its response. The abort releases the hold and keeps that end.
+        expect(yield* statusOf(db, id)).toEqual(["idle", "stop_on_response"])
         expect(linesOf(session.err()).filter((line) => line.includes("--tool-timeout"))).toEqual([held])
         expect(session.out()).not.toContain("--tool-timeout")
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),

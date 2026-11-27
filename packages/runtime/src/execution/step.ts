@@ -150,15 +150,17 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
     return observe({ type: "trace", entry })
   }
 
-  const report = (end: End) =>
+  const report = (end: End, brief: boolean) =>
     Effect.gen(function* () {
-      yield* Effect.forEach(pending, Fiber.join, { concurrency: 1, discard: true })
-      const calls = modelCalls.map((call) => ({
-        ...call,
-        ...(call.error === undefined ? {} : { error: redactError(call.error) }),
-        ...(call.metadataError === undefined ? {} : { metadataError: redact(call.metadataError) }),
-        ...(call.metadata == null ? {} : { metadata: redactLog(call.metadata) }),
-      }))
+      if (!brief) yield* Effect.forEach(pending, Fiber.join, { concurrency: 1, discard: true })
+      const calls = brief
+        ? []
+        : modelCalls.map((call) => ({
+            ...call,
+            ...(call.error === undefined ? {} : { error: redactError(call.error) }),
+            ...(call.metadataError === undefined ? {} : { metadataError: redact(call.metadataError) }),
+            ...(call.metadata == null ? {} : { metadata: redactLog(call.metadata) }),
+          }))
       return {
         threadId,
         flowId,
@@ -167,7 +169,7 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
         steps: run.steps,
         ...(end.stopTool === undefined ? {} : { stopTool: end.stopTool }),
         ...(end.error === undefined ? {} : { error: redactError(end.error) }),
-        trace,
+        trace: brief ? [] : trace,
         modelCalls: calls,
       } satisfies RunOutcome
     })
@@ -211,7 +213,8 @@ const prepareSide = Effect.fnUntraced(function* (
         from: tool,
         caller: tool,
         callback,
-        invoke: (name, args) => invokeTool(toolContext, tool, name, args).pipe(Effect.provideContext(services)),
+        invoke: (name, args, onExecute) =>
+          invokeTool(toolContext, tool, name, args, onExecute).pipe(Effect.provideContext(services)),
       }),
   }
   const promptState = makeThreadState({

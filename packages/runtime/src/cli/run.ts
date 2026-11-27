@@ -81,6 +81,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           })
 
           const delivery = yield* Effect.raceFirst(answerInterrupts(supervisor, threadId, identify), send)
+          if (delivery.failedDelivery) yield* identify(`Your message failed delivery on thread ${threadId}.`)
           const { outcome } = delivery
           const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
           if (outcome !== undefined) {

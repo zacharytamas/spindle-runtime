@@ -15,7 +15,15 @@ import {
   runColumns,
   unyielding,
 } from "./database.ts"
-import type { Claim, Holder, QueueEntry, Thread, ThreadNotFound, WriteOrigin } from "./model.ts"
+import {
+  type Claim,
+  external,
+  type Holder,
+  type QueueEntry,
+  type Thread,
+  type ThreadNotFound,
+  type WriteOrigin,
+} from "./model.ts"
 import {
   decodeQueued,
   type MessageRow,
@@ -41,6 +49,13 @@ const localHolders = new Set<string>()
 export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
   const hasPending = (threadId: string) =>
     Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} LIMIT 1`, (rows) => rows.length > 0)
+  const queueDisposition = Effect.fn("RunStore.queueDisposition")(function* (threadId: string, seq: number) {
+    const [row] = yield* sql<{ disposition: "pending" | "failed_delivery" }>`
+        SELECT disposition FROM queue WHERE thread_id = ${threadId} AND seq = ${seq}
+        UNION ALL SELECT 'failed_delivery' FROM waiting_senders WHERE thread_id = ${threadId} AND seq = ${seq} AND failed = 1
+        LIMIT 1`
+    return row?.disposition
+  }, unyielding)
   const closeCalls = (threadId: string, flowId: string | null, closing: string, now: number) =>
     Effect.gen(function* () {
       const callers = yield* sql<Pick<MessageRow, "tool_calls" | "parent_id" | "prompt"> & { seq: number }>`
@@ -108,6 +123,23 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       ? Effect.succeed(true)
       : Effect.map(processAlive(pid), (alive) => !alive)
 
+  const unclaimed = sql`NOT EXISTS (SELECT 1 FROM threads WHERE ${running} AND holder_id = holders.id)`
+  const removeUnclaimed = (row: HolderRow) =>
+    sql`DELETE FROM holders WHERE id = ${row.holder_id} AND pid = ${row.pid} AND ${unclaimed}`.pipe(
+      // A constraint can keep the row. Recovery must still release the thread, and the poll can retry deletion.
+      Effect.catchIf(
+        (error) => error.reason._tag === "ConstraintError",
+        () => Effect.void,
+      ),
+    )
+
+  const settleLost = (threadId: string, row: RunRow & HolderRow, dead: boolean) =>
+    Effect.gen(function* () {
+      const status = yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
+      if (dead && row.holder_id !== null) yield* removeUnclaimed(row)
+      return status
+    })
+
   return {
     terminate: Effect.fn("RunStore.terminate")(
       function* (threadId: string, origin: WriteOrigin) {
@@ -126,7 +158,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     ),
 
     admit: Effect.fn("RunStore.admit")(
-      function* (threadId: string, entry: QueueEntry, claim: Claim, origin: WriteOrigin) {
+      function* (threadId: string, entry: QueueEntry, claim: Claim, origin: WriteOrigin, waitForDelivery = false) {
         const row = yield* selectRun(threadId)
         const refusal = authorize(threadId, row, origin)
         if (refusal) return yield* refusal
@@ -137,6 +169,8 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
               RETURNING seq, kind, payload, queued_at`
         const queued = decodeQueued(yield* requireThread(threadId, rows))
         if (!queued) return yield* Effect.die(new Error("Invalid queued payload"))
+        if (waitForDelivery)
+          yield* sql`INSERT INTO waiting_senders (seq, thread_id, holder_id) VALUES (${queued.seq}, ${threadId}, ${claim.holder})`
         return { queued, claimed: yield* claimRun(threadId, row, claim, now) }
       },
       sql.withTransaction,
@@ -153,12 +187,31 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       unyielding,
     ),
 
-    isQueued: Effect.fn("RunStore.isQueued")(
-      (threadId: string, seq: number) =>
-        Effect.map(
-          sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} AND seq = ${seq}`,
-          (rows) => rows.length > 0,
-        ),
+    queueDisposition,
+    releaseSender: Effect.fn("RunStore.releaseSender")(
+      (seq: number, holder: string) => sql`DELETE FROM waiting_senders WHERE seq = ${seq} AND holder_id = ${holder}`,
+      unyielding,
+    ),
+    isQueued: (threadId: string, seq: number) =>
+      Effect.map(queueDisposition(threadId, seq), (disposition) => disposition === "pending"),
+
+    failedDeliveries: Effect.fn("RunStore.failedDeliveries")(
+      (threadId: string) => sql<Pick<QueueRow, "kind" | "queued_at"> & { seq: string }>`
+        SELECT CAST(seq AS TEXT) AS seq, kind, queued_at FROM queue WHERE thread_id = ${threadId} AND disposition = 'failed_delivery'
+        ORDER BY queue.seq`,
+      unyielding,
+    ),
+
+    discardFailed: Effect.fn("RunStore.discardFailed")(
+      function* (threadId: string, seq: string) {
+        const refusal = authorize(threadId, yield* selectRun(threadId), external)
+        if (refusal) return yield* refusal
+        const [removed] = yield* sql<Pick<QueueRow, "kind">>`
+          DELETE FROM queue WHERE thread_id = ${threadId} AND seq = ${seq} AND disposition = 'failed_delivery'
+          RETURNING kind`
+        return removed?.kind
+      },
+      sql.withTransaction,
       unyielding,
     ),
 
@@ -172,7 +225,10 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
           Effect.gen(function* () {
             const [run] = yield* runRows(threadId)
             if (!run || run.flow_id !== origin.flowId) return []
-            return yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(sql, threadId)} AND seq = ${row.seq} RETURNING seq`
+            const marked =
+              yield* sql`UPDATE queue SET disposition = 'failed_delivery' WHERE ${pending(sql, threadId)} AND seq = ${row.seq} RETURNING seq`
+            if (marked.length) yield* sql`UPDATE waiting_senders SET failed = 1 WHERE seq = ${row.seq}`
+            return marked
           }),
         )
         if (!changed.length) return undefined
@@ -195,7 +251,12 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         threadId: string,
         origin: { readonly flowId: string },
         outcome: { readonly state: "idle" | "failed"; readonly reason: string },
-        options: { readonly continueIfQueued: boolean; readonly atCap?: boolean; readonly closing: string },
+        options: {
+          readonly continueIfQueued: boolean
+          readonly settleOnly?: boolean
+          readonly atCap?: boolean
+          readonly closing: string
+        },
       ) {
         const [row] = yield* runRows(threadId)
         if (row === undefined || row.flow_id !== origin.flowId || row.run_state !== "running")
@@ -203,7 +264,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         // The check and the release share one transaction, so work queued after the last drain either keeps this
         // run going or finds the thread released and starts the next one.
         if (options.continueIfQueued && row.terminated_at === null) {
-          if (yield* hasPending(threadId)) {
+          if ((options.atCap || !options.settleOnly) && (yield* hasPending(threadId))) {
             if (!options.atCap) return "continue" as const
             yield* settleWith(
               threadId,
@@ -235,7 +296,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
             const recovered = []
             for (const row of yield* candidates) {
               if (!ids.has(row.flow_id) || !(yield* lost(row))) continue
-              yield* settleWith(row.id, row, { type: "lose" }, CLOSING.lost)
+              yield* settleLost(row.id, row, true)
               recovered.push(row.id)
             }
             return recovered
@@ -251,8 +312,9 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         )
         const thread = toThread(row)
         if (row.run_state !== "running") return { kind: "atRest", thread }
-        if (row.pid !== null && !force && !(yield* lost(row))) return { kind: "alive", thread, pid: row.pid }
-        const status = yield* settleWith(threadId, row, { type: "lose" }, CLOSING.lost)
+        const dead = yield* lost(row)
+        if (!dead && row.pid !== null && !force) return { kind: "alive", thread, pid: row.pid }
+        const status = yield* settleLost(threadId, row, dead)
         const settled = { ...thread, status }
         return row.pid === null
           ? { kind: "missingHolder", thread: settled }
@@ -261,6 +323,18 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       sql.withTransaction,
       unyielding,
     ),
+
+    pruneHolders: Effect.fn("RunStore.pruneHolders")(function* () {
+      const rows = yield* sql<HolderRow>`SELECT id AS holder_id, pid FROM holders WHERE ${unclaimed}`
+      for (const row of rows) {
+        if (yield* lost(row))
+          yield* sql.withTransaction(
+            Effect.gen(function* () {
+              if (yield* lost(row)) yield* removeUnclaimed(row)
+            }),
+          )
+      }
+    }, unyielding),
 
     acquireHolder: Effect.fn("RunStore.acquireHolder")(
       (holder: Holder) =>

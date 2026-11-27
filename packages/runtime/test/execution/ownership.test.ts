@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { defineTool } from "@standardagents/spec"
 import { Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { gate, ok, project, using } from "../../../conformance/src/scenarios/harness.ts"
@@ -35,6 +36,36 @@ it.effect("the control poll settles a claim of its live holder with no execution
       ),
     ),
   ),
+)
+
+const holderRows = SqlClient.use((sql) =>
+  Effect.map(sql<{ id: string }>`SELECT id FROM holders ORDER BY id`, (rows) => rows.map((row) => row.id)),
+)
+
+const withSupervisor = Layer.merge(
+  registryOf(project({ provider: new ScriptedProvider([]) })),
+  Layer.provideMerge(supervisorLayer(), inMemory),
+)
+
+// M1c-4 rule 2: a killed process that held no claim, such as an idle spindle chat, leaves a row the poll removes.
+it.effect("the control poll removes the holder row of a dead process that holds no claim", () =>
+  Effect.gen(function* () {
+    const supervisor = yield* ThreadSupervisor
+    yield* SqlClient.use((sql) => sql`INSERT INTO holders (id, pid) VALUES ('dead', 2147483647)`)
+    yield* TestClock.adjust("250 millis")
+    expect(yield* holderRows).toEqual([supervisor.holderId])
+  }).pipe(Effect.provide(withSupervisor)),
+)
+
+// The neighbor of rule 2 that passes today: the poll never removes a row whose process probes alive.
+it.effect("the control poll keeps its own holder row and the row of a live pid with no claim", () =>
+  Effect.gen(function* () {
+    const supervisor = yield* ThreadSupervisor
+    // Process 1 belongs to the system, so a probe of it from a test gets a permission error or finds it alive.
+    yield* SqlClient.use((sql) => sql`INSERT INTO holders (id, pid) VALUES ('reused', 1)`)
+    yield* TestClock.adjust("250 millis")
+    expect(yield* holderRows).toEqual([supervisor.holderId, "reused"].sort())
+  }).pipe(Effect.provide(withSupervisor)),
 )
 
 for (const mode of ["control poll", "local replacement", "local termination", "supervisor close"] as const)

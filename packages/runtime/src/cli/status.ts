@@ -1,4 +1,4 @@
-import { Console, Effect, Path } from "effect"
+import { Console, Effect, Option, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { RunStore } from "../store/RunStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
@@ -31,6 +31,8 @@ export const statusCommand = Command.make(
         const holder = yield* runStore.holderOf(thread.id)
         if (holder !== null) yield* Console.log(`held by process ${holder.pid}`)
         yield* Console.log(`queued ${yield* runStore.queueLength(thread.id)}`)
+        for (const failed of yield* runStore.failedDeliveries(thread.id))
+          yield* Console.log(`failed delivery ${failed.seq} ${failed.kind} queued ${time(failed.queued_at)}`)
         if (thread.terminated !== null) yield* Console.log(`terminated ${time(thread.terminated)}`)
       }).pipe(Effect.provide(database))
     }).pipe(commandErrors()),
@@ -41,18 +43,29 @@ export const recoverCommand = Command.make(
   {
     thread: Argument.String("thread").pipe(Argument.withDescription("The id of the thread to recover")),
     db: Flag.String("db").pipe(Flag.withDescription("The SQLite database file that holds the thread")),
+    discardFailed: Flag.String("discard-failed").pipe(
+      Flag.withDescription("Remove only the failed queue entry with this sequence number, without settling the run"),
+      Flag.optional,
+    ),
     force: Flag.Boolean("force").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Recover even when the holder process appears alive"),
     ),
   },
-  ({ thread, db, force }) =>
+  ({ thread, db, force, discardFailed }) =>
     Effect.gen(function* () {
-      const database = openDatabase(db)
-      const result = yield* RunStore.use((store) => store.recoverThread(thread, force)).pipe(
-        Effect.provide(database),
-        Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)),
-      )
+      const store = yield* RunStore
+      if (Option.isSome(discardFailed)) {
+        if (!/^-?[0-9]+$/.test(discardFailed.value))
+          return yield* fail("--discard-failed takes an integer sequence number")
+        const seq = BigInt(discardFailed.value).toString()
+        const kind = yield* store
+          .discardFailed(thread, seq)
+          .pipe(Effect.catchTag("ThreadTerminated", () => fail(`thread ${thread} is terminated, so its queue is kept`)))
+        if (kind === undefined) return yield* fail(`thread ${thread} has no failed delivery ${seq}`)
+        return yield* Console.log(`thread ${thread}: removed failed delivery ${seq} (${kind}). Nothing else changed.`)
+      }
+      const result = yield* store.recoverThread(thread, force)
       if (result.kind === "atRest")
         return yield* Console.log(
           `thread ${thread} is not running (${result.thread.status.state} ${result.thread.status.reason ?? "none"}). Nothing changed.`,
@@ -67,5 +80,9 @@ export const recoverCommand = Command.make(
         ? `thread ${thread} was running in process ${result.pid}. Settled it as failed (execution_lost). That process can write nothing more to the thread.`
         : `thread ${thread} was running in process ${result.pid}, which is gone. Settled it as failed (execution_lost).`
       yield* Console.log(line)
-    }).pipe(commandErrors()),
+    }).pipe(
+      Effect.provide(openDatabase(db)),
+      Effect.catchTag("ThreadNotFound", () => fail(`no thread ${thread} in ${db}`)),
+      commandErrors(),
+    ),
 ).pipe(Command.withDescription("Settle a thread whose execution was lost"))

@@ -5,9 +5,12 @@ import { TestClock } from "effect/testing"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider, type ScriptStep } from "../../../conformance/src/ScriptedProvider.ts"
 import { gate, ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import { newSecrets } from "../../src/execution/env.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
+import { notRun } from "../../src/execution/tools.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
+import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -715,30 +718,236 @@ for (const abort of [false, true])
           expect((yield* supervisor.status(id)).state).toBe("running")
           yield* supervisor.abort(id, true)
         }
-        expect((yield* Fiber.join(sent)).outcome?.reason).toBe(abort ? "aborted_by_user" : "stop_on_response")
+        // The run had ended with its response before the hold, so an abort in the wait keeps that end (M1c-4 rule 4).
+        expect((yield* Fiber.join(sent)).outcome?.reason).toBe("stop_on_response")
       }).pipe(Effect.ensuring(Effect.sync(leave.release)), Effect.provide(live))
     },
   )
 
-it.effect("aborting a failed step's wait signals the nested tool and holds until its callback returns", () => {
-  const { inner, live } = nestedFixture({ fail: true })
+// M1c-4 rule 4: an abort that reaches a run in its wait for callbacks keeps the end the step loop returned.
+for (const exiting of [false, true])
+  it.effect(
+    `an abort ${exiting ? "from an orderly exit" : "that holds"} in a failed step's wait keeps the step's error`,
+    () => {
+      const { inner, live } = nestedFixture({ fail: true })
+      return Effect.gen(function* () {
+        const { id, sent } = yield* start
+        const supervisor = yield* ThreadSupervisor
+        yield* waitFor(inner.entered)
+        yield* TestClock.adjust(0)
+        expect((yield* supervisor.status(id)).state).toBe("running")
+        const settlement = yield* supervisor.abort(id, exiting)
+        yield* TestClock.adjust(0)
+        expect(inner.state().execution?.abortSignal.aborted).toBe(true)
+        if (!exiting) expect(settlement?.isDone()).toBe(false)
+        inner.leave.release()
+        expect((yield* Fiber.join(sent)).outcome).toMatchObject({
+          status: "failed",
+          reason: "step_error",
+          steps: 1,
+          error: { message: "rejected", code: "invalid_request" },
+        })
+        expect(yield* supervisor.status(id)).toMatchObject({ state: "failed", reason: "step_error" })
+      }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+    },
+  )
+
+const queueBehind = (id: string) =>
+  Effect.flatMap(ThreadSupervisor, (supervisor) =>
+    supervisor.control(id).queueMessage({ role: "user", content: "queued" }, newSecrets(), external),
+  )
+
+it.effect("an abort in a failed step's wait leaves queued work queued, as any failure does", () => {
+  const { inner, live, provider } = nestedFixture({ fail: true })
   return Effect.gen(function* () {
     const { id, sent } = yield* start
     const supervisor = yield* ThreadSupervisor
     yield* waitFor(inner.entered)
     yield* TestClock.adjust(0)
-    expect((yield* supervisor.status(id)).state).toBe("running")
-    const settlement = yield* supervisor.abort(id)
-    yield* TestClock.adjust(0)
-    expect(inner.state().execution?.abortSignal.aborted).toBe(true)
-    expect(settlement?.isDone()).toBe(false)
+    yield* queueBehind(id)
+    yield* supervisor.abort(id)
     inner.leave.release()
-    expect((yield* Fiber.join(sent)).outcome).toMatchObject({
-      status: "idle",
-      reason: "aborted_by_user",
-      steps: 1,
-      trace: [],
-      modelCalls: [],
-    })
+    yield* Fiber.join(sent)
+    yield* supervisor.settled(id)
+    expect(yield* RunStore.use((store) => store.queueLength(id))).toBe(1)
+    expect(provider.requests).toHaveLength(2)
+    expect(yield* supervisor.status(id)).toMatchObject({ state: "failed", reason: "step_error" })
   }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})
+
+it.effect("an abort in a successful run's wait keeps the run's own reason", () => {
+  const { inner, live } = nestedFixture()
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.entered)
+    yield* TestClock.adjust(0)
+    yield* supervisor.abort(id)
+    inner.leave.release()
+    expect((yield* Fiber.join(sent)).outcome).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 2 })
+  }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})
+
+// The neighbor of rule 4 that passes today: after a success the queued work runs in a fresh flow, not in place.
+it.effect("an abort in a successful run's wait runs queued work in a fresh flow once the callback returns", () => {
+  const { inner, live, provider } = nestedFixture()
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.entered)
+    yield* TestClock.adjust(0)
+    yield* queueBehind(id)
+    yield* supervisor.abort(id)
+    expect(provider.requests).toHaveLength(2)
+    inner.leave.release()
+    const first = (yield* Fiber.join(sent)).outcome
+    const next = yield* supervisor.settled(id)
+    expect(yield* RunStore.use((store) => store.queueLength(id))).toBe(0)
+    expect(provider.requests).toHaveLength(3)
+    expect(next?.flowId).toBeDefined()
+    expect(next?.flowId).not.toBe(first?.flowId)
+  }).pipe(Effect.ensuring(Effect.sync(inner.leave.release)), Effect.provide(live))
+})
+
+// M1c-4 rule 3: a nested call is pending from the call to invokeTool, which covers its argument validation.
+function validatingTool() {
+  const validating = gate()
+  const proceed = gate()
+  const entered = gate()
+  let wrote: unknown
+  const base = defineTool({
+    description: "Validate slowly, then write",
+    execute: async (state: ThreadState) => {
+      entered.release()
+      wrote = await state.setValue("inner-ran", true).then(
+        () => "stored",
+        (error: { _tag?: string }) => error?._tag ?? String(error),
+      )
+      return ok("inner returned")
+    },
+  })
+  // An async schema runs user code before execute, as a zod refinement does.
+  const args = {
+    toJSONSchema: () => ({ type: "object" }),
+    safeParseAsync: async (input: unknown) => {
+      validating.release()
+      await proceed.opened
+      return { success: true, data: input }
+    },
+  }
+  return { tool: { ...base, args } as unknown as typeof base, validating, proceed, entered, wrote: () => wrote }
+}
+
+it.effect("holds the run for a nested tool that is still validating its arguments when the run ends", () => {
+  const inner = validatingTool()
+  const outer = defineTool({
+    description: "Start the inner tool and return",
+    execute: async (state: ThreadState) => {
+      void state.invokeTool("inner", {}).catch(() => {})
+      return ok("outer returned")
+    },
+  })
+  const { live } = fixture({ wait: outer, inner: inner.tool }, { limited: false })
+  return Effect.gen(function* () {
+    const supervisor = yield* ThreadSupervisor
+    const { id } = yield* createThread("assistant")
+    const held: string[] = []
+    const holding = gate()
+    const sent = yield* Effect.forkChild(
+      supervisor.send(id, "go", {
+        onHold: (operation) =>
+          Effect.sync(() => {
+            held.push(operation)
+            holding.release()
+          }),
+      }),
+    )
+    yield* waitFor(inner.validating)
+    // A run that counts the call waits and reports its hold. A run that does not settles. Either ends the race.
+    yield* Effect.raceFirst(waitFor(holding), Effect.asVoid(Fiber.await(sent)))
+    inner.proceed.release()
+    const { outcome } = yield* Fiber.join(sent)
+    expect(held).toEqual(["tool inner"])
+    expect(outcome?.reason).toBe("stop_on_response")
+    expect(inner.wrote()).toBe("stored")
+    expect(yield* ThreadStore.use((store) => store.getValue(id, "inner-ran"))).toBe(true)
+  }).pipe(Effect.ensuring(Effect.sync(inner.proceed.release)), Effect.provide(live))
+})
+
+it.effect("a nested call that an abort reaches during validation resolves as not run and never enters the tool", () => {
+  const inner = validatingTool()
+  let seen: unknown
+  const outer = defineTool({
+    description: "Wait for the inner tool",
+    execute: async (state: ThreadState) => {
+      seen = await state.invokeTool("inner", {}).then(
+        (result) => ({ resolved: result }),
+        (error: { _tag?: string }) => ({ rejected: error?._tag ?? String(error) }),
+      )
+      return ok("outer returned")
+    },
+  })
+  const { live } = fixture({ wait: outer, inner: inner.tool }, { limited: false })
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.validating)
+    yield* supervisor.abort(id)
+    yield* TestClock.adjust(0)
+    inner.proceed.release()
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    expect(seen).toEqual({ resolved: notRun })
+    expect(inner.wrote()).toBeUndefined()
+  }).pipe(Effect.ensuring(Effect.sync(inner.proceed.release)), Effect.provide(live))
+})
+
+// The neighbor of rule 3 that passes today: a handle that expired refuses the call and starts nothing.
+it.effect("a call to invokeTool from a handle that has expired rejects and starts nothing", () => {
+  const inner = validatingTool()
+  let saved: ThreadState | undefined
+  const outer = defineTool({
+    description: "Keep the handle",
+    execute: async (state: ThreadState) => {
+      saved = state
+      return ok("outer returned")
+    },
+  })
+  const { live } = fixture({ wait: outer, inner: inner.tool }, { limited: false })
+  return Effect.gen(function* () {
+    const { sent } = yield* start
+    yield* Fiber.join(sent)
+    const late = yield* Effect.promise(() =>
+      (saved as ThreadState).invokeTool("inner", {}).then(
+        () => "resolved",
+        (error: { _tag?: string }) => error?._tag ?? String(error),
+      ),
+    )
+    expect(late).toBe("HandleExpired")
+    expect(inner.wrote()).toBeUndefined()
+  }).pipe(Effect.ensuring(Effect.sync(inner.proceed.release)), Effect.provide(live))
+})
+
+it.effect("an aborted nested call gives its result while its live validator still holds the thread", () => {
+  const inner = validatingTool()
+  const resolved = Promise.withResolvers<ToolResult>()
+  const outer = defineTool({
+    description: "Wait for the nested result",
+    execute: async (state: ThreadState) => {
+      resolved.resolve(await state.invokeTool("inner", {}))
+      return ok("done")
+    },
+  })
+  const { live } = fixture({ wait: outer, inner: inner.tool }, { limited: false })
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    const supervisor = yield* ThreadSupervisor
+    yield* waitFor(inner.validating)
+    yield* supervisor.abort(id)
+    expect(yield* Effect.promise(() => resolved.promise)).toEqual(notRun)
+    yield* TestClock.adjust(0)
+    expect((yield* supervisor.status(id)).state).toBe("running")
+    inner.proceed.release()
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    expect(inner.wrote()).toBeUndefined()
+  }).pipe(Effect.ensuring(Effect.sync(inner.proceed.release)), Effect.provide(live))
 })
