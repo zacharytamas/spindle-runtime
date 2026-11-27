@@ -147,6 +147,7 @@ export const requestBody = (request: ProviderRequest, stream: boolean): Json => 
           : { type: "function", function: { name: request.toolChoice.name } }
     if (request.parallelToolCalls !== undefined) body.parallel_tool_calls = request.parallelToolCalls
   }
+  if (request.user !== undefined) body.user = request.user
   if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens
   if (request.temperature !== undefined) body.temperature = request.temperature
   if (request.topP !== undefined) body.top_p = request.topP
