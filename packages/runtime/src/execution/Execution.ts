@@ -49,6 +49,8 @@ export class Execution {
   readonly #abort = new AbortController()
   readonly signal = this.#abort.signal
   readonly #pending = new Map<Promise<unknown>, string>()
+  readonly #stopRequested = Latch.makeUnsafe()
+  readonly waitForStop = this.#stopRequested.await
   readonly #released = Latch.makeUnsafe()
   readonly #done = Deferred.makeUnsafe<RunOutcome, SqlError | ThreadNotFound>()
   readonly settlement = Object.freeze({
@@ -85,6 +87,7 @@ export class Execution {
   requestStop(by: Side | "user" = "user") {
     if (this.#phase !== "running") return false
     this.#stop ??= by
+    this.#stopRequested.openUnsafe()
     return true
   }
   call<A>(callback: Callback, operation: string, invoke: () => PromiseLike<A> | A) {

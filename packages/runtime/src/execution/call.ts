@@ -8,21 +8,9 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Predicate, Result } from "effect"
-import { isTimeout } from "../providers/timeout.ts"
+import { Data, Effect, Exit, type Fiber, Predicate, Schedule, Scope, Stream } from "effect"
+import { isTimeout, providerErrorCode } from "../providers/errors.ts"
 import type { SetupError } from "./turn.ts"
-
-const CODES: ReadonlyArray<ProviderErrorCode> = [
-  "rate_limit",
-  "invalid_request",
-  "auth_error",
-  "server_error",
-  "timeout",
-  "unknown",
-]
-const RETRYABLE: ReadonlyArray<ProviderErrorCode> = ["rate_limit", "server_error", "timeout"]
-
-const isCode = (value: unknown): value is ProviderErrorCode => CODES.includes(value as ProviderErrorCode)
 
 export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   readonly message: string
@@ -33,7 +21,7 @@ export class ProviderFailure extends Data.TaggedError("ProviderFailure")<{
   readonly upstream?: string
 }> {
   get retryable() {
-    return RETRYABLE.includes(this.code)
+    return this.code === "rate_limit" || this.code === "server_error" || this.code === "timeout"
   }
 }
 
@@ -48,7 +36,7 @@ const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFail
   const statusCode = number(fields.statusCode)
   const retryAfter = number(fields.retryAfter)
   const upstream = typeof fields.upstream === "string" ? fields.upstream : undefined
-  const code = isCode(fields.code) ? fields.code : "unknown"
+  const code = providerErrorCode(fields.code)
   return new ProviderFailure({
     message:
       cause instanceof Error ? cause.message : typeof fields.message === "string" ? fields.message : String(cause),
@@ -60,7 +48,7 @@ const failureOf = (cause: unknown, provider: LLMProviderInterface): ProviderFail
   })
 }
 
-export interface StreamedCall {
+interface StreamedCall {
   readonly id: string
   name: string
   argumentsText: string
@@ -82,8 +70,6 @@ export interface ModelResponse {
   providerTools: number
   finish: Finish | undefined
 }
-
-type FinishedResponse = ModelResponse & { readonly finish: Finish }
 
 const callOf = (response: ModelResponse, id: string): StreamedCall => {
   let call = response.calls.get(id)
@@ -130,7 +116,7 @@ const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk): Provid
       if (chunk.reasoningDetails !== undefined) response.reasoningDetails = chunk.reasoningDetails
       return
     case "error":
-      return new ProviderFailure({ message: chunk.error, code: isCode(chunk.code) ? chunk.code : "unknown" })
+      return new ProviderFailure({ message: chunk.error, code: providerErrorCode(chunk.code) })
     default:
       return
   }
@@ -264,11 +250,23 @@ const streamResponse = (
   started: Array<StreamedCall>,
 ) =>
   Effect.gen(function* () {
-    const iterable = yield* Effect.tryPromise({
-      try: () => provider.stream(request),
-      catch: (cause) => failureOf(cause, provider),
-    })
-    const iterator = iterable[Symbol.asyncIterator]()
+    // A provider can reject or stall in cleanup. Start closing its scope without holding the next attempt.
+    const cleanup = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
+      Effect.forkDetach(Scope.close(scope, exit), { startImmediately: true }),
+    )
+    // The attempt's signal fires only when the attempt fails or is interrupted. A provider may keep using the
+    // request's signal after a response that completed.
+    const attempt = yield* Scope.provide(
+      Effect.acquireRelease(
+        Effect.sync(() => new AbortController()),
+        (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
+      ),
+      cleanup,
+    )
+    const scoped = attempt.signal
+    const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])
+    const onError = (cause: unknown) => failureOf(cause, provider)
+    const iterable = yield* Effect.tryPromise({ try: () => provider.stream({ ...request, signal }), catch: onError })
     const response: ModelResponse = {
       content: null,
       reasoning: null,
@@ -279,41 +277,28 @@ const streamResponse = (
       finish: undefined,
     }
     const watchers = new Map<string, (delta: string) => { readonly value: unknown } | undefined>()
-    const read = Effect.gen(function* () {
-      while (true) {
-        const next = yield* Effect.tryPromise({
-          try: () => iterator.next(),
-          catch: (cause) => failureOf(cause, provider),
-        })
-        if (next.done === true) break
-        const failure = applyChunk(response, next.value)
-        if (failure !== undefined) return yield* failure
-        if (hooks !== undefined) yield* startCalls(response, next.value, hooks, started, watchers)
-      }
-      const { finish } = response
-      // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
-      if (finish === undefined)
-        return yield* new ProviderFailure({
-          message: "The provider stream ended without a finish chunk",
-          code: "server_error",
-          origin: `provider:${provider.name}`,
-        })
-      if (finish.finishReason === "error")
-        return yield* new ProviderFailure({
-          message: "The provider finished the response with an error",
-          code: "unknown",
-          origin: `provider:${provider.name}`,
-        })
-      return { ...response, finish } satisfies FinishedResponse
+    const pull = Stream.toPull(Stream.fromAsyncIterable(iterable, onError))
+    yield* Stream.runForEach(Stream.fromPull(Scope.provide(pull, cleanup)), (chunk) => {
+      const failure = applyChunk(response, chunk)
+      if (failure !== undefined) return Effect.fail(failure)
+      return hooks === undefined ? Effect.void : startCalls(response, chunk, hooks, started, watchers)
     })
-    return yield* read.pipe(
-      Effect.onError(() =>
-        Effect.sync(() => {
-          Promise.resolve(iterator.return?.()).catch(() => {})
-        }),
-      ),
-    )
-  })
+    const { finish } = response
+    // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
+    if (finish === undefined)
+      return yield* new ProviderFailure({
+        message: "The provider stream ended without a finish chunk",
+        code: "server_error",
+        origin: `provider:${provider.name}`,
+      })
+    if (finish.finishReason === "error")
+      return yield* new ProviderFailure({
+        message: "The provider finished the response with an error",
+        code: "unknown",
+        origin: `provider:${provider.name}`,
+      })
+    return { ...response, finish }
+  }).pipe(Effect.scoped)
 
 export interface ModelCall {
   readonly step: number
@@ -322,13 +307,7 @@ export interface ModelCall {
   finishReason?: ProviderFinishReason
   usage?: ProviderUsage
   // Providers section 7: origin and upstream are for logs, so each attempt keeps them, a recovered one included.
-  error?: {
-    readonly message: string
-    readonly code: ProviderErrorCode
-    readonly statusCode?: number
-    readonly origin?: string
-    readonly upstream?: string
-  }
+  error?: Pick<ProviderFailure, "message" | "code" | "statusCode" | "origin" | "upstream">
   rejected?: string
   images?: number
   providerTools?: number
@@ -338,6 +317,7 @@ export interface ModelCall {
 
 export interface CallContext {
   readonly stopped: () => boolean
+  readonly waitForStop: Effect.Effect<void>
   readonly step: number
   // Yields the provider for one backend request. Infrastructure Providers, Per-request Transport: an extension
   // with createFetch is built again for every request, and a retry is a request.
@@ -349,9 +329,6 @@ export interface CallContext {
   readonly record: (detail: string) => Effect.Effect<void>
   readonly streamed?: StreamedCalls
 }
-
-const backoff = (failure: ProviderFailure, attempt: number) =>
-  failure.retryAfter === undefined ? 500 * 2 ** (attempt - 1) : Math.min(failure.retryAfter, 60) * 1000
 
 const violation = (response: ModelResponse, toolChoice: CallContext["toolChoice"]) => {
   if (toolChoice === "required" && response.calls.size === 0)
@@ -385,7 +362,8 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
 }
 
 export const callModel = Effect.fn("callModel")(function* (context: CallContext, request: ProviderRequest) {
-  for (let attempt = 1; ; attempt++) {
+  const requestOnce = Effect.gen(function* () {
+    const attempt = (yield* Schedule.CurrentMetadata).attempt + 1
     if (context.stopped()) return undefined
     const provider = yield* context.provider
     yield* context.record(`${provider.name} ${request.model} attempt ${attempt}`)
@@ -395,24 +373,21 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     const started: Array<StreamedCall> = []
     const abandon = () =>
       started.length === 0 || context.streamed === undefined ? Effect.void : context.streamed.abandoned(started)
-    const result = yield* Effect.result(streamResponse(provider, request, context.streamed, started))
-    if (Result.isFailure(result)) {
-      yield* abandon()
-      const failure = result.failure
-      const { message, code, statusCode, origin, upstream } = failure
-      log.error = {
-        message,
-        code,
-        ...(statusCode === undefined ? {} : { statusCode }),
-        ...(origin === undefined ? {} : { origin }),
-        ...(upstream === undefined ? {} : { upstream }),
-      }
-      if (context.stopped()) return undefined
-      if (!failure.retryable || attempt > context.retries) return yield* failure
-      yield* Effect.sleep(backoff(failure, attempt))
-      continue
-    }
-    const response = result.success
+    const response = yield* streamResponse(provider, request, context.streamed, started).pipe(
+      Effect.tapError((failure) =>
+        Effect.gen(function* () {
+          yield* abandon()
+          const { message, code, statusCode, origin, upstream } = failure
+          log.error = {
+            message,
+            code,
+            ...(statusCode === undefined ? {} : { statusCode }),
+            ...(origin === undefined ? {} : { origin }),
+            ...(upstream === undefined ? {} : { upstream }),
+          }
+        }),
+      ),
+    )
     const { finish } = response
     log.finishReason = finish.finishReason
     log.usage = finish.usage
@@ -432,8 +407,27 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     if (rejected === undefined) return response
     log.rejected = rejected
     yield* abandon()
-    if (context.stopped()) return undefined
-    if (attempt > context.retries)
-      return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
-  }
+    return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
+  })
+  const policy = Schedule.exponential(500).pipe(
+    Schedule.upTo({ times: context.retries }),
+    Schedule.while(
+      ({ input }) =>
+        !context.stopped() &&
+        (input instanceof ResponseRejected || (input instanceof ProviderFailure && input.retryable)),
+    ),
+    Schedule.modifyDelay(({ input, duration }) => {
+      if (!(input instanceof ProviderFailure)) return Effect.succeed(0)
+      const delay = input.retryAfter === undefined ? duration : Math.min(input.retryAfter, 60) * 1000
+      // A graceful stop wakes the backoff, but lets a request already streaming reach its boundary.
+      return Effect.as(Effect.timeoutOption(context.waitForStop, delay), 0)
+    }),
+  )
+  return yield* requestOnce.pipe(
+    Effect.retry(policy),
+    Effect.catchIf(
+      (error) => error._tag !== "SetupError" && context.stopped(),
+      () => Effect.undefined,
+    ),
+  )
 })

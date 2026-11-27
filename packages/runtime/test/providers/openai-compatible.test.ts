@@ -301,6 +301,32 @@ describe("openaiCompatible", () => {
     ])
   })
 
+  it("delivers a final event that the endpoint did not end with a blank line", async () => {
+    const whole = await collect(
+      await openaiCompatible({ apiKey: "", fetch: transport(() => sse(streamed)).fetch }).stream(request),
+    )
+    for (const ending of ["", "\n", "\r\n", "\r"]) {
+      const body = streamed.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n") + ending
+      const { fetch } = transport(() => new Response(body))
+      expect(await collect(await openaiCompatible({ apiKey: "", fetch }).stream(request))).toEqual(whole)
+    }
+  })
+
+  it("reads each data line as one event, with or without a blank line after it", async () => {
+    const whole = await collect(
+      await openaiCompatible({ apiKey: "", fetch: transport(() => sse(streamed)).fetch }).stream(request),
+    )
+    const body = `${streamed.map((event) => `data: ${JSON.stringify(event)}\n`).join("")}data: [DONE]\n`
+    const { fetch } = transport(() => new Response(body))
+    expect(await collect(await openaiCompatible({ apiKey: "", fetch }).stream(request))).toEqual(whole)
+    // The endpoint keeps the connection open after the sentinel. The response is over all the same.
+    const open = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new TextEncoder().encode(body)),
+    })
+    const held = transport(() => new Response(open))
+    expect(await collect(await openaiCompatible({ apiKey: "", fetch: held.fetch }).stream(request))).toEqual(whole)
+  })
+
   it("ends a stream cut off before a finish reason with a retryable error and no tool-call-done", async () => {
     const cut = streamed.slice(0, 5).map((event) => `data: ${JSON.stringify(event)}\n\n`)
     for (const ending of ["data: [DONE]\n\n", ""]) {

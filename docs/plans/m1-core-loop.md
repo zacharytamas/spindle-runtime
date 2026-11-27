@@ -1067,6 +1067,20 @@ Package manifests keep the JSON parser of the current engine so syntax errors re
 
 All eight former record guards used the same predicate. Effect 4.1.5 provides it as `Predicate.isObject`. It accepts null-prototype objects and class instances and rejects arrays, functions and null. The issue codes are types and have no runtime exports.
 
+### Settled in M1-15
+
+Each request combines the execution signal with an attempt signal. The stream scope owns the iterator and the attempt signal. It starts closing the iterator before aborting the signal. A pending read can then finish on abort. The scope closes independently of the call so a provider that stalls or throws during cleanup cannot delay a retry or replace the original error. The plain stream runner in the review sketch let a failing finalizer turn a retryable error into a defect. The fetch timeout still covers the headers, error body and streamed body through one signal.
+
+`Effect.retry` numbers the requests through the schedule metadata. An exponential schedule starts at 500 ms and doubles for each retry within the budget. A numeric provider delay replaces that wait, up to 60 seconds. A rejected response has no delay. A graceful stop wakes the wait through a latch and leaves a response already streaming to finish at its boundary. The wait runs inside the schedule's delay modifier, which then returns zero. The sketch checked the stop flag only before sleeping. Execution abort still interrupts the fiber.
+
+The adapter keeps its own reader of event streams and does not use `Sse.makeParser`. The reader treats each `data` line as one event when its line ends. Effect's parser follows the format a browser reads. It joins the `data` lines of an event and delivers the event at the next blank line. Against an endpoint that ends each event with one line ending, that turned a response into a JSON error, and it waited for a blank line after the done sentinel on a connection the endpoint kept open. It also discarded a final event with no blank line after it. The parser removed no lines, so the reader stays. Tests now pin all three inputs. The adapter keeps fetch and uses no HTTP client bridge.
+
+The attempt's abort signal fires when an attempt fails or is interrupted, and not after a response that completed. A provider may go on using the request's signal after its stream ends.
+
+The script decoder and the runtime use one provider error code schema. A raw script chunk can carry an unknown type, an unexpected field or a nonstandard error code. Those records reach the loop unchanged. A strict chunk union would turn a previously successful script into a load error. The cast stays at that boundary. Unknown error codes still map to the standard unknown code when a consumer interprets them.
+
+S22 runs its existing assertions with Vitest's virtual timers advancing to the next scheduled timeout. The scenario opens several independent managed runtimes through the promise driver. Replacing the timer functions for that test reaches their clocks without changing the driver or the retry policy. It runs with the default test time limit.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

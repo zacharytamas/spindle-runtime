@@ -1,16 +1,25 @@
-import { describe, it } from "vitest"
+import { describe, it, vi } from "vitest"
 import { hookScenarios } from "../../conformance/src/scenarios/hooks.ts"
 import { integrityScenarios } from "../../conformance/src/scenarios/integrity.ts"
 import { messageScenarios } from "../../conformance/src/scenarios/messages.ts"
 import { ownershipScenarios } from "../../conformance/src/scenarios/ownership.ts"
 import { queueScenarios } from "../../conformance/src/scenarios/queue.ts"
 import { runStatusScenarios } from "../../conformance/src/scenarios/run-status.ts"
+import { S22 } from "../../conformance/src/scenarios/step-loop/provider-responses.ts"
 import { stepLoopScenarios } from "../../conformance/src/scenarios/step-loop.ts"
 import { spindleDriver } from "./spindle-driver.ts"
 
 describe("step loop", () => {
   for (const scenario of stepLoopScenarios)
-    it(scenario.name, scenario.name.startsWith("S22 ") ? { timeout: 15_000 } : {}, () => scenario.run(spindleDriver))
+    it(scenario.name, ({ onTestFinished }) => {
+      if (scenario === S22) {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }).setTimerTickMode("nextTimerAsync")
+        onTestFinished(() => {
+          vi.useRealTimers()
+        })
+      }
+      return scenario.run(spindleDriver)
+    })
 })
 
 describe("messages", () => {

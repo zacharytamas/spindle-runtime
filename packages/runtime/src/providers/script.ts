@@ -1,11 +1,11 @@
 import {
   type LLMProviderInterface,
   ProviderError,
-  type ProviderErrorCode,
   type ProviderStreamChunk,
   type ProviderToolCallPart,
 } from "@standardagents/spec"
 import { Schema } from "effect"
+import { ProviderErrorCodeSchema, providerErrorCode } from "./errors.ts"
 
 const Call = Schema.Struct({
   id: Schema.optionalKey(Schema.String),
@@ -21,9 +21,7 @@ const Response = Schema.Struct({
   error: Schema.optionalKey(
     Schema.Struct({
       message: Schema.String,
-      code: Schema.optionalKey(
-        Schema.Literals(["rate_limit", "invalid_request", "auth_error", "server_error", "timeout", "unknown"]),
-      ),
+      code: Schema.optionalKey(ProviderErrorCodeSchema),
       statusCode: Schema.optionalKey(Schema.Finite),
       retryAfter: Schema.optionalKey(Schema.Finite),
     }),
@@ -38,25 +36,8 @@ export const decodeScript = Schema.decodeUnknownEffect(Schema.fromJsonString(Scr
 
 const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
 
-const CODES: ReadonlyArray<string> = [
-  "rate_limit",
-  "invalid_request",
-  "auth_error",
-  "server_error",
-  "timeout",
-  "unknown",
-]
-
 const failure = (message: string, code: string | undefined) =>
-  new ProviderError(
-    message,
-    CODES.includes(code ?? "") ? (code as ProviderErrorCode) : "unknown",
-    undefined,
-    undefined,
-    {
-      origin: "provider:script",
-    },
-  )
+  new ProviderError(message, providerErrorCode(code), undefined, undefined, { origin: "provider:script" })
 
 export const scriptedProvider = (script: Script): LLMProviderInterface => {
   let index = 0
