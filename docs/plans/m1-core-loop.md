@@ -1105,7 +1105,7 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement.
 
-- During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON. Direct writes to process.stdout still reach standard output.
+- During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON, and direct writes to process.stdout still reach standard output.
 
 - Package validation reports package_meta_invalid if an index in __meta.entryAgents has no element.
 
