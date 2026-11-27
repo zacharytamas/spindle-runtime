@@ -2,6 +2,7 @@ import { defineHook } from "@standardagents/spec"
 import { expect, it } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { runTurn } from "../../../conformance/src/scenarios/harness.ts"
+import { isRequestHistory } from "../../src/execution/llm-history.ts"
 import { spindleDriver } from "../spindle-driver.ts"
 
 it("dispatches the request when a hidden tool call has a malformed name", async () => {
@@ -57,4 +58,9 @@ it("keeps shared call metadata shared inside a prefilter and isolates its failed
       m.role === "assistant" ? (m.toolCalls?.map((c) => c.extraContent?.text) ?? []) : [],
     ),
   ).toEqual(["original", "original"])
+})
+
+it("rejects prefilter history with invalid JSON in a tool call's arguments", () => {
+  const call = { id: "one", function: { name: "echo", arguments: "{" } }
+  expect(isRequestHistory([{ role: "assistant", tool_calls: [call] }])).toBe(false)
 })

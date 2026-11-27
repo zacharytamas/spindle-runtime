@@ -1,6 +1,6 @@
 import type { ContentPart, ProviderMessage, ProviderReasoningDetail, ProviderToolCallPart } from "@standardagents/spec"
 import { Predicate, Schema } from "effect"
-import { toJson } from "../store/json.ts"
+import { parseJson, toJson } from "../store/json.ts"
 
 const string = Schema.String
 const optionalString = Schema.optional(string)
@@ -25,7 +25,7 @@ const content = Schema.Union([string, Schema.mutable(Schema.Array(Schema.declare
 const jsonRecord = Schema.declare(
   (u): u is Record<string, unknown> => Predicate.isObject(u) && typeof toJson(u) === "string",
 )
-const objectText = Schema.declare((u): u is string => typeof u === "string" && Predicate.isObject(JSON.parse(u)))
+const objectText = Schema.declare((u): u is string => typeof u === "string" && Predicate.isObject(parseJson(u)))
 const call = Schema.Struct({
   id: string,
   function: Schema.Struct({ name: string, arguments: Schema.Union([objectText, jsonRecord]) }),
@@ -94,9 +94,6 @@ const callFrom = (entry: typeof call.Type): ProviderToolCallPart => ({
   ...(entry.extra_content === undefined ? {} : { extraContent: entry.extra_content }),
 })
 
-// The way back from LLMMessage, for the array prefilter_llm_history returns. hooks.ts has checked each message
-// against the provider message types, so every field one of them holds is kept as it is. A field that no provider
-// message type has, such as the name of a user message, has nowhere to go.
 export const fromLLMMessage = (message: RequestMessage): ProviderMessage => {
   switch (message.role) {
     case "system":
