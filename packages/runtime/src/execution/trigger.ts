@@ -24,10 +24,10 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
     const secrets = newSecrets(options.secrets)
     // A turn that cannot be prepared fails in its run with its own message. What it learned before that still counts.
     if (options.learn || set.byPosition.size > 0)
-      yield* Effect.matchEffect(prepareTurn(thread.agentId), {
-        onFailure: () => Effect.void,
-        onSuccess: (turn) => learnSecrets(turn, secrets),
-      })
+      yield* prepareTurn(thread.agentId).pipe(
+        Effect.flatMap((turn) => learnSecrets(turn, secrets)),
+        Effect.ignore,
+      )
     const base = {
       thread,
       services,
