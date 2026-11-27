@@ -77,9 +77,9 @@ export interface Edge {
 
 export const site = (registry: Registry["Service"], issues: Array<Issue>, definition: Definition) => {
   const report = (code: Issue["code"], path: string, message: string, severity: Issue["severity"] = "error"): void => {
-    issues.push(
-      issue(code, definition.file, [definition.path, path].filter((part) => part !== "").join("."), message, severity),
-    )
+    const location =
+      definition.path && path && !path.startsWith("[") ? `${definition.path}.${path}` : definition.path + path
+    issues.push(issue(code, definition.file, location, message, severity))
   }
   const from = namespaceOf(definition)
   const resolve = (kind: Kind, name: string) => registry.resolve(kind, name, from)
@@ -497,17 +497,15 @@ const checkHandler = (at: Site, handler: unknown) => {
 const checkEffect = (at: Site, effect: unknown) => {
   at.snakeCase()
   const valid =
-    Array.isArray(effect) &&
-    effect.length === 3 &&
-    typeof effect[0] === "string" &&
-    (effect[1] === null || Predicate.isObject(effect[1])) &&
-    typeof effect[2] === "function"
+    Array.isArray(effect) && effect.length === 3 && typeof effect[0] === "string" && typeof effect[2] === "function"
   if (!valid)
     at.report(
       "effect_invalid",
       "",
       "An effect must be the [description, args, handler] tuple that defineEffect() returns",
     )
+  else if (effect[1] !== null && !(effect[1] instanceof ZodObject))
+    at.report("effect_invalid", "[1]", "Effect arguments must be a Zod object schema or null")
 }
 
 export const checks = {
