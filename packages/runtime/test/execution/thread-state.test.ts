@@ -5,7 +5,7 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { expectTypeOf } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
-import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, stateAtRest } from "../../src/execution/trigger.ts"
 import { registryOf, spindleDriver } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
@@ -309,6 +309,41 @@ describe("ThreadState", () => {
     ),
   )
 
+  // Only the read that a caller asks for rejects. A variable that a prompt declares and nobody reads must not fail
+  // the creation of a thread, which has stored its row by then, or a run that never uses the variable.
+  it.effect("creates a thread and runs it when a declared variable that nothing reads cannot be read", () =>
+    Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const state = yield* stateAtRest(id)
+      yield* Effect.promise(async () => expect(await state.getMessages()).toMatchObject({ messages: [] }))
+      const supervisor = yield* ThreadSupervisor
+      expect((yield* supervisor.send(id, "go")).outcome).toMatchObject({ status: "idle", steps: 1 })
+      const sql = yield* SqlClient
+      expect(yield* sql`SELECT count(*) AS threads FROM threads`).toEqual([{ threads: 1 }])
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(
+            project({
+              provider: new ScriptedProvider([{ text: "done" }]),
+              prompt: {
+                variables: [{ name: "SPINDLE_UNREADABLE", type: "text", required: false, description: "Never read" }],
+              },
+            }),
+          ),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(
+            ConfigProvider.make((path) =>
+              path[0] === "SPINDLE_UNREADABLE"
+                ? Effect.fail(new ConfigProvider.SourceError({ message: "the configuration store is offline" }))
+                : Effect.succeed(undefined),
+            ),
+          ),
+        ),
+      ),
+    ),
+  )
+
   it("refuses an unknown message order and reads each legal order", async () => {
     await using(spindleDriver, { provider: new ScriptedProvider([]) }, async (session, thread) => {
       const state = await session.state(thread)
@@ -435,6 +470,8 @@ describe("ThreadState", () => {
       expect(await state.instanceEnv?.("SPINDLE_TEST_ABSENT_VARIABLE")).toBeUndefined()
       expect(await state.envType("missing")).toBe("secret")
       expect(await state.setStatus("ready")).toBeUndefined()
+      // setStatus(status: string): the empty string is a string, and threads.md:542 makes the call a no-op here.
+      expect(await state.setStatus("")).toBeUndefined()
     })
   })
 
