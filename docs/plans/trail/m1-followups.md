@@ -131,9 +131,11 @@ Found by the review of structure PR 8 and left for the operator's code review. T
 
 A lesson for the milestone revision. Effect's event-stream parser was recommended by a quality review and adopted, and it made the provider stricter than real endpoints need, in three ways that fail or hang a run. A recommendation to use a library's parser needs a check against sloppy input, not only against the standard.
 
+Found by the review of the tool time limit and left for the operator's code review. `Callback.within` changes three things on one parameter, the clock, the order of the race, and whether it forks. A tool past its limit does not bound a tool it started with `invokeTool` that has no limit of its own. A general limit given twice keeps the last without a word, while a name given twice is an error, and the number parsing accepts `0x10` and a leading space. Not driven end to end by that review: an abort in `spindle chat` that waits for a tool's limit, and timing on Bun.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
-After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
+After them. The tool timeout setting is built, as PR 20. What remains is the updated PR descriptions, after the operator's code review, and the milestone revision.
 
 ## Decided by the operator on 2026-11-26
 
