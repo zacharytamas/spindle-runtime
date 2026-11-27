@@ -50,11 +50,18 @@ const held = (options: { readonly stepCap?: number } = {}) => {
   return { leave, provider, registry, start, supervisor: supervisorLayer(options) }
 }
 
-for (const abort of [false, true])
+// With a cap of 2 the capped step is the model's answer, and the store turns its end into the cap's end because work
+// is queued. With a cap of 1 the capped step is the tool call itself, and the loop already ends at the cap.
+for (const [stepCap, abort] of [
+  [2, false],
+  [2, true],
+  [1, false],
+  [1, true],
+] as const)
   it.live(
-    `keeps the step cap's end and its queued work when the wait ends ${abort ? "by an abort" : "by itself"}`,
+    `keeps the end of a cap of ${stepCap} and its queued work when the wait ends ${abort ? "by an abort" : "by itself"}`,
     () => {
-      const { leave, provider, registry, start, supervisor: layer } = held({ stepCap: 2 })
+      const { leave, provider, registry, start, supervisor: layer } = held({ stepCap })
       return Effect.gen(function* () {
         const { supervisor, id, sent } = yield* start
         if (abort) yield* supervisor.abort(id)
@@ -65,7 +72,7 @@ for (const abort of [false, true])
         expect({ reason: outcome?.reason, queued, requests: provider.requests.length }).toEqual({
           reason: "max_total_steps",
           queued: 1,
-          requests: 2,
+          requests: stepCap,
         })
       }).pipe(
         Effect.ensuring(Effect.sync(leave.release)),

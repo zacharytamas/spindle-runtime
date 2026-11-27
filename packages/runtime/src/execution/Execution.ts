@@ -206,7 +206,9 @@ export class Execution {
         const { settlement, phase } = yield* this.#settle(store, threadId, proposed, stepCap)
         if (settlement === "continue") continue
         const result = settlement === "settled" ? end : settledAs[settlement]
-        const restart = settlement === "settled" && phase === "holding" && end.status === "idle"
+        // A run that ended at the step cap leaves queued work for the next trigger, whatever ended its wait.
+        const restart =
+          settlement === "settled" && phase === "holding" && end.status === "idle" && end.reason !== "max_total_steps"
         const brief = interrupted || phase === "holding" || phase === "dropping"
         const details = report(result, brief)
         const outcome =
