@@ -92,8 +92,7 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (model: Loaded
   return { config, missing: found.missing }
 })
 
-// Returns the effect that yields the provider for one request. A missing required value fails here, before any
-// request. An extension that declares createFetch is built again for each request, with that request's transport.
+// Shared providers are built during setup. A createFetch extension gets a fresh transport for each request.
 export const providerFor = Effect.fn("providerFor")(function* (
   model: Loaded<ModelDefinition>,
   state: ThreadState,
@@ -127,7 +126,7 @@ export const providerFor = Effect.fn("providerFor")(function* (
         message: `The provider factory of model ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
       }),
   })
-  if (definition?.createFetch !== undefined) return build
-  const instance = yield* build
-  return Effect.succeed(instance)
+  return definition?.createFetch === undefined
+    ? { lifetime: "shared" as const, provider: yield* build }
+    : { lifetime: "perRequest" as const, build }
 })

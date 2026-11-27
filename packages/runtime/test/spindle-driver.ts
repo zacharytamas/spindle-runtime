@@ -162,7 +162,7 @@ const openSession = (
       runtime.runPromise(
         Effect.gen(function* () {
           const supervisor = yield* ThreadSupervisor
-          return yield* supervisor.abort(threadId)
+          return (yield* supervisor.abort(threadId)) !== undefined
         }),
       ),
     inspect: (threadId) => rows.runPromise(inspectThread(threadId)),

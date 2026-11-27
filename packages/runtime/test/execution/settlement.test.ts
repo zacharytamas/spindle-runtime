@@ -1,0 +1,222 @@
+import { expect, it } from "@effect/vitest"
+import { defineTool } from "@standardagents/spec"
+import { Deferred, Effect, Fiber, Layer, Scheduler } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import { SqliteLive } from "#platform"
+import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { gate, ok, project } from "../../../conformance/src/scenarios/harness.ts"
+import { newSecrets } from "../../src/execution/env.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
+import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
+import { layer } from "../../src/store/sqlite.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { registryOf } from "../spindle-driver.ts"
+
+it.effect("a refused idle settlement reaches the sender without a second settlement as failed", () =>
+  Effect.gen(function* () {
+    const thread = yield* createThread("assistant")
+    const sql = yield* SqlClient
+    yield* sql`CREATE TRIGGER refuse_idle BEFORE UPDATE OF run_state ON threads WHEN NEW.run_state = 'idle'
+      BEGIN SELECT RAISE(ABORT, 'idle settlement refused'); END`
+    const result = yield* Effect.result(sendMessage(thread.id, "go"))
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "SqlError" } })
+    expect((yield* ThreadStore.use((s) => s.getThread(thread.id))).status.state).toBe("running")
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        registryOf(project({ provider: new ScriptedProvider([{ text: "done" }]) })),
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provideMerge(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  ),
+)
+
+it.effect("refuses a stop during an abort hold and runs queued work when the tool returns", () => {
+  const entered = gate()
+  const leave = gate()
+  const tool = defineTool({
+    description: "Wait for release",
+    execute: async () => {
+      entered.release()
+      await leave.opened
+      return ok("done")
+    },
+  })
+  const registry = registryOf(
+    project({
+      provider: new ScriptedProvider([{ toolCalls: [{ id: "1", name: "wait", arguments: {} }] }, { text: "resumed" }]),
+      tools: { wait: tool },
+    }),
+  )
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+    yield* Effect.promise(() => entered.opened)
+    const settlement = yield* supervisor.abort(id)
+    yield* supervisor.control(id).queueMessage({ role: "user", content: "queued" }, newSecrets(), { kind: "external" })
+    const stopped = yield* supervisor.stop(id)
+    leave.release()
+    expect(stopped).toBe(false)
+    expect(settlement?.isDone()).toBe(false)
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    yield* supervisor.settled(id)
+    expect((yield* supervisor.status(id)).reason).toBe("stop_on_response")
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        registry,
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  )
+})
+
+it.effect("an exiting abort followed by a holding abort leaves queued work for the next trigger", () => {
+  const entered = gate()
+  const leave = gate()
+  const provider = new ScriptedProvider([
+    { toolCalls: [{ id: "1", name: "wait", arguments: {} }] },
+    { text: "resumed" },
+  ])
+  const wait = defineTool({
+    description: "Wait for release",
+    execute: async () => {
+      entered.release()
+      await leave.opened
+      return ok("done")
+    },
+  })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+    yield* Effect.promise(() => entered.opened)
+    yield* supervisor.control(id).queueMessage({ role: "user", content: "queued" }, newSecrets(), { kind: "external" })
+    yield* supervisor.abort(id, true)
+    const stopped = yield* supervisor.stop(id)
+    yield* supervisor.abort(id)
+    leave.release()
+    expect(stopped).toBe(false)
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    yield* supervisor.settled(id)
+    expect((yield* supervisor.status(id)).reason).toBe("aborted_by_user")
+    expect(yield* RunStore.use((store) => store.queueLength(id))).toBe(1)
+    expect(provider.requests).toHaveLength(1)
+  }).pipe(
+    Effect.ensuring(Effect.sync(leave.release)),
+    Effect.provide(
+      Layer.merge(
+        registryOf(project({ provider, tools: { wait } })),
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  )
+})
+
+for (const mode of ["abort", "terminate", "abort after provider failure"] as const)
+  it.effect(`preserves the sender's outcome on ${mode} while committed metadata is pending`, () =>
+    Effect.gen(function* () {
+      const committed = yield* Deferred.make<boolean>()
+      const entered = gate()
+      const release = gate()
+      const registry = registryOf(
+        project({
+          provider: new ScriptedProvider(
+            mode === "abort after provider failure"
+              ? [
+                  { toolCalls: [{ id: "call", name: "missing", arguments: {} }] },
+                  { reject: { code: "invalid_request", message: "rejected" } },
+                ]
+              : [{ text: "reply" }],
+            {
+              getResponseMetadata: async () => {
+                entered.release()
+                await release.opened
+                return {}
+              },
+            },
+          ),
+        }),
+      )
+      const stores = Layer.effect(
+        RunStore,
+        RunStore.use((store) =>
+          Effect.succeed({
+            ...store,
+            settle: (...args: Parameters<typeof store.settle>) =>
+              store
+                .settle(...args)
+                .pipe(
+                  Effect.tap(() =>
+                    Effect.flatMap(Scheduler.PreventSchedulerYield, (guarded) => Deferred.succeed(committed, guarded)),
+                  ),
+                ),
+          }),
+        ),
+      ).pipe(Layer.provideMerge(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))))
+      yield* Effect.gen(function* () {
+        const { id } = yield* createThread("assistant")
+        const supervisor = yield* ThreadSupervisor
+        const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+        yield* Effect.promise(() => entered.opened)
+        expect(yield* Deferred.await(committed), "the scheduler is guarded through the return from commit").toBe(true)
+        if (mode === "terminate") yield* supervisor.control(id).terminate({ kind: "external" })
+        else yield* supervisor.abort(id)
+        if (mode === "abort after provider failure") {
+          release.release()
+          const { outcome, status } = yield* Fiber.join(sent)
+          expect(status.reason).toBe("step_error")
+          expect(outcome).toMatchObject({ status: "failed", reason: "step_error", error: { message: "rejected" } })
+          expect(outcome?.modelCalls).toHaveLength(2)
+          expect(outcome?.trace.length).toBeGreaterThan(0)
+          return
+        }
+        const { outcome, status } = yield* Fiber.join(sent)
+        expect(status.reason).toBe("stop_on_response")
+        expect(outcome).toMatchObject({ status: "idle", reason: "stop_on_response", trace: [], modelCalls: [] })
+      }).pipe(
+        Effect.ensuring(Effect.sync(release.release)),
+        Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), stores))),
+      )
+    }),
+  )
+
+it.effect("a queue that repeatedly asks to continue without a delivery still lets the operator stop", () =>
+  Effect.gen(function* () {
+    const retrying = gate()
+    let attempts = 0
+    const stores = Layer.effect(
+      RunStore,
+      RunStore.use((store) =>
+        Effect.succeed({
+          ...store,
+          settle: (...args: Parameters<typeof store.settle>) => {
+            if (args[2].reason !== "awaiting_human") return store.settle(...args)
+            if (++attempts > 1000) return Effect.die("the stop fiber never ran")
+            if (attempts === 1) queueMicrotask(retrying.release)
+            return Effect.succeed("continue" as const)
+          },
+        }),
+      ),
+    ).pipe(Layer.provideMerge(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))))
+    yield* Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const supervisor = yield* ThreadSupervisor
+      yield* supervisor
+        .control(id)
+        .queueMessage({ role: "assistant", content: "same side" }, newSecrets(), { kind: "external" })
+      yield* Effect.promise(() => retrying.opened)
+      expect(yield* supervisor.stop(id)).toBe(true)
+      expect((yield* supervisor.settled(id))?.reason).toBe("aborted_by_user")
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          registryOf(project({ provider: new ScriptedProvider([]) })),
+          Layer.provideMerge(supervisorLayer(), stores),
+        ),
+      ),
+    )
+  }),
+)

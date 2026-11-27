@@ -131,10 +131,6 @@ export interface Holder {
   readonly pid: number
 }
 
-// settled: the run ended and released the thread. continue: the queue holds work, so the run goes on.
-// superseded: the flow no longer holds the thread, and nothing was written.
-export type Settlement = "settled" | "capped" | "continue" | "superseded"
-
 export class HandleExpired extends Data.TaggedError("HandleExpired") {
   override get message() {
     return "This handle has expired. Use a current thread handle."

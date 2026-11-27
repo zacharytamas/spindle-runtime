@@ -2,7 +2,8 @@ import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult 
 import { Data, Effect, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { NewMessage } from "../store/model.ts"
-import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
+import { Callback } from "./callback.ts"
+import type { Execution } from "./Execution.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
@@ -15,7 +16,7 @@ export interface ToolCall {
 }
 
 export interface ToolContext {
-  readonly pending: PendingCallbacks
+  readonly execution: Execution
   readonly turn: Turn
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
@@ -87,12 +88,12 @@ const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
 export const executeTool = Effect.fn("executeTool")(function* (
+  context: ToolContext,
   tool: Loaded<FunctionTool>,
+  entry: PromptToolConfig | undefined,
   input: unknown,
-  stateFor: (callback: Callback) => ThreadState,
-  pending: PendingCallbacks,
-  scope: EnvScope,
 ) {
+  const scope = scopeFor(context.turn, entry)
   const name = tool.definition.qualifiedName
   for (const variable of tool.value.variables ?? [])
     if (variable.required && (yield* resolveEnv(scope, variable.name)) === undefined)
@@ -110,13 +111,13 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }
     args = parsed.success.data
   }
-  const callback: Callback = {}
-  const state = stateFor(callback)
-  if (state.execution?.stopped) return notRun
+  const callback = new Callback()
+  const state = context.stateFor(tool, entry, callback)
+  if (state.execution?.stopped) return undefined
   const returned = yield* Effect.result(
     Effect.tryPromise({
       try: () =>
-        invokeCallback(callback, pending, `tool ${name}`, () =>
+        context.execution.call(callback, `tool ${name}`, () =>
           schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
         ),
       catch: describe,
@@ -155,13 +156,7 @@ export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolCont
       `The model called ${call.name}, which prompt ${context.turn.prompt.definition.qualifiedName} does not offer.${offered.length === 0 ? "" : ` It offers ${offered.join(", ")}.`}`,
     )
   }
-  return yield* executeTool(
-    exposed.tool,
-    call.arguments,
-    (callback) => context.stateFor(exposed.tool, exposed.entry, callback),
-    context.pending,
-    scopeFor(context.turn, exposed.entry),
-  )
+  return yield* executeTool(context, exposed.tool, exposed.entry, call.arguments)
 })
 
 // Tools section 2.1: a supplied uses list limits the targets a tool may invoke or queue by name. An empty list
@@ -222,13 +217,7 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
     return failed(yield* notAFunctionTool(name, caller.definition, "invokeTool"))
   const tool = target as Loaded<FunctionTool>
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
-  return yield* executeTool(
-    tool,
-    input,
-    (callback) => context.stateFor(tool, entry, callback),
-    context.pending,
-    scopeFor(context.turn, entry),
-  )
+  return (yield* executeTool(context, tool, entry, input)) ?? notRun
 })
 
 export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({

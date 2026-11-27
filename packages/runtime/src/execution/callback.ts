@@ -1,31 +1,38 @@
-export type PendingCallbacks = Map<Promise<unknown>, string>
+export class Callback {
+  #finished = false
+  #expired = false
+  #release: (() => void) | undefined
 
-export interface Callback {
-  finished?: boolean
-  promise?: Promise<unknown>
-}
+  get finished() {
+    return this.#finished
+  }
+  get expired() {
+    return this.#expired
+  }
 
-export const invokeCallback = <A>(
-  callback: Callback,
-  pending: PendingCallbacks | undefined,
-  operation: string,
-  invoke: () => PromiseLike<A> | A,
-) => {
-  try {
-    const value = invoke()
-    if (!value || typeof (value as PromiseLike<A>).then !== "function") {
-      callback.finished = true
-      return Promise.resolve(value)
+  expire() {
+    this.#expired = true
+    this.#release?.()
+    this.#release = undefined
+  }
+
+  invoke<A>(invoke: () => PromiseLike<A> | A, register?: (promise: Promise<unknown>) => () => void) {
+    try {
+      const value = invoke()
+      if (!value || typeof (value as PromiseLike<A>).then !== "function") {
+        this.#finished = true
+        return Promise.resolve(value)
+      }
+      const result = Promise.resolve(value).finally(() => {
+        this.#finished = true
+        this.#release?.()
+        this.#release = undefined
+      })
+      this.#release = register?.(result)
+      return result
+    } catch (error) {
+      this.#finished = true
+      throw error
     }
-    const result = Promise.resolve(value).finally(() => {
-      callback.finished = true
-      pending?.delete(result)
-    })
-    pending?.set(result, operation)
-    callback.promise = result
-    return result
-  } catch (error) {
-    callback.finished = true
-    throw error
   }
 }
