@@ -267,7 +267,13 @@ const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryVie
   const parsed = history.map(({ message }, index) => {
     if (message.tool_calls == null || (message.role !== own && message.role !== other)) return NO_CALLS
     if (message.role === own && (view.includePastTools || !view.past.has(message.id))) return toolCallsOf(message)
-    if (needsIds) hiddenIds.set(index, callEntries(message))
+    // Even a hidden malformed name used to go through String(). An object or array can throw there.
+    // Escaped JSON keys can spell "name" too, so inspect those lists conservatively.
+    if (needsIds || /\\u|"name"\s*:\s*[[{]/.test(message.tool_calls)) {
+      const entries = callEntries(message)
+      for (const entry of entries) String(entry.function.name)
+      if (needsIds) hiddenIds.set(index, entries)
+    }
     return NO_CALLS
   })
   const callsAt = (index: number) => hiddenIds.get(index) ?? parsed[index] ?? NO_CALLS

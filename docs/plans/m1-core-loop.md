@@ -935,8 +935,8 @@ The workspace type check runs `effect-tsgo tsc` from `@effect/tsgo@0.73.7` with 
 - The default errors are `classSelfMismatch`, `effectFnImplicitAny`, `floatingEffect`, `floatingEffectInVitest`, `missingEffectContext`, `missingEffectError`, `missingLayerContext`, `missingReturnYieldStar`, `missingStarInYieldEffectGen`, `nonObjectEffectServiceType`, `overriddenSchemaConstructor`, `schemaLiteralNonFinite`, and `schemaOpaqueInstanceMember`.
 - The workspace also treats `duplicatePackage`, `effectInFailure`, `effectInVoidSuccess`, `layerMergeAllWithDependencies`, `lazyPromiseInEffectSync`, `promiseInEffectSuccess`, and `scopeInLayerEffect` as errors.
 - The practice rules at warning are `effectTryWithoutCatch`, `globalDateInEffect`, `globalErrorInEffectCatch`, `missingConcurrencyOption`, `preferTypedSchemaDecoder`, and `unknownInEffectCatch`.
-- `unsafeEffectTypeAssertion` stays at suggestion for the cast on the hook runner's return type. The hooks split should remove the cast and raise the rule to error.
-- `tryCatchInEffectGen` stays at suggestion for five recovery paths. The hooks and execution splits own hook result validation and tool result access. The store split owns delivery of a malformed queue row. The registry split owns both checks that read user definitions and package disclosures. Raise the rule to warning once all five paths have moved.
+- M1-12 removed the cast on the hook runner and raised `unsafeEffectTypeAssertion` to error.
+- `tryCatchInEffectGen` stays at suggestion for the two remaining checks in registry validation that read user definitions and package disclosures. The store and hooks splits handled the other three paths.
 - M1-11 raised `globalErrorInEffectFailure` to warning. A missing definition and an unset environment variable still reject at the promise boundary with a plain JavaScript `Error`.
 - M1-11 raised `returnEffectInGen` to warning. Provider setup resolves the configuration and transport once. It constructs an ordinary provider immediately and shares the instance. With `createFetch` it retains the factory operation and runs it once per request.
 - `schemaNumber` stays at suggestion for the script provider's `statusCode` and `retryAfter`. JSON exponents can overflow to infinity, which the current decoder accepts. The CLI split should settle that input contract before raising the rule to warning.
@@ -1004,6 +1004,28 @@ The following outcomes differ from the previous driver.
 - Step work now yields to the scheduler between guarded store operations. A local control request received after registration but before the fiber starts applies on its first turn. On shutdown the control poll closes before the executions finish and the holder is released.
 
 The step loop offers a reason at each boundary. Moving its queue check outside the settlement transaction would race admission. A timed-out hook leaves the callback tracker even if its promise never settles. The stop predicate is sampled before validation and again after asynchronous validation, since user code can stop the run between those points. A skipped tool has an absent result until the loop writes its prescribed error. Callback handles and their expiry remain synchronous for user code. The holder already uses scoped acquisition. Queue decoding, process identity, CLI setup and message hooks keep their existing owners.
+
+### Settled in M1-12
+
+Thirteen positions use three failure contracts. The hook set still comes from the first nonempty prompt list or the agent list, in declaration order with duplicate definitions removed.
+
+| Contract | Positions |
+| --- | --- |
+| Observe and continue after a failure | `after_thread_created`, `after_create_message`, `after_update_message`, `tool_call_started`, `tool_call_done` |
+| Transform and keep the last good value after a failure | `after_system_message`, `filter_messages`, `prefilter_llm_history`, `after_tool_call_success`, `after_tool_call_failure`, `before_store_tool_result`, and `before_create_message` on a required write |
+| Transform and refuse the write after a failure | `before_update_message` and `before_create_message` on injection |
+
+Thread creation runs its observer in the trigger. Each message write runs its own before and after hooks. Request assembly runs the system and both history transforms. The tool lifecycle handles stream start, abandonment, result transformation and the final notification. The drain delivers queued messages with the agent's hooks at rest and queued calls with the active turn's hooks.
+
+`injectMessage` can refuse a hook return or a taken id. `commitMessage` checks a chosen id before passing the draft on. Both redact after the hooks and check the chosen id against the final secrets. A required insert that loses the id to a nested write retries once under a fresh UUID. A second collision still raises the store's typed error. Removing it from the type would require changing that outcome. Queued arguments are redacted before the create hook and again with any newly learned secrets before storage. The skipped result restores its prescribed error fields after its hooks.
+
+An unstorable tool result and its replacement error are distinct drafts. A create hook can repair the first draft. If the insert still fails JSON validation, the replacement gets its own create hooks. Only the successful insert runs the after observer. M1-5's rule about a single pass applies to a retry of the same draft after an id collision.
+
+The review's clock change would compare nanoseconds at a boundary previously measured in whole milliseconds. The existing clock and the warning for an argument copy that throws are preserved. The id lookup still treats a database failure as a defect so the run retains its fatal outcome. Hook state and write depth stay with the handle whose callback owns them. The synchronous history getter shares the handle check. M1-10 already replaced the global positions map and array append with positioned rows in a persistent chunk. M1-9 already split the scenarios.
+
+Stored hook returns pass through the JSON writer before shape checks. Request hook returns go through structured cloning so aliases, extra fields and cloneable non-JSON metadata stay available to subsequent hooks. The first history filter receives copies of stored message records and their mutable JSON fields. A later filter receiving synthetic data uses a full structured clone. Schema supplies the request-message union and validates new file shapes. The shorter stored-message predicate also avoids the measured cost of running a struct decoder on every row. The update check still compares keys to the previous patch. Raw tool output keeps its historical file-identity check because tightening it would change the stored error or drop an accepted file.
+
+Assembly skips argument decoding for excluded calls. Legacy and synthetic results can still require hidden call ids for shadowing. A hidden list whose name may be an object or array still gets its name conversion, including its original failure on malformed input. Each reordered result group grows in place.
 
 ## Appendix B. Alternatives rejected
 
