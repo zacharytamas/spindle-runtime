@@ -1,6 +1,7 @@
 import type {
   AgentDefinition,
   HookExecutionSource,
+  HookToolCall,
   LLMMessage,
   Message,
   ThreadState,
@@ -24,37 +25,39 @@ export const HookTimeout = Context.Reference<Duration.Duration>("spindle/HookTim
 // chain of such writes may go.
 export const NestedWriteLimit = Context.Reference<number>("spindle/NestedWriteLimit", { defaultValue: () => 8 })
 
-// The value each position hands its hooks in turn. A transforming hook replaces it, an observing hook only sees it.
-export interface Values {
-  readonly after_thread_created: undefined
-  readonly after_system_message: string
-  readonly filter_messages: ReadonlyArray<Message>
-  readonly prefilter_llm_history: Array<LLMMessage>
-  readonly before_create_message: Message
-  readonly after_create_message: Message
-  readonly before_update_message: Record<string, unknown>
-  readonly after_update_message: Message
-  readonly before_store_tool_result: ToolResult
-  readonly after_tool_call_success: ToolResult
-  readonly after_tool_call_failure: ToolResult
-  readonly tool_call_started: string | undefined
-  readonly tool_call_done: ToolResult
+interface ObserverArgs {
+  after_thread_created: []
+  after_create_message: [Message]
+  after_update_message: [Message]
+  tool_call_started: [HookToolCall, string | undefined]
+  tool_call_done: [HookToolCall, ToolResult]
 }
 
-export type Position = keyof Values
+interface Values {
+  after_system_message: string
+  filter_messages: ReadonlyArray<Message>
+  prefilter_llm_history: Array<LLMMessage>
+  before_create_message: Message
+  before_update_message: Record<string, unknown>
+  before_store_tool_result: ToolResult
+  after_tool_call_success: ToolResult
+  after_tool_call_failure: ToolResult
+}
 
-type Vetoes = "before_create_message" | "before_update_message"
+type Veto = "before_create_message" | "before_update_message"
+type Position = keyof Values | keyof ObserverArgs
+type Prefix<K> = K extends "before_update_message"
+  ? [string]
+  : K extends "after_tool_call_success" | "after_tool_call_failure" | "before_store_tool_result"
+    ? [HookToolCall]
+    : []
 
 const INVALID = Symbol("invalid")
 
-interface Row<V> {
+interface Transform<V> {
   readonly where: string
-  // The next value, or INVALID when the hook returned something this position cannot take.
   readonly accept: (returned: unknown, current: V) => V | typeof INVALID
   readonly expects: string
-  // keep: the next hook and the loop get the value the failed hook was given. veto: a write its caller may refuse
-  // does not happen. A write the execution cannot go on without keeps the value instead.
-  readonly failure: "keep" | "veto"
   readonly kept: string
 }
 
@@ -69,14 +72,6 @@ const plain = (value: unknown): unknown => {
   const text = toJson(value)
   return typeof text === "string" ? JSON.parse(text) : INVALID
 }
-
-const observe = <V>(where: string): Row<V> => ({
-  where,
-  accept: (_returned, current) => current,
-  expects: "anything",
-  failure: "keep",
-  kept: "went on",
-})
 
 // Hooks section 8.6 writes metadata as JSON text, and Messages section 1 types it as an object, so a string that
 // holds a JSON object is read as that object.
@@ -271,31 +266,33 @@ const acceptResult = (returned: unknown) => {
     : INVALID
 }
 
-const branch = (where: string): Row<ToolResult> => ({
+const branch = (where: string): Transform<ToolResult> => ({
   where,
   accept: (returned, current) => (returned === null ? current : acceptResult(returned)),
   expects: "a ToolResult or null",
-  failure: "keep",
   kept: "kept the result the hook was given",
 })
 
-// Runtime section 4, Hooks sections 3 to 5, and Messages section 3. The loop calls each position at the place
-// that where names, and reads accept and failure from here. No other code decides what a hook's return means.
-export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
-  after_thread_created: observe("after a thread is created, before any message"),
+const observers: Record<keyof ObserverArgs, string> = {
+  after_thread_created: "after a thread is created, before any message",
+  after_create_message: "after a message is stored",
+  after_update_message: "after a message is updated",
+  tool_call_started: "when a tool call starts in the model's stream",
+  tool_call_done: "after a tool call's result is stored",
+}
+
+const transforms: { [K in keyof Values]: Transform<Values[K]> } = {
   after_system_message: {
     where: "after the system prompt is interpolated, before the history snapshot",
     accept: (returned, current) =>
       returned === null || returned === undefined ? current : typeof returned === "string" ? returned : INVALID,
     expects: "a string, null, or undefined",
-    failure: "keep",
     kept: "kept the system message the hook was given",
   },
   filter_messages: {
     where: "once per context assembly, on the history snapshot",
     accept: acceptMessages,
     expects: "an array of messages",
-    failure: "keep",
     kept: "kept the history the hook was given",
   },
   prefilter_llm_history: {
@@ -305,36 +302,28 @@ export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
       return isListOf(value, isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
     },
     expects: "an array of messages that provider messages can hold",
-    failure: "keep",
     kept: "kept the provider messages the hook was given",
   },
   before_create_message: {
     where: "before a message is stored",
     accept: acceptMessage,
     expects: "a message the store can hold, with the role, the tool calls, and the call id it was given",
-    failure: "veto",
     kept: "kept the message the hook was given",
   },
-  after_create_message: observe("after a message is stored"),
   before_update_message: {
     where: "before a message is updated",
     accept: acceptUpdate,
     expects: "updates that change only content and metadata",
-    failure: "veto",
     kept: "kept the updates the hook was given",
   },
-  after_update_message: observe("after a message is updated"),
   before_store_tool_result: {
     where: "before a tool result is stored",
     accept: acceptResult,
     expects: "a ToolResult",
-    failure: "keep",
     kept: "kept the result the hook was given",
   },
   after_tool_call_success: branch("after a tool call succeeds, before its result is stored"),
   after_tool_call_failure: branch("after a tool call fails, before its result is stored"),
-  tool_call_started: observe("when a tool call starts in the model's stream"),
-  tool_call_done: observe("after a tool call's result is stored"),
 }
 
 export interface SelectedHook {
@@ -437,79 +426,137 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-// Hooks section 1.2: a hook's failure is logged with its id and type only. The thrown error and the hook's
-// arguments can hold message content or a secret, so neither reaches the log.
-export const runHooks = <K extends Position>(
+// A hook may block the thread past its deadline before the timer gets a turn.
+const invoke = Effect.fnUntraced(function* (
   scope: HookScope,
-  position: K,
-  lead: ReadonlyArray<unknown>,
-  value: Values[K],
-  options: {
-    readonly essential?: boolean
-    // The depth of the write these hooks decorate. Anything else they decorate has depth 0.
-    readonly depth?: number
-    // A check the return passes only against stored state, such as an id that no message holds yet. It gives the
-    // problem, or undefined when there is none.
-    readonly check?: (next: Values[K], current: Values[K], hook: string) => Effect.Effect<string | undefined>
-  } = {},
-): Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never> =>
+  hook: SelectedHook,
+  call: HookCall,
+  args: () => readonly unknown[],
+  timeout: Duration.Duration,
+) {
+  const execute = () => hook.execute(scope.stateFor(hook, call), ...args(), { source: { ...scope.set.source } })
+  const started = yield* Clock.currentTimeMillis
+  const result = yield* Effect.tryPromise({
+    try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, execute) : call.invoke(execute)),
+    catch: () => "threw an error",
+  }).pipe(Effect.timeoutOption(timeout), Effect.result)
+  if (
+    (result._tag === "Success" && result.success._tag === "None") ||
+    (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+  )
+    call.expire()
+  if (!call.expired) {
+    if (result._tag === "Failure") return { problem: result.failure } as const
+    if (result.success._tag === "Some") return { value: result.success.value } as const
+  }
+  return { problem: `did not settle within ${Duration.format(timeout)}` } as const
+})
+
+interface Checks<V> {
+  depth?: number
+  check?: (next: V, current: V, hook: string) => Effect.Effect<string | undefined>
+}
+
+function accept<V>(row: Transform<V>, returned: unknown, current: V): V | typeof INVALID {
+  try {
+    return row.accept(returned, current)
+  } catch {
+    return INVALID
+  }
+}
+
+const pipeline = <V, E>(
+  scope: HookScope,
+  position: Position,
+  where: string,
+  action: string,
+  initial: V,
+  args: (current: V) => readonly unknown[],
+  transform: Transform<V> | undefined,
+  options: Checks<V>,
+  refuse?: (error: HookFailed) => Effect.Effect<never, E>,
+) =>
   Effect.gen(function* () {
     const hooks = scope.set.byPosition.get(position)
-    if (hooks === undefined) return value
-    const row = POSITIONS[position] as Row<Values[K]>
+    if (!hooks) return initial
     const timeout = yield* HookTimeout
-    const check = options.check ?? (() => Effect.undefined)
-    let current = value
+    let current = initial
     for (const hook of hooks) {
       const call = Object.assign(new Callback(), { hook: hook.id, position, depth: (options.depth ?? 0) + 1 })
-      const invoke = () =>
-        hook.execute(
-          scope.stateFor(hook, call),
-          ...lead.map((arg) => structuredClone(arg)),
-          ...(position === "after_thread_created" ? [] : [structuredClone(current)]),
-          { source: { ...scope.set.source } },
-        )
-      const started = yield* Clock.currentTimeMillis
-      const outcome = yield* Effect.tryPromise({
-        try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, invoke) : call.invoke(invoke)),
-        catch: () => "threw an error",
-      }).pipe(Effect.timeoutOption(timeout), Effect.result)
-      // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
-      if (
-        (outcome._tag === "Success" && outcome.success._tag === "None") ||
-        (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
-      )
-        call.expire()
-      let problem: string
-      let late = ""
-      if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {
-        problem =
-          call.expired || outcome._tag === "Success"
-            ? `did not settle within ${Duration.format(timeout)}`
-            : outcome.failure
-        if (call.expired)
-          late =
-            " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
-      } else {
-        let next: Values[K] | typeof INVALID
-        try {
-          next = row.accept(outcome.success.value, current)
-        } catch {
-          next = INVALID
+      const returned = yield* invoke(scope, hook, call, () => args(current), timeout)
+      let problem = returned.problem
+      if (problem === undefined) {
+        if (!transform) continue
+        const next = accept(transform, returned.value, current)
+        if (next === INVALID) problem = `returned a value that is not ${transform.expects}`
+        else {
+          problem = options.check ? yield* options.check(next, current, hook.id) : undefined
+          if (problem === undefined) {
+            current = next
+            continue
+          }
         }
-        const found =
-          next === INVALID ? `returned a value that is not ${row.expects}` : yield* check(next, current, hook.id)
-        if (found === undefined) {
-          current = next as Values[K]
-          continue
-        }
-        problem = found
       }
-      const veto = row.failure === "veto" && options.essential !== true
-      yield* Effect.logWarning(
-        `Hook ${hook.id} (${position}, ${row.where}) ${problem}. Spindle ${veto ? "refused the change" : row.kept}.${late}`,
-      )
-      if (veto) return yield* new HookFailed({ hook: hook.id, position, problem })
+      const late = call.expired
+        ? " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
+        : ""
+      yield* Effect.logWarning(`Hook ${hook.id} (${position}, ${where}) ${problem}. Spindle ${action}.${late}`)
+      if (refuse) return yield* refuse(new HookFailed({ hook: hook.id, position, problem }))
     }
     return current
-  }) as Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never>
+  })
+
+export const observeHooks = <K extends keyof ObserverArgs>(
+  scope: HookScope,
+  position: K,
+  args: ObserverArgs[K],
+  depth = 0,
+) =>
+  pipeline<void, never>(
+    scope,
+    position,
+    observers[position],
+    "went on",
+    undefined,
+    () => args.map((arg) => structuredClone(arg)),
+    undefined,
+    { depth },
+  )
+
+function transform<K extends keyof Values, E = never>(
+  scope: HookScope,
+  position: K,
+  prefix: Prefix<K>,
+  value: Values[K],
+  options: Checks<Values[K]>,
+  refuse?: (error: HookFailed) => Effect.Effect<never, E>,
+) {
+  const row = transforms[position]
+  return pipeline(
+    scope,
+    position,
+    row.where,
+    refuse ? "refused the change" : row.kept,
+    value,
+    (current) => [...prefix.map((arg) => structuredClone(arg)), structuredClone(current)],
+    row,
+    options,
+    refuse,
+  )
+}
+
+export const transformHooks = <K extends Exclude<keyof Values, "before_update_message">>(
+  scope: HookScope,
+  position: K,
+  prefix: Prefix<K>,
+  value: Values[K],
+  options: Checks<Values[K]> = {},
+) => transform(scope, position, prefix, value, options)
+
+export const vetoHooks = <K extends Veto>(
+  scope: HookScope,
+  position: K,
+  prefix: Prefix<K>,
+  value: Values[K],
+  options: Checks<Values[K]> = {},
+) => transform(scope, position, prefix, value, options, Effect.fail)

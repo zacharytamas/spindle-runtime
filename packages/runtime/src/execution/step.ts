@@ -34,7 +34,7 @@ import type { Callback } from "./callback.ts"
 import type { End, Execution } from "./Execution.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { makeHistory } from "./history.ts"
-import { agentHooks, countHooks, type HookScope, has, runHooks, turnHooks } from "./hooks.ts"
+import { agentHooks, countHooks, type HookScope, has, observeHooks, transformHooks, turnHooks } from "./hooks.ts"
 import { createMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
@@ -404,15 +404,18 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
             ? {
                 progressArgument: (name) => turn.tools.get(name)?.tool.value.progressArgument,
                 started: (call, progress) =>
-                  runHooks(hooks, "tool_call_started", [hookCall(call, call.argumentsText)], progress),
+                  observeHooks(hooks, "tool_call_started", [hookCall(call, call.argumentsText), progress]),
                 abandoned: (calls) =>
                   Effect.forEach(
                     calls,
                     (call) =>
-                      runHooks(hooks, "tool_call_done", [hookCall(call, call.argumentsText)], {
-                        status: "error",
-                        error: "Spindle did not run this call, because the model response that held it failed.",
-                      }),
+                      observeHooks(hooks, "tool_call_done", [
+                        hookCall(call, call.argumentsText),
+                        {
+                          status: "error",
+                          error: "Spindle did not run this call, because the model response that held it failed.",
+                        },
+                      ]),
                     { concurrency: 1, discard: true },
                   ),
               }
@@ -431,13 +434,15 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
             const toolCall = hookCall(call, argumentsOf(call))
             const branched = skipped
               ? returned
-              : yield* runHooks(
+              : yield* transformHooks(
                   hooks,
                   returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
                   [toolCall],
                   returned,
                 )
-            const final = skipped ? returned : yield* runHooks(hooks, "before_store_tool_result", [toolCall], branched)
+            const final = skipped
+              ? returned
+              : yield* transformHooks(hooks, "before_store_tool_result", [toolCall], branched)
             const save = (result: ToolResult) =>
               Effect.try({
                 try: () => storedResult(turn, call, result),
@@ -456,7 +461,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
             yield* record("persist-results", `${call.id} ${stored.tool_status}`)
             yield* observe({ type: "message", message: stored })
             // Hooks section 5.5: tool_call_done sees the result as the store holds it, after every hook and redaction.
-            yield* runHooks(hooks, "tool_call_done", [toolCall], resultOf(stored))
+            yield* observeHooks(hooks, "tool_call_done", [toolCall, resultOf(stored)])
             // Storing a result can turn a success into an error, and the stop tool outcome reports what was stored.
             return stored.tool_status == null ? final : { ...final, status: stored.tool_status }
           })
@@ -499,7 +504,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
             )
             yield* record("drain", `tool ${name} ${call.id}`)
             yield* observe({ type: "message", message })
-            yield* runHooks(hooks, "tool_call_started", [hookCall(call, argumentsText)], undefined)
+            yield* observeHooks(hooks, "tool_call_started", [hookCall(call, argumentsText), undefined])
             yield* runCall(
               seq,
               call,
@@ -570,7 +575,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               // Runtime section 4 orders the seven steps of an assembly.
               const rendered = yield* renderSystemPrompt(turn, secrets)
               yield* record("assemble", "interpolate the system prompt")
-              const system = yield* runHooks(hooks, "after_system_message", [], rendered)
+              const system = yield* transformHooks(hooks, "after_system_message", [], rendered)
               yield* checkSystemPrompt(turn, system, secrets)
               yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
               // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
@@ -580,7 +585,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               let historyRows: ReadonlyArray<RequestRow> = rows
               if (has(hooks, "filter_messages")) {
                 const snapshot = rows.map((row) => row.message)
-                const filtered = yield* runHooks(hooks, "filter_messages", [], snapshot)
+                const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot)
                 if (filtered !== snapshot) {
                   const byId = new Map(rows.map((row) => [row.message.id, row]))
                   historyRows = filtered.map((message) => {
@@ -594,7 +599,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               const transformed = toProviderMessages(historyRows, view)
               yield* record("assemble", `transform, ${transformed.length} provider messages`)
               const prefiltered = has(hooks, "prefilter_llm_history")
-                ? (yield* runHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(
+                ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(
                     fromLLMMessage,
                   )
                 : transformed

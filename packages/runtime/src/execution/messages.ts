@@ -11,8 +11,10 @@ import {
   type HookScope,
   NestedWriteLimit,
   NestedWriteTooDeep,
-  runHooks,
+  observeHooks,
   TEXT_FIELDS,
+  transformHooks,
+  vetoHooks,
 } from "./hooks.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { redactAttachment } from "./tools.ts"
@@ -159,7 +161,9 @@ export const createMessage = Effect.fn("createMessage")(function* (
       return "returned the id of a message that already exists"
     idOwner = hook
   })
-  const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
+  const hooked = yield* (essential
+    ? transformHooks(write.hooks, "before_create_message", [], original, { depth, check })
+    : vetoHooks(write.hooks, "before_create_message", [], original, { depth, check }))
   let redacted = redactWrite(writer, original, hooked, redact)
   if (writer === "queued" && original.tool_calls) {
     const calls = JSON.parse(original.tool_calls) as Array<{ function: { arguments: string } }>
@@ -196,7 +200,7 @@ export const createMessage = Effect.fn("createMessage")(function* (
   )
   write.history?.inserted(inserted)
   const stored = inserted.message
-  yield* runHooks(write.hooks, "after_create_message", [], stored, { depth })
+  yield* observeHooks(write.hooks, "after_create_message", [stored], depth)
   return inserted
 })
 
@@ -216,9 +220,9 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
 ) {
   const store = yield* MessageStore
   const depth = yield* depthOf(write)
-  const patch = yield* runHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
+  const patch = yield* vetoHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
   const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates, write.origin)
-  yield* runHooks(write.hooks, "after_update_message", [], message, { depth })
+  yield* observeHooks(write.hooks, "after_update_message", [message], depth)
   return message
 })

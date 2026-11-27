@@ -124,12 +124,9 @@ export const executeTool = Effect.fn("executeTool")(function* (
     }),
   )
   if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${returned.failure}`)
-  let result: unknown
-  try {
-    result = fieldsOf(returned.success)
-  } catch (cause) {
-    return failed(`Reading the result of tool ${name} threw: ${describe(cause)}`)
-  }
+  const read = yield* Effect.result(Effect.try({ try: () => fieldsOf(returned.success), catch: describe }))
+  if (Result.isFailure(read)) return failed(`Reading the result of tool ${name} threw: ${read.failure}`)
+  const result = read.success
   if (!isToolResult(result))
     return failed(
       `Tool ${name} returned a value that is not a ToolResult. A tool returns an object with status "success" or "error".`,

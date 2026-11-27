@@ -5,7 +5,7 @@ import type { Thread } from "../store/model.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { newSecrets } from "./env.ts"
-import { agentHooks, type HookScope, type HookSet, runHooks } from "./hooks.ts"
+import { agentHooks, type HookScope, type HookSet, observeHooks } from "./hooks.ts"
 import { type ExecutionOptions, learnSecrets } from "./step.ts"
 import { ThreadSupervisor } from "./ThreadSupervisor.ts"
 import { makeThreadState } from "./thread-state.ts"
@@ -63,7 +63,7 @@ export const createThread = (agentId: string, secrets?: Set<string>) =>
     const store = yield* ThreadStore
     const thread = yield* store.createThread({ agentId })
     const rest = yield* atRest(thread, { learn: false, ...(secrets ? { secrets } : {}) })
-    yield* runHooks(rest.hooks, "after_thread_created", [], undefined)
+    yield* observeHooks(rest.hooks, "after_thread_created", [])
     return thread
   })
 
