@@ -715,6 +715,13 @@ describe("openaiCompatible event stream", () => {
     for (const body of forms) expect(await streamOf(() => new Response(body))).toEqual(whole)
   })
 
+  // An empty data field after a complete event adds nothing to it. It must not start an event of its own.
+  it("ignores an empty data field that follows a complete event", async () => {
+    const whole = await streamOf(() => sse(streamed))
+    const body = `${streamed.map((event) => `data: ${JSON.stringify(event)}\ndata:\n\n`).join("")}data: [DONE]\n\n`
+    expect(await streamOf(() => new Response(body))).toEqual(whole)
+  })
+
   // An endpoint that sends no blank lines must not make each event wait for the one after it. A chat shows a delta
   // when it arrives, and the last event of a held-open connection has no successor at all.
   it("delivers an event as soon as its data is complete, before the next line arrives", async () => {

@@ -342,6 +342,8 @@ async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
       if (data !== undefined) return
       continue
     }
+    // An empty field with nothing buffered would only start an event that holds no data.
+    if (pending === undefined && data === "") continue
     pending = pending === undefined ? data : `${pending}\n${data}`
     if (isJson(pending)) {
       yield pending
