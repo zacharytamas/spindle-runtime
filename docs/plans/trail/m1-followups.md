@@ -47,7 +47,7 @@ After the fix round of 2026-11-26, at `2ca86ee`. The audit and the verifier of t
 - For an optimization pass after spec conformance. The step runs 13 SQL statements where M1-5 runs 11. The two extra are a read of the queue and a lookup of tool results by `caller_seq`, both at every step, and both look avoidable when the queue is empty and the step's own calls were all stored. Measured overhead per step is between 15 and 19 percent above M1-5, depending on machine load.
 - The descriptions of PR 2 to PR 8 on GitHub were written before the rebase and the fix rounds, and no longer match their commits.
 
-From the audit of the fix round, at `2ca86ee`. The full lists are in `/tmp/swarm-m1-6/audit-c/report.md`.
+From the audit of the fix round, at `2ca86ee`. The full lists are in `m1-6-audit-c.md`, beside this file.
 
 - Fifteen behaviours of the fix round have no test. The audit found them by breaking each fix and running the suite. Among them are the commit-time check of an expired handle, the three ways an abort's hold is released, and three of the filters on pending queue entries.
 - Nothing reads or removes a queue entry marked `failed_delivery`, and nothing removes the holder row of a killed process.
