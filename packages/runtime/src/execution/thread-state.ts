@@ -6,7 +6,7 @@ import type {
   ThreadStatus,
   ToolResult,
 } from "@standardagents/spec"
-import { Cause, Context, Data, Effect, Exit } from "effect"
+import { Cause, Context, Data, Effect, Exit, Predicate } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
@@ -73,9 +73,6 @@ class SecretInArguments extends Data.TaggedError("SecretInArguments") {
 }
 
 class InvalidArguments extends Data.TaggedError("InvalidArguments")<{ readonly message: string }> {}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 interface StateContext {
   readonly thread: Thread
@@ -304,7 +301,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
       runSync(
         Effect.gen(function* () {
           const given: unknown = args === undefined ? {} : args
-          if (!isRecord(given))
+          if (!Predicate.isObject(given))
             return yield* new InvalidArguments({
               message: `queueTool(${String(toolName)}) takes an object of arguments`,
             })

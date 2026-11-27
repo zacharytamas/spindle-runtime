@@ -1,5 +1,5 @@
 import type { Message, MessageUpdates } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, Predicate } from "effect"
 import { nowMicros } from "../store/database.ts"
 import { MessageStore } from "../store/MessageStore.ts"
 import type { NewMessage, WriteOrigin } from "../store/model.ts"
@@ -44,9 +44,6 @@ const depthOf = Effect.fnUntraced(function* (write: WriteContext) {
   }
   return call.depth
 })
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 // Hooks section 4.1: before_create_message sees the whole record that the store will hold, its id and time included.
 const messageOf = (draft: NewMessage, id: string, created_at: number): Message => ({
@@ -106,9 +103,11 @@ const redactField = (
   redact: (text: string) => string,
   result: boolean,
 ) => {
-  if (field === "metadata") return isRecord(value) ? redactMetadata(value, redact, result) : value
+  if (field === "metadata") return Predicate.isObject(value) ? redactMetadata(value, redact, result) : value
   if (field === "attachments")
-    return Array.isArray(value) ? value.map((item) => (isRecord(item) ? redactAttachment(item, redact) : item)) : value
+    return Array.isArray(value)
+      ? value.map((item) => (Predicate.isObject(item) ? redactAttachment(item, redact) : item))
+      : value
   return typeof value === "string" ? redact(value) : value
 }
 
@@ -206,7 +205,7 @@ export const commitMessage = Effect.fn("commitMessage")(function* (
 const redactUpdates = (updates: Record<string, unknown>, redact: (text: string) => string) => ({
   ...updates,
   ...(typeof updates.content === "string" ? { content: redact(updates.content) } : {}),
-  ...(isRecord(updates.metadata) ? { metadata: redactMetadata(updates.metadata, redact) } : {}),
+  ...(Predicate.isObject(updates.metadata) ? { metadata: redactMetadata(updates.metadata, redact) } : {}),
 })
 
 // Hooks sections 4.3 and 4.4. A failed before_update_message hook refuses the update. The patch is redacted once,

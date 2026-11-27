@@ -8,25 +8,15 @@ import type {
   ProviderRequest,
   ProviderToolCallPart,
 } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, Predicate } from "effect"
 import type { Definition } from "../registry/Registry.ts"
+import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { copyMessage } from "./history.ts"
-import { countHooks, has, transformHooks } from "./hooks.ts"
+import { countHooks, transformHooks } from "./hooks.ts"
 import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
 import type { SideScope, ThreadScope } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-const parseJson = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
 
 export const promptScope = (turn: Turn): EnvScope => ({
   agent: turn.agent.value.env,
@@ -131,22 +121,24 @@ function callEntries(message: Message) {
   return Array.isArray(parsed)
     ? parsed.filter(
         (entry: unknown): entry is { id: string; function: Record<string, unknown> } =>
-          isRecord(entry) && typeof entry.id === "string" && isRecord(entry.function),
+          Predicate.isObject(entry) && typeof entry.id === "string" && Predicate.isObject(entry.function),
       )
     : []
 }
 
 export const toolCallsOf = (message: Message): Array<ProviderToolCallPart> => {
   const extra =
-    isRecord(message.metadata) && isRecord(message.metadata.tool_call_extra) ? message.metadata.tool_call_extra : {}
+    Predicate.isObject(message.metadata) && Predicate.isObject(message.metadata.tool_call_extra)
+      ? message.metadata.tool_call_extra
+      : {}
   return callEntries(message).map((entry) => {
     const args = typeof entry.function.arguments === "string" ? parseJson(entry.function.arguments) : undefined
     const extraContent = extra[entry.id]
     return {
       id: entry.id,
       name: String(entry.function.name),
-      arguments: isRecord(args) ? args : {},
-      ...(isRecord(extraContent) ? { extraContent } : {}),
+      arguments: Predicate.isObject(args) ? args : {},
+      ...(Predicate.isObject(extraContent) ? { extraContent } : {}),
     }
   })
 }
@@ -367,7 +359,7 @@ export const assembleRequest = Effect.fnUntraced(function* (
   // the trace, runs between the read and the first hook.
   const { rows } = yield* history.read
   let historyRows: ReadonlyArray<RequestRow> = rows
-  if (has(hooks, "filter_messages")) {
+  if (countHooks(hooks, "filter_messages") > 0) {
     const snapshot = rows.map((row) => row.message)
     const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
       copyInitial: (messages) => messages.map(copyMessage),
@@ -388,9 +380,10 @@ export const assembleRequest = Effect.fnUntraced(function* (
   yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
   const transformed = toProviderMessages(historyRows, view)
   yield* record("assemble", `transform, ${transformed.length} provider messages`)
-  const prefiltered = has(hooks, "prefilter_llm_history")
-    ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
-    : transformed
+  const prefiltered =
+    countHooks(hooks, "prefilter_llm_history") > 0
+      ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
+      : transformed
   // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
   // put back.
   const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)

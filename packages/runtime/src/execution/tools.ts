@@ -1,5 +1,5 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
-import { Data, Effect, Result } from "effect"
+import { Data, Effect, Predicate, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
@@ -24,9 +24,6 @@ export interface ToolContext {
     callback: Callback,
   ) => ThreadState
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 
 // A thrown value that is not an Error, such as a plain object, is shown as JSON where it can be.
 export const describe = (cause: unknown) => {
@@ -56,13 +53,13 @@ export const scopeFor = (turn: Turn, entry: PromptToolConfig | undefined): EnvSc
 const optionalString = (value: unknown) => value === undefined || typeof value === "string"
 
 export const isToolResult = (value: unknown): value is ToolResult =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   (value.status === "success" || value.status === "error") &&
   optionalString(value.result) &&
   optionalString(value.error) &&
   optionalString(value.error_code) &&
   optionalString(value.stack) &&
-  (value.error_data === undefined || isRecord(value.error_data)) &&
+  (value.error_data === undefined || Predicate.isObject(value.error_data)) &&
   (value.attachments === undefined || Array.isArray(value.attachments))
 
 const FIELDS = ["status", "result", "error", "error_code", "error_data", "stack", "attachments"] as const
@@ -70,7 +67,7 @@ const FIELDS = ["status", "result", "error", "error_code", "error_data", "stack"
 // Reads each field of a returned result once into a plain object, so that a getter on the result runs here and
 // later reads cannot throw.
 const fieldsOf = (value: unknown) => {
-  if (!isRecord(value)) return value
+  if (!Predicate.isObject(value)) return value
   const fields: Record<string, unknown> = {}
   for (const key of FIELDS) {
     const field = value[key]
@@ -80,10 +77,10 @@ const fieldsOf = (value: unknown) => {
 }
 
 const isAttachmentRef = (value: unknown): value is AttachmentRef =>
-  isRecord(value) && value.type === "file" && typeof value.id === "string" && typeof value.path === "string"
+  Predicate.isObject(value) && value.type === "file" && typeof value.id === "string" && typeof value.path === "string"
 
 const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
-  isRecord(value) && typeof value.data === "string"
+  Predicate.isObject(value) && typeof value.data === "string"
 
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
@@ -271,7 +268,7 @@ export const resultOf = (message: Message): ToolResult => {
     ...(message.tool_status === "error" ? { status: "error", error: text } : { status: "success", result: text }),
     ...(message.attachments == null ? {} : { attachments: message.attachments }),
     ...(typeof error_code === "string" ? { error_code } : {}),
-    ...(isRecord(error_data) ? { error_data } : {}),
+    ...(Predicate.isObject(error_data) ? { error_data } : {}),
   }
 }
 

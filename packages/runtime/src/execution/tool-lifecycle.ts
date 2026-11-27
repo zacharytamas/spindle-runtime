@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import type { Registry } from "../registry/Registry.ts"
 import type { Stores } from "../store/sqlite.ts"
 import type { StreamedCalls } from "./call.ts"
-import { type HookScope, has, observeHooks, transformHooks } from "./hooks.ts"
+import { countHooks, type HookScope, observeHooks, transformHooks } from "./hooks.ts"
 import { commitMessage } from "./messages.ts"
 import { argumentsOf } from "./response.ts"
 import type { SideScope, ThreadScope } from "./step.ts"
@@ -24,7 +24,7 @@ export const callStarted = (
 
 // Hooks section 5. A call that started in a response the loop then discarded is done too, and never ran.
 export const streamedHooks = (hooks: HookScope, turn: Turn): StreamedCalls | undefined =>
-  has(hooks, "tool_call_started") || has(hooks, "tool_call_done")
+  countHooks(hooks, "tool_call_started") > 0 || countHooks(hooks, "tool_call_done") > 0
     ? {
         progressArgument: (name) => turn.tools.get(name)?.tool.value.progressArgument,
         started: (call, progress) => callStarted(hooks, call, progress),

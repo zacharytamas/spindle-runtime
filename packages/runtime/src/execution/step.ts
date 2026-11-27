@@ -14,7 +14,7 @@ import { type History, makeHistory } from "./history.ts"
 import { agentHooks, type HookScope, type HookSet, turnHooks } from "./hooks.ts"
 import { commitMessage, type WriteContext } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
-import { reasoningSource, responseMessage, stopToolOutcome, toolCallsOf } from "./response.ts"
+import { reasoningSource, responseCalls, responseMessage, stopToolOutcome } from "./response.ts"
 import { stopReason } from "./stop-rules.ts"
 import { atRestHooks, makeThreadState, type ThreadControl } from "./thread-state.ts"
 import { completeCall, streamedHooks } from "./tool-lifecycle.ts"
@@ -251,7 +251,7 @@ function historyView(turn: Turn) {
 const storeResponse = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope, response: ModelResponse) {
   const { toolContext, turn, write } = side
   const { run, record, observe } = thread
-  const calls = toolCallsOf(response)
+  const calls = responseCalls(response)
   const { message: assistant, seq } = yield* commitMessage(write, responseMessage(turn, response, calls))
   yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
   yield* observe({ type: "message", message: assistant })

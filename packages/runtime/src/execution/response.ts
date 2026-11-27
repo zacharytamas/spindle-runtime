@@ -1,18 +1,11 @@
 import type { ToolResult } from "@standardagents/spec"
+import { parseJson } from "../store/json.ts"
 import type { NewMessage } from "../store/model.ts"
 import type { ModelResponse } from "./call.ts"
 import { mapStrings } from "./redact.ts"
 import type { StopToolOutcome } from "./step.ts"
 import type { ToolCall } from "./tools.ts"
 import { roleOf, type Turn } from "./turn.ts"
-
-const parseJson = (text: string | undefined): unknown => {
-  try {
-    return text === undefined ? undefined : JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
 
 const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...` : text)
 
@@ -21,7 +14,7 @@ const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...
 export const argumentsOf = (call: ToolCall) => JSON.stringify(call.arguments ?? { invalid_json: call.argumentsText })
 
 // A call is run only when the provider named it and finished its arguments as one JSON object.
-export const toolCallsOf = (response: ModelResponse): Array<ToolCall> =>
+export const responseCalls = (response: ModelResponse): Array<ToolCall> =>
   [...response.calls.values()].map((call) => ({
     id: call.id,
     name: call.name,

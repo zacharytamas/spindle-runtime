@@ -6,9 +6,9 @@ import type {
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
-import { Clock, Context, Data, Duration, Effect, Schema } from "effect"
+import { Clock, Context, Data, Duration, Effect, Predicate, Schema } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import { toJson } from "../store/json.ts"
+import { parseJson, toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
@@ -61,9 +61,6 @@ interface Transform<V> {
   readonly kept: string
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 // A hook's return is user data. Reading it once into plain JSON data runs every getter here, so a getter that throws
 // fails that hook, no later read can throw, and the store can hold what is left.
 const plain = (value: unknown): unknown => {
@@ -74,14 +71,10 @@ const plain = (value: unknown): unknown => {
 // Hooks section 8.6 writes metadata as JSON text, and Messages section 1 types it as an object, so a string that
 // holds a JSON object is read as that object.
 const metadataOf = (value: unknown): Record<string, unknown> | undefined | typeof INVALID => {
-  if (value === undefined || isRecord(value)) return value
+  if (value === undefined || Predicate.isObject(value)) return value
   if (typeof value !== "string") return INVALID
-  try {
-    const parsed: unknown = JSON.parse(value)
-    return isRecord(parsed) ? parsed : INVALID
-  } catch {
-    return INVALID
-  }
+  const parsed = parseJson(value)
+  return Predicate.isObject(parsed) ? parsed : INVALID
 }
 
 // The text fields of a stored message, which a hook may set and Spindle redacts when a hook changes them.
@@ -107,7 +100,7 @@ const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
 const isMessage = (value: unknown): value is Message =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   isString(value.id) &&
   isCount(value.created_at) &&
   (value.role === "system" || value.role === "user" || value.role === "assistant" || value.role === "tool") &&
@@ -118,14 +111,14 @@ const isMessage = (value: unknown): value is Message =>
   optional(value.depth, isCount) &&
   optional(value.silent, (silent) => typeof silent === "boolean") &&
   optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
-  optional(value.metadata, isRecord)
+  optional(value.metadata, Predicate.isObject)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
 // change which message a record is, so the role, the tool calls, and a tool result's call id stay as the hook was
 // given them. The loop runs the calls the model returned, and each result must answer a call that the record lists.
 const acceptMessage = (returned: unknown, current: Message): Message | typeof INVALID => {
   const value = plain(returned)
-  if (!isRecord(value)) return INVALID
+  if (!Predicate.isObject(value)) return INVALID
   const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
   const message = { ...value, metadata }
@@ -149,7 +142,7 @@ const acceptMessages = (returned: unknown) => {
 // return is refused rather than stored in part. A key the caller passed and the hook kept is the caller's.
 const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
   const value = plain(returned)
-  if (!isRecord(value)) return INVALID
+  if (!Predicate.isObject(value)) return INVALID
   const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
   const patch = { ...value, ...(metadata === undefined ? {} : { metadata }) }
@@ -268,12 +261,10 @@ export interface HookScope {
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
 
-export const has = (scope: HookScope, position: Position) => scope.set.byPosition.has(position)
-
 export const countHooks = (scope: HookScope, position: Position) => scope.set.byPosition.get(position)?.length ?? 0
 
 const isHook = (value: unknown): value is { hook: string; id: string; execute: SelectedHook["execute"] } =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   typeof value.hook === "string" &&
   typeof value.id === "string" &&
   typeof value.execute === "function"

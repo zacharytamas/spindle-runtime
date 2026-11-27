@@ -1,5 +1,5 @@
 import type { ContentPart, ProviderMessage, ProviderReasoningDetail, ProviderToolCallPart } from "@standardagents/spec"
-import { Schema } from "effect"
+import { Predicate, Schema } from "effect"
 import { toJson } from "../store/json.ts"
 
 const string = Schema.String
@@ -22,9 +22,10 @@ const isDetail = Schema.is(
   }),
 )
 const content = Schema.Union([string, Schema.mutable(Schema.Array(Schema.declare((u): u is ContentPart => isPart(u))))])
-const object = (u: unknown): u is Record<string, unknown> => typeof u === "object" && u !== null && !Array.isArray(u)
-const jsonRecord = Schema.declare((u): u is Record<string, unknown> => object(u) && typeof toJson(u) === "string")
-const objectText = Schema.declare((u): u is string => typeof u === "string" && object(JSON.parse(u)))
+const jsonRecord = Schema.declare(
+  (u): u is Record<string, unknown> => Predicate.isObject(u) && typeof toJson(u) === "string",
+)
+const objectText = Schema.declare((u): u is string => typeof u === "string" && Predicate.isObject(JSON.parse(u)))
 const call = Schema.Struct({
   id: string,
   function: Schema.Struct({ name: string, arguments: Schema.Union([objectText, jsonRecord]) }),
