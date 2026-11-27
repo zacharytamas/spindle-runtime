@@ -82,6 +82,7 @@ const shapes: ReadonlyArray<Case> = [
       error("agents/agents/coordinator.ts:sideA.subagents[9].initAgentNameProperty"),
       error("agents/agents/coordinator.ts:sideA.subagents[10].optional"),
       error("agents/agents/coordinator.ts:sideA.subagents[11].hidden"),
+      error("agents/agents/coordinator.ts:sideA.subagents[12].scopedEnv"),
     ],
   ],
   [
@@ -100,6 +101,8 @@ const shapes: ReadonlyArray<Case> = [
     "stray-parent-hooks",
     [
       error("agents/packed/standardagent-extra-disclosure/package.json:standardagent.parentHooks.opener"),
+      // Neighbor: an entry agent that fails to load is reported once, and its correct disclosures are not called stray.
+      error("agents/packed/standardagent-failed-entry/index.js:agents.gate"),
       error("agents/packed/standardagent-ghost-disclosure/index.js:parentHooks.ghost"),
     ],
   ],
