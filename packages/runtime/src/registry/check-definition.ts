@@ -133,7 +133,8 @@ export const site = (registry: Registry["Service"], issues: Array<Issue>, defini
       return resolution._tag === "Found" ? [{ target: resolution.definition, path }] : []
     })
 
-  return { definition, report, resolve, reference, tool, describe, snakeCase, hookList, edgesTo }
+  const hasPackage = (id: string) => registry.packages.some((pkg) => pkg.signature.packageId === id)
+  return { definition, report, resolve, reference, tool, describe, snakeCase, hookList, edgesTo, hasPackage }
 }
 
 type Site = ReturnType<typeof site>
@@ -189,6 +190,15 @@ const checkAgent = (at: Site, agent: unknown) => {
       at.report("agent_side_invalid", `${sideKey}.label`, "label must be a string")
     if (backing === "prompt" && side.stopOnResponse !== undefined && typeof side.stopOnResponse !== "boolean")
       at.report("agent_side_invalid", `${sideKey}.stopOnResponse`, "stopOnResponse must be a boolean")
+    if (backing === "prompt" && typeof side.stopTool === "string") {
+      const [packageId] = parseQualifiedName(side.stopTool)
+      if (packageId !== null && !at.hasPackage(packageId))
+        at.report(
+          "agent_stop_tool_missing",
+          `${sideKey}.stopTool`,
+          `stopTool names a tool in missing package ${packageId}`,
+        )
+    }
     if (backing === "human") {
       for (const key of Object.keys(side)) {
         if (HUMAN_SIDE_KEYS.includes(key) || REPORTED_BY_SPEC_PACKAGE.includes(key)) continue
