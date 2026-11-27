@@ -148,6 +148,8 @@ const toolNames = (prompt: unknown): Array<string> =>
 const checkAgent = (at: Site, agent: unknown) => {
   for (const issue of validateAgentDefinition(agent)) at.report(issue.code, issue.path, issue.message, issue.severity)
   if (!Predicate.isObject(agent)) return
+  if (agent.maxSessionTurns === null)
+    at.report("agent_max_session_turns_invalid", "maxSessionTurns", "maxSessionTurns must be a positive number")
   at.snakeCase()
   for (const sideKey of ["sideA", "sideB"]) {
     const side = agent[sideKey]
@@ -192,6 +194,10 @@ const checkAgent = (at: Site, agent: unknown) => {
         )
     })
   }
+  checkAgentHooks(at, agent)
+}
+
+const checkAgentHooks = (at: Site, agent: Shape) => {
   at.hookList("hooks", agent.hooks)
   // validateAgentDefinition reports two equal spellings, so this check reports only another spelling of one hook.
   const spellings = new Map<Definition, string>()

@@ -189,3 +189,9 @@ Standard Agent Specification 0.2.0 defines no tool deadline. Spindle adds an ope
 ## Packed invocation dependencies
 
 Packaging §1 assigns dependency inclusion to the packer. Under the Visibility Rules, packed code can reference its own definitions and another package's entry agents. Spindle rejects a packed agent whose handler is missing and a packed tool whose `uses` target cannot resolve within that visibility.
+
+## An agent's session turn limit
+
+Agents section 2 types `maxSessionTurns` as an optional number.
+`validateAgentDefinition` in `@standardagents/spec` 0.45.13 also accepts null.
+Spindle follows the spec text. An agent can omit the limit, and an explicit null is a validation error.
