@@ -142,7 +142,7 @@ Found by the review of the fix PR and left. A `filter_messages` hook that rename
 
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
-After them. The tool timeout setting is built, as PR 20. What remains is the updated PR descriptions, after the operator's code review, and the milestone revision.
+After them. The tool timeout setting is built, as PR 20. The PR descriptions were brought up to date on 2026-11-27, and the milestone revision is `docs/plans/milestones.md`, proposed in PR 24. Its last section lists what the operator still has to decide, including the six questions below.
 
 ## Decided by the operator on 2026-11-26
 
