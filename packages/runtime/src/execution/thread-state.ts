@@ -90,7 +90,8 @@ export const queuedMessage = (input: QueueMessageInput, secrets: Secrets) =>
     if (typeof input.content !== "string") return yield* refuse("takes content that is a string")
     if (input.silent !== undefined && typeof input.silent !== "boolean")
       return yield* refuse("takes silent as a boolean")
-    if (input.metadata !== undefined && !isRecord(input.metadata)) return yield* refuse("takes metadata as an object")
+    if (input.metadata !== undefined && !Predicate.isObject(input.metadata))
+      return yield* refuse("takes metadata as an object")
     const attachments: ReadonlyArray<unknown> = input.attachments === undefined ? [] : input.attachments
     if (!Array.isArray(attachments)) return yield* refuse("takes attachments as an array")
     for (const item of attachments)
@@ -410,7 +411,7 @@ function toolMethods(
       ),
     invokeTool: (toolName, args = {}) => {
       if (typeof toolName !== "string") return invalid("invokeTool takes a string name")
-      if (!isRecord(args)) return invalid("invokeTool takes an object of arguments")
+      if (!Predicate.isObject(args)) return invalid("invokeTool takes an object of arguments")
       return run(
         state.invoke
           ? state.invoke(toolName, args)
@@ -506,8 +507,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     getChildThread: (id) =>
       typeof id === "string" ? run(Effect.succeed(null)) : invalid("getChildThread takes a string reference id"),
     getParentThread: () => run(Effect.succeed(null)),
-    setStatus: (status) =>
-      typeof status === "string" && status.length > 0 ? run(Effect.void) : invalid("setStatus takes a nonempty string"),
+    setStatus: (status) => (typeof status === "string" ? run(Effect.void) : invalid("setStatus takes a string")),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
     terminate: async () => {
       if (state.callback?.pastDeadline) throw new HandleExpired()
