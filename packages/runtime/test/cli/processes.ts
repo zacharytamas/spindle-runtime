@@ -20,7 +20,7 @@ export interface Child {
   readonly err: Array<string>
   readonly exit: Effect.Effect<number, unknown>
   // Sends the signal and returns. A process that a signal killed has no exit code, so exit reads -1 for it.
-  readonly signal: (signal: "SIGKILL" | "SIGINT") => Effect.Effect<void, never, Scope.Scope>
+  readonly signal: (signal: "SIGKILL" | "SIGINT" | "SIGTERM" | "SIGHUP") => Effect.Effect<void, never, Scope.Scope>
 }
 
 export interface SpawnOptions {
@@ -28,40 +28,32 @@ export interface SpawnOptions {
   readonly clockShiftMs?: number
 }
 
-const collect = (stream: Stream.Stream<Uint8Array, unknown>, into: Array<string>) =>
+const collectLines = (stream: Stream.Stream<string, unknown>, into: Array<string>) =>
   stream.pipe(
-    Stream.decodeText(),
     Stream.splitLines,
     Stream.runForEach((line) => Effect.sync(() => into.push(line))),
   )
 
-export const spawn = (gate: string, script: string, args: ReadonlyArray<string>, options: SpawnOptions = {}) =>
+export const startCommand = (
+  gate: string,
+  words: ReadonlyArray<string>,
+  read: (channel: "out" | "err", text: Stream.Stream<string, unknown>) => Effect.Effect<void, unknown>,
+  options: Pick<ChildProcess.CommandOptions, "env" | "stdin"> = {},
+) =>
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner
-    const shifted = options.clockShiftMs !== undefined
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(
-        platformName,
-        [...(shifted ? ["--import", shiftClock] : []), "--conditions=spindle-source", script, ...args],
-        {
-          env: {
-            SPINDLE_GATE_DIR: gate,
-            NODE_NO_WARNINGS: "1",
-            ...(shifted ? { SPINDLE_CLOCK_SHIFT_MS: String(options.clockShiftMs) } : {}),
-          },
-          extendEnv: true,
-        },
-      ),
-    )
-    const out: Array<string> = []
-    const err: Array<string> = []
+    const [name = "", ...args] = words
+    const handle = yield* ChildProcess.make(name, args, {
+      ...options,
+      env: { SPINDLE_GATE_DIR: gate, NODE_NO_WARNINGS: "1", ...options.env },
+      extendEnv: true,
+    })
     const reading = yield* Effect.forkScoped(
-      Effect.all([collect(handle.stdout, out), collect(handle.stderr, err)], { concurrency: 2 }),
+      Effect.all([read("out", Stream.decodeText(handle.stdout)), read("err", Stream.decodeText(handle.stderr))], {
+        concurrency: 2,
+      }),
     )
     return {
       pid: Number(handle.pid),
-      out,
-      err,
       exit: handle.exitCode.pipe(
         Effect.map(Number),
         Effect.orElseSucceed(() => -1),
@@ -69,7 +61,24 @@ export const spawn = (gate: string, script: string, args: ReadonlyArray<string>,
       ),
       // kill waits until the process exits, so it runs on its own fiber.
       signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
-    } satisfies Child
+    } satisfies Pick<Child, "pid" | "exit" | "signal">
+  })
+
+export const spawn = (gate: string, script: string, args: ReadonlyArray<string>, options: SpawnOptions = {}) =>
+  Effect.gen(function* () {
+    const shifted = options.clockShiftMs !== undefined
+    const words = [
+      platformName,
+      ...(shifted ? ["--import", shiftClock] : []),
+      "--conditions=spindle-source",
+      script,
+      ...args,
+    ]
+    const output: { out: Array<string>; err: Array<string> } = { out: [], err: [] }
+    const child = yield* startCommand(gate, words, (channel, text) => collectLines(text, output[channel]), {
+      env: shifted ? { SPINDLE_CLOCK_SHIFT_MS: String(options.clockShiftMs) } : {},
+    })
+    return { ...child, ...output } satisfies Child
   })
 
 export const spindle = (gate: string, args: ReadonlyArray<string>, options?: SpawnOptions) =>
@@ -81,7 +90,7 @@ const command = (name: string, args: ReadonlyArray<string>) =>
     const spawner = yield* ChildProcessSpawner
     const handle = yield* spawner.spawn(ChildProcess.make(name, [...args]))
     const out: Array<string> = []
-    yield* collect(handle.stdout, out)
+    yield* collectLines(Stream.decodeText(handle.stdout), out)
     yield* Effect.ignore(handle.exitCode)
     return out
   }).pipe(Effect.scoped)
@@ -95,6 +104,15 @@ export const until = <E, R>(what: string, check: Effect.Effect<boolean, E, R>) =
     }
     return yield* Effect.die(new Error(`timed out waiting for ${what}`))
   })
+
+// The complete lines printed so far. A prompt that waits for input is not one of them.
+export const linesOf = (text: string) => text.split("\n").slice(0, -1)
+
+export const printed = (what: string, text: () => string, line: string | RegExp) =>
+  until(
+    `the line ${what}`,
+    Effect.sync(() => linesOf(text()).some((found) => (typeof line === "string" ? found === line : line.test(found)))),
+  )
 
 const processState = (pid: number) =>
   Effect.map(command("ps", ["-o", "stat=", "-p", String(pid)]), (lines) => lines.join("").trim())
@@ -131,12 +149,15 @@ export const threadIn = (child: Child) =>
     return child.err.find((line) => line.startsWith("spindle: thread "))?.slice("spindle: thread ".length) ?? ""
   })
 
-export const setup = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const gate = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-ownership-" })
-  return { gate, db: path.join(gate, "spindle.db"), at: (name: string) => path.join(gate, name) }
-})
+export const setupWithPrefix = (prefix: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const gate = yield* fs.makeTempDirectoryScoped({ prefix })
+    return { gate, db: path.join(gate, "spindle.db"), at: (name: string) => path.join(gate, name) }
+  })
+
+export const setup = setupWithPrefix("spindle-ownership-")
 
 export type Row = Record<string, unknown>
 

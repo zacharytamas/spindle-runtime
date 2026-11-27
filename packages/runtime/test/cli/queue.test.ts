@@ -1,108 +1,32 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { Message } from "@standardagents/spec"
-import { Effect, Fiber, FileSystem, Layer, Path, type Scope, Stream } from "effect"
-import { ChildProcess } from "effect/process"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { PlatformLive, platformName, SqliteLive } from "#platform"
+import { Effect, Layer } from "effect"
+import { PlatformLive, SqliteLive } from "#platform"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer as storeLayer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 
-// Each test runs the real command in separate processes on one database file. The gated model and the hold tool of the
-// queue fixture wait for files that the test creates, so every ordering below is one the test made, not a timing.
-const source = (relative: string) => new URL(relative, import.meta.url).pathname
-const main = source("../../src/cli/main.ts")
-const probe = source("../../scripts/queue-probe.ts")
-const fixture = source("../../../conformance/fixtures/queue")
-
-interface Child {
-  readonly pid: number
-  readonly out: Array<string>
-  readonly err: Array<string>
-  readonly exit: Effect.Effect<number, unknown>
-  // Sends the signal and returns. A process that a signal killed has no exit code, so exit reads -1 for it.
-  readonly signal: (signal: "SIGKILL" | "SIGINT") => Effect.Effect<void, never, Scope.Scope>
-}
-
-const spawn = (gate: string, script: string, args: ReadonlyArray<string>) =>
-  Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(platformName, ["--conditions=spindle-source", script, ...args], {
-        env: { SPINDLE_GATE_DIR: gate, NODE_NO_WARNINGS: "1" },
-        extendEnv: true,
-      }),
-    )
-    const out: Array<string> = []
-    const err: Array<string> = []
-    const collect = (stream: Stream.Stream<Uint8Array, unknown>, into: Array<string>) =>
-      stream.pipe(
-        Stream.decodeText(),
-        Stream.splitLines,
-        Stream.runForEach((line) => Effect.sync(() => into.push(line))),
-      )
-    const reading = yield* Effect.forkScoped(
-      Effect.all([collect(handle.stdout, out), collect(handle.stderr, err)], { concurrency: 2 }),
-    )
-    return {
-      pid: Number(handle.pid),
-      out,
-      err,
-      exit: handle.exitCode.pipe(
-        Effect.map(Number),
-        Effect.orElseSucceed(() => -1),
-        Effect.tap(() => Fiber.join(reading)),
-      ),
-      // kill waits until the process exits, so it runs on its own fiber.
-      signal: (signal) => Effect.asVoid(Effect.forkScoped(Effect.ignore(handle.kill({ killSignal: signal })))),
-    } satisfies Child
-  })
-
-const spindle = (gate: string, args: ReadonlyArray<string>) => spawn(gate, main, args)
-
-// Waits for a condition that the processes make true. The deadline only bounds a failure.
-const until = <E, R>(what: string, check: Effect.Effect<boolean, E, R>) =>
-  Effect.gen(function* () {
-    for (let tries = 0; tries < 1500; tries++) {
-      if (yield* check) return
-      yield* Effect.sleep("20 millis")
-    }
-    return yield* Effect.die(new Error(`timed out waiting for ${what}`))
-  })
-
-const exists = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(file))
-
-const touch = (file: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(file, ""))
-
-const entries = (dir: string) => Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(dir))
-
-const lines = (file: string) =>
-  Effect.flatMap(FileSystem.FileSystem, (fs) =>
-    Effect.map(fs.readFileString(file), (text) => text.split("\n").filter((line) => line !== "")),
-  )
-
-const threadIn = (child: Child) =>
-  Effect.gen(function* () {
-    yield* until(
-      "the thread id",
-      Effect.sync(() => child.err.some((line) => line.startsWith("spindle: thread "))),
-    )
-    return child.err.find((line) => line.startsWith("spindle: thread "))?.slice("spindle: thread ".length) ?? ""
-  })
+import {
+  type Child,
+  entries,
+  exists,
+  lines,
+  probe,
+  project,
+  setupWithPrefix,
+  spawn,
+  spindle,
+  threadIn,
+  touch,
+  until,
+} from "./processes.ts"
 
 const storeAt = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
 
 const shape = (messages: ReadonlyArray<Message>) =>
   messages.map((message) => [message.role, message.role === "tool" ? message.tool_status : message.content])
 
-const setup = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const gate = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-queue-" })
-  return { gate, db: path.join(gate, "spindle.db"), at: (name: string) => path.join(gate, name) }
-})
-
-const project = ["--dir", fixture]
+const setup = setupWithPrefix("spindle-queue-")
 
 describe("spindle across processes", () => {
   it.live(

@@ -1,12 +1,20 @@
-import { defineHook, defineTool, type LLMMessage, type Message, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type LLMMessage, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { callsOf, history, holding, ok, type Scenario, send, sideOf, using } from "./step-loop.ts"
+import {
+  callsOf,
+  firstToolResult,
+  history,
+  holding,
+  ok,
+  type Scenario,
+  shape,
+  sideOf,
+  stubTool,
+  using,
+} from "./harness.ts"
 
 const CANARY = "sk-canary-0042"
-
-const rows = (messages: ReadonlyArray<Message>) =>
-  messages.map((m) => [m.role, m.role === "tool" ? m.tool_call_id : m.content])
 
 export const integrityScenarios: ReadonlyArray<Scenario> = [
   {
@@ -36,9 +44,9 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, prompt: { hooks: ["rename_calls"] } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const stored = await session.messages(thread)
-        expect(rows(stored)).toEqual([
+        expect(shape(stored)).toEqual([
           ["user", "go"],
           ["assistant", null],
           ["tool", "c1"],
@@ -75,15 +83,15 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
           },
         }),
       ]
-      const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+      const tools = { noop: stubTool("Does nothing", "noop") }
       const provider = new ScriptedProvider([
         { toolCalls: [{ id: "c1", name: "noop", arguments: {} }] },
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, prompt: { hooks: ["take_id"] } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const stored = await session.messages(thread)
-        expect(rows(stored)).toEqual([
+        expect(shape(stored)).toEqual([
           ["user", "go"],
           ["assistant", null],
           ["user", "nested row"],
@@ -156,13 +164,13 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools, hooks, prompt: { hooks: ["pick_id"] } },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const stored = await session.messages(thread)
           expect(holding(stored, CANARY)).toEqual([])
           expect(stored.map((m) => m.id)).toContain("y".repeat(255))
-          expect(rows(stored).filter(([role]) => role === "tool")).toEqual([["tool", "c1"]])
+          expect(shape(stored).filter(([role]) => role === "tool")).toEqual([["tool", "c1"]])
         },
-        { CANARY },
+        { instanceEnv: { CANARY } },
       )
       const refused = (content: string) => [
         content,
@@ -206,16 +214,16 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         driver,
         { provider, tools },
         async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
           const stored = await session.messages(thread)
           expect(holding(stored, CANARY)).toEqual([])
           expect(stored.find((m) => m.content === "note")?.metadata).toEqual({
             error_code: { description: "[redacted]" },
             nested: { error_code: "[redacted]" },
           })
-          expect(stored.find((m) => m.role === "tool")?.metadata).toMatchObject({ error_code: "E_FAIL" })
+          expect(firstToolResult(stored)?.metadata).toMatchObject({ error_code: "E_FAIL" })
         },
-        { CANARY },
+        { instanceEnv: { CANARY } },
       )
     },
   },
@@ -253,12 +261,12 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
           driver,
           { provider, hooks, prompt: { hooks: ["add_system"] } },
           async (session, thread) => {
-            const outcome = await send(session, thread, "go")
+            const outcome = await session.send(thread, "go")
             expect(outcome).toMatchObject({ status: "failed", reason: "fatal_error", steps: 0 })
             expect(outcome.error?.message).toContain("holds a secret value")
             expect(holding(outcome, CANARY)).toEqual([])
           },
-          { CANARY },
+          { instanceEnv: { CANARY } },
         )
         expect(provider.requests).toEqual([])
       }
@@ -307,7 +315,7 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         ]
         const provider = new ScriptedProvider([{ text: "done" }])
         await using(driver, { provider, hooks, prompt: { hooks: ["odd_prefilter"] } }, async (session, thread) => {
-          expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 1 })
+          expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 1 })
           expect(history(provider.requests[0]).map(sideOf)).toEqual([["user", "go"]])
           expect(session.logs().join("\n")).toContain("Hook odd_prefilter (prefilter_llm_history")
         })
@@ -342,7 +350,7 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools, hooks, prompt: { hooks: ["always_inject"] } }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
         const lines = session.logs().filter((line) => line.includes("limit of 8"))
         expect(lines).toHaveLength(1)
         expect(lines[0]).toContain("Hook always_inject (before_create_message)")
@@ -361,7 +369,7 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
             return ok("noted")
           },
         }),
-        noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }),
+        noop: stubTool("Does nothing", "noop"),
       }
       const provider = new ScriptedProvider([
         {
@@ -373,8 +381,8 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
         { text: "done" },
       ])
       await using(driver, { provider, tools }, async (session, thread) => {
-        expect(await send(session, thread, "go")).toMatchObject({ status: "idle", steps: 2 })
-        expect(rows(await session.messages(thread))).toEqual([
+        expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+        expect(shape(await session.messages(thread))).toEqual([
           ["user", "go"],
           ["assistant", null],
           ["user", "note"],
@@ -401,7 +409,7 @@ export const integrityScenarios: ReadonlyArray<Scenario> = [
           { role: "user", content: "between" },
           { role: "tool", tool_call_id: "p1", name: "noop", content: "one" },
         ])
-        await send(session, thread, "go")
+        await session.send(thread, "go")
         expect(history(seeded.requests[0]).map(sideOf)).toEqual([
           ["user", "q"],
           ["assistant", null, ["p1", "p2"]],

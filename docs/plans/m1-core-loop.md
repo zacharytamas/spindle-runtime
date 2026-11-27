@@ -944,6 +944,16 @@ The workspace type check runs `effect-tsgo tsc` from `@effect/tsgo@0.73.7` with 
 
 The CLI exports the root command used by the run and validate tests. Node 22.19.0, Node 22.22.3, Node 24.10.0, and Bun 1.4.5 identify the entry module with `import.meta.main`. Node 24.0.0 lacks that property, so the platform resolves the command path, including a bin symlink, and compares its URL with the module URL. An evaluated script can pass that same path as an argument and import the CLI without starting it. On all five runtimes, both the source and the built entry print the version when launched and can be imported without running the command.
 
+### Settled in M1-9
+
+The conformance scenarios share project setup, session cleanup, gates, and tool result readers in `packages/conformance/src/scenarios/harness.ts`. A scenario that sends one turn can read its outcome from `runTurn`. A scenario that inspects a running thread keeps its session open with `using`. Ownership scenarios use `usingPeer` to observe the same database from a second connection.
+
+The step loop, hooks, queue, messages, and ownership each have a directory of scenarios grouped by behavior. For example, the queue has separate modules for admission, delivery, stop, the step cap, termination, and secrets. Each former scenario file now lists the scenario ids in their original registration order. The runtime still registers those lists from `conformance.test.ts`, which keeps their test names stable in the ledger.
+
+The store contract has separate files for threads and key-value data, message writes, history reads and revisions, and runs. The two message files belong to the same service. The text round-trip across store areas stays together with the message write tests. The ledger follows each store test to its new file.
+
+The queue and chat tests share command startup, signals, and output draining in `test/cli/processes.ts`. Queue tests read complete lines. Chat tests retain partial output so they can wait for a prompt before typing into the child's input.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

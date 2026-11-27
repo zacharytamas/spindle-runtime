@@ -979,10 +979,10 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
 			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
 		"reason": ""
@@ -991,7 +991,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
 		],
 		"reason": "A child process writes the value and exits, and this process reads it from the file. A redeploy keeps the value when it keeps the database file."
 	},
@@ -999,8 +999,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
 			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
 			"packages/runtime/test/conformance.test.ts > hooks > H20 lets hooks and tools read each other's key-value writes in one thread"
 		],
@@ -1010,7 +1010,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
 		],
 		"reason": ""
 	},
@@ -1018,11 +1018,11 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values round-trip with JSON structure",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue rejects a value JSON cannot represent with an error that names the key, and stores nothing",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue accepts a plain object whose prototype is not this realm's Object.prototype",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue stores the value it validated, even when the caller changes it before the write runs",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue fails with ValueNotJson, not a thrown error, for a getter that throws or a value nested too deep"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values round-trip with JSON structure",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue rejects a value JSON cannot represent with an error that names the key, and stores nothing",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue accepts a plain object whose prototype is not this realm's Object.prototype",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue stores the value it validated, even when the caller changes it before the write runs",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue fails with ValueNotJson, not a thrown error, for a getter that throws or a value nested too deep"
 		],
 		"reason": "The store rejects an object whose tag is not Object, such as a Date or a Map, because it would not read back with the same structure. DIVERGENCES.md records the 1000-level nesting cap."
 	},
@@ -1030,9 +1030,9 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
 		],
 		"reason": ""
 	},
@@ -1040,8 +1040,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
 		],
 		"reason": ""
 	},
@@ -1049,7 +1049,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a value is committed when setValue resolves, so a second connection reads it while the first stays open"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a value is committed when setValue resolves, so a second connection reads it while the first stays open"
 		],
 		"reason": "The test reads the value through a second connection before the writer closes, so the write committed before setValue resolved. The store sets synchronous to FULL. No unit test can show durability across a power loss."
 	},
@@ -1216,7 +1216,7 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
 		],
 		"reason": ""
 	},
@@ -3731,8 +3731,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session",
 			"packages/runtime/test/conformance.test.ts > queue > Q35 never reports idle to a sender whose run could not be settled"
@@ -3743,7 +3743,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status"
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status"
 		],
 		"reason": ""
 	},
@@ -3751,7 +3751,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a model call leaves a thread that live observers settle as lost while another thread runs on",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a process killed in a tool leaves the response and the first result, an error result for the open call, and the queue",
 			"packages/runtime/test/store/claims.test.ts > ThreadStore claims > recover settles a thread whose process is gone as lost and keeps its queue and its history",
@@ -3766,7 +3766,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes"
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes"
 		],
 		"reason": ""
 	},
@@ -3834,9 +3834,9 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
 			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
 			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > keeps the structured reasoning of a response and sends it back in the fields it arrived in"
@@ -3875,8 +3875,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
 			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
 			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
 		],
@@ -3896,8 +3896,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
 			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly",
 			"packages/runtime/test/conformance.test.ts > messages > M1 runs each create hook once for a message a tool injects, and later tools and hooks see the stored row",
 			"packages/runtime/test/conformance.test.ts > hooks > H18 stores an injected user, assistant, or system message as given and presents it by perspective"
@@ -3916,7 +3916,7 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage",
 			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read",
 			"packages/runtime/test/cli/chat.test.ts > spindle chat > a silent message never prints, and a human-side message the chat did not send prints as elsewhere (O4, O7)"
@@ -3943,8 +3943,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > a silent message persists across a restart like a visible one",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > a silent message persists across a restart like a visible one",
 			"packages/runtime/test/conformance.test.ts > messages > M3 stores a silent and a visible injection alike and hides only the silent one from a default read"
 		],
 		"reason": ""
@@ -5001,8 +5001,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > each thread keeps its own ordered list of messages across a restart",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > each thread keeps its own ordered list of messages across a restart",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
 		],
 		"reason": ""
 	},
@@ -5010,7 +5010,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
 			"packages/runtime/test/conformance.test.ts > step loop > S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling"
 		],
@@ -5020,7 +5020,7 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps each lifecycle status it receives",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages keeps each lifecycle status it receives",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
 		"reason": "Spindle stores a message once the model finishes it and keeps a queued message in its queue until the drain stores it as completed, so no stored message is pending. A message stored while it is still being generated arrives with streaming in M6."
@@ -5029,9 +5029,9 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages counts and pages from one snapshot while another connection inserts between the reads",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages counts and pages from one snapshot while another connection inserts between the reads",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5040,8 +5040,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5050,7 +5050,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5059,7 +5059,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5068,7 +5068,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5125,7 +5125,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > queue > enqueue and takeQueue keep messages and tool calls in arrival order and empty the queue",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > queue > enqueue and takeQueue keep messages and tool calls in arrival order and empty the queue",
 			"packages/runtime/test/conformance.test.ts > queue > Q07 holds messages queued during a request for the next request, in order, in the same run",
 			"packages/runtime/test/conformance.test.ts > queue > Q09 drains a queued message, a queued tool, and another message in arrival order before the next request"
 		],
@@ -5135,7 +5135,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
 			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
 		"reason": ""
@@ -5144,10 +5144,10 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage keeps the results of a later assistant message that reuses a tool call id",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes the tool results of a user message that lists their call ids",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes only the record itself for a tool message or a message without tool calls",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > deleteMessage keeps the results of a later assistant message that reuses a tool call id",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > deleteMessage removes the tool results of a user message that lists their call ids",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > deleteMessage removes only the record itself for a tool message or a message without tool calls",
 			"packages/runtime/test/conformance.test.ts > step loop > S33b deletes a side B model turn together with the tool results of its calls"
 		],
 		"reason": ""
@@ -5423,7 +5423,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
 		"reason": ""
@@ -5432,7 +5432,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running",
 			"packages/runtime/test/conformance.test.ts > queue > Q30 keeps the id and the tool name of a queued call that a secret overlaps, and pairs its result with it",
 			"packages/runtime/test/conformance.test.ts > ownership > O15 stores exactly one result for a completed call whose id holds a NUL character",
@@ -5445,7 +5445,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
 			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
 		"reason": ""
@@ -5454,8 +5454,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/store/history.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
 		],
 		"reason": "The store defaults depth to 0 and keeps a deeper depth it receives. The PR that adds sub-prompts owes setting it."
 	},
@@ -5714,7 +5714,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0",
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
@@ -5724,7 +5724,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > setStatus changes since only when the state or the reason changes",
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
@@ -5734,7 +5734,7 @@
 		"status": "partial",
 		"milestone": "M2",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > threads > createThread stores the agent, the parent, and the arguments, and starts idle with since 0"
 		],
 		"reason": "The store keeps the arguments a thread was created with. M2 owes exposing them read-only on ThreadState.arguments on every run, and the arguments supplied when a thread is invoked."
 	},
@@ -5760,7 +5760,7 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
 			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
 			"packages/runtime/test/conformance.test.ts > hooks > H20 lets hooks and tools read each other's key-value writes in one thread"
 		],
@@ -5770,7 +5770,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling"
 		],
 		"reason": ""
 	},
@@ -5778,7 +5778,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
 			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
 		"reason": ""
@@ -5787,9 +5787,9 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values round-trip with JSON structure",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue accepts a plain object whose prototype is not this realm's Object.prototype",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue stores the value it validated, even when the caller changes it before the write runs"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > values round-trip with JSON structure",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue accepts a plain object whose prototype is not this realm's Object.prototype",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue stores the value it validated, even when the caller changes it before the write runs"
 		],
 		"reason": ""
 	},
@@ -5797,8 +5797,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > getValue returns null for a key that was never set, on a thread whose store was never written",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
 		],
 		"reason": ""
 	},
@@ -5806,8 +5806,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > setValue with null or undefined deletes the key",
+			"packages/runtime/test/store/threads.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
 		],
 		"reason": ""
 	},
@@ -5821,8 +5821,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
@@ -5831,8 +5831,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages gives each message a unique id and its creation time in microseconds",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/conformance.test.ts > hooks > H9b stores a hook's own id, time, and JSON metadata text, and refuses an id another message holds or an update key it adds"
 		],
 		"reason": ""
@@ -5841,7 +5841,7 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
+			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
 			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
 		],
 		"reason": ""
@@ -6644,8 +6644,8 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/store/messages.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
 		],
 		"reason": "The store keeps parent_id on every message and returns null when nothing sets it. M2 owes the sub-prompt messages that name a parent."
 	},

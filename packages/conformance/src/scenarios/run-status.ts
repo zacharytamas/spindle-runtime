@@ -1,23 +1,7 @@
 import { defineHook, defineTool, ProviderError, type ThreadState, type ThreadStatus } from "@standardagents/spec"
 import { expect } from "vitest"
-import type { RuntimeDriver, RuntimeSession } from "../RuntimeDriver.ts"
 import { ScriptedProvider } from "../ScriptedProvider.ts"
-import { ok, project, type Scenario, type Setup } from "./step-loop.ts"
-
-const using = async (
-  driver: RuntimeDriver,
-  setup: Setup,
-  body: (session: RuntimeSession, thread: string) => Promise<void>,
-) => {
-  const session = await driver.load(project(setup))
-  try {
-    await body(session, await session.createThread("assistant"))
-  } finally {
-    await session.close()
-  }
-}
-
-const statusOf = async (session: RuntimeSession, thread: string) => (await session.state(thread)).status()
+import { ok, type Scenario, statusOf, stubTool, using } from "./harness.ts"
 
 export const runStatusScenarios: ReadonlyArray<Scenario> = [
   {
@@ -71,7 +55,7 @@ export const runStatusScenarios: ReadonlyArray<Scenario> = [
           expect(failed.since).toBeGreaterThan(idle.since)
           const peer = await session.peer()
           try {
-            expect(await (await peer.state(thread)).status()).toEqual(failed)
+            expect(await statusOf(peer, thread)).toEqual(failed)
           } finally {
             await peer.close()
           }
@@ -87,8 +71,8 @@ export const runStatusScenarios: ReadonlyArray<Scenario> = [
     name: "R16 settles each run with the stop reason code that applies",
     requirements: ["1a0354bc", "7029c151"],
     run: async (driver) => {
-      const finish = defineTool({ description: "Finish", execute: async () => ok("finished") })
-      const loop = defineTool({ description: "Loop", execute: async () => ok("again") })
+      const finish = stubTool("Finish", "finished")
+      const loop = stubTool("Loop", "again")
       const provider = new ScriptedProvider([
         { text: "a reply" },
         { toolCalls: [{ id: "c_finish", name: "finish", arguments: {} }] },
