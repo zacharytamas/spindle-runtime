@@ -96,40 +96,29 @@ export const TEXT_FIELDS = [
   "parent_id",
 ] as const
 
+const isText = (value: unknown) => value === undefined || value === null || typeof value === "string"
+const oneOf = (value: unknown, allowed: ReadonlyArray<unknown>) => value === undefined || allowed.includes(value)
+const optional = (value: unknown, test: (value: unknown) => boolean) => value === undefined || test(value)
+const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+const isString = (value: unknown) => typeof value === "string"
 // An id is a key that the store, a log line, and every reader hold as it is. Node's SQLite driver ends a string at a
 // NUL character, and UTF-8 has no encoding for a lone surrogate.
 const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}\uD800-\uDFFF]/u.test(id)
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
-const text = Schema.optional(Schema.NullOr(Schema.String))
-const matchesMessage = Schema.is(
-  Schema.Struct({
-    id: Schema.String,
-    role: Schema.Literals(["system", "user", "assistant", "tool"]),
-    created_at: Schema.Natural,
-    content: Schema.NullOr(Schema.String),
-    name: text,
-    tool_calls: text,
-    tool_call_id: text,
-    reasoning_content: text,
-    reasoning_details: text,
-    prompt: text,
-    parent_id: text,
-    tool_status: Schema.optional(Schema.NullOr(Schema.Literals(["success", "error"]))),
-    status: Schema.optional(Schema.NullOr(Schema.Literals(["pending", "completed", "failed"]))),
-    depth: Schema.optional(Schema.Natural),
-    silent: Schema.optional(Schema.Boolean),
-    metadata: Schema.optional(Schema.declare(isRecord)),
-    attachments: Schema.optional(
-      Schema.NullOr(
-        Schema.declare(
-          (list): list is NonNullable<Message["attachments"]> => Array.isArray(list) && list.every(isAttachmentRef),
-        ),
-      ),
-    ),
-  }),
-)
-const isMessage = (value: unknown): value is Message => matchesMessage(value)
+const isMessage = (value: unknown): value is Message =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isCount(value.created_at) &&
+  (value.role === "system" || value.role === "user" || value.role === "assistant" || value.role === "tool") &&
+  (value.content === null || isString(value.content)) &&
+  TEXT_FIELDS.every((field) => isText(value[field])) &&
+  oneOf(value.tool_status, ["success", "error", null]) &&
+  oneOf(value.status, ["pending", "completed", "failed", null]) &&
+  optional(value.depth, isCount) &&
+  optional(value.silent, (silent) => typeof silent === "boolean") &&
+  optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
+  optional(value.metadata, isRecord)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
 // change which message a record is, so the role, the tool calls, and a tool result's call id stay as the hook was
@@ -253,7 +242,7 @@ const transforms: { [K in keyof Values]: Transform<Values[K]> } = {
   after_tool_call_failure: branch("after a tool call fails, before its result is stored"),
 }
 
-export interface SelectedHook {
+interface SelectedHook {
   readonly id: string
   readonly definition: Definition
   readonly execute: (...args: ReadonlyArray<unknown>) => unknown
@@ -380,6 +369,7 @@ const invoke = Effect.fnUntraced(function* (
 })
 
 interface Checks<V> {
+  copyInitial?: (value: V) => V
   depth?: number
   check?: (next: V, current: V, hook: string) => Effect.Effect<string | undefined>
 }
@@ -465,7 +455,10 @@ function transform<K extends keyof Values, E = never>(
     row.where,
     refuse ? "refused the change" : row.kept,
     value,
-    (current) => [...prefix.map((arg) => structuredClone(arg)), structuredClone(current)],
+    (current) => [
+      ...prefix.map((arg) => structuredClone(arg)),
+      current === value && options.copyInitial ? options.copyInitial(value) : structuredClone(current),
+    ],
     row,
     options,
     refuse,

@@ -43,7 +43,7 @@ export interface ExecutionOptions {
   readonly observe?: (event: ExecutionEvent) => Effect.Effect<void>
 }
 
-export interface RunError {
+interface RunError {
   readonly message: string
   readonly code?: string
   readonly statusCode?: number
@@ -274,12 +274,21 @@ const storeResponse = Effect.fnUntraced(function* (session: Session, response: M
 
 type Session = Effect.Success<ReturnType<typeof prepareSession>>
 
-function advance(session: Session, events: ReturnType<typeof stepLog>, options: ExecutionOptions, stepCap: number) {
+function advance(session: Session, events: ReturnType<typeof stepLog>, retries: number, stepCap: number) {
   const { turn, history, write, delivery, toolContext, provider } = session
   const run = toolContext.execution
   const { record, modelCalls, pending, counter, redact } = events
   let view = historyView(turn)
   const streamed = streamedHooks(write.hooks, turn)
+  const model = {
+    provider,
+    stopped: () => run.stopAtBoundary() !== undefined,
+    retries,
+    calls: modelCalls,
+    pending,
+    record: (detail: string) => record("call", detail),
+    ...(streamed && { streamed }),
+  }
   const drain = drainQueue(toolContext, write, delivery, events)
   // Execution State section 3: a stop takes effect at the boundary between two operations. The run settles idle,
   // and the work still queued waits for the next trigger.
@@ -315,17 +324,7 @@ function advance(session: Session, events: ReturnType<typeof stepLog>, options: 
       const request = yield* assembleRequest(turn, view, history, write, run, events)
       if (!request) return yield* recordStop(run.abortEnd)
       const response = yield* callModel(
-        {
-          step: counter.step,
-          provider,
-          stopped: () => run.stopAtBoundary() !== undefined,
-          retries: options.retries ?? 2,
-          toolChoice: turn.prompt.value.toolChoice,
-          calls: modelCalls,
-          pending,
-          record: (detail) => record("call", detail),
-          ...(streamed === undefined ? {} : { streamed }),
-        },
+        { ...model, step: counter.step, toolChoice: turn.prompt.value.toolChoice },
         request,
       )
       if (response === undefined) return yield* recordStop(run.abortEnd)
@@ -335,16 +334,8 @@ function advance(session: Session, events: ReturnType<typeof stepLog>, options: 
       const afterTools = run.stopAtBoundary()
       if (afterTools) return yield* recordStop(afterTools)
       // maxSteps counts the side's model steps in one turn, and the runtime cap counts every step of the execution.
-      const reason = stopReason(
-        {
-          text: response.content,
-          calls,
-          sideSteps: turnSteps,
-          totalSteps: run.steps,
-        },
-        turn.config,
-        stepCap,
-      )
+      const progress = { text: response.content, calls, sideSteps: turnSteps, totalSteps: run.steps }
+      const reason = stopReason(progress, turn.config, stepCap)
       yield* record("stop", reason ?? "continue")
       if (reason !== undefined) {
         const stopTool = reason === "stop_tool" ? stopToolOutcome(turn, calls, results, redact) : undefined
@@ -370,10 +361,11 @@ export const prepareSteps = Effect.fnUntraced(function* (
 ) {
   const secrets = newSecrets(options.secrets)
   const log = stepLog(threadId, run, secrets, options)
+  const retries = options.retries ?? 2
   const stepCap = options.stepCap ?? 1000
   const setup = yield* Effect.cached(
     Effect.map(prepareSession(threadId, run, control, secrets, options), (session) =>
-      advance(session, log, options, stepCap),
+      advance(session, log, retries, stepCap),
     ),
   )
   return { advance: Effect.flatten(setup), report: log.report, stepCap }

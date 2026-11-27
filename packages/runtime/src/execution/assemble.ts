@@ -12,7 +12,7 @@ import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { Execution } from "./Execution.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
-import type { History } from "./history.ts"
+import { copyMessage, type History } from "./history.ts"
 import { countHooks, has, transformHooks } from "./hooks.ts"
 import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
 import type { WriteContext } from "./messages.ts"
@@ -117,7 +117,7 @@ const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: 
       )
     : Effect.void
 
-export interface HistoryView {
+interface HistoryView {
   readonly side: Side
   // The ids of the messages before the one from the other side that started this turn. A message that filter_messages
   // adds has no such id, so it belongs to the current exchange.
@@ -128,23 +128,28 @@ export interface HistoryView {
   readonly acceptsDetails: (message: Message) => boolean
 }
 
-export const toolCallsOf = (message: Message): Array<ProviderToolCallPart> => {
+function callEntries(message: Message) {
   const parsed = message.tool_calls == null ? undefined : parseJson(message.tool_calls)
-  if (!Array.isArray(parsed)) return []
+  return Array.isArray(parsed)
+    ? parsed.filter(
+        (entry: unknown): entry is { id: string; function: Record<string, unknown> } =>
+          isRecord(entry) && typeof entry.id === "string" && isRecord(entry.function),
+      )
+    : []
+}
+
+export const toolCallsOf = (message: Message): Array<ProviderToolCallPart> => {
   const extra =
     isRecord(message.metadata) && isRecord(message.metadata.tool_call_extra) ? message.metadata.tool_call_extra : {}
-  return parsed.flatMap((entry: unknown) => {
-    if (!isRecord(entry) || typeof entry.id !== "string" || !isRecord(entry.function)) return []
+  return callEntries(message).map((entry) => {
     const args = typeof entry.function.arguments === "string" ? parseJson(entry.function.arguments) : undefined
     const extraContent = extra[entry.id]
-    return [
-      {
-        id: entry.id,
-        name: String(entry.function.name),
-        arguments: isRecord(args) ? args : {},
-        ...(isRecord(extraContent) ? { extraContent } : {}),
-      },
-    ]
+    return {
+      id: entry.id,
+      name: String(entry.function.name),
+      arguments: isRecord(args) ? args : {},
+      ...(isRecord(extraContent) ? { extraContent } : {}),
+    }
   })
 }
 
@@ -190,20 +195,23 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDeliver
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
 // A hook can add a message that has no stored position.
-export interface RequestRow {
+interface RequestRow {
   readonly message: Message
   readonly seq?: number
   readonly callerSeq?: number | null
 }
 
-const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+const requestOrder = (
+  history: ReadonlyArray<RequestRow>,
+  callsAt: (index: number) => ReadonlyArray<{ id: string }>,
+) => {
   const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
   const holderOf = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     if (message.role === "tool")
       return callerSeq != null ? bySeq.get(callerSeq) : holder.get(message.tool_call_id ?? "")
     if (seq !== undefined) bySeq.set(seq, index)
-    for (const call of parsed[index] ?? []) holder.set(call.id, index)
+    for (const call of callsAt(index)) holder.set(call.id, index)
     return undefined
   }
   let last = -1
@@ -216,7 +224,7 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
       last = index
       position = -1
     } else if (at !== undefined) {
-      const next = (parsed[at] ?? []).findIndex((call) => call.id === message.tool_call_id)
+      const next = callsAt(at).findIndex((call) => call.id === message.tool_call_id)
       if (at !== last || next < position) stored = false
       position = next
     }
@@ -229,13 +237,15 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
     const at = holderOf(message, index)
     if (at === undefined) return
     moved.add(index)
-    results.set(at, [...(results.get(at) ?? []), index])
+    const group = results.get(at)
+    if (group) group.push(index)
+    else results.set(at, [index])
   })
   const order: Array<number> = []
   history.forEach((_message, index) => {
     if (moved.has(index)) return
     order.push(index)
-    const ids = (parsed[index] ?? []).map((call) => call.id)
+    const ids = callsAt(index).map((call) => call.id)
     const at = (result: number) => ids.indexOf(history[result]?.message.tool_call_id ?? "")
     order.push(...(results.get(index) ?? []).sort((a, b) => at(a) - at(b)))
   })
@@ -245,17 +255,22 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
 // includeChat and includePastTools admit. A call and its result are shown or hidden together.
-export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryView): Array<ProviderMessage> => {
+const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryView): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
   const shownBySeq = new Map<number, ReadonlyArray<ProviderToolCallPart>>()
   const messages: Array<ProviderMessage> = []
-  const parsed = history.map(({ message }) =>
-    (message.role === "user" || message.role === "assistant") && message.tool_calls != null
-      ? toolCallsOf(message)
-      : NO_CALLS,
-  )
+  // Only a legacy or synthetic result needs to resolve its holder by id. A hidden holder can shadow a visible id.
+  const needsIds = history.some(({ message, callerSeq }) => message.role === "tool" && callerSeq == null)
+  const hiddenIds = new Map<number, Array<{ id: string }>>()
+  const parsed = history.map(({ message }, index) => {
+    if (message.tool_calls == null || (message.role !== own && message.role !== other)) return NO_CALLS
+    if (message.role === own && (view.includePastTools || !view.past.has(message.id))) return toolCallsOf(message)
+    if (needsIds) hiddenIds.set(index, callEntries(message))
+    return NO_CALLS
+  })
+  const callsAt = (index: number) => hiddenIds.get(index) ?? parsed[index] ?? NO_CALLS
   const visit = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
@@ -274,13 +289,13 @@ export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: His
     } else if (message.role === "system") {
       if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
     } else if (message.role === other) {
-      for (const call of parsed[index] ?? []) shownCalls.set(call.id, false)
+      for (const call of callsAt(index)) shownCalls.set(call.id, false)
       if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message) })
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
       if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
-      for (const call of calls) shownCalls.set(call.id, showCalls)
+      if (needsIds) for (const call of callsAt(index)) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
       if (past && !showCalls && (content ?? "") === "") return
       messages.push({
@@ -291,7 +306,7 @@ export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: His
       })
     }
   }
-  const order = requestOrder(history, parsed)
+  const order = requestOrder(history, callsAt)
   if (order === undefined) history.forEach(visit)
   else for (const index of order) visit(history[index] as RequestRow, index)
   return messages
@@ -360,7 +375,9 @@ export const assembleRequest = Effect.fnUntraced(function* (
   let historyRows: ReadonlyArray<RequestRow> = rows
   if (has(hooks, "filter_messages")) {
     const snapshot = rows.map((row) => row.message)
-    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot)
+    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
+      copyInitial: (messages) => messages.map(copyMessage),
+    })
     if (filtered !== snapshot) {
       const byId = new Map(rows.map((row) => [row.message.id, row]))
       historyRows = filtered.map((message) => {
