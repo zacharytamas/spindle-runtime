@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { SPEC_VERSION } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Schema } from "effect"
-import { Command } from "effect/cli"
+import { CliOutput, Command } from "effect/cli"
 import { isMain, PlatformLive, platformName, runMain } from "#platform"
 import { chatCommand } from "./chat.ts"
 import { runCommand } from "./run.ts"
 import { sendCommand } from "./send.ts"
+import { note } from "./shared.ts"
 import { recoverCommand, statusCommand } from "./status.ts"
 import { validateCommand } from "./validate.ts"
 
@@ -27,5 +28,15 @@ if (isMain(import.meta)) {
   Effect.gen(function* () {
     const version = yield* packageVersion
     yield* Command.run(spindle, { version: `${version} (spec ${SPEC_VERSION}, platform ${platformName})` })
-  }).pipe(Effect.provide(PlatformLive), runMain)
+  }).pipe(
+    Effect.updateService(CliOutput.Presenter, (presenter) => ({
+      present: (event) =>
+        event._tag === "InvalidInvocation" &&
+        event.errors.some((error) => error._tag === "InvalidValue" && error.option === "tool-timeout")
+          ? note("--tool-timeout takes SECONDS or NAME=SECONDS with a finite number of seconds above 0")
+          : presenter.present(event),
+    })),
+    Effect.provide(PlatformLive),
+    runMain,
+  )
 }

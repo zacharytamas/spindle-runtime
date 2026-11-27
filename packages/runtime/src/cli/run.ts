@@ -38,6 +38,7 @@ interface DeliveryArgs {
   readonly trace: boolean
   readonly dumpRequests: boolean
   readonly db: string
+  readonly toolTimeout: ReadonlyArray<string>
   readonly hookTimeout: Option.Option<number>
 }
 
@@ -50,6 +51,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
       args.db,
       target,
       args.script,
+      args.toolTimeout,
       secrets,
       (_, filename) =>
         Effect.gen(function* () {

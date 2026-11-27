@@ -53,6 +53,7 @@ export interface ThreadScope {
 }
 
 export interface ExecutionOptions {
+  readonly toolTimeout?: ToolContext["toolTimeout"]
   readonly retries?: number
   readonly stepCap?: number
   readonly provider?: LLMProviderInterface
@@ -173,7 +174,7 @@ const prepareSide = Effect.fnUntraced(function* (
   thread: ThreadScope,
   turn: Turn,
   set: HookSet,
-  override?: LLMProviderInterface,
+  options: ExecutionOptions,
 ) {
   const { run, history, secrets, services } = thread
   const hooks: HookScope = {
@@ -195,6 +196,8 @@ const prepareSide = Effect.fnUntraced(function* (
   const write = { ...thread.delivery, hooks }
   const toolContext: ToolContext = {
     execution: run,
+    scope: yield* Effect.scope,
+    toolTimeout: options.toolTimeout,
     turn,
     stateFor: (tool, entry, callback) =>
       makeThreadState({
@@ -214,9 +217,9 @@ const prepareSide = Effect.fnUntraced(function* (
   // A scripted run still learns the secret values of the model's real provider config.
   yield* learnSecrets(turn, secrets)
   const configured =
-    override === undefined
+    options.provider === undefined
       ? yield* providerFor(turn.model, promptState, secrets)
-      : { lifetime: "shared" as const, provider: override }
+      : { lifetime: "shared" as const, provider: options.provider }
   const provider = configured.lifetime === "shared" ? Effect.succeed(configured.provider) : configured.build
   return {
     turn,
@@ -372,7 +375,7 @@ export const prepareSteps = Effect.fnUntraced(function* (
         origin: { kind: "flow", flowId: run.flowId },
       }
       const scope: ThreadScope = { ...base, ...log, delivery }
-      const side = yield* prepareSide(scope, turn, set, options.provider)
+      const side = yield* prepareSide(scope, turn, set, options)
       return { advance: advance(side, scope, retries, stepCap) }
     }),
   )

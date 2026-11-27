@@ -206,7 +206,7 @@ export class Execution {
         return Deferred.done(this.#done, exit)
       }),
     )
-    return Effect.map(Effect.forkIn(publish, scope, { uninterruptible: true }), (fiber) => {
+    return Effect.map(Effect.forkIn(Effect.scoped(publish), scope, { uninterruptible: true }), (fiber) => {
       this.#fiber = fiber
       if (this.#phase === "holding" || this.#phase === "dropping") fiber.interruptUnsafe()
     })
