@@ -9,7 +9,7 @@ import { platformName, SqliteLive } from "#platform"
 const source = (relative: string) => new URL(relative, import.meta.url).pathname
 export const main = source("../../src/cli/main.ts")
 export const probe = source("../../scripts/queue-probe.ts")
-export const fixture = source("../../../conformance/fixtures/queue")
+const fixture = source("../../../conformance/fixtures/queue")
 const shiftClock = source("../../../conformance/fixtures/queue/shift-clock.mjs")
 
 export const project = ["--dir", fixture]
@@ -159,7 +159,7 @@ export const setupWithPrefix = (prefix: string) =>
 
 export const setup = setupWithPrefix("spindle-ownership-")
 
-export type Row = Record<string, unknown>
+type Row = Record<string, unknown>
 
 // One statement on a connection of the test's own, which no command uses.
 export const query = (db: string, statement: string, parameters: ReadonlyArray<unknown> = []) =>
