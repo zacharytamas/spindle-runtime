@@ -121,6 +121,8 @@ Seven code quality reviews found that no PR of the stack meets the operator's ba
 
 8. Fallow, added last, by the operator's decision of 2026-11-26. It gets a pinned development dependency, the configuration in `docs/plans/trail/reviews/fallow.md`, and one CI job outside the runtime matrix that runs its audit of a PR. The findings it has then are cleared in that PR, so that it starts from a clean baseline. Until then its findings go to the structure PR that owns the code: the two circular imports between `Registry.ts` and its two loaders go to PR 7, and the list of exports that nothing uses goes to each PR for its own files.
 
+Found by the structure reviews and left. A `filter_messages` hook that returns a crafted `tool_calls` name on a visible call ends the run with `fatal_error`, where a value from a hook should never crash the loop. `extraContent` in a dispatched request is the history cache's own object, so a provider that mutates its request edits the cached history. The drain delivers every queued entry in one pass and stores a queued tool as the prompt side's call, which a handler side in milestone 2 cannot use.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
 After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
