@@ -195,6 +195,33 @@ export const S02b: Scenario = {
   run: (driver) => orientation(driver, "a"),
 }
 
+export const S02c: Scenario = {
+  name: "S02c describes own-side attachments and retains attachment-only history",
+  requirements: [],
+  run: async (driver) => {
+    const ref = { type: "file" as const, id: "1", path: "/a.txt", name: "a.txt", mimeType: "text/plain", size: 1 }
+    const description = "[Attachment a.txt (text/plain) at /a.txt]"
+    const call = { id: "c", name: "noop", arguments: {} }
+    const provider = new ScriptedProvider([{ toolCalls: [call] }, { text: "done" }])
+    await using(
+      driver,
+      { provider, prompt: { includeChat: true }, tools: { noop: stubTool("Noop", "ok") } },
+      async (session, thread) => {
+        await session.seed(thread, [
+          { role: "assistant", content: "caption", attachments: [ref] },
+          { role: "assistant", content: null, attachments: [ref] },
+        ])
+        await session.send(thread, "go")
+        expect(history(provider.requests[1]).filter((m) => m.role === "assistant")).toEqual([
+          { role: "assistant", content: `caption\n${description}` },
+          { role: "assistant", content: description },
+          { role: "assistant", content: null, toolCalls: [call] },
+        ])
+      },
+    )
+  },
+}
+
 export const S03: Scenario = {
   name: "S03 renders includes in place and resolves variables by precedence before any request",
   requirements: ["67885fd3", "97e0539c", "a7e2995d", "3a27e944", "8e8bbe20"],

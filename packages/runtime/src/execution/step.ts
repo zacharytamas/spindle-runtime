@@ -132,7 +132,8 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
   // A log keeps no secret in its keys either, and data that cannot be walked is left out.
   const redactLog = (data: Record<string, unknown>) => {
     try {
-      return mapStrings(data, redact, redact)
+      const plain: Record<string, unknown> = JSON.parse(JSON.stringify(data))
+      return mapStrings(plain, redact, redact)
     } catch {
       return null
     }

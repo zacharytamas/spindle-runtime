@@ -1099,6 +1099,26 @@ Tools section 8 requires annotations to leave execution and results unchanged. A
 
 A tool past its deadline gives the ordinary failure hooks an error naming the tool and its limit. The run can continue with the next call. The handle expires and loses its hold on the thread, even if an abort is waiting for that tool. A late return or rejection has no effect on the run. The tool shares its execution's abort signal, so timing out one call leaves the signal live. Its JavaScript can still run and produce effects outside the thread. Spindle refuses later writes through its handle and checks writes already in flight again at commit.
 
+### Settled in M1-18
+
+- A history hook that changes only a caller's message id keeps the stored pairing in the model request, even when another caller uses the same tool call id. The renamed caller is recognized by its place in the list. A hook that renames a caller and also adds or removes a message before it still sends the call without its result, as before this change. A value from the hook that is too deep to compare counts as a new message and does not end the run.
+
+- Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement. A chat with no database prints the note that the thread lives in memory with the id, and no resume command.
+
+- During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON, and direct writes to process.stdout still reach standard output.
+
+- Package validation reports package_meta_invalid if an index in __meta.entryAgents has no element.
+
+- Model call logs redact a plain JSON copy of provider metadata. Metadata that cannot be serialized, including a circular object, becomes null.
+
+- The model sees attachment descriptions on its own side, including past messages containing only an attachment when chat history is enabled. A tool call with no text or attachments keeps null content.
+
+- A tool result with a class instance as its error_data takes the unstorable-result fallback. The stored error retains the tool's text and code and explains why it dropped the data.
+
+- On Node versions without import.meta.main, the entry check compares the real paths of the module and the command. A symlinked entry is recognized with either symlink preservation flag.
+
+- The conformance harness fails the scenario when admission has not occurred after 500 polls.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

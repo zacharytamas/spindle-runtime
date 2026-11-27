@@ -14,7 +14,7 @@ export const redactor = (secrets: ReadonlySet<string>) => (text: string) => {
   return redacted
 }
 
-const isPlain = (value: object) => {
+export const isPlain = (value: object) => {
   const prototype = Object.getPrototypeOf(value)
   return Array.isArray(value) || prototype === null || Object.getPrototypeOf(prototype) === null
 }

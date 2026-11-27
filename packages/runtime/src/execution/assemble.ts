@@ -8,7 +8,7 @@ import type {
   ProviderRequest,
   ProviderToolCallPart,
 } from "@standardagents/spec"
-import { Effect, Predicate } from "effect"
+import { Effect, Equal, Predicate } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
@@ -151,10 +151,12 @@ const describeAttachment = (ref: AttachmentRef) => {
 
 // The thread file system arrives in M3. Until then no attachment bytes exist, so every reference reaches
 // the model as the text description that Prompts section 7 gives older images.
-const textOf = (message: Message) =>
-  [message.content ?? "", ...(message.attachments ?? []).map(describeAttachment)]
+const textOf = <A extends "" | null>(message: Message, empty: A): string | A => {
+  if (!message.attachments?.length) return message.content ?? empty
+  return [message.content ?? "", ...message.attachments.map(describeAttachment)]
     .filter((part) => part !== "")
     .join("\n")
+}
 
 const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssistantMessage> => {
   if (!view.includeReasoning) return {}
@@ -269,7 +271,7 @@ const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryVie
           ? shownCalls.get(message.tool_call_id ?? "")
           : shownBySeq.get(callerSeq)?.some((call) => call.id === message.tool_call_id)
       if (!visible) return
-      const text = textOf(message)
+      const text = textOf(message, "")
       messages.push({
         role: "tool",
         toolCallId: message.tool_call_id ?? "",
@@ -280,13 +282,13 @@ const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryVie
       if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
     } else if (message.role === other) {
       for (const call of callsAt(index)) shownCalls.set(call.id, false)
-      if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message) })
+      if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message, "") })
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
       if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
       if (needsIds) for (const call of callsAt(index)) shownCalls.set(call.id, showCalls)
-      const content = !past || view.includeChat ? message.content : null
+      const content = !past || view.includeChat ? textOf(message, null) : null
       if (past && !showCalls && (content ?? "") === "") return
       messages.push({
         role: "assistant",
@@ -344,6 +346,15 @@ const buildRequest = (
   }
 }
 
+// A hook's value may be too deep to compare. Then it is not the stored message.
+const sameButId = (stored: Message, returned: Message) => {
+  try {
+    return Equal.equals(stored, { ...returned, id: stored.id })
+  } catch {
+    return false
+  }
+}
+
 export const assembleRequest = Effect.fnUntraced(function* (
   { turn, view, write: { hooks } }: SideScope,
   { history, secrets, run, record, observe }: ThreadScope,
@@ -366,11 +377,18 @@ export const assembleRequest = Effect.fnUntraced(function* (
     })
     if (filtered !== snapshot) {
       let byId: Map<string, (typeof rows)[number]> | undefined
+      let retainedIds: Set<string> | undefined
       historyRows = filtered.map((message, index) => {
         let row = rows[index]
         if (row?.message.id !== message.id) {
           byId ??= new Map(rows.map((row) => [row.message.id, row]))
-          row = byId.get(message.id)
+          const stored = byId.get(message.id)
+          // A caller renamed in place keeps its stored position and past visibility. A copy alongside the original is new.
+          if (!stored && row && message.tool_calls != null && sameButId(row.message, message)) {
+            retainedIds ??= new Set(filtered.map((entry) => entry.id))
+            if (!retainedIds.has(row.message.id)) return row
+          }
+          row = stored
         }
         return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
       })

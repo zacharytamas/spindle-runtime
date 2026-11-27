@@ -18,6 +18,7 @@ import {
   counter,
   gate,
   history,
+  holding,
   ok,
   runTurn,
   type Scenario,
@@ -337,6 +338,28 @@ export const S11: Scenario = {
         usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
       })
     })
+  },
+}
+
+export const S11b: Scenario = {
+  name: "S11b drops circular provider metadata from the model call log",
+  requirements: [],
+  run: async (driver) => {
+    const secret = "metadata-secret-41"
+    const metadata: Record<string, unknown> = { token: secret }
+    metadata.self = metadata
+    const provider = new ScriptedProvider([{ text: "done" }], { getResponseMetadata: async () => metadata })
+    const prompt = { variables: [{ name: "TOKEN", type: "secret" as const, description: "Token", required: true }] }
+    await using(
+      driver,
+      { provider, prompt },
+      async (session, thread) => {
+        const outcome = await session.send(thread, "go")
+        expect(outcome.modelCalls.map((call) => call.metadata)).toEqual([null])
+        expect(holding(outcome, secret)).toEqual([])
+      },
+      { instanceEnv: { TOKEN: secret } },
+    )
   },
 }
 

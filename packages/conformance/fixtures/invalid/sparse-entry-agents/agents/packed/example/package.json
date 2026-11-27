@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-example",
+  "version": "1.0.0",
+  "standardagent": {
+    "entryAgents": []
+  },
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ]
+}
