@@ -25,6 +25,7 @@ const CONTROL_POLL = Duration.millis(250)
 class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
 
 export interface Delivery {
+  readonly failedDelivery?: true
   readonly stillQueued?: boolean
   // The outcome of the execution that took the message, when this process ran it.
   readonly outcome?: RunOutcome
@@ -137,18 +138,27 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
-      const admit = (threadId: string, entry: QueueEntry, options: SendOptions, origin: WriteOrigin) =>
+      const admit = (
+        threadId: string,
+        entry: QueueEntry,
+        options: SendOptions,
+        origin: WriteOrigin,
+        waitForDelivery = false,
+      ) =>
         Effect.gen(function* () {
           if (originFlow(origin) === null) yield* runStore.recoverLost(threadId)
           let seq = 0
           const started = yield* claimWith(
             threadId,
             (flowId) =>
-              Effect.map(runStore.admit(threadId, entry, { holder: holder.id, flowId }, origin), (admitted) => {
-                seq = admitted.queued.seq
-                options.onAdmitted?.(seq)
-                return admitted.claimed
-              }),
+              Effect.map(
+                runStore.admit(threadId, entry, { holder: holder.id, flowId }, origin, waitForDelivery),
+                (admitted) => {
+                  seq = admitted.queued.seq
+                  options.onAdmitted?.(seq)
+                  return admitted.claimed
+                },
+              ),
             options,
           )
           return { seq, started }
@@ -191,6 +201,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // behind it, and interrupts an execution here whose run another process settled, by terminate or as lost.
       const tick = Effect.gen(function* () {
         yield* runStore.recoverLost()
+        yield* runStore.pruneHolders()
         const running = [...live]
         const owned = yield* runStore.owned(holder.id)
         for (const [threadId, flowId] of owned)
@@ -212,6 +223,67 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
       yield* Effect.forkScoped(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))))
 
+      const waitForDelivery = (
+        threadId: string,
+        admitted: { seq: number; started: Execution | undefined },
+        options: SendOptions,
+      ) =>
+        Effect.gen(function* () {
+          let started = admitted.started
+          while (true) {
+            if (started !== undefined) {
+              const outcome = yield* started.settlement.await
+              const status = yield* statusOf(threadId)
+              const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
+              return disposition === "failed_delivery"
+                ? { outcome, status, failedDelivery: true as const, stillQueued: false }
+                : { outcome, status }
+            }
+            const local = live.get(threadId)
+            let outcome: RunOutcome | undefined
+            if (local !== undefined) {
+              if (options.onWaiting) {
+                const operation = local.waitingOn
+                yield* options.onWaiting({
+                  kind: "local",
+                  pid: holder.pid,
+                  ...(operation && { operation }),
+                })
+              }
+              outcome = yield* local.lastOutcome
+            } else {
+              const holderNow = yield* runStore.holderOf(threadId)
+              if (holderNow && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: holderNow.pid })
+            }
+            const status = yield* awaitRest(threadId).pipe(
+              Effect.onInterrupt(() =>
+                Effect.gen(function* () {
+                  if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
+                    yield* options.interruptedWhileQueued
+                }),
+              ),
+            )
+            const current = yield* threadStore.getThread(threadId)
+            const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
+            if (current.terminated !== null && disposition !== "failed_delivery")
+              return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
+            const stillQueued = disposition === "pending"
+            if (status.reason === "execution_lost" || !stillQueued) {
+              return {
+                status,
+                stillQueued,
+                ...(disposition === "failed_delivery" && { failedDelivery: true as const }),
+                ...(outcome && { outcome }),
+              }
+            }
+            started = yield* claimWith(
+              threadId,
+              (flowId) => runStore.claim(threadId, { holder: holder.id, flowId }),
+              options,
+            )
+          }
+        })
+
       return ThreadSupervisor.of({
         holderId: holder.id,
         // A sender waits for the run that takes its message. When the run it waited behind stopped or failed and left
@@ -224,50 +296,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const thread = yield* threadStore.getThread(threadId)
             const { human } = yield* sidesOf(thread.agentId)
             const message: QueueMessageInput = { role: roleOf(human), content }
-            const admitted = yield* admit(threadId, { kind: "message", message }, options, external)
-            let started = admitted.started
-            while (true) {
-              if (started !== undefined) {
-                const outcome = yield* started.settlement.await
-                return { outcome, status: yield* statusOf(threadId) }
-              }
-              const local = live.get(threadId)
-              let outcome: RunOutcome | undefined
-              if (local !== undefined) {
-                if (options.onWaiting) {
-                  const operation = local.waitingOn
-                  yield* options.onWaiting({
-                    kind: "local",
-                    pid: holder.pid,
-                    ...(operation && { operation }),
-                  })
-                }
-                outcome = yield* local.lastOutcome
-              } else {
-                const holderNow = yield* runStore.holderOf(threadId)
-                if (holderNow && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: holderNow.pid })
-              }
-              const status = yield* awaitRest(threadId).pipe(
-                Effect.onInterrupt(() =>
-                  Effect.gen(function* () {
-                    if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
-                      yield* options.interruptedWhileQueued
-                  }),
-                ),
-              )
-              const current = yield* threadStore.getThread(threadId)
-              if (current.terminated !== null)
-                return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
-              const stillQueued = yield* runStore.isQueued(threadId, admitted.seq)
-              if (status.reason === "execution_lost" || !stillQueued) {
-                return { status, stillQueued, ...(outcome && { outcome }) }
-              }
-              started = yield* claimWith(
-                threadId,
-                (flowId) => runStore.claim(threadId, { holder: holder.id, flowId }),
-                options,
-              )
-            }
+            return yield* Effect.acquireUseRelease(
+              admit(threadId, { kind: "message", message }, options, external, true),
+              (admitted) => waitForDelivery(threadId, admitted, options),
+              (admitted) => Effect.asVoid(runStore.releaseSender(admitted.seq, holder.id)),
+            )
           }),
         control,
         stop: (threadId) => Effect.sync(() => live.get(threadId)?.requestStop() ?? false),

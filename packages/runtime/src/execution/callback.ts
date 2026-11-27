@@ -51,7 +51,7 @@ export class Callback {
     this.#release = undefined
   }
 
-  invoke<A>(invoke: () => PromiseLike<A> | A, register?: (promise: Promise<unknown>) => () => void) {
+  invoke<A>(invoke: () => PromiseLike<A> | A, register?: () => () => void) {
     try {
       const value = invoke()
       if (!value || typeof (value as PromiseLike<A>).then !== "function") {
@@ -63,7 +63,7 @@ export class Callback {
         this.#release?.()
         this.#release = undefined
       })
-      this.#release = register?.(result)
+      this.#release = register?.()
       return result
     } catch (error) {
       this.#finished = true

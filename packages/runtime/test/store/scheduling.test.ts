@@ -39,6 +39,10 @@ it.effect("every store operation prevents scheduler yields while using the conne
       {
         acquireHolder: Effect.scoped(runs.acquireHolder({ id: claim.holder, pid: 0 })),
         admit: runs.admit(id, { kind: "message", message: { role: "user", content: "go" } }, claim, external),
+        failedDeliveries: runs.failedDeliveries(id),
+        discardFailed: runs.discardFailed(id, "2"),
+        releaseSender: runs.releaseSender(1, claim.holder),
+        queueDisposition: runs.queueDisposition(id, 1),
         isQueued: runs.isQueued(id, 1),
         nextQueued: runs.nextQueued(id, claim),
         queueLength: runs.queueLength(id),
@@ -46,6 +50,7 @@ it.effect("every store operation prevents scheduler yields while using the conne
         owned: runs.owned(claim.holder),
         settle: runs.settle(id, claim, { state: "idle", reason: "aborted" }, { continueIfQueued: false, closing: "" }),
         claim: runs.claim(id, claim),
+        pruneHolders: runs.pruneHolders(),
         recoverLost: runs.recoverLost(id),
         recoverThread: runs.recoverThread(id, true),
         terminate: runs.terminate(id, external),

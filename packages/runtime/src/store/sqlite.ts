@@ -8,6 +8,7 @@ import revisions from "./migrations/0002_revision.ts"
 import claims from "./migrations/0003_claims.ts"
 import admission from "./migrations/0004_message_admission.ts"
 import resultPrompt from "./migrations/0005_result_prompt.ts"
+import waitingSenders from "./migrations/0006_waiting_senders.ts"
 import { makeRunStore, RunStore } from "./RunStore.ts"
 import { makeThreadStore, ThreadStore } from "./ThreadStore.ts"
 
@@ -18,6 +19,7 @@ const migrate = Migrator.make({})({
     "0003_claims": claims,
     "0004_message_admission": admission,
     "0005_result_prompt": resultPrompt,
+    "0006_waiting_senders": waitingSenders,
   }),
 })
 

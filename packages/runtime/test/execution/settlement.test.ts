@@ -220,3 +220,53 @@ it.effect("a queue that repeatedly asks to continue without a delivery still let
     )
   }),
 )
+
+// M1c-4 rule 1: a sender whose entry is set aside as unreadable is told so, and is not told it was taken.
+it.effect("a sender whose queued entry fails delivery learns that it was not delivered", () => {
+  const entered = gate()
+  const leave = gate()
+  const wait = defineTool({
+    description: "Wait for release",
+    execute: async () => {
+      entered.release()
+      await leave.opened
+      return ok("done")
+    },
+  })
+  const provider = new ScriptedProvider([
+    { toolCalls: [{ id: "1", name: "wait", arguments: {} }] },
+    { text: "after the tool" },
+  ])
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    const sql = yield* SqlClient
+    const first = yield* Effect.forkChild(sendMessage(id, "go"))
+    yield* Effect.promise(() => entered.opened)
+    const admitted = yield* Deferred.make<number>()
+    const waiting = gate()
+    const second = yield* Effect.forkChild(
+      supervisor.send(id, "unreadable later", {
+        onAdmitted: (seq) => Deferred.doneUnsafe(admitted, Effect.succeed(seq)),
+        onWaiting: () => Effect.sync(waiting.release),
+      }),
+    )
+    const seq = yield* Deferred.await(admitted)
+    yield* Effect.promise(() => waiting.opened)
+    yield* sql`UPDATE queue SET payload = 'unreadable' WHERE seq = ${seq}`
+    leave.release()
+    yield* Fiber.join(first)
+    const [row] = yield* sql<{ disposition: string }>`SELECT disposition FROM queue WHERE seq = ${seq}`
+    expect(row?.disposition).toBe("failed_delivery")
+    expect(yield* Fiber.join(second)).toMatchObject({ failedDelivery: true, stillQueued: false })
+    expect(provider.requests).toHaveLength(2)
+  }).pipe(
+    Effect.ensuring(Effect.sync(leave.release)),
+    Effect.provide(
+      Layer.merge(
+        registryOf(project({ provider, tools: { wait } })),
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provideMerge(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  )
+})

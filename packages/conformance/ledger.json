@@ -5867,7 +5867,8 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/runs.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status",
-			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session"
+			"packages/runtime/test/conformance.test.ts > run status > R15 reads the run status at rest, inside a run, after success and failure, and from another session",
+			"packages/runtime/test/execution/tool-timeout.test.ts > an abort that holds in a failed step's wait keeps the step's error"
 		],
 		"reason": ""
 	},

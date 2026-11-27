@@ -48,7 +48,7 @@ export class Execution {
   readonly flowId: string
   readonly #abort = new AbortController()
   readonly signal = this.#abort.signal
-  readonly #pending = new Map<Promise<unknown>, string>()
+  readonly #pending = new Map<symbol, string>()
   readonly #stopRequested = Latch.makeUnsafe()
   readonly waitForStop = this.#stopRequested.await
   readonly #released = Latch.makeUnsafe()
@@ -59,6 +59,8 @@ export class Execution {
   })
   #phase: "running" | "waiting" | "holding" | "dropping" | "ended" = "running"
   #stop: Side | "user" | undefined
+  // True when the stop is only the mark of a cancel. Such a run keeps its own rule for queued work at the cap.
+  #stopFromCancel = false
   #steps = 0
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
   #successor: Execution | undefined
@@ -92,14 +94,16 @@ export class Execution {
     return true
   }
   call<A>(callback: Callback, operation: string, invoke: () => PromiseLike<A> | A) {
-    return callback.invoke(invoke, (promise) => {
-      this.#pending.set(promise, operation)
-      if (this.#phase !== "dropping") this.#released.closeUnsafe()
-      return () => {
-        this.#pending.delete(promise)
-        this.#releaseIfReady()
-      }
-    })
+    return callback.invoke(invoke, () => this.track(operation))
+  }
+  track(operation: string) {
+    const token = Symbol()
+    this.#pending.set(token, operation)
+    if (this.#phase !== "dropping") this.#released.closeUnsafe()
+    return () => {
+      this.#pending.delete(token)
+      this.#releaseIfReady()
+    }
   }
   #releaseIfReady() {
     if (this.#phase === "dropping" || !this.#pending.size) this.#released.openUnsafe()
@@ -110,9 +114,14 @@ export class Execution {
 
   cancel(mode: "hold" | "exit" | "displace") {
     if (!this.ended) {
-      if (mode !== "displace") this.#stop ??= "user"
+      const waiting = this.#phase === "waiting"
+      if (mode !== "displace" && this.#stop === undefined) {
+        this.#stop = "user"
+        this.#stopFromCancel = true
+      }
       this.#phase = mode === "hold" && this.#phase !== "dropping" ? "holding" : "dropping"
       this.#releaseIfReady()
+      if (waiting) this.#abort.abort()
     }
     this.#fiber?.interruptUnsafe()
     return this.settlement
@@ -123,6 +132,97 @@ export class Execution {
     (outcome) => this.#successor?.lastOutcome ?? Effect.succeed(outcome),
   )
 
+  #waitForCallbacks(notify: NonNullable<ExecutionOptions["onHold"]>) {
+    return Effect.gen({ self: this }, function* () {
+      let notificationError: Cause.Cause<never> | undefined
+      const operation = this.#pending.values().next().value
+      if (operation !== undefined && this.#phase === "running") {
+        this.#phase = "waiting"
+        const notified = yield* Effect.exit(Effect.interruptible(Effect.suspend(() => notify(operation))))
+        if (Exit.isFailure(notified) && !Cause.hasInterruptsOnly(notified.cause)) notificationError = notified.cause
+      }
+      if (this.#phase === "holding" || this.#phase === "dropping") {
+        this.#abort.abort()
+        // Return control to the abort caller before publishing the outcome.
+        yield* Effect.yieldNow
+      }
+      while (this.#phase !== "dropping" && this.#pending.size) yield* this.#released.await
+      if (this.#phase === "waiting") this.#phase = "running"
+      return notificationError
+    })
+  }
+
+  #settle(store: RunStore["Service"], threadId: string, end: End | FlowEnded, stepCap: number) {
+    const settle =
+      end instanceof FlowEnded
+        ? Effect.succeed(end.why)
+        : store.settle(
+            threadId,
+            { flowId: this.flowId },
+            { state: end.status, reason: end.reason },
+            {
+              continueIfQueued: !!end.continueIfQueued && (this.#stop === undefined || this.#stopFromCancel),
+              // A cancelled run never takes queued work itself. At the cap it still ends as the cap ends a run.
+              settleOnly: this.#phase === "holding" || this.#phase === "dropping",
+              atCap: this.steps >= stepCap,
+              closing: end.status === "failed" ? CLOSING.failed : CLOSING.aborted,
+            },
+          )
+    // A poll must not observe the released claim between SQLite commit and this local transition.
+    return settle.pipe(
+      Effect.map((settlement) => ({ settlement, phase: this.#phase })),
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isFailure(exit) || exit.value.settlement !== "continue") this.#phase = "ended"
+        }),
+      ),
+      Effect.provideService(Scheduler.PreventSchedulerYield, true),
+    )
+  }
+
+  #finish(threadId: string, steps: ReturnType<typeof prepareSteps>, onHold?: ExecutionOptions["onHold"]) {
+    return Effect.gen({ self: this }, function* () {
+      const store = yield* RunStore
+      const { advance, report, stepCap } = yield* steps
+      const notify = (operation: string) => {
+        const once = onHold
+        onHold = undefined
+        return once?.(operation) ?? Effect.void
+      }
+      while (true) {
+        const exit = yield* Effect.exit(Effect.interruptible(advance))
+        const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+        let proposed: End | FlowEnded = Exit.isSuccess(exit)
+          ? exit.value
+          : interrupted
+            ? this.abortEnd
+            : failure(exit.cause)
+        if (proposed instanceof FlowEnded) this.#abort.abort()
+        else {
+          const notificationError = yield* this.#waitForCallbacks(notify)
+          if (notificationError) proposed = failure(notificationError)
+        }
+        const end: End = proposed instanceof FlowEnded ? settledAs[proposed.why] : proposed
+        const { settlement, phase } = yield* this.#settle(store, threadId, proposed, stepCap)
+        if (settlement === "continue") continue
+        const result = settlement === "settled" ? end : settledAs[settlement]
+        const restart = settlement === "settled" && phase === "holding" && end.status === "idle"
+        const brief = interrupted || phase === "holding" || phase === "dropping"
+        const details = report(result, brief)
+        const outcome =
+          Exit.isFailure(exit) || brief
+            ? yield* details
+            : yield* Effect.interruptible(details).pipe(
+                Effect.catchCauseIf(Cause.hasInterruptsOnly, () => {
+                  this.#abort.abort()
+                  return report(result, true)
+                }),
+              )
+        return { outcome, restart }
+      }
+    })
+  }
+
   start<R>(
     threadId: string,
     scope: Scope.Scope,
@@ -131,91 +231,9 @@ export class Execution {
     remove: () => void,
     onHold?: ExecutionOptions["onHold"],
   ) {
-    const finish = Effect.gen({ self: this }, function* () {
-      const store = yield* RunStore
-      const { advance, report, stepCap } = yield* steps
-      const advanceAndWait = Effect.gen({ self: this }, function* () {
-        const exit = yield* Effect.exit(advance)
-        const operation = this.#pending.values().next().value
-        if (operation !== undefined && this.#phase === "running") {
-          if (Exit.isFailure(exit) && (Cause.hasInterruptsOnly(exit.cause) || failure(exit.cause) instanceof FlowEnded))
-            return yield* exit
-          this.#phase = "waiting"
-          if (onHold) {
-            yield* onHold(operation)
-            onHold = undefined
-          }
-          while (this.#pending.size) yield* this.#released.await
-          this.#phase = "running"
-        }
-        return yield* exit
-      })
-      while (true) {
-        const exit = yield* Effect.exit(Effect.interruptible(advanceAndWait))
-        const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-        if (interrupted) {
-          this.#abort.abort()
-          // Return control to the abort caller before publishing the interrupted outcome.
-          yield* Effect.yieldNow
-          if (this.#phase === "holding") yield* this.#released.await
-        }
-        const proposed: End | FlowEnded = Exit.isSuccess(exit)
-          ? exit.value
-          : interrupted
-            ? this.abortEnd
-            : failure(exit.cause)
-        const end: End = proposed instanceof FlowEnded ? settledAs[proposed.why] : proposed
-        if (proposed instanceof FlowEnded) this.#abort.abort()
-        const settle =
-          proposed instanceof FlowEnded
-            ? Effect.succeed(proposed.why)
-            : store.settle(
-                threadId,
-                { flowId: this.flowId },
-                { state: end.status, reason: end.reason },
-                {
-                  continueIfQueued: !!end.continueIfQueued && this.#stop === undefined,
-                  atCap: this.steps >= stepCap,
-                  closing: end.status === "failed" ? CLOSING.failed : CLOSING.aborted,
-                },
-              )
-        const holding = this.#phase === "holding"
-        // A poll must not observe the released claim between SQLite commit and this local transition.
-        const settlement = yield* settle.pipe(
-          Effect.onExit((exit) =>
-            Effect.sync(() => {
-              if (Exit.isFailure(exit) || exit.value !== "continue") this.#phase = "ended"
-            }),
-          ),
-          Effect.provideService(Scheduler.PreventSchedulerYield, true),
-        )
-        if (settlement === "continue") continue
-        const restart = interrupted && settlement === "settled" && holding
-        const result = settlement === "settled" ? end : settledAs[settlement]
-        const details = report(result)
-        return { result, details: Exit.isSuccess(exit) ? Effect.interruptible(details) : details, interrupted, restart }
-      }
-    })
     // Mask the driver before its first turn. Only the work between settlement boundaries is interruptible.
     const publish = Effect.gen({ self: this }, function* () {
-      const { result, details, interrupted, restart } = yield* finish
-      const brief = ({ status, reason }: End): RunOutcome => ({
-        threadId,
-        flowId: this.flowId,
-        steps: this.steps,
-        status,
-        reason,
-        trace: [],
-        modelCalls: [],
-      })
-      const outcome = interrupted
-        ? brief(result)
-        : yield* details.pipe(
-            Effect.catchCauseIf(Cause.hasInterruptsOnly, () => {
-              this.#abort.abort()
-              return Effect.succeed(brief(result))
-            }),
-          )
+      const { outcome, restart } = yield* this.#finish(threadId, steps, onHold)
       if (restart) this.#successor = yield* resume
       return outcome
     }).pipe(

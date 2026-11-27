@@ -59,6 +59,15 @@ const rows = (threadId: string) =>
     ),
   )
 
+// No process has this id. Positive ids on macOS and Linux stay far below it.
+const absentPid = 2147483647
+
+// The store and its connection, so that a test can write a holder row of another process.
+const inMemoryWithSql = Layer.fresh(layer.pipe(Layer.provideMerge(SqliteLive({ filename: ":memory:" }))))
+
+const holderRows = (sql: SqlClient) =>
+  Effect.map(sql<{ id: string }>`SELECT id FROM holders ORDER BY id`, (rows) => rows.map((row) => row.id))
+
 describe("ThreadStore claims", () => {
   it("explains expired handles and refusals to delete open calls", () => {
     expect(new HandleExpired().message).toMatch(/handle.*expired.*current/i)
@@ -448,6 +457,68 @@ describe("ThreadStore claims", () => {
       )
       expect(yield* runStore.holderOf(thread.id)).toBeNull()
     }).pipe(Effect.provide(inMemory)),
+  )
+
+  it.effect("a discard during a run still reports the failure to the sender until it leaves", () =>
+    Effect.gen(function* () {
+      const { id } = yield* ThreadStore.use((store) => store.createThread({ agentId: "assistant" }))
+      const runs = yield* RunStore
+      const sql = yield* SqlClient
+      const owner = claim("flow")
+      yield* runs.acquireHolder({ id: owner.holder, pid: processId })
+      const { queued } = yield* runs.admit(id, message("bad"), owner, external, true)
+      yield* sql`UPDATE queue SET payload = 'unreadable' WHERE seq = ${queued.seq}`
+      expect(yield* runs.nextQueued(id, owner)).toBeUndefined()
+      expect(yield* runs.discardFailed(id, String(queued.seq))).toBe("message")
+      expect(yield* runs.failedDeliveries(id)).toEqual([])
+      expect(yield* runs.queueDisposition(id, queued.seq)).toBe("failed_delivery")
+      expect(yield* runs.holderOf(id)).toEqual({ id: owner.holder, pid: processId })
+      yield* runs.releaseSender(queued.seq, owner.holder)
+      expect(yield* runs.queueDisposition(id, queued.seq)).toBeUndefined()
+    }).pipe(Effect.provide(inMemoryWithSql)),
+  )
+
+  // M1c-4 rule 2: the holder row of a killed process goes with the last running claim that names it.
+  for (const by of ["a status read", "spindle recover"] as const)
+    it.effect(`${by} removes the holder row of a dead process with its last claim, and not before`, () =>
+      Effect.gen(function* () {
+        const threads = yield* ThreadStore
+        const runs = yield* RunStore
+        const sql = yield* SqlClient
+        const recover = (threadId: string) =>
+          by === "a status read" ? runs.recoverLost(threadId) : runs.recoverThread(threadId, false)
+        yield* sql`INSERT INTO holders (id, pid) VALUES ('dead', ${absentPid})`
+        const first = yield* threads.createThread({ agentId: "assistant" })
+        const second = yield* threads.createThread({ agentId: "assistant" })
+        yield* runs.admit(first.id, message("one"), claim("flow-1", "dead"), external)
+        yield* runs.admit(second.id, message("two"), claim("flow-2", "dead"), external)
+        yield* recover(first.id)
+        expect(yield* holderRows(sql)).toEqual(["dead"])
+        yield* recover(second.id)
+        expect((yield* threads.getThread(second.id)).status).toMatchObject({
+          state: "failed",
+          reason: "execution_lost",
+        })
+        expect(yield* holderRows(sql)).toEqual([])
+      }).pipe(Effect.provide(inMemoryWithSql)),
+    )
+
+  // The neighbor of rule 2 that passes today: a live process, such as one that took a reused pid, keeps its row.
+  it.effect("spindle recover --force settles the claim of a live pid and keeps that holder's row", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadStore
+      const runs = yield* RunStore
+      const sql = yield* SqlClient
+      // Process 1 belongs to the system, so a probe of it from a test gets a permission error or finds it alive.
+      yield* sql`INSERT INTO holders (id, pid) VALUES ('reused', 1)`
+      const thread = yield* threads.createThread({ agentId: "assistant" })
+      yield* runs.admit(thread.id, message("one"), claim("flow-1", "reused"), external)
+      expect(yield* runs.recoverLost()).toEqual([])
+      expect((yield* runs.recoverThread(thread.id, false)).kind).toBe("alive")
+      expect((yield* runs.recoverThread(thread.id, true)).kind).toBe("recovered")
+      expect(yield* runs.recoverLost()).toEqual([])
+      expect(yield* holderRows(sql)).toEqual(["reused"])
+    }).pipe(Effect.provide(inMemoryWithSql)),
   )
 
   it.effect("recovers a closed local holder even if its row could not be deleted", () =>

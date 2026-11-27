@@ -94,6 +94,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   tool: Loaded<FunctionTool>,
   entry: PromptToolConfig | undefined,
   input: unknown,
+  onExecute?: () => void,
 ) {
   const scope = scopeFor(context.turn, entry)
   const name = tool.qualifiedName
@@ -107,7 +108,14 @@ export const executeTool = Effect.fn("executeTool")(function* (
   const schema = tool.value.args ?? null
   let args: unknown
   if (schema !== null) {
-    const parsed = yield* Effect.result(Effect.tryPromise({ try: () => schema.safeParseAsync(input), catch: describe }))
+    const validate = () => schema.safeParseAsync(input)
+    // Interrupting a nested invocation can return notRun while its user-supplied validator is still running.
+    const parsed = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => (onExecute ? context.execution.call(new Callback(), `tool ${name}`, validate) : validate()),
+        catch: describe,
+      }),
+    )
     if (Result.isFailure(parsed)) return failed(`Validating the arguments of ${name} threw: ${parsed.failure}`)
     if (!parsed.success.success) {
       const issues = parsed.success.error.issues
@@ -121,14 +129,11 @@ export const executeTool = Effect.fn("executeTool")(function* (
   const state = context.stateFor(tool, entry, callback)
   const work = Effect.tryPromise({
     try: () =>
-      context.execution.call(callback, `tool ${name}`, () =>
-        // Checked in the same synchronous step that starts the tool, so no stop can arrive in between.
-        state.execution?.stopped
-          ? skipped
-          : schema === null
-            ? tool.value.execute(state)
-            : tool.value.execute(state, args),
-      ),
+      context.execution.call(callback, `tool ${name}`, () => {
+        if (state.execution?.stopped || context.execution.signal.aborted) return skipped
+        onExecute?.()
+        return schema === null ? tool.value.execute(state) : tool.value.execute(state, args)
+      }),
     catch: (cause) => `Tool ${name} threw: ${describe(cause)}`,
   })
   const timeout = context.toolTimeout?.(name)
@@ -212,13 +217,14 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   caller: Loaded<FunctionTool>,
   name: string,
   input: unknown,
+  onExecute: () => void,
 ) {
   const target = yield* lookup("tool", name, caller)
   const outside = yield* outsideUses(caller, name, target)
   if (outside !== undefined) return failed(outside)
   if (!isFunctionTool(target)) return failed(yield* notAFunctionTool(name, caller, "invokeTool"))
   const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool === target)?.entry
-  return (yield* executeTool(context, target, entry, input)) ?? notRun
+  return (yield* executeTool(context, target, entry, input, onExecute)) ?? notRun
 })
 
 export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({

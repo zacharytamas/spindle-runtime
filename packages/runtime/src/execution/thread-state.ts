@@ -32,7 +32,7 @@ import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope, type HookSet } from "./hooks.ts"
 import { injectMessage, redactMetadata, updateMessage } from "./messages.ts"
 import { isPlain, mapStrings, redactor } from "./redact.ts"
-import { QueueRefused, queueTarget, redactAttachment } from "./tools.ts"
+import { describe, failed, notRun, QueueRefused, queueTarget, redactAttachment } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
 
 interface ExecutionRecord {
@@ -127,7 +127,7 @@ interface StateContext {
   readonly from: Definition | undefined
   readonly context: Record<string, unknown>
   readonly secrets: Secrets
-  readonly invoke?: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
+  readonly invoke?: (name: string, args: Record<string, unknown>, onExecute: () => void) => Effect.Effect<ToolResult>
   // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
   readonly hooks: HookScope
   // The hook call this state belongs to, when a hook gets it.
@@ -235,7 +235,7 @@ const stateBridge = (state: StateContext) => {
     if (Exit.isSuccess(exit)) return exit.value
     throw Cause.squash(exit.cause)
   }
-  return { check, origin, run, runSync, runPromise }
+  return { check, origin, owner, run, runSync, runPromise, signal }
 }
 
 type Bridge = ReturnType<typeof stateBridge>
@@ -378,7 +378,7 @@ function environment(state: StateContext, { run }: Bridge): Pick<ThreadState, "e
 
 function toolMethods(
   state: StateContext,
-  { run, runSync, origin }: Bridge,
+  { check, owner, runPromise, runSync, signal, origin }: Bridge,
 ): Pick<ThreadState, "invokeTool" | "queueTool"> {
   return {
     // Threads section 3.1 and Tools section 2.1. The constrained ThreadState of a tool with a uses list lets it leave
@@ -409,17 +409,31 @@ function toolMethods(
           yield* state.control.queueTool(target, plain, origin)
         }),
       ),
-    invokeTool: (toolName, args = {}) => {
+    // A nested call is pending from here, before its lookup and its validation, so the run waits for it.
+    invokeTool: async (toolName, args = {}) => {
+      check()
       if (typeof toolName !== "string") return invalid("invokeTool takes a string name")
       if (!Predicate.isObject(args)) return invalid("invokeTool takes an object of arguments")
-      return run(
-        state.invoke
-          ? state.invoke(toolName, args)
-          : Effect.succeed({
-              status: "error",
-              error: `invokeTool(${toolName}) needs a calling tool and its uses list`,
-            }),
-      )
+      if (!owner || !state.invoke) return failed(`invokeTool(${toolName}) needs a calling tool and its uses list`)
+      const release = owner.track(`tool ${toolName}`)
+      let entered = false
+      try {
+        if (owner.stopAtBoundary()) return notRun
+        const result = await runPromise(
+          state.invoke(toolName, args, () => {
+            entered = true
+          }),
+          signal,
+        )
+        return !entered && owner.stopAtBoundary() ? notRun : result
+      } catch (error) {
+        if (entered) throw error
+        return owner.signal.aborted || owner.stopAtBoundary()
+          ? notRun
+          : failed(`Preparing tool ${toolName} threw: ${describe(error)}`)
+      } finally {
+        release()
+      }
     },
   }
 }

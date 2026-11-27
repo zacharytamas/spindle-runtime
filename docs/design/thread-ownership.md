@@ -1,4 +1,4 @@
-**Status. The first section, "Decisions for the M1-6 fix round", is built in PR 8. The operator confirmed its four marked choices on 2026-11-26.**
+**Status. The first section, "Decisions for the M1-6 fix round", is built in PR 8. The operator confirmed its four marked choices on 2026-11-26. The second section, "Decisions for M1c-4", is designed for PR M1c-4 and not built yet.**
 
 # Thread ownership
 
@@ -41,6 +41,50 @@ The lead wrote this section on 2026-11-26, after reading the rest of the note. W
 **Stop.** The loop reads the stop flag at every boundary, which includes after an awaited hook, before entering a tool, and before a retry of a model call. A call that a stop kept from running gets one error result that says it did not run. No hook can change that result's status or its link to the call.
 
 **An unreadable queue entry** is kept with its sequence and its payload, marked as a failed delivery, and skipped. The entries after it are delivered.
+
+## Decisions for M1c-4: the queue, the holder table, and two limits of the hold
+
+Written on 2026-11-27 for pull request M1c-4 and not built yet. It wins over the sections below it. Rule 3 replaces one sentence of decision 5 above.
+
+### 1. A queue entry that could not be delivered
+
+**Rule.** Nothing removes an entry marked `failed_delivery` except an operator who names it. No run reads it again, and nothing about it is written into the thread's messages. `spindle status <thread>` prints one line for each such entry after the `queued` line, `failed delivery <seq> <kind> queued <time>`, with the time in the format of `since`. With no such entry it prints nothing more than today. `spindle recover <thread> --discard-failed <seq>` removes that one entry, prints `thread <thread>: removed failed delivery <seq> (<kind>). Nothing else changed.`, and exits 0. With `--discard-failed` the command settles no run, so it may run while the thread runs. It changes nothing and exits 1 for a sequence that is not a failed delivery of that thread (`spindle: thread <thread> has no failed delivery <seq>`) and for any entry of a terminated thread (`spindle: thread <thread> is terminated, so its queue is kept`), by decision 9. A sender that waits on the entry gets `failedDelivery: true` in its `Delivery`. Today it reads only `stillQueued: false`, which says the message was taken.
+
+**Reason.** The entry is a request that a person or a tool made, so only the operator may drop it. A retry under the same decoder fails the same way, and putting the entry back at its old sequence would deliver it ahead of entries already taken. Neither command prints the payload. Its bytes were unreadable, and printed raw they could carry terminal control codes. The `queue` table keeps them for `sqlite3`.
+
+**Left alone.** A well-formed entry for a tool that no longer exists is delivered and gets an error result. An SQLite error while reading the head rolls back and leaves the entry pending.
+
+### 2. The holder row of a killed process
+
+**Rule.** A holder row is removed once its process is observed gone and no running thread names it. The probe is the one that decides loss today: ESRCH, a pid that is not positive, or this process's pid without a local registration. Recovery removes the row in the transaction that settles the dead holder's last claim, whether a status read, the control poll, or `spindle recover` settled it. The control poll of every supervisor also removes a dead holder that held no claim, such as a killed idle `spindle chat`. An orderly exit deletes its own row, as today.
+
+A row whose process probes alive is never removed, even with no claim and even after `spindle recover --force` settled its thread. A pid that the system gave to an unrelated process keeps its stale row until that process exits.
+
+**Reason.** Removing a live holder's row would make its next claim look lost to every observer, which takes over a live process. A row without a running claim takes part in no decision, so a stale one costs a probe per poll and nothing else.
+
+**What the operator sees.** Nothing new. `held by process` stops once the thread settles, as today.
+
+### 3. A nested tool is pending from the call
+
+**Rule.** A call to `state.invokeTool` from a live handle counts as pending for its flow from the call itself, registered in the same synchronous step, until its promise settles. That covers the lookup, the `uses` check, required variables, and argument validation, which can run user code through an async schema. The operation is named `tool <name>`, so `onHold` and the waiting line show the same name as for a tool already entered. A run that ends while such a call is unsettled waits for it under decision 5. This replaces decision 5's sentence "A nested call counts from the moment its tool code is entered".
+
+A nested call that is refused before `execute` starts resolves, and does not reject, with an error `ToolResult`. A `uses` or schema refusal gives the error it gives today. A stop or an abort that reaches the call before `execute` gives `notRun`. Today an abort during validation rejects the promise with an interruption. A call from a handle that had already expired is not a nested call. It rejects with the handle's error and registers nothing, like every other method of that handle (decision 6).
+
+**Left alone.** A terminate still settles at once without waiting. Hooks of a nested write still register when the hook is entered.
+
+### 4. An abort that arrives while a run waits for its callbacks
+
+**Rule.** Once the step loop has returned its end (success, stop, cap, or failure) and the run waits for its callbacks, an abort no longer changes that end. The abort fires the signal, and the run still waits under decision 5. It then settles with the end it had, with its status, reason, and error. A failed last step reports `failed`, `step_error` or `fatal_error`, and its error, not `idle aborted_by_user`. An abort from an orderly exit ends the wait at once and settles with that end too. A terminate settles `idle aborted` and a loss settles `failed execution_lost`, as today.
+
+Queued work follows the end, not the abort. After a failure it stays queued for a waiting sender or the next trigger, as after any failure. After a success the flow does not continue in place, because the abort asked it to stop. After the callbacks return, the supervisor starts a fresh flow for the queued work, as decision 5 does after any abort. After an orderly exit nothing starts. A run at the step cap with work in its queue ends as the cap ends any run, with `max_total_steps` and the work left queued for the next trigger, whatever ended its wait. A supervisor that closes during the wait settles the run and takes no queued work.
+
+**Reason.** Completed work decided the end, and the error is the only record of why the run failed. An abort during the wait asks for less waiting, not for a different history. The build moves this wait out of the interruptible region into a second wait after it.
+
+### Choices the operator can overrule
+
+- **Discard and never retry.** A `--retry-failed <seq>` that admits the payload again at the tail would rescue an entry that a newer Spindle can read. No Spindle version writes such an entry yet.
+- **No note in the thread.** A system message about the failed entry would tell the model, but it is a write nobody asked for, about content Spindle could not read.
+- **A failure leaves the queue after an abort in the wait.** The other choice starts a fresh flow, as an abort in the middle of a step does, so that a Ctrl-C a moment earlier or later treats the queue the same way. This note keeps the failure rule in one place instead.
 
 ## The draft the decisions were taken from
 
