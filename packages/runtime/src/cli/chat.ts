@@ -394,4 +394,8 @@ export const chatCommand = Command.make(
           }),
       )
     }, escapeControls),
-).pipe(Command.withDescription("Chat with an agent on one thread until end of input or Ctrl-C"))
+).pipe(
+  Command.withDescription(
+    "Chat with an agent on one thread until end of input or Ctrl-C. The terminal limits typed or pasted lines (1,024 bytes or more never arrive on macOS), so pipe longer input into chat or use spindle send.",
+  ),
+)

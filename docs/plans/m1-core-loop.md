@@ -1123,6 +1123,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - A run that finishes or fails keeps the thread while a tool it started through `invokeTool` is still running or a hook started by an unawaited write is still pending. The nested tool can write through its own handle until it returns, reaches its own `--tool-timeout` limit, or the run is aborted. New sends wait in the queue. The command names the operation holding the thread and explains how to exit.
 
+- In a macOS pseudo-terminal on Node and Bun, a typed or pasted line of 1,024 bytes or more never reached `spindle chat`, and chat waited for input. A reviewer reported truncation at 4,095 bytes on Linux (Linux not measured). Pipe longer lines into chat or pass them to `spindle send -m`.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
