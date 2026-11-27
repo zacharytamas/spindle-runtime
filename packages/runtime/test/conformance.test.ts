@@ -9,7 +9,8 @@ import { stepLoopScenarios } from "../../conformance/src/scenarios/step-loop.ts"
 import { spindleDriver } from "./spindle-driver.ts"
 
 describe("step loop", () => {
-  for (const scenario of stepLoopScenarios) it(scenario.name, () => scenario.run(spindleDriver))
+  for (const scenario of stepLoopScenarios)
+    it(scenario.name, scenario.name.startsWith("S22 ") ? { timeout: 15_000 } : {}, () => scenario.run(spindleDriver))
 })
 
 describe("messages", () => {

@@ -1,18 +1,19 @@
 import type {
   AgentDefinition,
   HookExecutionSource,
-  LLMMessage,
+  HookToolCall,
   Message,
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
-import { Clock, Context, Data, Duration, Effect } from "effect"
+import { Clock, Context, Data, Duration, Effect, Predicate, Schema } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import { toJson } from "../store/json.ts"
+import { parseJson, toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
-import { readResult } from "./tools.ts"
+import { isRequestHistory, type RequestMessage } from "./llm-history.ts"
+import { isToolResult, readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
 // Hooks section 1.2 asks for a timeout and names none. One setting covers every hook call.
@@ -24,44 +25,41 @@ export const HookTimeout = Context.Reference<Duration.Duration>("spindle/HookTim
 // chain of such writes may go.
 export const NestedWriteLimit = Context.Reference<number>("spindle/NestedWriteLimit", { defaultValue: () => 8 })
 
-// The value each position hands its hooks in turn. A transforming hook replaces it, an observing hook only sees it.
-export interface Values {
-  readonly after_thread_created: undefined
-  readonly after_system_message: string
-  readonly filter_messages: ReadonlyArray<Message>
-  readonly prefilter_llm_history: Array<LLMMessage>
-  readonly before_create_message: Message
-  readonly after_create_message: Message
-  readonly before_update_message: Record<string, unknown>
-  readonly after_update_message: Message
-  readonly before_store_tool_result: ToolResult
-  readonly after_tool_call_success: ToolResult
-  readonly after_tool_call_failure: ToolResult
-  readonly tool_call_started: string | undefined
-  readonly tool_call_done: ToolResult
+interface ObserverArgs {
+  after_thread_created: []
+  after_create_message: [Message]
+  after_update_message: [Message]
+  tool_call_started: [HookToolCall, string | undefined]
+  tool_call_done: [HookToolCall, ToolResult]
 }
 
-export type Position = keyof Values
+interface Values {
+  after_system_message: string
+  filter_messages: ReadonlyArray<Message>
+  prefilter_llm_history: Array<RequestMessage>
+  before_create_message: Message
+  before_update_message: Record<string, unknown>
+  before_store_tool_result: ToolResult
+  after_tool_call_success: ToolResult
+  after_tool_call_failure: ToolResult
+}
 
-type Vetoes = "before_create_message" | "before_update_message"
+type Veto = "before_create_message" | "before_update_message"
+type Position = keyof Values | keyof ObserverArgs
+type Prefix<K> = K extends "before_update_message"
+  ? [string]
+  : K extends "after_tool_call_success" | "after_tool_call_failure" | "before_store_tool_result"
+    ? [HookToolCall]
+    : []
 
 const INVALID = Symbol("invalid")
 
-interface Row<V> {
+interface Transform<V> {
   readonly where: string
-  // The next value, or INVALID when the hook returned something this position cannot take.
   readonly accept: (returned: unknown, current: V) => V | typeof INVALID
   readonly expects: string
-  // keep: the next hook and the loop get the value the failed hook was given. veto: a write its caller may refuse
-  // does not happen. A write the execution cannot go on without keeps the value instead.
-  readonly failure: "keep" | "veto"
   readonly kept: string
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-const ROLES: ReadonlyArray<unknown> = ["system", "user", "assistant", "tool"]
 
 // A hook's return is user data. Reading it once into plain JSON data runs every getter here, so a getter that throws
 // fails that hook, no later read can throw, and the store can hold what is left.
@@ -70,25 +68,13 @@ const plain = (value: unknown): unknown => {
   return typeof text === "string" ? JSON.parse(text) : INVALID
 }
 
-const observe = <V>(where: string): Row<V> => ({
-  where,
-  accept: (_returned, current) => current,
-  expects: "anything",
-  failure: "keep",
-  kept: "went on",
-})
-
 // Hooks section 8.6 writes metadata as JSON text, and Messages section 1 types it as an object, so a string that
 // holds a JSON object is read as that object.
 const metadataOf = (value: unknown): Record<string, unknown> | undefined | typeof INVALID => {
-  if (value === undefined || isRecord(value)) return value
+  if (value === undefined || Predicate.isObject(value)) return value
   if (typeof value !== "string") return INVALID
-  try {
-    const parsed: unknown = JSON.parse(value)
-    return isRecord(parsed) ? parsed : INVALID
-  } catch {
-    return INVALID
-  }
+  const parsed = parseJson(value)
+  return Predicate.isObject(parsed) ? parsed : INVALID
 }
 
 // The text fields of a stored message, which a hook may set and Spindle redacts when a hook changes them.
@@ -114,10 +100,10 @@ const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
 const isMessage = (value: unknown): value is Message =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   isString(value.id) &&
   isCount(value.created_at) &&
-  ROLES.includes(value.role) &&
+  (value.role === "system" || value.role === "user" || value.role === "assistant" || value.role === "tool") &&
   (value.content === null || isString(value.content)) &&
   TEXT_FIELDS.every((field) => isText(value[field])) &&
   oneOf(value.tool_status, ["success", "error", null]) &&
@@ -125,14 +111,14 @@ const isMessage = (value: unknown): value is Message =>
   optional(value.depth, isCount) &&
   optional(value.silent, (silent) => typeof silent === "boolean") &&
   optional(value.attachments, (list) => list === null || (Array.isArray(list) && list.every(isAttachmentRef))) &&
-  optional(value.metadata, isRecord)
+  optional(value.metadata, Predicate.isObject)
 
 // The returned message is stored as it is, so every field it sets must be one the store can hold. A hook may not
 // change which message a record is, so the role, the tool calls, and a tool result's call id stay as the hook was
 // given them. The loop runs the calls the model returned, and each result must answer a call that the record lists.
 const acceptMessage = (returned: unknown, current: Message): Message | typeof INVALID => {
   const value = plain(returned)
-  if (!isRecord(value)) return INVALID
+  if (!Predicate.isObject(value)) return INVALID
   const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
   const message = { ...value, metadata }
@@ -143,87 +129,6 @@ const acceptMessage = (returned: unknown, current: Message): Message | typeof IN
     (current.role !== "tool" || message.tool_call_id === current.tool_call_id)
     ? message
     : INVALID
-}
-
-const parses = (text: string) => {
-  try {
-    return isRecord(JSON.parse(text))
-  } catch {
-    return false
-  }
-}
-
-const DETAIL = ["auto", "low", "high"]
-
-// The ContentPart union of the package's provider types.
-const isContentPart = (value: unknown) => {
-  if (!isRecord(value)) return false
-  switch (value.type) {
-    case "text":
-      return isString(value.text)
-    case "image":
-      return isString(value.data) && isString(value.mediaType) && oneOf(value.detail, DETAIL)
-    case "image_url":
-      return isRecord(value.image_url) && isString(value.image_url.url) && oneOf(value.image_url.detail, DETAIL)
-    case "file":
-      return isString(value.data) && isString(value.mediaType) && optional(value.filename, isString)
-    default:
-      return false
-  }
-}
-
-// Array.prototype.every skips a hole in an array, and the request conversion reads a hole as undefined.
-const isListOf = (value: unknown, test: (item: unknown) => boolean) =>
-  Array.isArray(value) && Array.from(value).every(test)
-
-const isParts = (value: unknown) => isListOf(value, isContentPart)
-
-const isCall = (value: unknown) =>
-  isRecord(value) &&
-  isString(value.id) &&
-  isRecord(value.function) &&
-  isString(value.function.name) &&
-  ((isRecord(value.function.arguments) && isString(toJson(value.function.arguments))) ||
-    (isString(value.function.arguments) && parses(value.function.arguments))) &&
-  optional(value.extra_content, (extra) => isRecord(extra) && isString(toJson(extra)))
-
-const DETAIL_TYPES: ReadonlyArray<unknown> = ["text", "summary", "encrypted"]
-
-// The ProviderReasoningDetail type of the package, the shape every provider reads a detail in.
-const isReasoningDetail = (value: unknown) =>
-  isRecord(value) &&
-  DETAIL_TYPES.includes(value.type) &&
-  optional(value.id, isString) &&
-  optional(value.text, isString) &&
-  optional(value.data, isString) &&
-  optional(value.format, isString)
-
-// Hooks section 3.3 makes the returned array the provider request history, so each message must be one that a
-// provider message type of the package holds as it is. Only a user or a tool message may hold content parts.
-const isLLMMessage = (value: unknown) => {
-  if (!isRecord(value)) return false
-  switch (value.role) {
-    case "system":
-      return isString(value.content)
-    case "user":
-      return isString(value.content) || isParts(value.content)
-    case "assistant":
-      return (
-        optional(value.content, (content) => content === null || isString(content)) &&
-        optional(value.tool_calls, (calls) => isListOf(calls, isCall)) &&
-        optional(value.reasoning_content, isString) &&
-        optional(value.reasoning_details, (details) => isListOf(details, isReasoningDetail))
-      )
-    case "tool":
-      return (
-        isString(value.tool_call_id) &&
-        optional(value.name, isString) &&
-        oneOf(value.tool_status, ["success", "error"]) &&
-        (isString(value.content) || (value.tool_status !== "error" && isParts(value.content)))
-      )
-    default:
-      return false
-  }
 }
 
 // The array a request hook returns shapes one request and is never stored, so a structured clone, which is cheaper
@@ -237,7 +142,7 @@ const acceptMessages = (returned: unknown) => {
 // return is refused rather than stored in part. A key the caller passed and the hook kept is the caller's.
 const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
   const value = plain(returned)
-  if (!isRecord(value)) return INVALID
+  if (!Predicate.isObject(value)) return INVALID
   const metadata = metadataOf(value.metadata)
   if (metadata === INVALID) return INVALID
   const patch = { ...value, ...(metadata === undefined ? {} : { metadata }) }
@@ -250,94 +155,87 @@ const acceptUpdate = (returned: unknown, current: Record<string, unknown>) => {
   return patch
 }
 
-const isNewFile = (value: unknown) =>
-  isRecord(value) &&
-  isString(value.name) &&
-  isString(value.mimeType) &&
-  isString(value.data) &&
-  optional(value.width, isCount) &&
-  optional(value.height, isCount)
+const isNewFile = Schema.is(
+  Schema.Struct({
+    name: Schema.String,
+    mimeType: Schema.String,
+    data: Schema.String,
+    width: Schema.optional(Schema.Natural),
+    height: Schema.optional(Schema.Natural),
+  }),
+)
 
-// Hooks section 6.3: each attachment is a new file or a reference to a stored one.
 const acceptResult = (returned: unknown) => {
   const result = readResult(returned)
-  const value = result === undefined ? INVALID : plain(result)
-  return isRecord(value) &&
-    optional(
-      value.attachments,
-      (list) => Array.isArray(list) && list.every((item) => isAttachmentRef(item) || isNewFile(item)),
-    )
-    ? (value as unknown as ToolResult)
+  if (result === undefined) return INVALID
+  const value = plain(result)
+  return isToolResult(value) &&
+    (value.attachments === undefined || value.attachments.every((item) => isAttachmentRef(item) || isNewFile(item)))
+    ? value
     : INVALID
 }
 
-const branch = (where: string): Row<ToolResult> => ({
+const branch = (where: string): Transform<ToolResult> => ({
   where,
   accept: (returned, current) => (returned === null ? current : acceptResult(returned)),
   expects: "a ToolResult or null",
-  failure: "keep",
   kept: "kept the result the hook was given",
 })
 
-// Runtime section 4, Hooks sections 3 to 5, and Messages section 3. The loop calls each position at the place
-// that where names, and reads accept and failure from here. No other code decides what a hook's return means.
-export const POSITIONS: { readonly [K in Position]: Row<Values[K]> } = {
-  after_thread_created: observe("after a thread is created, before any message"),
+const observers: Record<keyof ObserverArgs, string> = {
+  after_thread_created: "after a thread is created, before any message",
+  after_create_message: "after a message is stored",
+  after_update_message: "after a message is updated",
+  tool_call_started: "when a tool call starts in the model's stream",
+  tool_call_done: "after a tool call's result is stored",
+}
+
+const transforms: { [K in keyof Values]: Transform<Values[K]> } = {
   after_system_message: {
     where: "after the system prompt is interpolated, before the history snapshot",
     accept: (returned, current) =>
       returned === null || returned === undefined ? current : typeof returned === "string" ? returned : INVALID,
     expects: "a string, null, or undefined",
-    failure: "keep",
     kept: "kept the system message the hook was given",
   },
   filter_messages: {
     where: "once per context assembly, on the history snapshot",
     accept: acceptMessages,
     expects: "an array of messages",
-    failure: "keep",
     kept: "kept the history the hook was given",
   },
   prefilter_llm_history: {
     where: "after the history becomes provider messages, before the request",
     accept: (returned) => {
       const value: unknown = structuredClone(returned)
-      return isListOf(value, isLLMMessage) ? (value as Array<LLMMessage>) : INVALID
+      return isRequestHistory(value) ? value : INVALID
     },
     expects: "an array of messages that provider messages can hold",
-    failure: "keep",
     kept: "kept the provider messages the hook was given",
   },
   before_create_message: {
     where: "before a message is stored",
     accept: acceptMessage,
     expects: "a message the store can hold, with the role, the tool calls, and the call id it was given",
-    failure: "veto",
     kept: "kept the message the hook was given",
   },
-  after_create_message: observe("after a message is stored"),
   before_update_message: {
     where: "before a message is updated",
     accept: acceptUpdate,
     expects: "updates that change only content and metadata",
-    failure: "veto",
     kept: "kept the updates the hook was given",
   },
-  after_update_message: observe("after a message is updated"),
   before_store_tool_result: {
     where: "before a tool result is stored",
     accept: acceptResult,
     expects: "a ToolResult",
-    failure: "keep",
     kept: "kept the result the hook was given",
   },
   after_tool_call_success: branch("after a tool call succeeds, before its result is stored"),
   after_tool_call_failure: branch("after a tool call fails, before its result is stored"),
-  tool_call_started: observe("when a tool call starts in the model's stream"),
-  tool_call_done: observe("after a tool call's result is stored"),
 }
 
-export interface SelectedHook {
+interface SelectedHook {
   readonly id: string
   readonly definition: Definition
   readonly execute: (...args: ReadonlyArray<unknown>) => unknown
@@ -363,12 +261,10 @@ export interface HookScope {
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
 
-export const has = (scope: HookScope, position: Position) => scope.set.byPosition.has(position)
-
 export const countHooks = (scope: HookScope, position: Position) => scope.set.byPosition.get(position)?.length ?? 0
 
 const isHook = (value: unknown): value is { hook: string; id: string; execute: SelectedHook["execute"] } =>
-  isRecord(value) &&
+  Predicate.isObject(value) &&
   typeof value.hook === "string" &&
   typeof value.id === "string" &&
   typeof value.execute === "function"
@@ -437,79 +333,120 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-// Hooks section 1.2: a hook's failure is logged with its id and type only. The thrown error and the hook's
-// arguments can hold message content or a secret, so neither reaches the log.
-export const runHooks = <K extends Position>(
+// A hook may block the thread past its deadline before the timer gets a turn.
+const invoke = Effect.fnUntraced(function* (
   scope: HookScope,
-  position: K,
-  lead: ReadonlyArray<unknown>,
-  value: Values[K],
-  options: {
-    readonly essential?: boolean
-    // The depth of the write these hooks decorate. Anything else they decorate has depth 0.
-    readonly depth?: number
-    // A check the return passes only against stored state, such as an id that no message holds yet. It gives the
-    // problem, or undefined when there is none.
-    readonly check?: (next: Values[K], current: Values[K], hook: string) => Effect.Effect<string | undefined>
-  } = {},
-): Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never> =>
+  hook: SelectedHook,
+  call: HookCall,
+  args: () => readonly unknown[],
+  timeout: Duration.Duration,
+) {
+  const execute = () => hook.execute(scope.stateFor(hook, call), ...args(), { source: { ...scope.set.source } })
+  const started = yield* Clock.currentTimeMillis
+  const result = yield* Effect.tryPromise({
+    try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, execute) : call.invoke(execute)),
+    catch: () => "threw an error",
+  }).pipe(Effect.timeoutOption(timeout), Effect.result)
+  if (
+    (result._tag === "Success" && result.success._tag === "None") ||
+    (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+  )
+    call.expire()
+  if (!call.expired) {
+    if (result._tag === "Failure") return { problem: result.failure } as const
+    if (result.success._tag === "Some") return { value: result.success.value } as const
+  }
+  return { problem: `did not settle within ${Duration.format(timeout)}` } as const
+})
+
+interface HookOptions<V> {
+  copyInitial?: (value: V) => V
+  depth?: number
+  check?: (next: V, current: V, hook: string) => Effect.Effect<string | undefined>
+}
+
+function accept<V>(row: Transform<V>, returned: unknown, current: V): V | typeof INVALID {
+  try {
+    return row.accept(returned, current)
+  } catch {
+    return INVALID
+  }
+}
+
+const pipeline = <V, E = never>(
+  scope: HookScope,
+  position: Position,
+  contract: string | Transform<V>,
+  prefix: readonly unknown[],
+  initial: V,
+  options: HookOptions<V>,
+  refuse?: (error: HookFailed) => Effect.Effect<never, E>,
+) =>
   Effect.gen(function* () {
     const hooks = scope.set.byPosition.get(position)
-    if (hooks === undefined) return value
-    const row = POSITIONS[position] as Row<Values[K]>
+    if (!hooks) return initial
     const timeout = yield* HookTimeout
-    const check = options.check ?? (() => Effect.undefined)
-    let current = value
+    const transform = typeof contract === "string" ? undefined : contract
+    let current = initial
     for (const hook of hooks) {
       const call = Object.assign(new Callback(), { hook: hook.id, position, depth: (options.depth ?? 0) + 1 })
-      const invoke = () =>
-        hook.execute(
-          scope.stateFor(hook, call),
-          ...lead.map((arg) => structuredClone(arg)),
-          ...(position === "after_thread_created" ? [] : [structuredClone(current)]),
-          { source: { ...scope.set.source } },
-        )
-      const started = yield* Clock.currentTimeMillis
-      const outcome = yield* Effect.tryPromise({
-        try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, invoke) : call.invoke(invoke)),
-        catch: () => "threw an error",
-      }).pipe(Effect.timeoutOption(timeout), Effect.result)
-      // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
-      if (
-        (outcome._tag === "Success" && outcome.success._tag === "None") ||
-        (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+      const returned = yield* invoke(
+        scope,
+        hook,
+        call,
+        () => {
+          const args = prefix.map((arg) => structuredClone(arg))
+          if (transform)
+            args.push(
+              current === initial && options.copyInitial ? options.copyInitial(initial) : structuredClone(current),
+            )
+          return args
+        },
+        timeout,
       )
-        call.expire()
-      let problem: string
-      let late = ""
-      if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {
-        problem =
-          call.expired || outcome._tag === "Success"
-            ? `did not settle within ${Duration.format(timeout)}`
-            : outcome.failure
-        if (call.expired)
-          late =
-            " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
-      } else {
-        let next: Values[K] | typeof INVALID
-        try {
-          next = row.accept(outcome.success.value, current)
-        } catch {
-          next = INVALID
+      let problem = returned.problem
+      if (problem === undefined) {
+        if (!transform) continue
+        const next = accept(transform, returned.value, current)
+        if (next === INVALID) problem = `returned a value that is not ${transform.expects}`
+        else {
+          problem = options.check ? yield* options.check(next, current, hook.id) : undefined
+          if (problem === undefined) {
+            current = next
+            continue
+          }
         }
-        const found =
-          next === INVALID ? `returned a value that is not ${row.expects}` : yield* check(next, current, hook.id)
-        if (found === undefined) {
-          current = next as Values[K]
-          continue
-        }
-        problem = found
       }
-      const veto = row.failure === "veto" && options.essential !== true
-      yield* Effect.logWarning(
-        `Hook ${hook.id} (${position}, ${row.where}) ${problem}. Spindle ${veto ? "refused the change" : row.kept}.${late}`,
-      )
-      if (veto) return yield* new HookFailed({ hook: hook.id, position, problem })
+      const late = call.expired
+        ? " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
+        : ""
+      const where = typeof contract === "string" ? contract : contract.where
+      const action = refuse ? "refused the change" : (transform?.kept ?? "went on")
+      yield* Effect.logWarning(`Hook ${hook.id} (${position}, ${where}) ${problem}. Spindle ${action}.${late}`)
+      if (refuse) return yield* refuse(new HookFailed({ hook: hook.id, position, problem }))
     }
     return current
-  }) as Effect.Effect<Values[K], K extends Vetoes ? HookFailed : never>
+  })
+
+export const observeHooks = <K extends keyof ObserverArgs>(
+  scope: HookScope,
+  position: K,
+  args: ObserverArgs[K],
+  options: Pick<HookOptions<void>, "depth"> = {},
+) => pipeline(scope, position, observers[position], args, undefined, options)
+
+export const transformHooks = <K extends Exclude<keyof Values, "before_update_message">>(
+  scope: HookScope,
+  position: K,
+  prefix: Prefix<K>,
+  value: Values[K],
+  options: HookOptions<Values[K]> = {},
+) => pipeline(scope, position, transforms[position], prefix, value, options)
+
+export const vetoHooks = <K extends Veto>(
+  scope: HookScope,
+  position: K,
+  prefix: Prefix<K>,
+  value: Values[K],
+  options: HookOptions<Values[K]> = {},
+) => pipeline(scope, position, transforms[position], prefix, value, options, Effect.fail)

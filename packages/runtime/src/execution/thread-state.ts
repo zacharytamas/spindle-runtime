@@ -6,7 +6,7 @@ import type {
   ThreadStatus,
   ToolResult,
 } from "@standardagents/spec"
-import { Cause, Context, Data, Effect, Exit } from "effect"
+import { Cause, Context, Data, Effect, Exit, Predicate } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
 import { type Definition, Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
@@ -26,8 +26,8 @@ import type { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
-import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
-import { createMessage, updateMessage } from "./messages.ts"
+import { type HookCall, HookExpired, type HookScope, type HookSet } from "./hooks.ts"
+import { injectMessage, updateMessage } from "./messages.ts"
 import { mapStrings } from "./redact.ts"
 import { type QueueRefused, queueTarget } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
@@ -60,24 +60,21 @@ export interface ThreadControl {
   readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, WriteError>
 }
 
-export class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
+class ExecutionEnded extends Data.TaggedError("ExecutionEnded")<{ readonly flowId: string }> {
   override get message() {
     return `Execution ${this.flowId} has ended, so Spindle refused this call from a ThreadState that belongs to it`
   }
 }
 
-export class SecretInArguments extends Data.TaggedError("SecretInArguments") {
+class SecretInArguments extends Data.TaggedError("SecretInArguments") {
   override get message() {
     return "queueTool arguments contain a secret"
   }
 }
 
-export class InvalidArguments extends Data.TaggedError("InvalidArguments")<{ readonly message: string }> {}
+class InvalidArguments extends Data.TaggedError("InvalidArguments")<{ readonly message: string }> {}
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-export interface StateContext {
+interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | Stores>
   readonly callback?: Callback
@@ -87,7 +84,7 @@ export interface StateContext {
   readonly from: Definition | undefined
   readonly context: Record<string, unknown>
   readonly secrets: Secrets
-  readonly invoke: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
+  readonly invoke?: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
   // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
   readonly hooks: HookScope
   // The hook call this state belongs to, when a hook gets it.
@@ -210,8 +207,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   // A read of the store finishes in the call that starts it, because no transaction spans an await. Each read gets
   // its own copy, so a tool or a hook that changes it changes nothing that a later read sees.
   const readHistory = (history: History) => () => {
-    const refused = expired()
-    if (refused !== undefined) throw refused
+    check()
     return Effect.runSyncWith(state.services)(history.read).rows.map(({ message }) => copyMessage(message))
   }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
@@ -259,17 +255,13 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     getMessage: (messageId) => run(messageStore.getMessage(threadId, messageId)),
     injectMessage: (input) =>
       run(
-        createMessage(
-          write,
-          {
-            role: input.role,
-            content: input.content,
-            status: "completed",
-            ...(input.silent === undefined ? {} : { silent: input.silent }),
-            ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-          },
-          "injection",
-        ).pipe(Effect.map((inserted) => inserted.message)),
+        injectMessage(write, {
+          role: input.role,
+          content: input.content,
+          status: "completed",
+          ...(input.silent === undefined ? {} : { silent: input.silent }),
+          ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+        }).pipe(Effect.map((inserted) => inserted.message)),
       ),
     updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
     deleteMessage: (messageId) => run(messageStore.deleteMessage(threadId, messageId, origin)),
@@ -309,7 +301,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
       runSync(
         Effect.gen(function* () {
           const given: unknown = args === undefined ? {} : args
-          if (!isRecord(given))
+          if (!Predicate.isObject(given))
             return yield* new InvalidArguments({
               message: `queueTool(${String(toolName)}) takes an object of arguments`,
             })
@@ -329,7 +321,15 @@ export const makeThreadState = (state: StateContext): ThreadState => {
           yield* state.control.queueTool(target, plain, origin)
         }),
       ),
-    invokeTool: (toolName, args) => run(state.invoke(toolName, args)),
+    invokeTool: (toolName, args) =>
+      run(
+        state.invoke
+          ? state.invoke(toolName, args)
+          : Effect.succeed({
+              status: "error",
+              error: `invokeTool(${toolName}) needs a calling tool and its uses list`,
+            }),
+      ),
 
     scheduleEffect: unavailableAsync("scheduleEffect", "M4"),
     getScheduledEffects: unavailableAsync("getScheduledEffects", "M4"),
@@ -377,4 +377,27 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     decide: unavailableAsync("decide", "M4"),
     runCode: unavailable("runCode", "M5"),
   }
+}
+
+// At rest a caller shares its context with the creation hooks. Each inbound delivery hook gets a fresh context.
+export function atRestHooks(
+  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner"> & {
+    context?: Record<string, unknown>
+  },
+  set: HookSet,
+): HookScope {
+  const hooks: HookScope = {
+    ...(base.owner && { execution: base.owner }),
+    set,
+    stateFor: (hook, call) =>
+      makeThreadState({
+        ...base,
+        execution: undefined,
+        context: base.context ?? {},
+        from: hook.definition,
+        hooks,
+        call,
+      }),
+  }
+  return hooks
 }

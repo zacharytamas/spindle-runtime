@@ -1,6 +1,5 @@
 import type {
   AttachmentRef,
-  LLMMessage,
   Message,
   PromptDefinition,
   ProviderAssistantMessage,
@@ -8,23 +7,16 @@ import type {
   ProviderReasoningDetail,
   ProviderRequest,
   ProviderToolCallPart,
-  ProviderUserMessage,
 } from "@standardagents/spec"
-import { Effect } from "effect"
+import { Effect, Predicate } from "effect"
 import type { Definition } from "../registry/Registry.ts"
+import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
+import { copyMessage } from "./history.ts"
+import { countHooks, transformHooks } from "./hooks.ts"
+import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
+import type { SideScope, ThreadScope } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-const parseJson = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
 
 export const promptScope = (turn: Turn): EnvScope => ({
   agent: turn.agent.value.env,
@@ -36,7 +28,7 @@ export const promptScope = (turn: Turn): EnvScope => ({
 // against the variables and env of the prompt being rendered, never those of the included one. Prompts section
 // 2.1: a system prompt holds no secret. An env part may name only a variable that the rendered prompt declares as
 // text, that nothing marks secret, and that a definition supplies, and the finished text may hold no barred value.
-export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: Secrets) {
+const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: Secrets) {
   const root = turn.prompt
   const variables = root.value.variables ?? []
   const scope = promptScope(turn)
@@ -92,51 +84,62 @@ const holdsSecret = (text: string, secrets: Secrets) =>
   [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
 
 // Runs on the finished system prompt, after after_system_message, so that a hook cannot put a secret into it either.
-export const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
+const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
   holdsSecret(text, secrets)
-    ? new SetupError({
-        message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
-      })
+    ? Effect.fail(
+        new SetupError({
+          message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
+        }),
+      )
     : Effect.void
 
 // Runs after the last request hook, so that a system message that filter_messages or prefilter_llm_history adds is
 // held to the rule of the system prompt.
-export const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
+const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
   messages.some((message) => message.role === "system" && holdsSecret(message.content, secrets))
-    ? new SetupError({
-        message:
-          "A system message in the request to the model holds a secret value. A system message never holds a secret.",
-      })
+    ? Effect.fail(
+        new SetupError({
+          message:
+            "A system message in the request to the model holds a secret value. A system message never holds a secret.",
+        }),
+      )
     : Effect.void
 
 export interface HistoryView {
   readonly side: Side
   // The ids of the messages before the one from the other side that started this turn. A message that filter_messages
   // adds has no such id, so it belongs to the current exchange.
-  readonly past: ReadonlySet<string>
+  past: ReadonlySet<string>
   readonly includeChat: boolean
   readonly includePastTools: boolean
   readonly includeReasoning: boolean
   readonly acceptsDetails: (message: Message) => boolean
 }
 
-export const toolCallsOf = (message: Message): Array<ProviderToolCallPart> => {
+function callEntries(message: Message) {
   const parsed = message.tool_calls == null ? undefined : parseJson(message.tool_calls)
-  if (!Array.isArray(parsed)) return []
+  return Array.isArray(parsed)
+    ? parsed.filter(
+        (entry: unknown): entry is { id: string; function: Record<string, unknown> } =>
+          Predicate.isObject(entry) && typeof entry.id === "string" && Predicate.isObject(entry.function),
+      )
+    : []
+}
+
+export const toolCallsOf = (message: Message): Array<ProviderToolCallPart> => {
   const extra =
-    isRecord(message.metadata) && isRecord(message.metadata.tool_call_extra) ? message.metadata.tool_call_extra : {}
-  return parsed.flatMap((entry: unknown) => {
-    if (!isRecord(entry) || typeof entry.id !== "string" || !isRecord(entry.function)) return []
+    Predicate.isObject(message.metadata) && Predicate.isObject(message.metadata.tool_call_extra)
+      ? message.metadata.tool_call_extra
+      : {}
+  return callEntries(message).map((entry) => {
     const args = typeof entry.function.arguments === "string" ? parseJson(entry.function.arguments) : undefined
     const extraContent = extra[entry.id]
-    return [
-      {
-        id: entry.id,
-        name: String(entry.function.name),
-        arguments: isRecord(args) ? args : {},
-        ...(isRecord(extraContent) ? { extraContent } : {}),
-      },
-    ]
+    return {
+      id: entry.id,
+      name: String(entry.function.name),
+      arguments: Predicate.isObject(args) ? args : {},
+      ...(Predicate.isObject(extraContent) ? { extraContent } : {}),
+    }
   })
 }
 
@@ -182,20 +185,23 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDeliver
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
 // A hook can add a message that has no stored position.
-export interface RequestRow {
+interface RequestRow {
   readonly message: Message
   readonly seq?: number
   readonly callerSeq?: number | null
 }
 
-const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+const requestOrder = (
+  history: ReadonlyArray<RequestRow>,
+  callsAt: (index: number) => ReadonlyArray<{ id: string }>,
+) => {
   const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
   const holderOf = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     if (message.role === "tool")
       return callerSeq != null ? bySeq.get(callerSeq) : holder.get(message.tool_call_id ?? "")
     if (seq !== undefined) bySeq.set(seq, index)
-    for (const call of parsed[index] ?? []) holder.set(call.id, index)
+    for (const call of callsAt(index)) holder.set(call.id, index)
     return undefined
   }
   let last = -1
@@ -208,7 +214,7 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
       last = index
       position = -1
     } else if (at !== undefined) {
-      const next = (parsed[at] ?? []).findIndex((call) => call.id === message.tool_call_id)
+      const next = callsAt(at).findIndex((call) => call.id === message.tool_call_id)
       if (at !== last || next < position) stored = false
       position = next
     }
@@ -221,13 +227,15 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
     const at = holderOf(message, index)
     if (at === undefined) return
     moved.add(index)
-    results.set(at, [...(results.get(at) ?? []), index])
+    const group = results.get(at)
+    if (group) group.push(index)
+    else results.set(at, [index])
   })
   const order: Array<number> = []
   history.forEach((_message, index) => {
     if (moved.has(index)) return
     order.push(index)
-    const ids = (parsed[index] ?? []).map((call) => call.id)
+    const ids = callsAt(index).map((call) => call.id)
     const at = (result: number) => ids.indexOf(history[result]?.message.tool_call_id ?? "")
     order.push(...(results.get(index) ?? []).sort((a, b) => at(a) - at(b)))
   })
@@ -237,17 +245,22 @@ const requestOrder = (history: ReadonlyArray<RequestRow>, parsed: ReadonlyArray<
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
 // includeChat and includePastTools admit. A call and its result are shown or hidden together.
-export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryView): Array<ProviderMessage> => {
+const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryView): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
   const shownBySeq = new Map<number, ReadonlyArray<ProviderToolCallPart>>()
   const messages: Array<ProviderMessage> = []
-  const parsed = history.map(({ message }) =>
-    (message.role === "user" || message.role === "assistant") && message.tool_calls != null
-      ? toolCallsOf(message)
-      : NO_CALLS,
-  )
+  // Only a legacy or synthetic result needs to resolve its holder by id. A hidden holder can shadow a visible id.
+  const needsIds = history.some(({ message, callerSeq }) => message.role === "tool" && callerSeq == null)
+  const hiddenIds = new Map<number, Array<{ id: string }>>()
+  const parsed = history.map(({ message }, index) => {
+    if (message.tool_calls == null || (message.role !== own && message.role !== other)) return NO_CALLS
+    if (message.role === own && (view.includePastTools || !view.past.has(message.id))) return toolCallsOf(message)
+    if (needsIds) hiddenIds.set(index, callEntries(message))
+    return NO_CALLS
+  })
+  const callsAt = (index: number) => hiddenIds.get(index) ?? parsed[index] ?? NO_CALLS
   const visit = ({ message, seq, callerSeq }: RequestRow, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
@@ -266,13 +279,13 @@ export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: His
     } else if (message.role === "system") {
       if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
     } else if (message.role === other) {
-      for (const call of parsed[index] ?? []) shownCalls.set(call.id, false)
+      for (const call of callsAt(index)) shownCalls.set(call.id, false)
       if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message) })
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
       if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
-      for (const call of calls) shownCalls.set(call.id, showCalls)
+      if (needsIds) for (const call of callsAt(index)) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
       if (past && !showCalls && (content ?? "") === "") return
       messages.push({
@@ -283,101 +296,19 @@ export const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: His
       })
     }
   }
-  const order = requestOrder(history, parsed)
+  const order = requestOrder(history, callsAt)
   if (order === undefined) history.forEach(visit)
   else for (const index of order) visit(history[index] as RequestRow, index)
   return messages
 }
 
-// Hooks section 3.3 hands prefilter_llm_history the history in chat completion format, the shape of LLMMessage.
-// A tool error keeps its kind in tool_status, the field a stored tool message uses for it.
-export const toLLMMessage = (message: ProviderMessage): LLMMessage => {
-  switch (message.role) {
-    case "system":
-    case "user":
-      return { role: message.role, content: message.content }
-    case "assistant":
-      return {
-        role: "assistant",
-        content: message.content ?? null,
-        ...(message.toolCalls === undefined
-          ? {}
-          : {
-              tool_calls: message.toolCalls.map((call) => ({
-                id: call.id,
-                type: "function",
-                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
-              })),
-            }),
-        ...(message.reasoning == null ? {} : { reasoning_content: message.reasoning }),
-        ...(message.reasoningDetails === undefined ? {} : { reasoning_details: message.reasoningDetails }),
-      }
-    case "tool": {
-      const content = message.content
-      return {
-        role: "tool",
-        tool_call_id: message.toolCallId,
-        name: message.toolName,
-        ...(typeof content === "string" || Array.isArray(content)
-          ? { content }
-          : content.type === "text"
-            ? { content: content.text }
-            : { content: content.error, tool_status: "error" }),
-      }
-    }
-  }
-}
-
-const callFrom = (entry: Record<string, unknown>): ProviderToolCallPart => {
-  const fn = entry.function as Record<string, unknown>
-  return {
-    id: entry.id as string,
-    name: fn.name as string,
-    arguments: (typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments) as Record<string, unknown>,
-    ...(isRecord(entry.extra_content) ? { extraContent: entry.extra_content } : {}),
-  }
-}
-
-// The way back from LLMMessage, for the array prefilter_llm_history returns. hooks.ts has checked each message
-// against the provider message types, so every field one of them holds is kept as it is. A field that no provider
-// message type has, such as the name of a user message, has nowhere to go.
-export const fromLLMMessage = (message: LLMMessage): ProviderMessage => {
-  switch (message.role) {
-    case "system":
-      return { role: "system", content: message.content as string }
-    case "user":
-      return { role: "user", content: message.content as ProviderUserMessage["content"] }
-    case "assistant":
-      return {
-        role: "assistant",
-        content: (message.content as string | null | undefined) ?? null,
-        ...(Array.isArray(message.tool_calls) ? { toolCalls: message.tool_calls.map(callFrom) } : {}),
-        ...(message.reasoning_content === undefined ? {} : { reasoning: message.reasoning_content }),
-        ...(Array.isArray(message.reasoning_details)
-          ? { reasoningDetails: message.reasoning_details as Array<ProviderReasoningDetail> }
-          : {}),
-      }
-    default:
-      return {
-        role: "tool",
-        toolCallId: message.tool_call_id as string,
-        toolName: message.name ?? "",
-        content:
-          message.tool_status === "error"
-            ? { type: "error", error: message.content as string }
-            : (message.content as ProviderUserMessage["content"]),
-      }
-  }
-}
-
-export const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
+const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
   if (message.role !== "assistant") return message
   const { reasoning: _reasoning, reasoningDetails: _details, ...rest } = message
   return rest
 }
 
-export const buildRequest = (
+const buildRequest = (
   turn: Turn,
   system: string,
   messages: ReadonlyArray<ProviderMessage>,
@@ -412,3 +343,57 @@ export const buildRequest = (
     signal,
   }
 }
+
+export const assembleRequest = Effect.fnUntraced(function* (
+  { turn, view, write: { hooks } }: SideScope,
+  { history, secrets, run, record, observe }: ThreadScope,
+) {
+  // Runtime section 4 orders the seven steps of an assembly.
+  const rendered = yield* renderSystemPrompt(turn, secrets)
+  yield* record("assemble", "interpolate the system prompt")
+  const system = yield* transformHooks(hooks, "after_system_message", [], rendered)
+  yield* checkSystemPrompt(turn, system, secrets)
+  yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
+  // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
+  // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
+  // the trace, runs between the read and the first hook.
+  const { rows } = yield* history.read
+  let historyRows: ReadonlyArray<RequestRow> = rows
+  if (countHooks(hooks, "filter_messages") > 0) {
+    const snapshot = rows.map((row) => row.message)
+    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
+      copyInitial: (messages) => messages.map(copyMessage),
+    })
+    if (filtered !== snapshot) {
+      let byId: Map<string, (typeof rows)[number]> | undefined
+      historyRows = filtered.map((message, index) => {
+        let row = rows[index]
+        if (row?.message.id !== message.id) {
+          byId ??= new Map(rows.map((row) => [row.message.id, row]))
+          row = byId.get(message.id)
+        }
+        return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
+      })
+    }
+  }
+  yield* record("assemble", `snapshot, ${rows.length} messages`)
+  yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
+  const transformed = toProviderMessages(historyRows, view)
+  yield* record("assemble", `transform, ${transformed.length} provider messages`)
+  const prefiltered =
+    countHooks(hooks, "prefilter_llm_history") > 0
+      ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
+      : transformed
+  // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
+  // put back.
+  const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
+  yield* checkSystemMessages(messages, secrets)
+  yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
+  const beforeRequest = run.stopAtBoundary()
+  if (beforeRequest) return undefined
+  yield* checkSystemPrompt(turn, system, secrets)
+  const request = buildRequest(turn, system, messages, run.signal)
+  yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
+  yield* observe({ type: "request", request })
+  return request
+})

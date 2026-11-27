@@ -1,3 +1,11 @@
+export const parseJson = (text: string | undefined): unknown => {
+  try {
+    return text === undefined ? undefined : JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
 export interface NotJson {
   readonly path: string
   readonly found: string

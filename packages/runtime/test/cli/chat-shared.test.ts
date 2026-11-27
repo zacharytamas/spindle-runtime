@@ -306,8 +306,13 @@ describe("spindle chat beside other processes", () => {
         yield* until("the reader to close its end", exists(at("reader-closed")))
         const thread = yield* threadOf(session)
         yield* touch(at("release-a"))
-        yield* until("the command to exit", exists(at("chat-exit")))
-        expect(yield* lines(at("chat-exit"))).toEqual(["1"])
+        const exitFile = at("chat-exit")
+        yield* until("the command to exit", exists(exitFile))
+        yield* until(
+          "the exit code",
+          Effect.map(lines(exitFile), (codes) => codes.length > 0),
+        )
+        expect(yield* lines(exitFile)).toEqual(["1"])
         yield* session.end
         yield* session.exit
         const notes = linesOf(session.err())
