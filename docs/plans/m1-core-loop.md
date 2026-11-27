@@ -1091,6 +1091,14 @@ Two named exports have exceptions. The `Implementations` type in `Platform.ts` c
 
 Semantic duplication reports blocks of at least 50 tokens and five lines with at least two occurrences. New clone groups are warnings and the percentage gate is off. The duplication scan skips conformance fixtures, scenario setups and runtime tests because their repeated examples are intentional. Complexity warns above 20 cyclomatic points, 15 cognitive points or 800 lines per file. The health report also lists functions over 60 lines. It excludes fixtures and both packages' tests to keep test setup out of the scores. The coverage-based CRAP rule is off because the suite supplies no measured coverage to Fallow. The boundary and policy rules are off because Biome checks platform imports and globals and this project supplies no Fallow policy pack.
 
+### Settled in M1-17
+
+A tool has no default deadline. For `run`, `send` and `chat`, `--tool-timeout 60` allows each tool call 60 seconds. Repeat the flag with `--tool-timeout lookup=10` to allow 10 seconds for the tool whose qualified name is `lookup` in `spindle validate --list`. A named limit wins in either order. The last general limit applies to other tools. Repeating a name is an error. Seconds may be fractional and must be finite and above zero.
+
+Tools section 8 requires annotations to leave execution and results unchanged. A deadline changes both, so the operator sets it on the command line. It applies in the process that executes the call. Time spent validating arguments or running hooks before the tool starts does not count. Model calls, queued tools and tools called through `invokeTool` each get their own deadline.
+
+A tool past its deadline gives the ordinary failure hooks an error naming the tool and its limit. The run can continue with the next call. The handle expires and loses its hold on the thread, even if an abort is waiting for that tool. A late return or rejection has no effect on the run. The tool shares its execution's abort signal, so timing out one call leaves the signal live. Its JavaScript can still run and produce effects outside the thread. Spindle refuses later writes through its handle and checks writes already in flight again at commit.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

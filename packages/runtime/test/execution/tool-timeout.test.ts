@@ -1,0 +1,422 @@
+import { expect, it } from "@effect/vitest"
+import { defineHook, defineTool, type ThreadState } from "@standardagents/spec"
+import { Clock, Duration, Effect, Fiber, Layer } from "effect"
+import { TestClock } from "effect/testing"
+import { SqliteLive } from "#platform"
+import { ScriptedProvider, type ScriptStep } from "../../../conformance/src/ScriptedProvider.ts"
+import { gate, ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
+import { layer } from "../../src/store/sqlite.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
+import { registryOf } from "../spindle-driver.ts"
+
+const call = { id: "first", name: "wait", arguments: { q: "private words" } }
+const limit = Duration.millis(10)
+const timeout = "Tool wait timed out after 10ms"
+const waitFor = (g: ReturnType<typeof gate>) => Effect.promise(() => g.opened)
+const elapsed = TestClock.adjust(limit)
+const messages = (id: string) =>
+  MessageStore.use((store) => store.getMessages(id, { order: "asc", includeSilent: true }))
+
+function waitingTool() {
+  const entered = gate()
+  const leave = gate()
+  let state: ThreadState
+  const tool = defineTool({
+    description: "Wait for release",
+    execute: async (handle: ThreadState) => {
+      state = handle
+      entered.release()
+      await leave.opened
+      return ok("returned")
+    },
+  })
+  return { tool, entered, leave, state: () => state }
+}
+
+function fixture(
+  tools: Setup["tools"],
+  options: { steps?: ScriptStep[]; hooks?: Setup["hooks"]; limited?: boolean } = {},
+) {
+  const provider = new ScriptedProvider(options.steps ?? [{ toolCalls: [call] }, { text: "done" }])
+  const registry = registryOf(
+    project({ provider, tools, hooks: options.hooks, prompt: { hooks: options.hooks?.map((hook) => hook.id) ?? [] } }),
+  )
+  const settings = options.limited === false ? {} : { toolTimeout: () => limit }
+  const stores = layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))
+  const live = Layer.merge(registry, Layer.provideMerge(supervisorLayer(settings), stores))
+  return { provider, live }
+}
+
+const start = Effect.gen(function* () {
+  const { id } = yield* createThread("assistant")
+  const sent = yield* Effect.forkChild(sendMessage(id, "go"))
+  return { id, sent }
+})
+
+it.effect("stores one timeout error without arguments and pairs it with the call in the next request", () => {
+  const wait = waitingTool()
+  const { live, provider } = fixture({ wait: wait.tool })
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(wait.entered)
+    yield* elapsed
+    wait.leave.release()
+    yield* Fiber.join(sent)
+    expect((yield* messages(id)).messages.filter((m) => m.role === "tool")).toMatchObject([
+      { tool_call_id: call.id, tool_status: "error", content: timeout },
+    ])
+    expect(provider.requests[1]?.messages.slice(-2)).toMatchObject([
+      { role: "assistant", toolCalls: [call] },
+      { role: "tool", toolCallId: call.id, toolName: "wait", content: { type: "error", error: timeout } },
+    ])
+  }).pipe(Effect.provide(live))
+})
+
+it.effect("passes timeout errors through the failure, storage and done hooks and ordinary failure traces", () => {
+  const wait = waitingTool()
+  const events: unknown[] = []
+  const hooks = [
+    defineHook({
+      hook: "tool_call_started",
+      id: "start",
+      execute: async (_state, call, progress) => {
+        events.push(["start", call.id, progress])
+      },
+    }),
+    defineHook({
+      hook: "after_tool_call_failure",
+      id: "failure",
+      execute: async (_state, call, result) => {
+        events.push(["failure", call, result])
+        return { status: "error", error: "handled" }
+      },
+    }),
+    defineHook({
+      hook: "before_store_tool_result",
+      id: "store",
+      execute: async (_state, call, result) => {
+        events.push(["store", call, result])
+        return result
+      },
+    }),
+    defineHook({
+      hook: "tool_call_done",
+      id: "done",
+      execute: async (_state, call, result) => {
+        events.push(["done", call, result])
+      },
+    }),
+  ]
+  const { live } = fixture({ wait: wait.tool }, { hooks })
+  return Effect.gen(function* () {
+    const { sent } = yield* start
+    yield* waitFor(wait.entered)
+    yield* elapsed
+    wait.leave.release()
+    const { outcome } = yield* Fiber.join(sent)
+    const received = {
+      id: call.id,
+      type: "function",
+      function: { name: "wait", arguments: JSON.stringify(call.arguments) },
+    }
+    const handled = { status: "error", error: "handled" }
+    expect(events).toEqual([
+      ["start", call.id, undefined],
+      ["failure", received, { status: "error", error: timeout }],
+      ["store", received, handled],
+      ["done", received, handled],
+    ])
+    expect(outcome?.trace.filter((e) => e.step === 1 && ["tools", "persist-results"].includes(e.phase))).toEqual([
+      { step: 1, phase: "tools", detail: "wait first" },
+      { step: 1, phase: "persist-results", detail: "first error" },
+    ])
+  }).pipe(Effect.provide(live))
+})
+
+it.effect("starts each sibling deadline at execute after hooks and continues the run", () => {
+  const first = waitingTool()
+  const second = waitingTool()
+  const hook = waitingTool()
+  const hooks = [
+    defineHook({
+      hook: "tool_call_started",
+      id: "gate",
+      execute: async () => {
+        hook.entered.release()
+        await hook.leave.opened
+      },
+    }),
+  ]
+  const { live } = fixture(
+    { wait: first.tool, sibling: second.tool },
+    {
+      hooks,
+      steps: [{ toolCalls: [call, { ...call, id: "second", name: "sibling" }] }, { text: "done" }],
+    },
+  )
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(hook.entered)
+    yield* elapsed
+    hook.leave.release()
+    yield* waitFor(first.entered)
+    yield* TestClock.adjust("9 millis")
+    expect(yield* Effect.promise(() => first.state().getValue("still-live"))).toBeNull()
+    yield* TestClock.adjust("1 millis")
+    first.leave.release()
+    yield* waitFor(second.entered)
+    yield* TestClock.adjust("9 millis")
+    second.leave.release()
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("stop_on_response")
+    expect((yield* messages(id)).messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      timeout,
+      "returned",
+    ])
+  }).pipe(Effect.provide(live))
+})
+
+for (const late of ["return", "reject"] as const)
+  it.effect(
+    `refuses writes from the expired handle and ignores a late ${late} without another hook, trace or result`,
+    () => {
+      const wait = waitingTool()
+      const hooksSeen: string[] = []
+      const hooks = [
+        defineHook({
+          hook: "tool_call_done",
+          id: "done",
+          execute: async (_state, c) => {
+            hooksSeen.push(c.id)
+          },
+        }),
+      ]
+      const finished = gate()
+      const tool = defineTool({
+        description: "Settle late",
+        execute: async (state: ThreadState) => {
+          await wait.tool.execute(state)
+          finished.release()
+          if (late === "reject") throw new Error("late rejection")
+          return ok("late success")
+        },
+      })
+      const { live } = fixture({ wait: tool }, { hooks })
+      return Effect.gen(function* () {
+        const { id, sent } = yield* start
+        yield* waitFor(wait.entered)
+        yield* elapsed
+        const snapshot = Effect.all(
+          {
+            thread: ThreadStore.use((s) => s.getThread(id)),
+            messages: messages(id),
+            queue: RunStore.use((s) => s.queueLength(id)),
+            value: ThreadStore.use((s) => s.getValue(id, "late")),
+          },
+          { concurrency: 1 },
+        )
+        const before = yield* snapshot
+        expect(before.thread.status.state).toBe("idle")
+        const { outcome } = yield* Fiber.join(sent)
+        const trace = structuredClone(outcome?.trace)
+        const handle = wait.state()
+        for (const write of [
+          () => handle.injectMessage({ role: "user", content: "late" }),
+          () => handle.queueMessage({ role: "user", content: "late" }),
+          () => handle.setValue("late", true),
+          () => handle.terminate(),
+        ])
+          yield* Effect.promise(() => expect(write()).rejects.toMatchObject({ _tag: "HandleExpired" }))
+        wait.leave.release()
+        yield* waitFor(finished)
+        yield* Effect.yieldNow
+        expect(yield* snapshot).toEqual(before)
+        expect(outcome?.trace).toEqual(trace)
+        expect(hooksSeen).toEqual([call.id])
+      }).pipe(Effect.ensuring(Effect.sync(wait.leave.release)), Effect.provide(live))
+    },
+  )
+
+for (const mode of ["stop", "abort", "terminate", "exit"] as const)
+  it.effect(`releases the tool hold so ${mode} can settle with the tool still pending`, () => {
+    const wait = waitingTool()
+    const next = gate()
+    const resume = gate()
+    const { live } = fixture(
+      { wait: wait.tool },
+      {
+        steps: [
+          { toolCalls: [call] },
+          async () => {
+            next.release()
+            await resume.opened
+            return { text: "done" }
+          },
+        ],
+      },
+    )
+    return Effect.gen(function* () {
+      const { id, sent } = yield* start
+      const supervisor = yield* ThreadSupervisor
+      yield* waitFor(wait.entered)
+      if (mode === "stop") yield* supervisor.stop(id)
+      yield* elapsed
+      expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+      if (mode !== "stop") {
+        yield* waitFor(next)
+        if (mode === "terminate") yield* supervisor.control(id).terminate({ kind: "external" })
+        else yield* supervisor.abort(id, mode === "exit")
+      }
+      expect((yield* Fiber.join(sent)).status.state).toBe("idle")
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          wait.leave.release()
+          resume.release()
+        }),
+      ),
+      Effect.provide(live),
+    )
+  })
+
+it.effect("keeps the deadline during an abort and delivers the waiting line only after it expires", () => {
+  const wait = waitingTool()
+  const { live, provider } = fixture({ wait: wait.tool })
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(wait.entered)
+    const supervisor = yield* ThreadSupervisor
+    const settlement = yield* supervisor.abort(id)
+    const queued = gate()
+    const waiting = yield* Effect.forkChild(
+      supervisor.send(id, "queued", { onWaiting: () => Effect.sync(queued.release) }),
+    )
+    yield* waitFor(queued)
+    yield* TestClock.adjust("9 millis")
+    expect(settlement?.isDone()).toBe(false)
+    expect(provider.requests).toHaveLength(1)
+    yield* TestClock.adjust("1 millis")
+    expect(settlement?.isDone()).toBe(true)
+    expect((yield* Fiber.join(sent)).outcome?.reason).toBe("aborted_by_user")
+    expect((yield* Fiber.join(waiting)).status.reason).toBe("stop_on_response")
+    expect(provider.requests[1]?.messages).toContainEqual({ role: "user", content: "queued" })
+  }).pipe(Effect.ensuring(Effect.sync(wait.leave.release)), Effect.provide(live))
+})
+
+it.effect("applies the same deadline to a queued tool started by queueTool", () => {
+  const wait = waitingTool()
+  const { live, provider } = fixture({ wait: wait.tool }, { steps: [{ text: "done" }] })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const state = yield* stateAtRest(id)
+    state.queueTool("wait", {})
+    yield* waitFor(wait.entered)
+    yield* elapsed
+    wait.leave.release()
+    yield* (yield* ThreadSupervisor).settled(id)
+    expect(provider.requests[0]?.messages.at(-1)).toMatchObject({
+      role: "tool",
+      toolName: "wait",
+      content: { type: "error", error: timeout },
+    })
+  }).pipe(Effect.provide(live))
+})
+
+it.effect("creates no tool timer without a limit and schedules one when a limit is set", () =>
+  Effect.gen(function* () {
+    const clock = yield* Clock.Clock
+    for (const limited of [false, true]) {
+      const sleeps: number[] = []
+      const wait = waitingTool()
+      const { live } = fixture({ wait: wait.tool }, { limited })
+      yield* Effect.gen(function* () {
+        const { id, sent } = yield* start
+        yield* waitFor(wait.entered)
+        yield* elapsed
+        wait.leave.release()
+        yield* Fiber.join(sent)
+        expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(
+          limited ? timeout : "returned",
+        )
+        expect(sleeps.filter((ms) => ms !== 250)).toEqual(limited ? [10] : [])
+      }).pipe(
+        Effect.provide(live),
+        Effect.provideService(Clock.Clock, {
+          ...clock,
+          sleep: (duration) => {
+            sleeps.push(Duration.toMillis(duration))
+            return clock.sleep(duration)
+          },
+        }),
+      )
+    }
+  }),
+)
+
+it.effect("leaves the execution abort signal live for a sibling after a tool times out", () => {
+  const wait = waitingTool()
+  const sibling = defineTool({
+    description: "Inspect the signal",
+    execute: async (state: ThreadState) =>
+      ok(
+        String(
+          state.execution?.abortSignal === wait.state().execution?.abortSignal && !state.execution?.abortSignal.aborted,
+        ),
+      ),
+  })
+  const { live } = fixture(
+    { wait: wait.tool, sibling },
+    { steps: [{ toolCalls: [call, { ...call, id: "second", name: "sibling" }] }, { text: "done" }] },
+  )
+  return Effect.gen(function* () {
+    const { id, sent } = yield* start
+    yield* waitFor(wait.entered)
+    yield* elapsed
+    wait.leave.release()
+    yield* Fiber.join(sent)
+    expect((yield* messages(id)).messages.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      timeout,
+      "true",
+    ])
+  }).pipe(Effect.provide(live))
+})
+
+it.effect("refuses a tool write past its deadline even before the event loop can run its timer", () =>
+  Effect.gen(function* () {
+    const clock = yield* Clock.Clock
+    let millis = 0
+    let refusal: unknown
+    const wait = defineTool({
+      description: "Advance past the deadline without yielding",
+      execute: async (state: ThreadState) => {
+        millis += 11
+        try {
+          await state.setValue("late", true)
+        } catch (error) {
+          refusal = error
+        }
+        return ok("late")
+      },
+    })
+    const { live } = fixture({ wait })
+    yield* Effect.gen(function* () {
+      const { id, sent } = yield* start
+      yield* Fiber.join(sent)
+      expect(refusal).toMatchObject({ _tag: "HandleExpired" })
+      expect(yield* ThreadStore.use((s) => s.getValue(id, "late"))).toBeNull()
+      expect((yield* messages(id)).messages.find((m) => m.role === "tool")?.content).toBe(timeout)
+    }).pipe(
+      Effect.provide(live),
+      Effect.provideService(Clock.Clock, {
+        ...clock,
+        currentTimeMillisUnsafe: () => millis,
+        currentTimeMillis: Effect.sync(() => millis),
+        monotonicTimeNanosUnsafe: () => BigInt(millis) * 1_000_000n,
+        monotonicTimeNanos: Effect.sync(() => BigInt(millis) * 1_000_000n),
+      }),
+    )
+  }),
+)

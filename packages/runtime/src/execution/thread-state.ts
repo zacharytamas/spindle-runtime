@@ -160,7 +160,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   const expired = () =>
     call?.expired === true
       ? new HookExpired({ hook: call.hook, position: call.position })
-      : (state.callback ?? call)?.finished
+      : state.callback?.pastDeadline || (state.callback ?? call)?.finished
         ? new HandleExpired()
         : owner?.ended === true
           ? new ExecutionEnded({ flowId: owner.flowId })
@@ -339,10 +339,10 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     removeScheduledEffect: unavailableAsync("removeScheduledEffect", "M4"),
     runAgent: unavailableAsync("runAgent", "M2"),
     // The termination aborts the execution that this state may belong to, so the call itself is not bound to it.
-    terminate: () =>
-      runPromise(state.control.terminate(origin)).then((time) => {
-        terminated = time
-      }),
+    terminate: async () => {
+      if (state.callback?.pastDeadline) throw new HandleExpired()
+      terminated = await runPromise(state.control.terminate(origin))
+    },
     // No client connects to a thread before the Thread Client API in M6, so an event has no receiver.
     emit: check,
 

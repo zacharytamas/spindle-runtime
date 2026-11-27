@@ -1,5 +1,5 @@
 import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
-import { Data, Effect, Predicate, Result } from "effect"
+import { Data, Duration, Effect, Predicate, Result, type Scope } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
@@ -16,6 +16,8 @@ export interface ToolCall {
 }
 
 export interface ToolContext {
+  readonly scope: Scope.Scope
+  readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
   readonly turn: Turn
   readonly stateFor: (
@@ -111,16 +113,20 @@ export const executeTool = Effect.fn("executeTool")(function* (
   const callback = new Callback()
   const state = context.stateFor(tool, entry, callback)
   if (state.execution?.stopped) return undefined
-  const returned = yield* Effect.result(
-    Effect.tryPromise({
-      try: () =>
-        context.execution.call(callback, `tool ${name}`, () =>
-          schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
-        ),
-      catch: describe,
-    }),
-  )
-  if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${returned.failure}`)
+  const work = Effect.tryPromise({
+    try: () =>
+      context.execution.call(callback, `tool ${name}`, () =>
+        schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
+      ),
+    catch: (cause) => `Tool ${name} threw: ${describe(cause)}`,
+  })
+  const timeout = context.toolTimeout?.(name)
+  const bounded =
+    timeout === undefined
+      ? work
+      : callback.within(work, timeout, () => `Tool ${name} timed out after ${Duration.format(timeout)}`, context.scope)
+  const returned = yield* Effect.result(bounded)
+  if (Result.isFailure(returned)) return failed(returned.failure)
   const read = yield* Effect.result(Effect.try({ try: () => readResult(returned.success), catch: describe }))
   if (Result.isFailure(read)) return failed(`Reading the result of tool ${name} threw: ${read.failure}`)
   const result = read.success

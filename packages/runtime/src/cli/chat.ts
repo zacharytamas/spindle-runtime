@@ -322,6 +322,7 @@ export const chatCommand = Command.make(
     db: Flag.String("db").pipe(Flag.optional),
     thread: Flag.String("thread").pipe(Flag.optional),
     script: deliveryFlags.script,
+    toolTimeout: deliveryFlags.toolTimeout,
     fullResults: Flag.Boolean("full-results").pipe(
       Flag.withDescription("Show successful tool results beyond 200 characters"),
       Flag.withDefault(false),
@@ -337,6 +338,7 @@ export const chatCommand = Command.make(
         db,
         { agent: args.agent, resume: Option.isSome(args.thread) },
         args.script,
+        args.toolTimeout,
         secrets,
         (role, filename) =>
           Effect.gen(function* () {

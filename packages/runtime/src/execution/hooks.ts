@@ -6,7 +6,7 @@ import type {
   ThreadState,
   ToolResult,
 } from "@standardagents/spec"
-import { Clock, Context, Data, Duration, Effect, Predicate, Schema } from "effect"
+import { Context, Data, Duration, Effect, Predicate, Schema } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import { parseJson, toJson } from "../store/json.ts"
 import { isAttachmentRef } from "../store/schema.ts"
@@ -333,7 +333,6 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-// A hook may block the thread past its deadline before the timer gets a turn.
 const invoke = Effect.fnUntraced(function* (
   scope: HookScope,
   hook: SelectedHook,
@@ -342,21 +341,14 @@ const invoke = Effect.fnUntraced(function* (
   timeout: Duration.Duration,
 ) {
   const execute = () => hook.execute(scope.stateFor(hook, call), ...args(), { source: { ...scope.set.source } })
-  const started = yield* Clock.currentTimeMillis
-  const result = yield* Effect.tryPromise({
+  const work = Effect.tryPromise({
     try: () => (scope.execution ? scope.execution.call(call, `hook ${hook.id}`, execute) : call.invoke(execute)),
     catch: () => "threw an error",
-  }).pipe(Effect.timeoutOption(timeout), Effect.result)
-  if (
-    (result._tag === "Success" && result.success._tag === "None") ||
-    (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+  })
+  const result = yield* Effect.result(
+    call.within(work, timeout, () => `did not settle within ${Duration.format(timeout)}`),
   )
-    call.expire()
-  if (!call.expired) {
-    if (result._tag === "Failure") return { problem: result.failure } as const
-    if (result.success._tag === "Some") return { value: result.success.value } as const
-  }
-  return { problem: `did not settle within ${Duration.format(timeout)}` } as const
+  return result._tag === "Failure" ? { problem: result.failure } : { value: result.success }
 })
 
 interface HookOptions<V> {

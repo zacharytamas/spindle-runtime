@@ -1,5 +1,5 @@
 import type { Message, ProviderRequest, ProviderToolCallPart } from "@standardagents/spec"
-import { Cause, Console, Data, Effect, FileSystem, Layer, Logger, Option, Path, Runtime } from "effect"
+import { Cause, Console, Data, Duration, Effect, FileSystem, Layer, Logger, Option, Path, Runtime } from "effect"
 import { Flag } from "effect/cli"
 import { SqliteLive } from "#platform"
 import { newSecrets } from "../execution/env.ts"
@@ -110,17 +110,50 @@ export const deliveryFlags = {
     Flag.withDescription("Print each provider request as JSON, with secret values redacted"),
     Flag.withDefault(false),
   ),
+  toolTimeout: Flag.String("tool-timeout").pipe(
+    Flag.withDescription(
+      "Set a tool call limit in seconds. Repeat with NAME=SECONDS for a named tool. Defaults to no limit.",
+    ),
+    Flag.atLeast(0),
+  ),
   hookTimeout: Flag.Finite("hook-timeout").pipe(
     Flag.withDescription("Seconds one hook call may run before the run goes on without it. The default is 30."),
     Flag.optional,
   ),
 }
 
+const toolTimeoutFor = Effect.fnUntraced(function* (values: ReadonlyArray<string>) {
+  if (values.length === 0) return undefined
+  const { definitions } = yield* Registry
+  const names = new Set(definitions.filter((d) => d.kind === "tool").map((d) => d.qualifiedName))
+  const named = new Map<string, Duration.Duration>()
+  let general: Duration.Duration | undefined
+  for (const value of values) {
+    const parts = value.split("=")
+    const name = parts.length === 1 ? undefined : parts[0]
+    if (parts.length > 2 || name === "" || parts.at(-1) === "")
+      return yield* fail("--tool-timeout takes SECONDS or NAME=SECONDS")
+    const seconds = Number(parts.at(-1))
+    if (!Number.isFinite(seconds) || seconds <= 0)
+      return yield* fail("--tool-timeout takes a finite number of seconds above 0")
+    const duration = Duration.seconds(seconds)
+    if (name === undefined) general = duration
+    else {
+      const label = JSON.stringify(name)
+      if (!names.has(name)) return yield* fail(`--tool-timeout names no tool in this project called ${label}`)
+      if (named.has(name)) return yield* fail(`--tool-timeout sets the limit for ${label} twice`)
+      named.set(name, duration)
+    }
+  }
+  return (qualifiedName: string) => named.get(qualifiedName) ?? general
+})
+
 export const withProject = <A, E, R>(
   dir: string,
   db: string,
   target: { agent: string; resume?: boolean } | { thread: string },
   script: Option.Option<string>,
+  toolTimeouts: ReadonlyArray<string>,
   secrets: Set<string>,
   body: (role: Message["role"], filename: string) => Effect.Effect<A, E, R>,
   observer?: (role: Message["role"]) => (event: ExecutionEvent) => Effect.Effect<void>,
@@ -151,11 +184,13 @@ export const withProject = <A, E, R>(
       for (const issue of errors)
         yield* Console.error(`${issue.code} ${issue.file}${issue.path === "" ? "" : `:${issue.path}`} ${issue.message}`)
       if (errors.length) return yield* fail(`${root} has ${plural(errors.length, "definition error")}`)
+      const toolTimeout = yield* toolTimeoutFor(toolTimeouts)
       const { side } = yield* sidesOf(agent)
       const provider = Option.isSome(script) ? yield* loadScript(path.resolve(script.value)) : undefined
       const role = roleOf(side)
       const supervisor = supervisorLayer({
         secrets,
+        toolTimeout,
         ...(observer && { observe: observer(role) }),
         ...(provider ? { provider } : {}),
       })
