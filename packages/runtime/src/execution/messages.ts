@@ -154,7 +154,7 @@ const prepareWrite = Effect.fnUntraced(function* <E>(
     })
   const after = Effect.fnUntraced(function* (inserted: Parameters<History["inserted"]>[0]) {
     write.history?.inserted(inserted)
-    yield* observeHooks(write.hooks, "after_create_message", [inserted.message], depth)
+    yield* observeHooks(write.hooks, "after_create_message", [inserted.message], { depth })
     return inserted
   })
   return { original, message, unsafeId, insert, after, redact }
@@ -221,6 +221,6 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   const patch = yield* vetoHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
   const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates, write.origin)
-  yield* observeHooks(write.hooks, "after_update_message", [message], depth)
+  yield* observeHooks(write.hooks, "after_update_message", [message], { depth })
   return message
 })

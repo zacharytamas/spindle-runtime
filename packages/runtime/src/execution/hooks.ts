@@ -368,7 +368,7 @@ const invoke = Effect.fnUntraced(function* (
   return { problem: `did not settle within ${Duration.format(timeout)}` } as const
 })
 
-interface Checks<V> {
+interface HookOptions<V> {
   copyInitial?: (value: V) => V
   depth?: number
   check?: (next: V, current: V, hook: string) => Effect.Effect<string | undefined>
@@ -382,25 +382,37 @@ function accept<V>(row: Transform<V>, returned: unknown, current: V): V | typeof
   }
 }
 
-const pipeline = <V, E>(
+const pipeline = <V, E = never>(
   scope: HookScope,
   position: Position,
-  where: string,
-  action: string,
+  contract: string | Transform<V>,
+  prefix: readonly unknown[],
   initial: V,
-  args: (current: V) => readonly unknown[],
-  transform: Transform<V> | undefined,
-  options: Checks<V>,
+  options: HookOptions<V>,
   refuse?: (error: HookFailed) => Effect.Effect<never, E>,
 ) =>
   Effect.gen(function* () {
     const hooks = scope.set.byPosition.get(position)
     if (!hooks) return initial
     const timeout = yield* HookTimeout
+    const transform = typeof contract === "string" ? undefined : contract
     let current = initial
     for (const hook of hooks) {
       const call = Object.assign(new Callback(), { hook: hook.id, position, depth: (options.depth ?? 0) + 1 })
-      const returned = yield* invoke(scope, hook, call, () => args(current), timeout)
+      const returned = yield* invoke(
+        scope,
+        hook,
+        call,
+        () => {
+          const args = prefix.map((arg) => structuredClone(arg))
+          if (transform)
+            args.push(
+              current === initial && options.copyInitial ? options.copyInitial(initial) : structuredClone(current),
+            )
+          return args
+        },
+        timeout,
+      )
       let problem = returned.problem
       if (problem === undefined) {
         if (!transform) continue
@@ -417,6 +429,8 @@ const pipeline = <V, E>(
       const late = call.expired
         ? " Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means."
         : ""
+      const where = typeof contract === "string" ? contract : contract.where
+      const action = refuse ? "refused the change" : (transform?.kept ?? "went on")
       yield* Effect.logWarning(`Hook ${hook.id} (${position}, ${where}) ${problem}. Spindle ${action}.${late}`)
       if (refuse) return yield* refuse(new HookFailed({ hook: hook.id, position, problem }))
     }
@@ -427,56 +441,21 @@ export const observeHooks = <K extends keyof ObserverArgs>(
   scope: HookScope,
   position: K,
   args: ObserverArgs[K],
-  depth = 0,
-) =>
-  pipeline<void, never>(
-    scope,
-    position,
-    observers[position],
-    "went on",
-    undefined,
-    () => args.map((arg) => structuredClone(arg)),
-    undefined,
-    { depth },
-  )
-
-function transform<K extends keyof Values, E = never>(
-  scope: HookScope,
-  position: K,
-  prefix: Prefix<K>,
-  value: Values[K],
-  options: Checks<Values[K]>,
-  refuse?: (error: HookFailed) => Effect.Effect<never, E>,
-) {
-  const row = transforms[position]
-  return pipeline(
-    scope,
-    position,
-    row.where,
-    refuse ? "refused the change" : row.kept,
-    value,
-    (current) => [
-      ...prefix.map((arg) => structuredClone(arg)),
-      current === value && options.copyInitial ? options.copyInitial(value) : structuredClone(current),
-    ],
-    row,
-    options,
-    refuse,
-  )
-}
+  options: Pick<HookOptions<void>, "depth"> = {},
+) => pipeline(scope, position, observers[position], args, undefined, options)
 
 export const transformHooks = <K extends Exclude<keyof Values, "before_update_message">>(
   scope: HookScope,
   position: K,
   prefix: Prefix<K>,
   value: Values[K],
-  options: Checks<Values[K]> = {},
-) => transform(scope, position, prefix, value, options)
+  options: HookOptions<Values[K]> = {},
+) => pipeline(scope, position, transforms[position], prefix, value, options)
 
 export const vetoHooks = <K extends Veto>(
   scope: HookScope,
   position: K,
   prefix: Prefix<K>,
   value: Values[K],
-  options: Checks<Values[K]> = {},
-) => transform(scope, position, prefix, value, options, Effect.fail)
+  options: HookOptions<Values[K]> = {},
+) => pipeline(scope, position, transforms[position], prefix, value, options, Effect.fail)
