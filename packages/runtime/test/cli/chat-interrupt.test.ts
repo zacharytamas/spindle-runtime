@@ -82,6 +82,17 @@ describe("spindle chat and Ctrl-C", () => {
     )
   }
 
+  it.live("chat with no --db says so when a signal arrives during the creation hook, and prints no resume line", () =>
+    Effect.gen(function* () {
+      const { gate, at } = yield* setup
+      const session = yield* chat(gate, ["creating", "--dir", queue])
+      yield* until("the creation hook to start", exists(at("creation-entered")))
+      yield* session.signal("SIGTERM")
+      expect(yield* session.exit).toBe(130)
+      expect(linesOf(screen(session.err()))).toEqual([expect.stringMatching(/^spindle: thread \S+$/), note.memory])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.live(
     "two consecutive aborted tools release both queued turns",
     () =>

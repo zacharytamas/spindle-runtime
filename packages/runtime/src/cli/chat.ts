@@ -82,8 +82,11 @@ const openThread = (
     const runStore = yield* RunStore
     const messageStore = yield* MessageStore
     if (Option.isNone(requested)) {
-      const { id } = yield* createThread(agent, secrets, reportId)
-      if (filename === ":memory:") yield* note("no --db, so the thread lives in memory and ends with this chat")
+      const { id } = yield* createThread(agent, secrets, (id) =>
+        filename === ":memory:"
+          ? Effect.andThen(reportId(id), note("no --db, so the thread lives in memory and ends with this chat"))
+          : reportId(id),
+      )
       return { id, cursor: 0 }
     }
     const id = requested.value
