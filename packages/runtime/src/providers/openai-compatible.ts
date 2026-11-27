@@ -286,7 +286,7 @@ const reasoningText = (delta: Json): string | undefined => {
   return undefined
 }
 
-async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+async function* eventLines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const decoder = new TextDecoder()
   let buffer = ""
   for await (const bytes of body) {
@@ -295,12 +295,38 @@ async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
     while (end !== -1) {
       const line = buffer.slice(0, end).replace(/\r$/, "")
       buffer = buffer.slice(end + 1)
-      if (line.startsWith("data:")) yield line.slice(5).trimStart()
+      yield line
       end = buffer.indexOf("\n")
     }
   }
   buffer += decoder.decode()
-  if (buffer.startsWith("data:")) yield buffer.slice(5).trimStart()
+  if (buffer !== "") yield buffer.replace(/\r$/, "")
+}
+
+async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  let pending: string | undefined
+  for await (const line of eventLines(body)) {
+    if (line === "") {
+      if (pending !== undefined) yield pending
+      pending = undefined
+    } else if (line.startsWith("data:")) {
+      const data = line.slice(5).trimStart()
+      // Blank lines and EOF dispatch the event. At the next data line, dispatch complete JSON for
+      // endpoints that omit blank lines, or join the unfinished JSON with a newline.
+      if (pending !== undefined) {
+        try {
+          JSON.parse(pending)
+        } catch {
+          pending += `\n${data}`
+          continue
+        }
+        yield pending
+      }
+      if (data === "[DONE]") return
+      pending = data
+    }
+  }
+  if (pending !== undefined) yield pending
 }
 
 interface WireCall {
@@ -321,7 +347,6 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
   let sawContent = false
   let sawReasoning = false
   for await (const data of serverSentEvents(body)) {
-    if (data === "[DONE]") break
     let event: unknown
     try {
       event = JSON.parse(data)
