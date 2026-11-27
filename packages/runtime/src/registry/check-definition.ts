@@ -417,7 +417,8 @@ const checkCapabilities = (at: Site, capabilities: unknown) => {
   if (levels === undefined) return
   if (!Predicate.isObject(levels)) return invalid("reasoningLevels", "an object of reasoning levels")
   for (const [level, value] of Object.entries(levels))
-    if (typeof value !== "string" && value !== null) invalid(`reasoningLevels.${level}`, "a string or null")
+    if (level.trim() === "" || !Number.isFinite(Number(level))) invalid(`reasoningLevels.${level}`, "keyed by a number")
+    else if (typeof value !== "string" && value !== null) invalid(`reasoningLevels.${level}`, "a string or null")
 }
 
 const checkModel = (at: Site, model: unknown) => {

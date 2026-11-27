@@ -40,6 +40,7 @@ const shapes: ReadonlyArray<Case> = [
     "rejects a model capability of the wrong type and accepts every capability with a legal value",
     "model-capabilities",
     [
+      error("agents/models/levels_named.ts:capabilities.reasoningLevels.high"),
       error("agents/models/levels_string.ts:capabilities.reasoningLevels"),
       error("agents/models/levels_value.ts:capabilities.reasoningLevels.100"),
       error("agents/models/max_context_tokens.ts:capabilities.maxContextTokens"),
