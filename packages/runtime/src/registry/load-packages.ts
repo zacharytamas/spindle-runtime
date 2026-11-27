@@ -24,6 +24,23 @@ const metaProblem = (meta: unknown): string | undefined => {
   return undefined
 }
 
+const checkEntryAgents = (pkg: Package, issues: Array<Issue>) => {
+  const manifest = pkg.manifest.standardagent
+  if (!Predicate.isObject(manifest) || !isStringArray(manifest.entryAgents)) return
+  const declared = new Set(manifest.entryAgents)
+  const exported = new Set(pkg.entryAgents)
+  if (declared.size !== exported.size || [...exported].some((name) => !declared.has(name)))
+    issues.push(
+      issue(
+        "package_entry_agents_mismatch",
+        pkg.manifestFile,
+        "standardagent.entryAgents",
+        "The package.json entryAgents and __meta.entryAgents lists name different agents",
+        "warning",
+      ),
+    )
+}
+
 const withSignature = (definition: unknown, signature: PackageSignature): unknown => {
   if (Array.isArray(definition)) return Object.assign([...definition], { __package: signature })
   if (Predicate.isObject(definition))
@@ -214,6 +231,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (
       packedAt: Number(meta.packedAt),
     })
     const pkg: Package = { signature, entryAgents, file, manifestFile: relativeManifest, manifest, meta }
+    checkEntryAgents(pkg, issues)
     if (Result.isFailure(SemVer.parse(signature.version)))
       issues.push(issue("package_meta_invalid", file, "version", "__meta.version must be a semantic version"))
     packages.push(pkg)
