@@ -1,0 +1,4 @@
+{
+  "responses": [{ "text": "Checking again.", "toolCalls": [{ "name": "read_note", "arguments": { "key": "color" } }] }],
+  "repeat": true
+}

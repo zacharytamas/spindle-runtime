@@ -1,0 +1,11 @@
+{
+  "responses": [
+    {
+      "toolCalls": [
+        { "name": "explode", "arguments": {} },
+        { "name": "write_note", "arguments": { "key": "after", "value": "still ran" } }
+      ]
+    },
+    { "text": "The first tool failed and the second one still ran." }
+  ]
+}

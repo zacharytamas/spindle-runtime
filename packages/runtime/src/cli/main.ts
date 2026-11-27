@@ -3,6 +3,7 @@ import { SPEC_VERSION } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Schema } from "effect"
 import { Command } from "effect/cli"
 import { PlatformLive, platformName, runMain } from "#platform"
+import { runCommand } from "./run.ts"
 import { validateCommand } from "./validate.ts"
 
 const PackageJson = Schema.fromJsonString(Schema.Struct({ version: Schema.String }))
@@ -15,7 +16,7 @@ const packageVersion = Effect.gen(function* () {
   return version
 })
 
-const spindle = Command.make("spindle").pipe(Command.withSubcommands([validateCommand]))
+const spindle = Command.make("spindle").pipe(Command.withSubcommands([validateCommand, runCommand]))
 
 Effect.gen(function* () {
   const version = yield* packageVersion

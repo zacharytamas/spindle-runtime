@@ -192,15 +192,21 @@
 		"reason": ""
 	},
 	"infrastructure:providers:9097ab93": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > uses the base slot's defaultEnv and then its default when no extension overrides the slot",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:39190edc": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:47c96c1c": {
@@ -222,15 +228,20 @@
 		"reason": ""
 	},
 	"infrastructure:providers:7f2a48b4": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:5ade0cd2": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:8a969663": {
@@ -246,9 +257,12 @@
 		"reason": ""
 	},
 	"infrastructure:providers:c55ceba3": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:02a0961f": {
@@ -258,27 +272,39 @@
 		"reason": ""
 	},
 	"infrastructure:providers:9f6f4255": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > uses the base slot's defaultEnv and then its default when no extension overrides the slot",
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:6277f499": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets",
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and prints no line that holds it"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:b6375022": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the API key slot to the endpoint and prints no line that holds it",
+			"packages/runtime/test/cli/run.test.ts > spindle run > prints an HTTP 401 diagnostic without the key that the endpoint echoed"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:96b5f282": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > reports a missing required variable before any request reaches the backend",
+			"packages/runtime/test/cli/run.test.ts > spindle run > reports a missing provider variable, an unknown agent, and a bad script as one plain line each"
+		],
 		"reason": ""
 	},
 	"infrastructure:providers:15e04850": {
@@ -294,22 +320,29 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:db1fad8a": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
+		],
+		"reason": "One execution runs its steps one after another. M1-6 keeps a second execution of the thread from starting while one runs."
 	},
 	"infrastructure:runtime:ae6194c8": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:d80e4c71": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches"
+		],
+		"reason": "S19 and S20 enforce maxSteps, the runtime step cap, and the stop rules of one prompt side. M2 adds session tools and maxSessionTurns, which owe the rest."
 	},
 	"infrastructure:runtime:f448a4e6": {
 		"status": "planned",
@@ -327,49 +360,63 @@
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "M1-6 drains queued messages and tools at the start of each step. Until then the drain phase finds no queue."
 	},
 	"infrastructure:runtime:6362a22f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:9e1310ee": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:f6fb47da": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:7056a090": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:c5f07383": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:13b3351a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:67885fd3": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
+		],
+		"reason": "Each assembly interpolates the system prompt first. M1-5 adds the hook steps that follow it."
 	},
 	"infrastructure:runtime:aa659667": {
 		"status": "planned",
@@ -378,10 +425,12 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:88c209cc": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+		],
+		"reason": "S35 shows only what happens between steps: each assembly reads persisted history once, and a message injected during tools enters the next assembly. M1-5 starts filter_messages on that snapshot and owes the rest."
 	},
 	"infrastructure:runtime:0018442c": {
 		"status": "planned",
@@ -390,10 +439,12 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:14d530a7": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+		],
+		"reason": "The snapshot becomes provider messages. M1-5 transforms the result of filter_messages instead."
 	},
 	"infrastructure:runtime:babeaaef": {
 		"status": "planned",
@@ -402,39 +453,55 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:bd9fdd64": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
+		"reason": "The request is dispatched after assembly. M1-5 adds prefilter_llm_history before it."
 	},
 	"infrastructure:runtime:41fe7364": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+		],
+		"reason": "S35 shows only what happens between steps: a message persisted before an assembly is in it and one injected during tools is in the next. M1-5 starts filter_messages at the snapshot and owes the moment the statement names."
 	},
 	"infrastructure:runtime:8233eb0b": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+		],
+		"reason": "S35 shows that a message injected during tools stays out of the request already sent and enters the next one. It injects only after the model returned, so it cannot show which steps an injection between the snapshot and the call would restart. M1-5 adds filter_messages and the hooks around it, which owe that case."
 	},
 	"infrastructure:runtime:83735bf6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:732b2d4b": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running",
+			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
+			"packages/runtime/test/conformance.test.ts > step loop > S14b stores a tool error that keeps the tool's text for a result that cannot be stored, and runs the next call"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:f3a1cf30": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order",
+			"packages/runtime/test/conformance.test.ts > step loop > S12 validates arguments against the tool schema and runs execute only with the parsed values"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:0496b9da": {
@@ -462,22 +529,34 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:60822bc8": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool wins over max_side_steps when both match",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool wins over max_total_steps when both match"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:47ded442": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response wins over max_side_steps when both match",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response wins over max_total_steps when both match"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:bc5ba253": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": "M1-4 tests that `maxSteps` is evaluated after `stopTool` and `stopOnResponse`. The `maxSessionTurns` part waits for M2, so mark this entry partial after M1-4."
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_total_steps matches once the execution reaches the runtime step cap"
+		],
+		"reason": "maxSteps and the runtime step cap are evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2."
 	},
 	"infrastructure:runtime:f4e7b1f2": {
 		"status": "planned",
@@ -852,15 +931,16 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:d0bf2dee": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a thread reads only its own keys, not those of its parent, child, or sibling",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
-		"reason": "The store implements the per-thread key-value semantics. M1-4 owes ThreadState.getValue and ThreadState.setValue on top of it."
+		"reason": ""
 	},
 	"infrastructure:runtime:f80f3471": {
 		"status": "covered",
@@ -875,9 +955,10 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > setValue makes a value visible to every later getValue on the same thread",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > a key that is not well-formed Unicode fails with KeyNotWellFormed and never aliases another key",
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
-		"reason": "The store makes a written value visible to every later read of the same thread. M1-4 owes one store behind getValue in tools and hooks, and M4 owes it in endpoints."
+		"reason": "Tools read every value an earlier tool or execution wrote. M1-5 owes the same store behind hooks, and M4 owes it behind endpoints."
 	},
 	"infrastructure:runtime:534e316a": {
 		"status": "covered",
@@ -1023,21 +1104,28 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:3faec548": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
+		],
+		"reason": "Steps and tool calls of one execution run in order. M1-6 keeps a second execution of the thread from interleaving."
 	},
 	"infrastructure:runtime:7b5d1f06": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > orders the rules stopTool, stopOnResponse, maxSteps, then the runtime step cap"
+		],
+		"reason": "S20 and the stop-rule table enforce stopTool, stopOnResponse, maxSteps, and the runtime step cap of one prompt side. M2 adds session bindings and maxSessionTurns, which owe the rest."
 	},
 	"infrastructure:runtime:43d5659d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S01 persists the response before any tool and each result before the next tool starts"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:e28dedf2": {
@@ -1065,9 +1153,12 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:5e2f73a8": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:af9b4b76": {
@@ -1615,12 +1706,13 @@
 		"reason": ""
 	},
 	"specification:models:b3b6b02d": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > fails setup when the model's provider factory throws or returns something that is not a provider"
 		],
-		"reason": "M1-2 rejects a provider that is not a function. M1-4 owes calling the factory and checking that it returns a provider."
+		"reason": ""
 	},
 	"specification:models:a170a848": {
 		"status": "covered",
@@ -1661,15 +1753,19 @@
 		"reason": ""
 	},
 	"specification:models:57723af5": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+		],
+		"reason": "Spindle reads capabilities.reasoningLevels. The other capabilities steer features of later milestones."
 	},
 	"specification:models:d7549987": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06a merges provider options from the model and then the prompt, later keys winning"
+		],
 		"reason": ""
 	},
 	"specification:models:53ae9744": {
@@ -1733,12 +1829,13 @@
 		"reason": ""
 	},
 	"specification:models:dd57ce77": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > fails setup when the model's provider factory throws or returns something that is not a provider"
 		],
-		"reason": "M1-2 rejects a provider that is not a function. M1-4 owes calling the factory and checking that it returns a provider."
+		"reason": ""
 	},
 	"specification:models:a8ca6779": {
 		"status": "covered",
@@ -1791,64 +1888,83 @@
 		"reason": ""
 	},
 	"specification:prompts:a3e64f93": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
 		"reason": ""
 	},
 	"specification:prompts:22a9ddbb": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
 		"reason": ""
 	},
 	"specification:prompts:987763cb": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
+		],
 		"reason": ""
 	},
 	"specification:prompts:539cf227": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:23ec065b": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
-		"reason": ""
+		"reason": "requiredSchema applies when the prompt is called as a tool, which M2 adds."
 	},
 	"specification:prompts:59cc8ad5": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
+		],
+		"reason": "Function tools are offered and run. Sub-prompts and handoff agents arrive with M2."
 	},
 	"specification:prompts:5522b650": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
 		"reason": ""
 	},
 	"specification:prompts:7553bb50": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
 		"reason": ""
 	},
 	"specification:prompts:1caa81d5": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+		],
 		"reason": ""
 	},
 	"specification:prompts:149b9d7b": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S24 keeps stored attachment references intact and describes them in the request"
+		],
+		"reason": "Spindle accepts the property. Until M3 adds attachment bytes no image reaches the model as image content, so the threshold changes nothing yet."
 	},
 	"specification:prompts:216a047a": {
 		"status": "planned",
@@ -1857,20 +1973,25 @@
 		"reason": ""
 	},
 	"specification:prompts:d263e879": {
-		"status": "planned",
-		"milestone": "M2",
-		"tests": [],
-		"reason": ""
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks",
+			"packages/runtime/test/conformance.test.ts > step loop > S26d fails before any request when a secret variable or a secret value reaches the finished system prompt",
+			"packages/runtime/test/conformance.test.ts > step loop > S26e treats every instance value as secret, so a text variable from the instance never reaches the system prompt",
+			"packages/runtime/test/cli/run.test.ts > spindle run > fails before any request when a prompt declares the endpoint key as a text variable"
+		],
+		"reason": "A system prompt interpolates only declared text variables whose value a definition supplies. The run fails before a request when a declaration or the provider config marks an interpolated name secret, when an interpolated value comes from the instance environment, or when the finished prompt holds a secret value the execution knows by then. An instance value that nothing declares is checked only after a tool reads it. No untrusted input reaches a system prompt before M2 adds thread arguments to interpolation, so the sanitizing half waits for M2."
 	},
 	"specification:prompts:97e0539c": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two prompts that include each other",
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt that includes itself",
-			"packages/runtime/test/registry/validate.test.ts > validate > includes > rejects an include part that names no defined prompt"
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
 		],
-		"reason": "M1-2 resolves every include part, rejects an include that names no defined prompt, and rejects a cycle. M1-4 owes the recursive expansion when it renders the system prompt."
+		"reason": ""
 	},
 	"specification:prompts:e9cb2058": {
 		"status": "covered",
@@ -1901,64 +2022,76 @@
 		"reason": ""
 	},
 	"specification:prompts:d0ac352d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:20479ea7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:cb3cc2b1": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S08 retries a response without a tool call when the prompt requires one, within the retry budget"
+		],
 		"reason": ""
 	},
 	"specification:prompts:975e02f5": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:ea4bf54e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:2f53909a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S07 passes toolChoice through, sends none with the definitions, and never runs a call the prompt forbids"
+		],
 		"reason": ""
 	},
 	"specification:prompts:64c83f9a": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
-		"reason": ""
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
 	},
 	"specification:prompts:551cdfc5": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
-		"reason": ""
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
 	},
 	"specification:prompts:8ccbefff": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M2",
 		"tests": [],
-		"reason": ""
+		"reason": "These apply to the requiredSchema of a prompt called as a tool, which M2 adds."
 	},
 	"specification:prompts:61b7d2b3": {
 		"status": "planned",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "No user input reaches a prompt in M1-4. M2 adds thread arguments to prompt interpolation."
 	},
 	"specification:prompts:06ac343e": {
 		"status": "covered",
@@ -2047,15 +2180,20 @@
 		"reason": ""
 	},
 	"specification:providers:e50614cd": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure",
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others"
+		],
 		"reason": ""
 	},
 	"specification:providers:016dca2f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
+		],
 		"reason": ""
 	},
 	"specification:providers:8b317fb8": {
@@ -2236,10 +2374,19 @@
 		"reason": ""
 	},
 	"specification:threads:287f2aef": {
-		"status": "planned",
-		"milestone": "M2",
-		"tests": [],
-		"reason": ""
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool",
+			"packages/runtime/test/conformance.test.ts > step loop > S26b redacts a secret of any length from stored tool results, later requests, and run errors",
+			"packages/runtime/test/conformance.test.ts > step loop > S26f redacts the text a tool writes into the thread and keeps what the human and the model wrote",
+			"packages/runtime/test/conformance.test.ts > step loop > S26g treats only the top-level text of a result as JSON and replaces a secret in every nested string as written",
+			"packages/runtime/test/conformance.test.ts > step loop > S26h redacts a stored result after Spindle adds its own note, so a secret that is a word of the note is removed",
+			"packages/runtime/test/cli/run.test.ts > spindle run > learns the secret set before it prints a setup error about the database or the script",
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts the endpoint key and a three-character token from every printed line and the database",
+			"packages/runtime/test/cli/run.test.ts > spindle run > redacts a three-character common word from every line it prints, the summary line included"
+		],
+		"reason": "A value from any source but the thread defaults to secret, and envType always returns secret. Spindle redacts the string values of each stored tool result, the content and metadata of each message a tool injects or edits, every line spindle run prints, and run errors, and it stores the model's response as returned. It finds a value as written and JSON-escaped, not a transformed copy. Thread values marked text arrive with setEnv in M2."
 	},
 	"specification:threads:4e919532": {
 		"status": "planned",
@@ -2386,9 +2533,11 @@
 		"reason": ""
 	},
 	"specification:threads:52e1e778": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
 		"reason": ""
 	},
 	"specification:threads:b97f0023": {
@@ -3370,21 +3519,27 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:8254ece3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:8cefb16e": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+		],
+		"reason": "Later tools observe the injected record on messageHistory. M1-5 adds hooks."
 	},
 	"specification:threads/execution-state:dca92c64": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
 		"reason": ""
 	},
 	"specification:threads/execution-state:cf4e7ca0": {
@@ -3499,41 +3654,54 @@
 		"reason": ""
 	},
 	"specification:threads/messages:7abccc72": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > keeps the structured reasoning of a response and sends it back in the fields it arrived in"
 		],
-		"reason": "The store keeps reasoning_content and reasoning_details with the message. M1-4 owes persisting the reasoning the model returns."
+		"reason": ""
 	},
 	"specification:threads/messages:80b5ff9b": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/cli/run.test.ts > spindle run > sends the reasoning text and details of an earlier response back through openaiCompatible"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:b9e3d243": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:bbc2f60d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > keeps the structured reasoning of a response and sends it back in the fields it arrived in"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:c0dc1ab1": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps reasoning_content and reasoning_details independently of each other",
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
 		],
-		"reason": "The store keeps each reasoning field independently, as null when it receives none and as the value when it receives one. M1-4 owes passing null for each field the model did not return."
+		"reason": ""
 	},
 	"specification:threads/messages:22cf59fa": {
 		"status": "planned",
@@ -3542,13 +3710,14 @@
 		"reason": ""
 	},
 	"specification:threads/messages:b74ef581": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > text > every text column reads back exactly as written, including a NUL character",
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
 		],
-		"reason": "appendMessages resolves after the commit, and getMessage and getMessages return the record. M1-5 owes injectMessage on top of it."
+		"reason": ""
 	},
 	"specification:threads/messages:000bf2b7": {
 		"status": "planned",
@@ -3560,14 +3729,17 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "Store reads omit silent messages unless includeSilent is true. M1-4 owes ThreadState.getMessages and M6 owes the client API on top of it."
+		"reason": "ThreadState.getMessages hides silent messages unless includeSilent is true. M6 owes the client API."
 	},
 	"specification:threads/messages:b93f89a4": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
 		"reason": ""
 	},
 	"specification:threads/messages:e4ba69e7": {
@@ -3586,28 +3758,36 @@
 		"reason": "The store persists and returns a silent message like a visible one. M1-5 owes the same lifecycle hooks and same-execution visibility."
 	},
 	"specification:threads/messages:73bce32e": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+		],
+		"reason": "A later tool observes the injected message. M1-5 adds hooks."
 	},
 	"specification:threads/messages:c4905fe6": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+		],
+		"reason": "The live history is chronological, persisted, and includes silent messages. M1-5 confines the messages that request-context hooks transform to the request."
 	},
 	"specification:threads/messages:6d37745b": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+		],
+		"reason": "S35 shows a message persisted before an assembly in that assembly. It cannot show the moment of the snapshot, because filter_messages, which marks it, arrives in M1-5. M1-5 owes that boundary."
 	},
 	"specification:threads/messages:16606350": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S35 leaves a message injected during tools out of the current request and puts it in the next one"
+		],
+		"reason": "S35 shows a message injected during tools in the next assembly. It injects only after the model returned, so it cannot show an injection after the snapshot starts and before the call. M1-5 adds filter_messages and owes that case."
 	},
 	"specification:threads/messages:4fcc1f95": {
 		"status": "planned",
@@ -3676,19 +3856,22 @@
 		"reason": ""
 	},
 	"specification:tools:dc9a10a7": {
-		"status": "planned",
-		"milestone": "M2",
-		"tests": [],
-		"reason": ""
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
+		],
+		"reason": "A tool invokes a listed function tool through invokeTool. Prompts and agents as targets arrive with M2, and queueTool with M1-6."
 	},
 	"specification:tools:a403d2a5": {
 		"status": "partial",
-		"milestone": "M2",
+		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
 		],
-		"reason": "M1-2 rejects a packed tool whose uses target resolves to nothing the package can see. It accepts a target that resolves to another package's entry agent, which the package does not include. The M1-4 brief owes an invokeTool call outside uses, M1-6 owes the same for queueTool, and M2 owes the other callable categories."
+		"reason": "invokeTool returns an error result for a target outside a supplied uses list, and an empty list permits none. M1-2 checks the uses of packed tools at load. queueTool throws for an undeclared target in M1-6."
 	},
 	"specification:tools:462ec47b": {
 		"status": "planned",
@@ -3739,9 +3922,11 @@
 		"reason": ""
 	},
 	"specification:tools:3bb2444c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S23 ignores tool annotations in the request, the validation, the execution, and the result"
+		],
 		"reason": ""
 	},
 	"specification:tools:24622716": {
@@ -3751,45 +3936,62 @@
 		"reason": ""
 	},
 	"specification:tools:e2d0db94": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S23 ignores tool annotations in the request, the validation, the execution, and the result"
+		],
 		"reason": ""
 	},
 	"specification:tools:20a428b9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S23 ignores tool annotations in the request, the validation, the execution, and the result"
+		],
 		"reason": ""
 	},
 	"specification:tools:e2a1037e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S12 validates arguments against the tool schema and runs execute only with the parsed values"
+		],
 		"reason": ""
 	},
 	"specification:tools:072413a0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order"
+		],
 		"reason": ""
 	},
 	"specification:tools:5522b4f9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S12 validates arguments against the tool schema and runs execute only with the parsed values",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
+		],
 		"reason": ""
 	},
 	"specification:tools:2cf0753e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S12 validates arguments against the tool schema and runs execute only with the parsed values",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
+		],
 		"reason": ""
 	},
 	"specification:tools:cfce7619": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S23 ignores tool annotations in the request, the validation, the execution, and the result",
+			"packages/runtime/test/registry/validate.test.ts > Registry > keeps a tool's annotations unchanged on the loaded definition"
+		],
 		"reason": ""
 	},
 	"specification:type-registry:67c0cc66": {
@@ -4177,10 +4379,12 @@
 		"reason": "The Users page is a Draft in spec 0.2.0."
 	},
 	"infrastructure:runtime:6e443a4c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+		],
+		"reason": "A message from the human side starts an execution. M1-6 queues it when the thread is already executing."
 	},
 	"infrastructure:runtime:d0f4d8de": {
 		"status": "planned",
@@ -4207,34 +4411,45 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:176f7205": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+		],
+		"reason": "The execution settles after the prompt side's turn, and the human's next message starts the next one. M1-6 records the park as the run status."
 	},
 	"infrastructure:runtime:58bf6a6d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:3b206e78": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:43bbb05d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+		],
 		"reason": ""
 	},
 	"infrastructure:runtime:a3bd2fbf": {
 		"status": "planned",
 		"milestone": "M3",
 		"tests": [],
-		"reason": ""
+		"reason": "Until M3 adds the thread file system no attachment bytes exist, so every attachment reaches the model as a text description."
 	},
 	"infrastructure:runtime:e65dd4b8": {
 		"status": "planned",
@@ -4486,63 +4701,71 @@
 		"reason": ""
 	},
 	"specification:threads/messages:6a7975b1": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages returns the stored records and getMessage reads each one back",
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments",
+			"packages/runtime/test/conformance.test.ts > step loop > S13 never runs a call whose streamed arguments are not a JSON object and still runs its sibling"
 		],
-		"reason": "The store keeps tool_calls as the JSON-encoded string it receives. M1-4 owes encoding the model's tool calls in that shape."
+		"reason": ""
 	},
 	"specification:threads/messages:2d964c36": {
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps each lifecycle status it receives"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages keeps each lifecycle status it receives",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
-		"reason": "The store keeps the status it receives. M1-4 and M1-6 owe pending while a message is queued or generating, then completed or failed."
+		"reason": "Spindle stores each message it writes as completed, because it persists a response only after the model finishes it. M1-6 stores pending while a message waits in the queue."
 	},
 	"specification:threads/messages:37e69561": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages counts and pages from one snapshot while another connection inserts between the reads",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:3489685d": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages fails with InvalidMessagesQuery for a limit or offset that is not a non-negative integer",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:f67424cd": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages orders newest first by default and pages with limit and offset",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:bd122f30": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages omits silent messages unless includeSilent is true",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:7f464a24": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > getMessages with maxDepth omits deeper messages",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store implements the option. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:8fe975d3": {
 		"status": "planned",
@@ -4589,22 +4812,25 @@
 		"reason": "The store dequeues messages and tool calls in arrival order. M1-6 owes the drain phase that processes them in that order."
 	},
 	"specification:threads/messages:1edbcdb1": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
+			"packages/runtime/test/conformance.test.ts > step loop > S33 passes ThreadState message reads, updates, and deletes through to thread storage"
 		],
-		"reason": "The store's deleteMessage returns true once and false after. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:threads/messages:96307380": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage returns whether it removed a message and removes the tool results of an assistant message",
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage keeps the results of a later assistant message that reuses a tool call id",
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes only the record itself when it is not an assistant message"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes the tool results of a user message that lists their call ids",
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > deleteMessage removes only the record itself for a tool message or a message without tool calls",
+			"packages/runtime/test/conformance.test.ts > step loop > S33b deletes a side B model turn together with the tool results of its calls"
 		],
-		"reason": "Deleting an assistant message deletes each later tool result whose tool_call_id it lists, unless a later assistant message between them lists the same id. M1-4 owes the ThreadState method that passes this through to the store."
+		"reason": ""
 	},
 	"specification:agents:bf19dc18": {
 		"status": "covered",
@@ -4616,27 +4842,41 @@
 		"reason": ""
 	},
 	"specification:agents:7aa29e92": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S17 stops a turn on a text response without tool calls and only then, unless stopOnResponse is false",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response matches text without calls by default, and never empty text, calls, or a false setting",
+			"packages/runtime/test/conformance.test.ts > step loop > S21 retries a response with no text and no tool call, and fails the run when every retry returns nothing"
+		],
 		"reason": ""
 	},
 	"specification:agents:77195da7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool matches a step that calls the side's stopTool, and no other step",
+			"packages/runtime/test/cli/run.test.ts > spindle run > stops on a stop tool that the agent names with its package prefix"
+		],
 		"reason": ""
 	},
 	"specification:agents:e70c9393": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S18 stops after the step that calls the stop tool, runs every call of that step, and reports the outcome",
+			"packages/runtime/test/conformance.test.ts > step loop > S18b reads the stop property of a redacted result when a secret is part of its name or of its value"
+		],
 		"reason": ""
 	},
 	"specification:agents:c5ab8a06": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps matches once the side has taken maxSteps steps"
+		],
 		"reason": ""
 	},
 	"specification:agents:8fb03a6e": {
@@ -4661,7 +4901,8 @@
 		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape"
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape",
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
 		],
 		"reason": ""
 	},
@@ -4717,9 +4958,11 @@
 		"reason": ""
 	},
 	"specification:agents:d6567ce8": {
-		"status": "planned",
-		"milestone": "M2",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
 		"reason": ""
 	},
 	"specification:agents:13907439": {
@@ -4755,9 +4998,11 @@
 		"reason": ""
 	},
 	"specification:agents:9b948743": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+		],
 		"reason": ""
 	},
 	"specification:agents:5585bfa6": {
@@ -4825,12 +5070,15 @@
 		"status": "planned",
 		"milestone": "M2",
 		"tests": [],
-		"reason": ""
+		"reason": "43bbb05d holds the same sentence for M1. M2 adds the case with two prompt sides."
 	},
 	"infrastructure:runtime:ec3b4b7f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order",
+			"packages/runtime/test/conformance.test.ts > step loop > S06a merges provider options from the model and then the prompt, later keys winning"
+		],
 		"reason": ""
 	},
 	"specification:hooks:3b4fc9bc": {
@@ -4846,28 +5094,31 @@
 		"reason": ""
 	},
 	"specification:threads/messages:968989f2": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
-		"reason": "The store keeps the tool name of a tool result. M1-4 owes setting it."
+		"reason": ""
 	},
 	"specification:threads/messages:41278e5e": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
-		"reason": "The store keeps the tool call id of a tool result. M1-4 owes setting it."
+		"reason": ""
 	},
 	"specification:threads/messages:3b0dd02b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > messages > appendMessages stores tool results with their name, call id, and status",
+			"packages/runtime/test/conformance.test.ts > step loop > S14 stores every tool outcome as a named, linked result and keeps the loop running"
 		],
-		"reason": "The store keeps the tool status of a tool result. M1-4 owes setting it."
+		"reason": ""
 	},
 	"specification:threads/messages:e551bf33": {
 		"status": "partial",
@@ -5065,10 +5316,9 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects provider options that fail the provider's schema",
-			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects provider options that fail the provider's schema"
 		],
-		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. It rejects options that the schema rejects and accepts a scalar that the schema allows. M1-4, which adds the first provider with a schema, owes a test that calls defineModel."
+		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. openaiCompatible declares no providerOptions schema, so no Spindle provider exercises the defineModel path. The first Spindle provider with a schema owes it, and none is planned before M7."
 	},
 	"specification:handlers:cdfccc99": {
 		"status": "partial",
@@ -5176,9 +5426,10 @@
 		"status": "partial",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
-		"reason": "The store keeps values per thread across restarts. M1-4 owes one store behind tools and hooks, and M4 owes it behind endpoints."
+		"reason": "Tools see each value in every later execution. M1-5 owes hooks and M4 owes endpoints."
 	},
 	"specification:threads:3a998922": {
 		"status": "covered",
@@ -5189,12 +5440,13 @@
 		"reason": ""
 	},
 	"specification:threads:1c6df0f5": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them"
+			"packages/runtime/test/store/contract.test.ts > ThreadStore > key-value store > values survive the exit of the process that wrote them",
+			"packages/runtime/test/conformance.test.ts > step loop > S34 keeps a tool's key-value writes for later executions of the same thread and only that thread"
 		],
-		"reason": "The store keeps values per thread across the exit of the process that wrote them. M1-4 owes one store behind every execution of the thread."
+		"reason": ""
 	},
 	"specification:threads:e6726838": {
 		"status": "covered",
@@ -5255,5 +5507,759 @@
 			"packages/runtime/test/store/contract.test.ts > ThreadStore > run status > the run status survives a restart with its since time, including a failed execution_lost status"
 		],
 		"reason": "The store records failed with a reason. M1-6 owes settling to failed when a run ends in an error."
+	},
+	"specification:providers:3ad3e23c": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns from generate the same text, reasoning, call, and finish that stream yields",
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
+		],
+		"reason": ""
+	},
+	"specification:providers:e23472e0": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > routes generate and stream through the injected fetch with the base URL and default headers",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > streams chunk by chunk and gives no tool-call-done to a call whose arguments are not a JSON object",
+			"packages/runtime/test/providers/script.test.ts > scriptedProvider > returns from generate the text, calls, finish, and usage that stream yields for the same response"
+		],
+		"reason": ""
+	},
+	"specification:providers:be41f88f": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort"
+		],
+		"reason": ""
+	},
+	"specification:providers:9df2bdf4": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort"
+		],
+		"reason": ""
+	},
+	"specification:providers:171552a1": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort",
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+		],
+		"reason": ""
+	},
+	"specification:providers:d0c166ad": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort"
+		],
+		"reason": ""
+	},
+	"specification:providers:d7a1b4b5": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError"
+		],
+		"reason": ""
+	},
+	"specification:providers:d20be44c": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
+		],
+		"reason": ""
+	},
+	"specification:providers:a894b520": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
+		],
+		"reason": ""
+	},
+	"specification:providers:b68429b5": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
+		],
+		"reason": ""
+	},
+	"specification:providers:6eb61992": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S11 fetches response metadata beside the loop and waits for it only before the run settles"
+		],
+		"reason": "The model call log in the run outcome holds the metadata of each response. Durable log records arrive with a later milestone."
+	},
+	"specification:providers:a0076042": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06a merges provider options from the model and then the prompt, later keys winning"
+		],
+		"reason": ""
+	},
+	"specification:providers:bf553948": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06a merges provider options from the model and then the prompt, later keys winning"
+		],
+		"reason": ""
+	},
+	"specification:providers:da82bb5b": {
+		"status": "planned",
+		"milestone": "M6",
+		"tests": [],
+		"reason": "Spindle has no source of a runtime request option, and the spec names none. S06a covers the model and prompt tiers. The first interface that can carry request options owes this tier, at the latest the Thread Client API in M6."
+	},
+	"specification:providers:8fd04a52": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure"
+		],
+		"reason": ""
+	},
+	"specification:providers:d3de63cd": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure"
+		],
+		"reason": ""
+	},
+	"specification:providers:3ff82607": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a request that outlives the timeout slot with a timeout ProviderError",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails a body that outlives the timeout slot after the headers arrived with a timeout ProviderError",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > fails with a retryable timeout when the transport times out, and never for a request the caller cancelled",
+			"packages/runtime/test/cli/run.test.ts > spindle run > retries a response whose body the transport times out after the headers arrived"
+		],
+		"reason": ""
+	},
+	"specification:providers:31f3e684": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure"
+		],
+		"reason": ""
+	},
+	"specification:providers:fe4cd03b": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > throws a typed ProviderError with the status, retry delay, and origin of an HTTP failure"
+		],
+		"reason": ""
+	},
+	"specification:providers:bd7788f4": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S22 retries retryable provider errors within the budget and settles failed on the others"
+		],
+		"reason": ""
+	},
+	"specification:providers:e08292c5": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > resolves an extension's sources, forwards its header map without unset leaves, and records secrets"
+		],
+		"reason": ""
+	},
+	"specification:providers:d746d4b2": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > uses the base slot's defaultEnv and then its default when no extension overrides the slot"
+		],
+		"reason": ""
+	},
+	"specification:providers:5131e507": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > uses the base slot's defaultEnv and then its default when no extension overrides the slot"
+		],
+		"reason": ""
+	},
+	"specification:providers:3adfdd7f": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > reports a missing required variable before any request reaches the backend"
+		],
+		"reason": ""
+	},
+	"infrastructure:providers:e356062e": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > hands the executing thread's state to a request-scoped override"
+		],
+		"reason": "generate and stream overrides receive the executing thread's state. Spindle calls no inspectRequest override and no catalog method yet. M7, which adds model catalogs and fallbacks, owes those."
+	},
+	"infrastructure:providers:34cea831": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/providers/openai-compatible.test.ts > provider config slots > builds an extension with createFetch again for each request, with the thread state",
+			"packages/runtime/test/conformance.test.ts > step loop > S36 builds a createFetch transport for every backend request, a retry included"
+		],
+		"reason": ""
+	},
+	"infrastructure:runtime:a7e2995d": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
+		],
+		"reason": ""
+	},
+	"infrastructure:runtime:07cc7193": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
+		"reason": "includeChat and includePastTools filter the history. M1-5 adds filter_messages."
+	},
+	"infrastructure:runtime:482d644d": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
+		"reason": ""
+	},
+	"specification:agents:37cadafc": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02b stores a side B model's turns as user and still presents them as assistant when the human is on side A"
+		],
+		"reason": "S02b shows the perspective for storage and rendering with the human on either side. Queueing arrives in M1-6 and injection hooks in M1-5, and each owes its part."
+	},
+	"specification:agents:44e51927": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_tool wins over max_side_steps when both match"
+		],
+		"reason": ""
+	},
+	"specification:agents:8d9a5b12": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > stop_on_response wins over max_side_steps when both match"
+		],
+		"reason": ""
+	},
+	"specification:agents:35afe886": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match"
+		],
+		"reason": "maxSteps is evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2."
+	},
+	"specification:prompts:f46d5136": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S05 sends the native model id and the offered function tools, and runs two returned calls in order",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort"
+		],
+		"reason": ""
+	},
+	"specification:prompts:07a378de": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
+		"reason": ""
+	},
+	"specification:prompts:cc611236": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > maps the standard request to chat completions, and a reasoning level replaces only the native effort"
+		],
+		"reason": ""
+	},
+	"specification:prompts:3f5e07ed": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns no reasoning from generate or stream when the request excludes it"
+		],
+		"reason": ""
+	},
+	"specification:prompts:aea91179": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+		],
+		"reason": ""
+	},
+	"specification:prompts:13e0d197": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+		],
+		"reason": ""
+	},
+	"specification:prompts:3a27e944": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
+		],
+		"reason": ""
+	},
+	"specification:prompts:8e8bbe20": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S03 renders includes in place and resolves variables by precedence before any request"
+		],
+		"reason": ""
+	},
+	"specification:prompts:29d03e8b": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+		],
+		"reason": ""
+	},
+	"specification:prompts:132940db": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels"
+		],
+		"reason": "The request carries maxTokens. openaiCompatible sends none, because chat completions has no common field for a reasoning token budget. The first Spindle provider with a native budget field owes the mapping, and none is planned before M7."
+	},
+	"specification:prompts:c4839f4c": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S06b carries the prompt's reasoning level, token limit, and exclusion with the model's declared levels",
+			"packages/runtime/test/providers/openai-compatible.test.ts > openaiCompatible > returns no reasoning from generate or stream when the request excludes it"
+		],
+		"reason": ""
+	},
+	"specification:prompts:6e1d2f01": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S10 replays persisted reasoning unless include is false, and never for a message outside the request"
+		],
+		"reason": ""
+	},
+	"specification:prompts:49f402d9": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3."
+	},
+	"specification:prompts:aac9da80": {
+		"status": "planned",
+		"milestone": "M3",
+		"tests": [],
+		"reason": "The threshold needs attachment bytes, which the thread file system brings in M3."
+	},
+	"specification:tools:b7cd3b54": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S26 keeps secrets out of the system prompt and hands them only to the tool that asks"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:6638d0e6": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
+			"packages/runtime/test/conformance.test.ts > step loop > S30 makes an injected message durable at once, visible to the next tool, and eligible from the next assembly"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:d50d7c17": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:50d12acc": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:a5a61544": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:f3f5c522": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S09 assembles one response from interleaved chunks and stores calls in first-seen order with JSON arguments"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:778b4467": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+		],
+		"reason": ""
+	},
+	"specification:threads/messages:61c7bee3": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S04 includeChat and includePastTools admit past turns, and silent messages stay eligible and live"
+		],
+		"reason": "A silent message reaches model context. M1-5 adds the request-context hooks it also reaches."
+	},
+	"specification:threads/messages:1d6d311a": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:04d1538b": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": "Tools receive execution state. M1-5 adds hooks."
+	},
+	"specification:threads/execution-state:048a4525": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": "Endpoints arrive with M4."
+	},
+	"specification:threads/execution-state:8a66bc04": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:6ad6d3c1": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:ffcb95d1": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:77517ef7": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:5c3c3e89": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:0700c380": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:7a728ef6": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": "execution.stop() arrives with M1-6."
+	},
+	"specification:threads/execution-state:da3295e2": {
+		"status": "planned",
+		"milestone": "M1",
+		"tests": [],
+		"reason": "execution.stop() arrives with M1-6."
+	},
+	"specification:threads/execution-state:18655cf1": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:6f984718": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": "Tools receive the abort signal of the execution. M1-6 aborts it when the thread is terminated."
+	},
+	"specification:threads/execution-state:903da2e2": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": ""
+	},
+	"specification:threads:bb21b13f": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": ""
+	},
+	"specification:threads:afa3f93e": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": ""
+	},
+	"specification:threads:ac0df6bc": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": "A Spindle thread has no user, and S28 shows userId as null. Users arrive later, when the Users page leaves Draft, and that milestone owes a thread with a user."
+	},
+	"specification:threads:bc63a67f": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": ""
+	},
+	"specification:threads:7b26e7c9": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": "S28 shows null while the thread is active. terminate arrives in M1-6, which owes the timestamp after termination."
+	},
+	"specification:threads:e6e64d26": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": "S28 shows the empty arguments of a thread created without any. Thread arguments arrive in M2 and subagent arguments in M3, and each owes its part."
+	},
+	"specification:threads:31e057f3": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": ""
+	},
+	"specification:threads:09150a13": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S28 gives a tool a ThreadState with the thread's identity, one execution context, and live execution state"
+		],
+		"reason": "S28 shows execution state during an execution. Endpoints, which read a thread at rest, arrive in M4, which owes null at rest."
+	},
+	"specification:threads:c4b75828": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:e3afb48b": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:4d4c50a2": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:cf66e53e": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:be6b8ba1": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:75fba4a7": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S29 loads definitions and lists their names through ThreadState"
+		],
+		"reason": ""
+	},
+	"specification:threads:341727f4": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
+		"reason": "Agent, prompt, and instance values resolve in that order. Thread values arrive with setEnv in M2, and user values with the Users page."
+	},
+	"specification:threads:a01f5667": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32 resolves env by agent, tool entry, prompt, then instance, classifies it secret, and invokes a listed tool"
+		],
+		"reason": "A value from any source but the thread is secret. Thread values and their text classification arrive with setEnv in M2."
+	},
+	"specification:threads:39260b1a": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
+			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
+		],
+		"reason": ""
+	},
+	"specification:threads:c544edac": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal"
+		],
+		"reason": ""
+	},
+	"specification:threads:4495359b": {
+		"status": "planned",
+		"milestone": "M2",
+		"tests": [],
+		"reason": "Thread values arrive with setEnv in M2."
+	},
+	"specification:threads:65b3e24e": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32b resolves env() from agent defaults, then prompt defaults, then the instance"
+		],
+		"reason": ""
+	},
+	"specification:threads:3918859a": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32b resolves env() from agent defaults, then prompt defaults, then the instance"
+		],
+		"reason": ""
+	},
+	"specification:threads:a12ed69e": {
+		"status": "deferred",
+		"milestone": "later",
+		"tests": [],
+		"reason": "User-account values come from the Users page, a Draft in 0.2.0."
+	},
+	"specification:threads:6cd8ba3f": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S32b resolves env() from agent defaults, then prompt defaults, then the instance"
+		],
+		"reason": ""
+	},
+	"infrastructure:runtime:244b7d29": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > step loop > S24 keeps stored attachment references intact and describes them in the request"
+		],
+		"reason": "S24 shows that stored references survive and reach the request as text descriptions. M3 adds attachment bytes, which owes image parts and their filtering for a model without vision."
 	}
 }

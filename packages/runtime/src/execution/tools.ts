@@ -1,0 +1,262 @@
+import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
+import { Data, Effect, Result } from "effect"
+import type { NewMessage } from "../store/ThreadStore.ts"
+import { type EnvScope, resolveEnv } from "./env.ts"
+import { mapStrings, redactText } from "./redact.ts"
+import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
+
+export interface ToolCall {
+  readonly id: string
+  readonly name: string
+  readonly arguments: Record<string, unknown> | undefined
+  readonly argumentsText: string
+  readonly problem: string | undefined
+}
+
+export interface ToolContext {
+  readonly turn: Turn
+  readonly stateFor: (tool: Loaded<FunctionTool>, entry: PromptToolConfig | undefined) => ThreadState
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+// A thrown value that is not an Error, such as a plain object, is shown as JSON where it can be.
+export const describe = (cause: unknown) => {
+  if (cause instanceof Error) return cause.message
+  try {
+    return JSON.stringify(cause) ?? String(cause)
+  } catch {
+    return String(cause)
+  }
+}
+
+export class ResultUnreadable extends Data.TaggedError("ResultUnreadable")<{ readonly message: string }> {}
+
+export const failed = (error: string): ToolResult => ({ status: "error", error })
+
+export const scopeFor = (turn: Turn, entry: PromptToolConfig | undefined): EnvScope => ({
+  agent: turn.agent.value.env,
+  toolEntry: entry?.env,
+  prompt: turn.prompt.value.env,
+})
+
+const optionalString = (value: unknown) => value === undefined || typeof value === "string"
+
+const isToolResult = (value: unknown): value is ToolResult =>
+  isRecord(value) &&
+  (value.status === "success" || value.status === "error") &&
+  optionalString(value.result) &&
+  optionalString(value.error) &&
+  optionalString(value.error_code) &&
+  optionalString(value.stack) &&
+  (value.error_data === undefined || isRecord(value.error_data)) &&
+  (value.attachments === undefined || Array.isArray(value.attachments))
+
+const FIELDS = ["status", "result", "error", "error_code", "error_data", "stack", "attachments"] as const
+
+// Reads each field of a returned result once into a plain object, so that a getter on the result runs here and
+// later reads cannot throw.
+const fieldsOf = (value: unknown) => {
+  if (!isRecord(value)) return value
+  const fields: Record<string, unknown> = {}
+  for (const key of FIELDS) {
+    const field = value[key]
+    if (field !== undefined) fields[key] = field
+  }
+  return fields
+}
+
+const isAttachmentRef = (value: unknown): value is AttachmentRef =>
+  isRecord(value) && value.type === "file" && typeof value.id === "string" && typeof value.path === "string"
+
+const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) && typeof value.data === "string"
+
+// Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
+// tool throws or returns becomes a ToolResult rather than a failure of the loop.
+export const executeTool = Effect.fn("executeTool")(function* (
+  tool: Loaded<FunctionTool>,
+  input: unknown,
+  state: ThreadState,
+  scope: EnvScope,
+) {
+  const name = tool.definition.qualifiedName
+  for (const variable of tool.value.variables ?? [])
+    if (variable.required && (yield* resolveEnv(scope, variable.name)) === undefined)
+      return failed(`Tool ${name} requires variable ${variable.name}, which has no value`)
+  const schema = tool.value.args ?? null
+  let args: unknown
+  if (schema !== null) {
+    const parsed = yield* Effect.result(
+      Effect.tryPromise({ try: () => schema.safeParseAsync(input), catch: (cause) => cause }),
+    )
+    if (Result.isFailure(parsed))
+      return failed(`Validating the arguments of ${name} threw: ${describe(parsed.failure)}`)
+    if (!parsed.success.success) {
+      const issues = parsed.success.error.issues
+        .map((issue) => `${issue.path.length === 0 ? "(arguments)" : issue.path.join(".")}: ${issue.message}`)
+        .join("; ")
+      return failed(`The arguments for ${name} do not match its schema. ${issues}`)
+    }
+    args = parsed.success.data
+  }
+  const returned = yield* Effect.result(
+    Effect.tryPromise({
+      try: () => (schema === null ? tool.value.execute(state) : tool.value.execute(state, args)),
+      catch: (cause) => cause,
+    }),
+  )
+  if (Result.isFailure(returned)) return failed(`Tool ${name} threw: ${describe(returned.failure)}`)
+  let result: unknown
+  try {
+    result = fieldsOf(returned.success)
+  } catch (cause) {
+    return failed(`Reading the result of tool ${name} threw: ${describe(cause)}`)
+  }
+  if (!isToolResult(result))
+    return failed(
+      `Tool ${name} returned a value that is not a ToolResult. A tool returns an object with status "success" or "error".`,
+    )
+  return result
+})
+
+export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {
+  if (call.problem !== undefined) return failed(call.problem)
+  const exposed = context.turn.tools.get(call.name)
+  if (exposed === undefined) {
+    const offered = [...context.turn.tools.keys()]
+    return failed(
+      `The model called ${call.name}, which prompt ${context.turn.prompt.definition.qualifiedName} does not offer.${offered.length === 0 ? "" : ` It offers ${offered.join(", ")}.`}`,
+    )
+  }
+  return yield* executeTool(
+    exposed.tool,
+    call.arguments,
+    context.stateFor(exposed.tool, exposed.entry),
+    scopeFor(context.turn, exposed.entry),
+  )
+})
+
+// Tools section 2.1: a supplied uses list limits the targets a tool may invoke by name, and invokeTool returns
+// an error result for a target outside it.
+export const invokeTool = Effect.fn("invokeTool")(function* (
+  context: ToolContext,
+  caller: Loaded<FunctionTool>,
+  name: string,
+  input: unknown,
+) {
+  const target = yield* lookup<unknown>("tool", name, caller.definition)
+  const uses = caller.value.uses
+  if (uses !== undefined && uses !== null) {
+    let allowed = false
+    for (const entry of uses)
+      if (
+        entry === name ||
+        (target !== undefined && (yield* lookup("tool", entry, caller.definition))?.definition === target.definition)
+      )
+        allowed = true
+    if (!allowed) return failed(`Tool ${caller.definition.qualifiedName} does not list ${name} in uses`)
+  }
+  if (target === undefined || !isFunctionTool(target.value)) {
+    const other =
+      (yield* lookup("prompt", name, caller.definition)) !== undefined ||
+      (yield* lookup("agent", name, caller.definition)) !== undefined
+    return failed(
+      other
+        ? `${name} is a prompt or an agent. In this version of Spindle, invokeTool reaches function tools only.`
+        : `No tool named ${name} is defined`,
+    )
+  }
+  const tool = target as Loaded<FunctionTool>
+  const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool.definition === tool.definition)?.entry
+  return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))
+})
+
+const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
+  ...item,
+  ...(typeof item.name === "string" ? { name: redact(item.name) } : {}),
+  ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),
+})
+
+// Threads section 2.3: a result is redacted in its string values only. The status, the error code, every property
+// name, and the parts of an attachment that the runtime reads back keep their values. Only the result and error
+// text are read as JSON, and every other string loses each secret as written, whatever it looks like.
+export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
+  ...result,
+  ...(result.result === undefined ? {} : { result: redactText(redact)(result.result) }),
+  ...(result.error === undefined ? {} : { error: redactText(redact)(result.error) }),
+  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact) }),
+  ...(result.attachments === undefined
+    ? {}
+    : {
+        attachments: result.attachments.map((item: unknown) =>
+          isRecord(item) ? redactAttachment(item, redact) : item,
+        ) as NonNullable<ToolResult["attachments"]>,
+      }),
+})
+
+const contentOf = (result: ToolResult) =>
+  result.status === "success"
+    ? (result.result ?? "")
+    : [result.error, result.result].filter((part) => part !== undefined && part !== "").join("\n\n")
+
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
+
+// Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
+// keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
+// The content is redacted after Spindle adds its notes, so a secret that is a word of a note is removed too.
+export const storedResult = (
+  turn: Turn,
+  call: ToolCall,
+  result: ToolResult,
+  redact: (text: string) => string,
+): NewMessage => {
+  const redacted = redactResult(result, redact)
+  const attachments: ReadonlyArray<unknown> = result.attachments ?? []
+  const refs = ((redacted.attachments ?? []) as ReadonlyArray<unknown>).filter(isAttachmentRef)
+  const fresh = attachments.filter(isNewAttachment)
+  const odd = attachments.length - refs.length - fresh.length
+  const dropped = [
+    ...(fresh.length === 0
+      ? []
+      : [
+          `Spindle dropped the new file ${fresh.map((item) => String(item.name)).join(", ")}, because this version cannot store a new file. The thread file system arrives in M3.`,
+        ]),
+    ...(odd === 0
+      ? []
+      : [
+          `Spindle dropped ${odd} ${plural(odd, "attachment that is", "attachments that are")} neither a file reference nor a new file.`,
+        ]),
+  ]
+  return {
+    role: "tool",
+    name: call.name,
+    tool_call_id: call.id,
+    prompt: turn.prompt.definition.qualifiedName,
+    status: "completed",
+    tool_status: dropped.length === 0 ? result.status : "error",
+    content: redactText(redact)([contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n")),
+    attachments: refs.length === 0 ? null : refs,
+    metadata: {
+      ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
+      ...(redacted.error_data === undefined ? {} : { error_data: redacted.error_data }),
+    },
+  }
+}
+
+// Runtime section 5.2: a result that fails between the tool's return and the store becomes a tool error for its
+// call. It keeps the tool's own text and error code, and drops its attachments and error data.
+export const unstorableResult = (result: ToolResult, reason: string): ToolResult => {
+  const parts = [
+    ...((result.attachments ?? []).length === 0 ? [] : ["attachments"]),
+    ...(result.error_data === undefined ? [] : ["error data"]),
+  ]
+  const note = `Spindle dropped the ${parts.length === 0 ? "data" : parts.join(" and ")} of this result, because ${reason}`
+  return {
+    status: "error",
+    error: [result.error ?? "", note].filter((part) => part !== "").join("\n\n"),
+    ...(result.result === undefined ? {} : { result: result.result }),
+    ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "responses": [
+    { "toolCalls": [{ "name": "explode", "arguments": {} }] },
+    { "text": "The tool failed, so I will answer without it." }
+  ]
+}
