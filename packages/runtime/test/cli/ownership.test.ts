@@ -258,6 +258,7 @@ describe("spindle ownership across processes", () => {
           })
         yield* queue(["queue-message", "--role", "user", "--content", "M1"])
         yield* queue(["queue-tool", "--tool", "hold", "--args", JSON.stringify({ name: "k" })])
+        yield* queue(["queue-tool", "--tool", "echo", "--args", JSON.stringify({ text: "durable" })])
         yield* queue(["queue-message", "--role", "user", "--content", "M2"])
         yield* touch(at("release-model"))
         yield* until("the queued tool to start", exists(at("tool-entered-k")))
@@ -271,9 +272,9 @@ describe("spindle ownership across processes", () => {
             ["user", "M1"],
             ["assistant", null],
           ],
-          ["message"],
+          ["tool", "message"],
         ])
-        expect(String(cut.queue[0]?.[1])).toContain("M2")
+        expect(String(cut.queue[1]?.[1])).toContain("M2")
         const read = (child: { readonly out: ReadonlyArray<string> }) => child.out[0] ?? ""
         yield* until(
           "an observer to settle the run as lost",
@@ -284,7 +285,10 @@ describe("spindle ownership across processes", () => {
           }),
         )
         const after = yield* spindle(gate, ["send", thread, "-m", "after", ...project, "--db", db])
-        expect([yield* after.exit, after.out]).toEqual([0, ["ack: M2 | after"]])
+        expect([yield* after.exit, after.out]).toEqual([
+          0,
+          ['[tool call] echo {"text":"durable"}', "[tool result] echo success: durable", "ack: M2 | after"],
+        ])
         const end = yield* stored(db, thread)
         expect([end.messages, end.queue]).toEqual([
           [
@@ -293,13 +297,15 @@ describe("spindle ownership across processes", () => {
             ["user", "M1"],
             ["assistant", null],
             ["tool", "error"],
+            ["assistant", null],
+            ["tool", "success"],
             ["user", "M2"],
             ["user", "after"],
             ["assistant", "ack: M2 | after"],
           ],
           [],
         ])
-        expect(yield* lines(at("tool-log"))).toEqual(["k"])
+        expect(yield* lines(at("tool-log"))).toEqual(["k", "echo durable"])
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )

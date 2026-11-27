@@ -7,7 +7,7 @@ export const MAX_REQUIREMENTS_PER_TEST = 8
 
 const LedgerEntry = Schema.Struct({
   status: Schema.Literals(["covered", "partial", "planned", "deferred", "not-testable"]),
-  milestone: Schema.Literals(["M1", "M2", "M3", "M4", "M5", "M6", "M7", "later", "none"]),
+  milestone: Schema.Literals(["M1", "M1c", "M2a", "M2b", "M3a", "M3b", "M4", "M5", "M6", "M7", "later", "none"]),
   tests: Schema.Array(Schema.String),
   reason: Schema.String,
 })
@@ -147,7 +147,7 @@ if (import.meta.main) {
   }
   const count = (status: string) => Object.values(ledger).filter((entry) => entry.status === status).length
   const partial = count("partial") === 0 ? "" : `, ${count("partial")} partial`
-  const m1 = Object.values(ledger).filter((entry) => entry.milestone === "M1")
+  const m1 = Object.values(ledger).filter((entry) => entry.milestone === "M1" || entry.milestone === "M1c")
   const inM1 = (status: string) => m1.filter((entry) => entry.status === status).length
   console.log(
     `ledger ok, ${requirementIds.length} requirements, ${count("covered")} covered${partial}, milestone 1 ${inM1("covered")} covered of ${m1.length}, ${inM1("planned")} planned`,
