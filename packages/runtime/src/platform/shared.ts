@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 export { openChatTerminal } from "./chat-terminal.ts"
+export { isolateDefinitionLoads, readDefinition } from "./definition-load.ts"
 export { Interrupts, runMain } from "./interrupts.ts"
 export { processAlive } from "./process-alive.ts"
 

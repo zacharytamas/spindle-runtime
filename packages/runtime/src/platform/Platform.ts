@@ -6,6 +6,8 @@ import type * as BunPlatform from "./bun.ts"
 import type * as NodePlatform from "./node.ts"
 
 export interface Platform {
+  readonly isolateDefinitionLoads: typeof import("./definition-load.ts").isolateDefinitionLoads
+  readonly readDefinition: typeof import("./definition-load.ts").readDefinition
   readonly isMain: (meta: ImportMeta) => boolean
   readonly openChatTerminal: typeof import("./chat-terminal.ts").openChatTerminal
   readonly platformName: "node" | "bun"

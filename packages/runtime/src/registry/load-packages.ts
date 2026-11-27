@@ -1,5 +1,6 @@
 import type { PackageSignature } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Predicate, Result, SemVer } from "effect"
+import { readDefinition } from "#platform"
 import { type Issue, issue, KINDS, type Package, pluralKind } from "./definition.ts"
 import { type Discovered, describeCause, type ImportFile, loadFailure } from "./load-error.ts"
 import { packageEntry } from "./package-entry.ts"
@@ -78,8 +79,9 @@ const collectDefinitions = (
     }
     for (const [key, loader] of Object.entries(loaders)) {
       const at = `${plural}.${key}`
-      const load = Effect.tryPromise({
-        try: async () => {
+      const load = readDefinition(
+        file,
+        async () => {
           if (typeof loader !== "function") throw new TypeError(`${at} is not a loader function`)
           const pending: unknown = loader()
           // A Promise from another realm fails instanceof Promise, so any thenable counts.
@@ -87,11 +89,11 @@ const collectDefinitions = (
           if (typeof then !== "function") throw new TypeError(`${at} returns a value, not a Promise`)
           return withSignature(await pending, signature)
         },
-        catch: (cause) => {
+        (cause) => {
           const prefix = `${name} ${at} failed to load: `
           return loadFailure(cause, file, at, prefix, prefix + describeCause(cause))
         },
-      })
+      )
       definitions.push({
         kind,
         name: key,

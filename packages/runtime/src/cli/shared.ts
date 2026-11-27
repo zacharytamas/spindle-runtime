@@ -1,13 +1,15 @@
 import type { Message, ProviderRequest, ProviderToolCallPart } from "@standardagents/spec"
 import { Cause, Console, Data, Duration, Effect, FileSystem, Layer, Logger, Option, Path, Runtime } from "effect"
 import { Flag } from "effect/cli"
-import { SqliteLive } from "#platform"
+import { isolateDefinitionLoads, SqliteLive } from "#platform"
 import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
 import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
 import { layer as supervisorLayer } from "../execution/ThreadSupervisor.ts"
 import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
+import { issue } from "../registry/definition.ts"
+import { describeCause } from "../registry/load-error.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
 import { ThreadTerminated } from "../store/model.ts"
@@ -105,7 +107,31 @@ export const openDatabase = (filename: string) =>
     }),
   )
 
+export const loadTimeoutFlag = Flag.Finite("load-timeout").pipe(
+  Flag.filter(
+    (seconds) => seconds > 0,
+    () => "--load-timeout takes a number of seconds above 0",
+  ),
+  Flag.withDescription("Seconds one definition file or package loader may take. The default is 30."),
+  Flag.withDefault(30),
+)
+
+export const commandRegistry = (root: string, seconds: number) =>
+  Layer.effect(
+    Registry,
+    isolateDefinitionLoads(seconds, Effect.provide(Registry, Registry.layer(root))).pipe(
+      Effect.map(({ value, faults }) => ({
+        ...value,
+        issues: [
+          ...value.issues,
+          ...faults.map(({ file, cause }) => issue("definition_load_failed", file, "", describeCause(cause))),
+        ],
+      })),
+    ),
+  )
+
 export const deliveryFlags = {
+  loadTimeout: loadTimeoutFlag,
   message: Flag.String("message").pipe(Flag.withAlias("m"), Flag.withDescription("The message from the human side")),
   dir: Flag.String("dir").pipe(Flag.withDescription("The project directory that holds agents/"), Flag.withDefault(".")),
   script: Flag.String("script").pipe(
@@ -161,6 +187,7 @@ export const withProject = <A, E, R>(
   target: { agent: string; resume?: boolean } | { thread: string },
   script: Option.Option<string>,
   toolTimeouts: ReadonlyArray<string>,
+  loadTimeout: number,
   secrets: Set<string>,
   body: (role: Message["role"], filename: string) => Effect.Effect<A, E, R>,
   observer?: (role: Message["role"]) => (event: ExecutionEvent) => Effect.Effect<void>,
@@ -202,5 +229,5 @@ export const withProject = <A, E, R>(
         ...(provider ? { provider } : {}),
       })
       return yield* body(role, filename).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
-    }).pipe(Effect.provide(Registry.layer(root)))
+    }).pipe(Effect.provide(commandRegistry(root, loadTimeout)))
   }).pipe(Effect.scoped)
