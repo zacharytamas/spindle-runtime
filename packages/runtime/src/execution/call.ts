@@ -138,7 +138,133 @@ export const applyChunk = (response: ModelResponse, chunk: ProviderStreamChunk):
   }
 }
 
-const streamResponse = (provider: LLMProviderInterface, request: ProviderRequest) =>
+// Reads a call's argument text as it streams and returns the value of one top-level argument as soon as that value
+// is complete, before the rest of the call arrives. Each character is read once.
+export const argumentWatcher = (key: string) => {
+  let text = ""
+  let depth = 0
+  let inString = false
+  let escaped = false
+  let phase: "key" | "colon" | "value" | "string" | "scalar" | "nested" | "after" = "key"
+  let start = 0
+  let name: unknown
+  const complete = (end: number) => {
+    if (name !== key) return undefined
+    try {
+      return { value: JSON.parse(text.slice(start, end)) as unknown }
+    } catch {
+      return { value: undefined }
+    }
+  }
+  return (delta: string): { readonly value: unknown } | undefined => {
+    const from = text.length
+    text += delta
+    for (let index = from; index < text.length; index++) {
+      const char = text[index] ?? ""
+      if (inString) {
+        if (escaped) escaped = false
+        else if (char === "\\") escaped = true
+        else if (char === '"') {
+          inString = false
+          if (depth === 1 && phase === "key") {
+            try {
+              name = JSON.parse(text.slice(start, index + 1))
+            } catch {
+              name = undefined
+            }
+            phase = "colon"
+          } else if (depth === 1 && phase === "string") {
+            phase = "after"
+            const found = complete(index + 1)
+            if (found !== undefined) return found
+          }
+        }
+        continue
+      }
+      const space = char.trim() === ""
+      if (depth === 1 && phase === "scalar" && (char === "," || char === "}" || space)) {
+        const found = complete(index)
+        if (found !== undefined) return found
+        phase = "after"
+      }
+      if (char === '"') {
+        inString = true
+        if (depth === 1 && (phase === "key" || phase === "value")) {
+          start = index
+          if (phase === "value") phase = "string"
+        }
+      } else if (char === "{" || char === "[") {
+        if (depth === 1 && phase === "value") {
+          start = index
+          phase = "nested"
+        }
+        depth += 1
+      } else if (char === "}" || char === "]") {
+        depth -= 1
+        if (depth === 1 && phase === "nested") {
+          phase = "after"
+          const found = complete(index + 1)
+          if (found !== undefined) return found
+        }
+      } else if (depth === 1 && phase === "colon" && char === ":") phase = "value"
+      else if (depth === 1 && char === ",") phase = "key"
+      else if (depth === 1 && phase === "value" && !space) {
+        start = index
+        phase = "scalar"
+      }
+    }
+    return undefined
+  }
+}
+
+// Hooks section 5.1 and Tools section 7. The loop observes each call as it streams.
+export interface StreamedCalls {
+  readonly progressArgument: (toolName: string) => string | undefined
+  readonly started: (call: StreamedCall, progress: string | undefined) => Effect.Effect<void>
+  // The calls of an attempt that failed or that the loop rejected. They started and never run.
+  readonly abandoned: (calls: ReadonlyArray<StreamedCall>) => Effect.Effect<void>
+}
+
+// A call without a progress argument starts when its name is known. A call with one starts when that argument is
+// complete, or when the call is done or the stream finishes without it.
+const startCalls = (
+  response: ModelResponse,
+  chunk: ProviderStreamChunk,
+  hooks: StreamedCalls,
+  started: Array<StreamedCall>,
+  watchers: Map<string, (delta: string) => { readonly value: unknown } | undefined>,
+) =>
+  Effect.gen(function* () {
+    const start = (call: StreamedCall, progress: unknown) => {
+      started.push(call)
+      return hooks.started(call, typeof progress === "string" ? progress : undefined)
+    }
+    if (chunk.type === "finish") {
+      for (const call of response.calls.values()) if (!started.includes(call)) yield* start(call, undefined)
+      return
+    }
+    if (chunk.type !== "tool-call-start" && chunk.type !== "tool-call-delta" && chunk.type !== "tool-call-done") return
+    const call = response.calls.get(chunk.id)
+    if (call === undefined || call.name === "" || started.includes(call)) return
+    const argument = hooks.progressArgument(call.name)
+    if (argument === undefined) return yield* start(call, undefined)
+    if (chunk.type === "tool-call-done") return yield* start(call, call.arguments?.[argument])
+    let watch = watchers.get(call.id)
+    let found: { readonly value: unknown } | undefined
+    if (watch === undefined) {
+      watch = argumentWatcher(argument)
+      watchers.set(call.id, watch)
+      found = watch(call.argumentsText)
+    } else if (chunk.type === "tool-call-delta") found = watch(chunk.argumentsDelta)
+    if (found !== undefined) yield* start(call, found.value)
+  })
+
+const streamResponse = (
+  provider: LLMProviderInterface,
+  request: ProviderRequest,
+  hooks: StreamedCalls | undefined,
+  started: Array<StreamedCall>,
+) =>
   Effect.gen(function* () {
     const iterable = yield* Effect.tryPromise({
       try: () => provider.stream(request),
@@ -154,6 +280,7 @@ const streamResponse = (provider: LLMProviderInterface, request: ProviderRequest
       providerTools: 0,
       finish: undefined,
     }
+    const watchers = new Map<string, (delta: string) => { readonly value: unknown } | undefined>()
     const read = Effect.gen(function* () {
       while (true) {
         const next = yield* Effect.tryPromise({
@@ -163,6 +290,7 @@ const streamResponse = (provider: LLMProviderInterface, request: ProviderRequest
         if (next.done === true) break
         const failure = applyChunk(response, next.value)
         if (failure !== undefined) return yield* failure
+        if (hooks !== undefined) yield* startCalls(response, next.value, hooks, started, watchers)
       }
       const { finish } = response
       // A stream cut off before its finish chunk is an incomplete response, retried like a server error.
@@ -220,6 +348,7 @@ export interface CallContext {
   readonly calls: Array<ModelCall>
   readonly pending: Array<Fiber.Fiber<void>>
   readonly record: (detail: string) => Effect.Effect<void>
+  readonly streamed?: StreamedCalls
 }
 
 const backoff = (failure: ProviderFailure, attempt: number) =>
@@ -262,8 +391,12 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     yield* context.record(`${provider.name} ${request.model} attempt ${attempt}`)
     const log: ModelCall = { step: context.step, attempt, model: request.model }
     context.calls.push(log)
-    const result = yield* Effect.result(streamResponse(provider, request))
+    const started: Array<StreamedCall> = []
+    const abandon = () =>
+      started.length === 0 || context.streamed === undefined ? Effect.void : context.streamed.abandoned(started)
+    const result = yield* Effect.result(streamResponse(provider, request, context.streamed, started))
     if (Result.isFailure(result)) {
+      yield* abandon()
       const failure = result.failure
       const { message, code, statusCode, origin, upstream } = failure
       log.error = {
@@ -296,6 +429,7 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     const rejected = violation(response, context.toolChoice)
     if (rejected === undefined) return response
     log.rejected = rejected
+    yield* abandon()
     if (attempt > context.retries)
       return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
   }

@@ -1,8 +1,7 @@
-import type { AttachmentRef, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
+import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult } from "@standardagents/spec"
 import { Data, Effect, Result } from "effect"
 import type { NewMessage } from "../store/ThreadStore.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
-import { mapStrings, redactText } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -121,6 +120,16 @@ export const executeTool = Effect.fn("executeTool")(function* (
   return result
 })
 
+// A ToolResult read once into a plain object, or undefined when the value is not one or reading it throws.
+export const readResult = (value: unknown): ToolResult | undefined => {
+  try {
+    const result = fieldsOf(value)
+    return isToolResult(result) ? result : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {
   if (call.problem !== undefined) return failed(call.problem)
   const exposed = context.turn.tools.get(call.name)
@@ -173,27 +182,10 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
   return yield* executeTool(tool, input, context.stateFor(tool, entry), scopeFor(context.turn, entry))
 })
 
-const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
+export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({
   ...item,
   ...(typeof item.name === "string" ? { name: redact(item.name) } : {}),
   ...(typeof item.description === "string" ? { description: redact(item.description) } : {}),
-})
-
-// Threads section 2.3: a result is redacted in its string values only. The status, the error code, every property
-// name, and the parts of an attachment that the runtime reads back keep their values. Only the result and error
-// text are read as JSON, and every other string loses each secret as written, whatever it looks like.
-export const redactResult = (result: ToolResult, redact: (text: string) => string): ToolResult => ({
-  ...result,
-  ...(result.result === undefined ? {} : { result: redactText(redact)(result.result) }),
-  ...(result.error === undefined ? {} : { error: redactText(redact)(result.error) }),
-  ...(result.error_data === undefined ? {} : { error_data: mapStrings(result.error_data, redact) }),
-  ...(result.attachments === undefined
-    ? {}
-    : {
-        attachments: result.attachments.map((item: unknown) =>
-          isRecord(item) ? redactAttachment(item, redact) : item,
-        ) as NonNullable<ToolResult["attachments"]>,
-      }),
 })
 
 const contentOf = (result: ToolResult) =>
@@ -205,16 +197,10 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
-// The content is redacted after Spindle adds its notes, so a secret that is a word of a note is removed too.
-export const storedResult = (
-  turn: Turn,
-  call: ToolCall,
-  result: ToolResult,
-  redact: (text: string) => string,
-): NewMessage => {
-  const redacted = redactResult(result, redact)
+// createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
+export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
-  const refs = ((redacted.attachments ?? []) as ReadonlyArray<unknown>).filter(isAttachmentRef)
+  const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
   const odd = attachments.length - refs.length - fresh.length
   const dropped = [
@@ -236,12 +222,26 @@ export const storedResult = (
     prompt: turn.prompt.definition.qualifiedName,
     status: "completed",
     tool_status: dropped.length === 0 ? result.status : "error",
-    content: redactText(redact)([contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n")),
+    content: [contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n"),
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
-      ...(redacted.error_data === undefined ? {} : { error_data: redacted.error_data }),
+      // A copy runs every getter of the error data here, inside the caller's try, so one that throws makes the
+      // result unstorable rather than failing the write that redacts it.
+      ...(result.error_data === undefined ? {} : { error_data: structuredClone(result.error_data) }),
     },
+  }
+}
+
+// The result that a stored tool message holds, in the shape a tool returns it.
+export const resultOf = (message: Message): ToolResult => {
+  const text = message.content ?? ""
+  const { error_code, error_data } = message.metadata ?? {}
+  return {
+    ...(message.tool_status === "error" ? { status: "error", error: text } : { status: "success", result: text }),
+    ...(message.attachments == null ? {} : { attachments: message.attachments }),
+    ...(typeof error_code === "string" ? { error_code } : {}),
+    ...(isRecord(error_data) ? { error_data } : {}),
   }
 }
 

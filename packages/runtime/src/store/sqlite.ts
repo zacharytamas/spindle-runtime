@@ -1,7 +1,8 @@
-import { Clock, Effect, Layer } from "effect"
+import { Clock, Effect, Layer, Option } from "effect"
 import * as Migrator from "effect/sql/Migrator"
 import { BeginTransaction, SqlClient } from "effect/sql/SqlClient"
 import threads from "./migrations/0001_threads.ts"
+import revisions from "./migrations/0002_revision.ts"
 import {
   type MessageRow,
   messageColumns,
@@ -21,13 +22,17 @@ import {
 import {
   InvalidMessagesQuery,
   KeyNotWellFormed,
+  MessageIdTaken,
   MessageNotFound,
+  type ThreadHistory,
   ThreadNotFound,
   ThreadStore,
   ValueNotJson,
 } from "./ThreadStore.ts"
 
-const migrate = Migrator.make({})({ loader: Migrator.fromRecord({ "0001_threads": threads }) })
+const migrate = Migrator.make({})({
+  loader: Migrator.fromRecord({ "0001_threads": threads, "0002_revision": revisions }),
+})
 
 const nowMicros = Effect.map(Clock.currentTimeNanos, (nanos) => Number(nanos / 1000n))
 
@@ -138,6 +143,55 @@ export const layer = Layer.effect(
           }),
         ),
 
+      insertMessage: (threadId, message) =>
+        Effect.gen(function* () {
+          const nested = Option.isSome(yield* Effect.serviceOption(sql.transactionService))
+          return yield* sql.withTransaction(
+            Effect.gen(function* () {
+              const thread = yield* first(
+                yield* sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`,
+                () => new ThreadNotFound({ threadId }),
+              )
+              // Message ids are unique across threads, so an id that another thread holds is taken too.
+              const taken = yield* sql`SELECT 1 FROM messages WHERE id = ${message.id}`
+              if (taken.length > 0) return yield* new MessageIdTaken({ messageId: message.id })
+              const row = messageRow(threadId, message.id, message.created_at, message, {
+                attachments:
+                  message.attachments == null ? null : yield* json("the message attachments", message.attachments),
+                metadata: yield* json("the message metadata", message.metadata ?? {}),
+              })
+              yield* sql`INSERT INTO messages ${sql.insert(row)}`
+              // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
+              return { message: toMessage(row), revision: nested ? null : thread.revision + 1 }
+            }),
+          )
+        }),
+
+      revision: (threadId) =>
+        Effect.flatMap(sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`, (rows) =>
+          Effect.map(
+            first(rows, () => new ThreadNotFound({ threadId })),
+            (row) => row.revision,
+          ),
+        ),
+
+      history: (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* first(
+            yield* sql<{ revision: number }>`SELECT revision FROM threads WHERE id = ${threadId}`,
+            () => new ThreadNotFound({ threadId }),
+          )
+          const rows = yield* sql<MessageRow>`${selectMessages(sql.and([sql`thread_id = ${threadId}`]))} ORDER BY seq`
+          return { revision: thread.revision, messages: rows.map(toMessage) }
+        }).pipe(sql.withTransaction, Effect.provideService(BeginTransaction, "BEGIN"), (read) =>
+          Effect.flatMap(Effect.serviceOption(sql.transactionService), (outer) =>
+            Effect.map(
+              read,
+              (history): ThreadHistory => (Option.isSome(outer) ? { ...history, revision: null } : history),
+            ),
+          ),
+        ),
+
       getMessages: (threadId, options = {}) =>
         Effect.gen(function* () {
           const { limit, offset = 0, order = "desc", includeSilent = false, maxDepth } = options
@@ -166,6 +220,9 @@ export const layer = Layer.effect(
         Effect.map(selectMessages(sql.and([sql`thread_id = ${threadId}`, sql`id = ${messageId}`])), (rows) =>
           rows[0] === undefined ? null : toMessage(rows[0]),
         ),
+
+      messageIdTaken: (messageId) =>
+        Effect.map(sql`SELECT 1 FROM messages WHERE id = ${messageId}`, (rows) => rows.length > 0),
 
       updateMessage: (threadId, messageId, updates) =>
         sql.withTransaction(

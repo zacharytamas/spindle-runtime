@@ -61,6 +61,26 @@ export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{
   readonly messageId: string
 }> {}
 
+export type IdentifiedMessage = NewMessage & Pick<Message, "id" | "created_at">
+
+// The revision is null when the insert ran inside a caller's transaction, which may still roll it back.
+export interface Inserted {
+  readonly message: Message
+  readonly revision: number | null
+}
+
+// The revision is null when the read ran inside a caller's transaction, which may still roll back what it read.
+export interface ThreadHistory {
+  readonly revision: number | null
+  readonly messages: ReadonlyArray<Message>
+}
+
+export class MessageIdTaken extends Data.TaggedError("MessageIdTaken")<{ readonly messageId: string }> {
+  override get message() {
+    return `a message with id ${JSON.stringify(this.messageId)} already exists`
+  }
+}
+
 export class ValueNotJson extends Data.TaggedError("ValueNotJson")<{
   readonly field: string
   readonly path: string
@@ -98,11 +118,22 @@ export class ThreadStore extends Context.Service<
       threadId: string,
       messages: ReadonlyArray<NewMessage>,
     ) => Effect.Effect<ReadonlyArray<Message>, ThreadNotFound | ValueNotJson | SqlError>
+    // Stores a message whose id and created_at the caller already chose, as a before_create_message hook saw them.
+    readonly insertMessage: (
+      threadId: string,
+      message: IdentifiedMessage,
+    ) => Effect.Effect<Inserted, ThreadNotFound | ValueNotJson | MessageIdTaken | SqlError>
+    // Every insert, update, and delete of one of the thread's messages raises its revision by one, whoever writes.
+    readonly revision: (threadId: string) => Effect.Effect<number, ThreadNotFound | SqlError>
+    // Every message of the thread, oldest first and silent ones included, and the revision they match.
+    readonly history: (threadId: string) => Effect.Effect<ThreadHistory, ThreadNotFound | SqlError>
     readonly getMessages: (
       threadId: string,
       options?: GetMessagesOptions,
     ) => Effect.Effect<MessagesResult, InvalidMessagesQuery | SqlError>
     readonly getMessage: (threadId: string, messageId: string) => Effect.Effect<Message | null, SqlError>
+    // Message ids are unique across threads, so this asks whether any thread holds the id.
+    readonly messageIdTaken: (messageId: string) => Effect.Effect<boolean, SqlError>
     readonly updateMessage: (
       threadId: string,
       messageId: string,

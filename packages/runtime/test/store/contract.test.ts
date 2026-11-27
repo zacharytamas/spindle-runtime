@@ -198,6 +198,162 @@ describe("ThreadStore", () => {
       }).pipe(Effect.provide(inMemory)),
     )
 
+    it.effect("insertMessage keeps the id and creation time the caller chose and stores it in arrival order", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        yield* TestClock.adjust("5 seconds")
+        const [first] = yield* store.appendMessages(thread.id, [user("first")])
+        const { message: inserted } = yield* store.insertMessage(thread.id, {
+          id: "chosen-id",
+          created_at: 42,
+          role: "user",
+          content: "second",
+          silent: true,
+          metadata: { stamped: true },
+        })
+        expect(inserted).toMatchObject({ id: "chosen-id", created_at: 42, content: "second", silent: true })
+        expect(yield* store.getMessage(thread.id, "chosen-id")).toEqual(inserted)
+        const read = (yield* store.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
+        expect(read.map((m) => [m.id, m.created_at])).toEqual([
+          [first?.id, 5_000_000],
+          ["chosen-id", 42],
+        ])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("insertMessage fails with MessageIdTaken for an id that any thread holds and keeps the first row", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const other = yield* store.createThread({ agentId: "assistant" })
+        const [existing] = yield* store.appendMessages(thread.id, [user("original")])
+        const id = existing?.id ?? ""
+        const again = yield* Effect.flip(
+          store.insertMessage(thread.id, { id, created_at: 1, role: "user", content: "replacement" }),
+        )
+        expect(again).toMatchObject({ _tag: "MessageIdTaken", messageId: id })
+        const elsewhere = yield* Effect.flip(
+          store.insertMessage(other.id, { id, created_at: 1, role: "user", content: "elsewhere" }),
+        )
+        expect(elsewhere._tag).toBe("MessageIdTaken")
+        expect(yield* store.getMessage(thread.id, id)).toEqual(existing)
+        expect((yield* store.getMessages(thread.id, { includeSilent: true })).total).toBe(1)
+        expect((yield* store.getMessages(other.id, { includeSilent: true })).total).toBe(0)
+        const missing = yield* Effect.flip(
+          store.insertMessage("missing", { id: "fresh", created_at: 1, role: "user", content: "x" }),
+        )
+        expect(missing._tag).toBe("ThreadNotFound")
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("messageIdTaken says whether any thread holds a message id", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [existing] = yield* store.appendMessages(thread.id, [user("original")])
+        expect(yield* store.messageIdTaken(existing?.id ?? "")).toBe(true)
+        expect(yield* store.messageIdTaken("fresh")).toBe(false)
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect(
+      "each inserted, updated, or deleted row of a thread's messages raises that thread's revision by one",
+      () =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore
+          const thread = yield* store.createThread({ agentId: "assistant" })
+          const other = yield* store.createThread({ agentId: "assistant" })
+          const revisions = [yield* store.revision(thread.id)]
+          const [first] = yield* store.appendMessages(thread.id, [user("first"), user("second")])
+          revisions.push(yield* store.revision(thread.id))
+          const inserted = yield* store.insertMessage(thread.id, {
+            id: "chosen",
+            created_at: 1,
+            role: "user",
+            content: "x",
+          })
+          revisions.push(yield* store.revision(thread.id))
+          yield* store.updateMessage(thread.id, first?.id ?? "", { content: "edited" })
+          revisions.push(yield* store.revision(thread.id))
+          yield* store.deleteMessage(thread.id, "chosen")
+          revisions.push(yield* store.revision(thread.id))
+          const [call] = yield* store.appendMessages(thread.id, [
+            { role: "assistant", content: null, tool_calls: toolCalls("a", "b") },
+            { role: "tool", content: "ok", tool_call_id: "a" },
+            { role: "tool", content: "ok", tool_call_id: "b" },
+          ])
+          revisions.push(yield* store.revision(thread.id))
+          yield* store.deleteMessage(thread.id, call?.id ?? "")
+          revisions.push(yield* store.revision(thread.id))
+          yield* store.appendMessages(other.id, [user("elsewhere")])
+          yield* store.deleteMessage(thread.id, "missing")
+          revisions.push(yield* store.revision(thread.id))
+          expect(revisions).toEqual([0, 2, 3, 4, 5, 8, 11, 11])
+          expect(inserted.revision).toBe(3)
+          expect(yield* store.revision(other.id)).toBe(1)
+          expect((yield* Effect.flip(store.revision("missing")))._tag).toBe("ThreadNotFound")
+        }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("a message write inside a transaction that rolls back leaves the revision as it was", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const [kept] = yield* store.appendMessages(thread.id, [user("kept")])
+        const id = kept?.id ?? ""
+        const writes: ReadonlyArray<Effect.Effect<unknown, unknown>> = [
+          store.appendMessages(thread.id, [user("appended")]),
+          store.insertMessage(thread.id, { id: "inserted", created_at: 1, role: "user", content: "x" }),
+          store.updateMessage(thread.id, id, { content: "edited" }),
+          store.deleteMessage(thread.id, id),
+        ]
+        for (const write of writes)
+          expect(yield* Effect.flip(store.transaction(Effect.andThen(write, Effect.fail("crash"))))).toBe("crash")
+        expect(yield* store.history(thread.id)).toEqual({ revision: 1, messages: [kept] })
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect("insertMessage reports the revision after its insert, and none inside a caller's transaction", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "assistant" })
+        const alone = yield* store.insertMessage(thread.id, { id: "alone", created_at: 1, role: "user", content: "x" })
+        const nested = yield* store.transaction(
+          store.insertMessage(thread.id, { id: "nested", created_at: 2, role: "user", content: "y" }),
+        )
+        expect([alone.revision, nested.revision, yield* store.revision(thread.id)]).toEqual([1, null, 2])
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect(
+      "history reads every message oldest first with the revision they match, and sees another connection",
+      () =>
+        withDatabaseFile((filename) =>
+          Effect.gen(function* () {
+            const store = yield* ThreadStore
+            const thread = yield* store.createThread({ agentId: "assistant" })
+            yield* store.appendMessages(thread.id, [user("first"), user("quiet", { silent: true })])
+            const before = yield* store.history(thread.id)
+            yield* Effect.gen(function* () {
+              const other = yield* ThreadStore
+              yield* other.appendMessages(thread.id, [user("from another connection")])
+            }).pipe(Effect.provide(storeAt(filename)))
+            const after = yield* store.history(thread.id)
+            expect({ revision: before.revision, contents: before.messages.map((m) => m.content) }).toEqual({
+              revision: 2,
+              contents: ["first", "quiet"],
+            })
+            expect(yield* store.revision(thread.id)).toBe(3)
+            expect({ revision: after.revision, contents: after.messages.map((m) => m.content) }).toEqual({
+              revision: 3,
+              contents: ["first", "quiet", "from another connection"],
+            })
+            expect((yield* Effect.flip(store.history("missing")))._tag).toBe("ThreadNotFound")
+          }).pipe(Effect.provide(storeAt(filename))),
+        ),
+    )
+
     it.effect("appendMessages keeps reasoning_content and reasoning_details independently of each other", () =>
       Effect.gen(function* () {
         const store = yield* ThreadStore

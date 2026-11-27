@@ -4,7 +4,9 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
-import { mapStrings, redactor, redactText } from "./redact.ts"
+import { copyMessage, type History } from "./history.ts"
+import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
+import { createMessage, updateMessage } from "./messages.ts"
 import { lookup, type Side } from "./turn.ts"
 
 export interface ExecutionRecord {
@@ -13,9 +15,9 @@ export interface ExecutionRecord {
   stepCount: number
   sideAStepCount: number
   sideBStepCount: number
-  readonly history: Array<Message>
   readonly abort: AbortController
   readonly promptPath: ReadonlyArray<string>
+  readonly history: History
 }
 
 export interface StateContext {
@@ -27,6 +29,10 @@ export interface StateContext {
   readonly context: Record<string, unknown>
   readonly secrets: Secrets
   readonly invoke: (name: string, args: Record<string, unknown>) => Effect.Effect<ToolResult>
+  // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
+  readonly hooks: HookScope
+  // The hook call this state belongs to, when a hook gets it.
+  readonly call?: HookCall
 }
 
 const notYet = (member: string, arrival: string) => () => {
@@ -40,7 +46,7 @@ const notYetAsync =
       new Error(`ThreadState.${member} is not available in this version of Spindle. It arrives with ${arrival}.`),
     )
 
-const executionState = (record: ExecutionRecord): ExecutionState => ({
+const executionState = (record: ExecutionRecord, readHistory: () => Array<Message>): ExecutionState => ({
   flowId: record.flowId,
   currentSide: record.side,
   get stepCount() {
@@ -53,9 +59,8 @@ const executionState = (record: ExecutionRecord): ExecutionState => ({
     return record.sideBStepCount
   },
   stopped: false,
-  // A copy, so that a tool that edits the array or a message in it cannot change the live history.
   get messageHistory() {
-    return structuredClone(record.history)
+    return readHistory()
   },
   forceTurn: notYet("execution.forceTurn", "M1-6"),
   stop: notYet("execution.stop", "M1-6"),
@@ -63,19 +68,27 @@ const executionState = (record: ExecutionRecord): ExecutionState => ({
   promptPath: [...record.promptPath],
 })
 
-// The one place where Spindle turns an Effect into a Promise. Tools are Promise-based user code, and every
-// ThreadState method they call runs here against the services of the execution.
+// The one place where Spindle runs an Effect for user code. Tools and hooks are Promise-based, and every ThreadState
+// method they call runs here against the services of the execution.
 export const makeThreadState = (state: StateContext): ThreadState => {
-  const run = Effect.runPromiseWith(state.services)
+  const { call } = state
+  const expired = () =>
+    call?.expired === true ? new HookExpired({ hook: call.hook, position: call.position }) : undefined
+  const runPromise = Effect.runPromiseWith(state.services)
+  const run = <A, E>(effect: Effect.Effect<A, E, Registry | ThreadStore>): Promise<A> => {
+    const refused = expired()
+    return refused === undefined ? runPromise(effect) : Promise.reject(refused)
+  }
   const registry = Context.get(state.services, Registry)
   const store = Context.get(state.services, ThreadStore)
   const threadId = state.thread.id
-  const history = state.execution?.history
-  const reloadHistory = Effect.gen(function* () {
-    if (history === undefined) return
-    const { messages } = yield* store.getMessages(threadId, { order: "asc", includeSilent: true })
-    history.splice(0, history.length, ...messages)
-  })
+  // A read of the store finishes in the call that starts it, because no transaction spans an await. Each read gets
+  // its own copy, so a tool or a hook that changes it changes nothing that a later read sees.
+  const readHistory = (history: History) => () => {
+    const refused = expired()
+    if (refused !== undefined) throw refused
+    return Effect.runSyncWith(state.services)(history.read).map(copyMessage)
+  }
   const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
     run(
       Effect.gen(function* () {
@@ -86,12 +99,7 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ) as Promise<never>
   const names = (kind: "model" | "prompt" | "agent") => () =>
     registry.definitions.filter((definition) => definition.kind === kind).map((definition) => definition.qualifiedName)
-  // Threads section 2.3: text that user code writes into the thread is tool output, so it is redacted before it is
-  // stored, by the rule for a tool result. The human's messages and the model's responses never pass through here.
-  const redact = redactor(state.secrets.values)
-  const redactContent = redactText(redact)
-  const redactMetadata = (metadata: Record<string, unknown> | undefined) =>
-    metadata === undefined ? {} : { metadata: mapStrings(metadata, redact) }
+  const write = { threadId, hooks: state.hooks, secrets: state.secrets, call, history: state.execution?.history }
   const remember = (value: string, barred: boolean) => {
     if (barred) addSecret(state.secrets, value)
     else state.secrets.values.add(value)
@@ -106,48 +114,27 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     terminated: state.thread.terminated,
     arguments: structuredClone(state.thread.arguments) as Record<string, unknown>,
     context: state.context,
-    execution: state.execution === undefined ? null : executionState(state.execution),
+    execution:
+      state.execution === undefined ? null : executionState(state.execution, readHistory(state.execution.history)),
 
     getMessages: (options) => run(store.getMessages(threadId, options)),
     getMessage: (messageId) => run(store.getMessage(threadId, messageId)),
     injectMessage: (input) =>
       run(
-        Effect.gen(function* () {
-          const [message] = yield* store.appendMessages(threadId, [
-            {
-              role: input.role,
-              content: typeof input.content === "string" ? redactContent(input.content) : input.content,
-              status: "completed",
-              ...(input.silent === undefined ? {} : { silent: input.silent }),
-              ...redactMetadata(input.metadata),
-            },
-          ])
-          if (message === undefined) return yield* Effect.die(new Error("appendMessages returned no message"))
-          history?.push(message)
-          return message
-        }),
+        createMessage(
+          write,
+          {
+            role: input.role,
+            content: input.content,
+            status: "completed",
+            ...(input.silent === undefined ? {} : { silent: input.silent }),
+            ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+          },
+          "injection",
+        ),
       ),
-    updateMessage: (messageId, updates) =>
-      run(
-        Effect.gen(function* () {
-          const message = yield* store.updateMessage(threadId, messageId, {
-            ...updates,
-            ...(typeof updates.content === "string" ? { content: redactContent(updates.content) } : {}),
-            ...redactMetadata(updates.metadata),
-          })
-          const index = history?.findIndex((candidate) => candidate.id === messageId) ?? -1
-          if (history !== undefined && index !== -1) history[index] = message
-          return message
-        }),
-      ),
-    deleteMessage: (messageId) =>
-      run(
-        Effect.gen(function* () {
-          const deleted = yield* store.deleteMessage(threadId, messageId)
-          if (deleted) yield* reloadHistory
-          return deleted
-        }),
-      ),
+    updateMessage: (messageId, updates) => run(updateMessage(write, messageId, updates)),
+    deleteMessage: (messageId) => run(store.deleteMessage(threadId, messageId)),
     queueMessage: notYetAsync("queueMessage", "M1-6"),
 
     loadModel: load("model"),

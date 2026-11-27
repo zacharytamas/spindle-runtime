@@ -1,5 +1,6 @@
 import type {
   AttachmentRef,
+  LLMMessage,
   Message,
   PromptDefinition,
   ProviderAssistantMessage,
@@ -7,6 +8,7 @@ import type {
   ProviderReasoningDetail,
   ProviderRequest,
   ProviderToolCallPart,
+  ProviderUserMessage,
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
@@ -83,18 +85,35 @@ export const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (tur
       }
       return text
     })
-  const text = yield* render(root, [root.definition])
-  if ([...secrets.barred].some((secret) => secret !== "" && text.includes(secret)))
-    return yield* new SetupError({
-      message: `The system prompt that prompt ${root.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
-    })
-  return text
+  return yield* render(root, [root.definition])
 })
+
+const holdsSecret = (text: string, secrets: Secrets) =>
+  [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
+
+// Runs on the finished system prompt, after after_system_message, so that a hook cannot put a secret into it either.
+export const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
+  holdsSecret(text, secrets)
+    ? new SetupError({
+        message: `The system prompt that prompt ${turn.prompt.definition.qualifiedName} renders holds a secret value. A system prompt never holds a secret.`,
+      })
+    : Effect.void
+
+// Runs after the last request hook, so that a system message that filter_messages or prefilter_llm_history adds is
+// held to the rule of the system prompt.
+export const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: Secrets) =>
+  messages.some((message) => message.role === "system" && holdsSecret(message.content, secrets))
+    ? new SetupError({
+        message:
+          "A system message in the request to the model holds a secret value. A system message never holds a secret.",
+      })
+    : Effect.void
 
 export interface HistoryView {
   readonly side: Side
-  // The message from the other side that started this turn. It and everything after it form the current exchange.
-  readonly turnStart: string | undefined
+  // The ids of the messages before the one from the other side that started this turn. A message that filter_messages
+  // adds has no such id, so it belongs to the current exchange.
+  readonly past: ReadonlySet<string>
   readonly includeChat: boolean
   readonly includePastTools: boolean
   readonly includeReasoning: boolean
@@ -147,8 +166,59 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
 }
 
 // Read once when the execution starts, so that a message a tool injects later cannot move the start of the turn.
-export const turnStartOf = (history: ReadonlyArray<Message>, side: Side) =>
-  history.findLast((message) => message.role === roleOf(side === "a" ? "b" : "a"))?.id
+export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
+  const other = roleOf(side === "a" ? "b" : "a")
+  const start = history.findLastIndex((message) => message.role === other)
+  return new Set(history.slice(0, Math.max(0, start)).map((message) => message.id))
+}
+
+// The chat completions format puts each result right after the message that holds its call, in the order of the
+// calls. A message stored between them, such as one a tool injected while its call ran, follows the last result. A
+// result belongs to the nearest earlier message that lists its call id. The stored order does not change, and the
+// order is undefined when the stored order already is the request order, which is the usual case.
+const NO_CALLS: Array<ProviderToolCallPart> = []
+
+const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+  const holder = new Map<string, number>()
+  const holderOf = (message: Message, index: number) => {
+    if (message.role === "tool") return holder.get(message.tool_call_id ?? "")
+    for (const call of parsed[index] ?? []) holder.set(call.id, index)
+    return undefined
+  }
+  let last = -1
+  let position = -1
+  let stored = true
+  history.forEach((message, index) => {
+    const at = holderOf(message, index)
+    if (message.role !== "tool") {
+      last = index
+      position = -1
+    } else if (at !== undefined) {
+      const next = (parsed[at] ?? []).findIndex((call) => call.id === message.tool_call_id)
+      if (at !== last || next < position) stored = false
+      position = next
+    }
+  })
+  if (stored) return undefined
+  holder.clear()
+  const results = new Map<number, Array<number>>()
+  const moved = new Set<number>()
+  history.forEach((message, index) => {
+    const at = holderOf(message, index)
+    if (at === undefined) return
+    moved.add(index)
+    results.set(at, [...(results.get(at) ?? []), index])
+  })
+  const order: Array<number> = []
+  history.forEach((_message, index) => {
+    if (moved.has(index)) return
+    order.push(index)
+    const ids = (parsed[index] ?? []).map((call) => call.id)
+    const at = (result: number) => ids.indexOf(history[result]?.tool_call_id ?? "")
+    order.push(...(results.get(index) ?? []).sort((a, b) => at(a) - at(b)))
+  })
+  return order
+}
 
 // Runtime section 4: a side's own turns are assistant turns, the other side's are user turns, and the other
 // side's tool calls stay hidden. History before the message that started the turn is past history, which
@@ -156,14 +226,15 @@ export const turnStartOf = (history: ReadonlyArray<Message>, side: Side) =>
 export const toProviderMessages = (history: ReadonlyArray<Message>, view: HistoryView): Array<ProviderMessage> => {
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
-  const current = Math.max(
-    0,
-    history.findIndex((message) => message.id === view.turnStart),
-  )
   const shownCalls = new Map<string, boolean>()
   const messages: Array<ProviderMessage> = []
-  history.forEach((message, index) => {
-    const past = index < current
+  const parsed = history.map((message) =>
+    (message.role === "user" || message.role === "assistant") && message.tool_calls != null
+      ? toolCallsOf(message)
+      : NO_CALLS,
+  )
+  const visit = (message: Message, index: number) => {
+    const past = view.past.has(message.id)
     if (message.role === "tool") {
       if (shownCalls.get(message.tool_call_id ?? "") !== true) return
       const text = textOf(message)
@@ -176,10 +247,10 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
     } else if (message.role === "system") {
       if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
     } else if (message.role === other) {
-      for (const call of toolCallsOf(message)) shownCalls.set(call.id, false)
+      for (const call of parsed[index] ?? []) shownCalls.set(call.id, false)
       if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message) })
     } else if (message.role === own) {
-      const calls = toolCallsOf(message)
+      const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
@@ -191,8 +262,99 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
         ...reasoningOf(message, view),
       })
     }
-  })
+  }
+  const order = requestOrder(history, parsed)
+  if (order === undefined) history.forEach(visit)
+  else for (const index of order) visit(history[index] as Message, index)
   return messages
+}
+
+// Hooks section 3.3 hands prefilter_llm_history the history in chat completion format, the shape of LLMMessage.
+// A tool error keeps its kind in tool_status, the field a stored tool message uses for it.
+export const toLLMMessage = (message: ProviderMessage): LLMMessage => {
+  switch (message.role) {
+    case "system":
+    case "user":
+      return { role: message.role, content: message.content }
+    case "assistant":
+      return {
+        role: "assistant",
+        content: message.content ?? null,
+        ...(message.toolCalls === undefined
+          ? {}
+          : {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
+              })),
+            }),
+        ...(message.reasoning == null ? {} : { reasoning_content: message.reasoning }),
+        ...(message.reasoningDetails === undefined ? {} : { reasoning_details: message.reasoningDetails }),
+      }
+    case "tool": {
+      const content = message.content
+      return {
+        role: "tool",
+        tool_call_id: message.toolCallId,
+        name: message.toolName,
+        ...(typeof content === "string" || Array.isArray(content)
+          ? { content }
+          : content.type === "text"
+            ? { content: content.text }
+            : { content: content.error, tool_status: "error" }),
+      }
+    }
+  }
+}
+
+const callFrom = (entry: Record<string, unknown>): ProviderToolCallPart => {
+  const fn = entry.function as Record<string, unknown>
+  return {
+    id: entry.id as string,
+    name: fn.name as string,
+    arguments: (typeof fn.arguments === "string" ? JSON.parse(fn.arguments) : fn.arguments) as Record<string, unknown>,
+    ...(isRecord(entry.extra_content) ? { extraContent: entry.extra_content } : {}),
+  }
+}
+
+// The way back from LLMMessage, for the array prefilter_llm_history returns. hooks.ts has checked each message
+// against the provider message types, so every field one of them holds is kept as it is. A field that no provider
+// message type has, such as the name of a user message, has nowhere to go.
+export const fromLLMMessage = (message: LLMMessage): ProviderMessage => {
+  switch (message.role) {
+    case "system":
+      return { role: "system", content: message.content as string }
+    case "user":
+      return { role: "user", content: message.content as ProviderUserMessage["content"] }
+    case "assistant":
+      return {
+        role: "assistant",
+        content: (message.content as string | null | undefined) ?? null,
+        ...(Array.isArray(message.tool_calls) ? { toolCalls: message.tool_calls.map(callFrom) } : {}),
+        ...(message.reasoning_content === undefined ? {} : { reasoning: message.reasoning_content }),
+        ...(Array.isArray(message.reasoning_details)
+          ? { reasoningDetails: message.reasoning_details as Array<ProviderReasoningDetail> }
+          : {}),
+      }
+    default:
+      return {
+        role: "tool",
+        toolCallId: message.tool_call_id as string,
+        toolName: message.name ?? "",
+        content:
+          message.tool_status === "error"
+            ? { type: "error", error: message.content as string }
+            : (message.content as ProviderUserMessage["content"]),
+      }
+  }
+}
+
+export const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
+  if (message.role !== "assistant") return message
+  const { reasoning: _reasoning, reasoningDetails: _details, ...rest } = message
+  return rest
 }
 
 export const buildRequest = (

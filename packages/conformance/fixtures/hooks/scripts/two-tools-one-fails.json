@@ -1,0 +1,24 @@
+{
+  "responses": [
+    {
+      "toolCalls": [
+        {
+          "id": "c_write",
+          "name": "write_note",
+          "arguments": {
+            "key": "color",
+            "value": "blue"
+          }
+        },
+        {
+          "id": "c_explode",
+          "name": "explode",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    }
+  ]
+}

@@ -49,8 +49,61 @@ describe("spindle run", () => {
   it.effect("prints the seven phases of a step in order with --trace", () =>
     Effect.gen(function* () {
       const { out } = yield* run(["assistant", "-m", "hello", "--script", "@text-reply.json", "--trace"])
-      const phases = out.filter((line) => line.startsWith("step 1 ")).map((line) => line.split(/\s+/)[2])
+      const lines = out.filter((line) => line.startsWith("step 1 ")).map((line) => line.split(/[\s,]+/))
+      const phases = lines.map((words) => words[2]).filter((phase, index, all) => phase !== all[index - 1])
       expect(phases).toEqual(["drain", "assemble", "call", "persist-response", "tools", "persist-results", "stop"])
+      expect(lines.filter((words) => words[2] === "assemble").map((words) => words[3])).toEqual([
+        "interpolate",
+        "after_system_message",
+        "snapshot",
+        "filter_messages",
+        "transform",
+        "prefilter_llm_history",
+        "dispatch",
+      ])
+    }),
+  )
+
+  it.effect("runs a hook from an installed package only for the agent whose list names it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-run-" })
+      const stamps = (agent: string, db: string) =>
+        Effect.gen(function* () {
+          const { exit, err } = yield* run([agent, "-m", "hi", "--script", "@text-reply.json", "--db", db], {}, "hooks")
+          expect(Exit.isSuccess(exit)).toBe(true)
+          return (yield* storedMessages(db, err)).map((message) => [message.role, message.metadata?.loud ?? null])
+        })
+      expect(yield* stamps("plain", path.join(dir, "plain.db"))).toEqual([
+        ["user", null],
+        ["assistant", null],
+      ])
+      expect(yield* stamps("standardagent-loud/loud", path.join(dir, "loud.db"))).toEqual([
+        ["user", true],
+        ["assistant", true],
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.live("goes on after --hook-timeout and prints the hook's id on standard error without the message", () =>
+    Effect.gen(function* () {
+      const started = Date.now()
+      const { exit, out, err } = yield* run(
+        ["stuck", "-m", "private words", "--script", "@text-reply.json", "--hook-timeout", "0.2"],
+        {},
+        "hooks",
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(Date.now() - started).toBeLessThan(5000)
+      expect(out).toEqual(["Hello! How can I help?"])
+      expect(err[0]).toBe(
+        "spindle: Hook never_settles (filter_messages, once per context assembly, on the history snapshot) did not settle within 200ms. Spindle kept the history the hook was given. Its ThreadState refuses every later call, and Spindle cannot undo what it does after this point by other means.",
+      )
+      expect(err.join("\n")).not.toContain("private words")
+      const zero = yield* run(["stuck", "-m", "hi", "--script", "@text-reply.json", "--hook-timeout", "0"], {}, "hooks")
+      expect(Exit.isFailure(zero.exit)).toBe(true)
+      expect(zero.err).toEqual(["spindle: --hook-timeout takes a number of seconds above 0"])
     }),
   )
 
