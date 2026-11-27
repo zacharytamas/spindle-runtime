@@ -145,6 +145,35 @@ const toolNames = (prompt: unknown): Array<string> =>
       })
     : []
 
+const checkRelationshipOptions = (at: Site, relationship: Shape, path: string) => {
+  const invalid = (key: string, expected: string) =>
+    at.report("subagent_relationship_invalid", `${path}.${key}`, `${key} must be ${expected}`)
+  for (const key of [
+    "description",
+    "initUserMessageProperty",
+    "initAttachmentsProperty",
+    "initAgentNameProperty",
+    "optional",
+  ])
+    if (relationship[key] !== undefined && typeof relationship[key] !== "string") invalid(key, "a string")
+  for (const key of ["blocking", "hidden"])
+    if (relationship[key] !== undefined && typeof relationship[key] !== "boolean") invalid(key, "a boolean")
+  if (
+    relationship.parentCommunication !== undefined &&
+    !isOneOf(["implicit", "explicit"], relationship.parentCommunication)
+  )
+    invalid("parentCommunication", "implicit or explicit")
+  if (relationship.scopedEnv !== undefined && !isStringArray(relationship.scopedEnv))
+    invalid("scopedEnv", "an array of strings")
+  const immediate = relationship.immediate
+  if (immediate === undefined || typeof immediate === "boolean") return
+  if (!Predicate.isObject(immediate)) return invalid("immediate", "a boolean or an object")
+  for (const key of ["nameEnv", "descriptionEnv"])
+    if (immediate[key] !== undefined && typeof immediate[key] !== "string") invalid(`immediate.${key}`, "a string")
+  if (immediate.scopedEnv !== undefined && !isStringArray(immediate.scopedEnv))
+    invalid("immediate.scopedEnv", "an array of strings")
+}
+
 const checkAgent = (at: Site, agent: unknown) => {
   for (const issue of validateAgentDefinition(agent)) at.report(issue.code, issue.path, issue.message, issue.severity)
   if (!Predicate.isObject(agent)) return
@@ -180,6 +209,7 @@ const checkAgent = (at: Site, agent: unknown) => {
     side.subagents.forEach((relationship: unknown, index) => {
       if (!Predicate.isObject(relationship) || !hasName(relationship, "agent")) return
       const path = `${sideKey}.subagents[${index}]`
+      checkRelationshipOptions(at, relationship, path)
       at.reference("agent", () => relationship.agent, "subagent_agent_undefined", `${path}.agent`)
       if (isNonEmptyString(relationship.as) && relationship.as.includes("/"))
         at.report(
