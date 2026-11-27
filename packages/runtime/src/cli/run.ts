@@ -45,7 +45,6 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
   withOutput(({ secrets, clean, identify }) => {
     if (Option.isSome(args.hookTimeout) && !(args.hookTimeout.value > 0))
       return fail("--hook-timeout takes a number of seconds above 0")
-    const reject = (message: string) => fail(message, identify)
     const run = withProject(
       args.dir,
       args.db,
@@ -58,23 +57,22 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           // Another command can name a thread in a database file, so the id comes first, before any reply.
           if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
           const supervisor = yield* ThreadSupervisor
-          const delivery = yield* supervisor
-            .send(threadId, args.message, {
-              onWaiting: (holder) =>
-                holder.kind === "remote"
-                  ? identify(
-                      `thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`,
-                    )
-                  : Effect.void,
-              interruptedWhileQueued: note(stillQueued),
-            })
-            .pipe(answerInterrupts(threadId, identify))
+          const send = supervisor.send(threadId, args.message, {
+            onWaiting: (holder) =>
+              holder.kind === "remote"
+                ? identify(`thread ${threadId} is running in process ${holder.pid}, so the message waits in its queue`)
+                : Effect.void,
+            interruptedWhileQueued: note(stillQueued),
+          })
+
+          const delivery = yield* Effect.raceFirst(answerInterrupts(supervisor, threadId, identify), send)
           const { outcome } = delivery
           const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
           if (outcome !== undefined) {
             if (outcome.reason === "execution_lost")
-              return yield* reject(
+              return yield* fail(
                 `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
+                identify,
               )
             yield* identify(
               `${outcome.status} (${clean(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
@@ -85,7 +83,10 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           const { status } = delivery
           yield* identify(`${status.state} (${clean(status.reason ?? "none")}), thread ${threadId}`)
           if (status.state === "failed")
-            return yield* reject(`the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`)
+            return yield* fail(
+              `the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`,
+              identify,
+            )
         }),
       (role) => printer(role, args),
     )
@@ -96,24 +97,15 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
 
 // The first Ctrl-C asks the execution to stop after its current operation. The second interrupts it, and the run
 // settles idle while the thread stays open. A Ctrl-C after that ends the process.
-const answerInterrupts =
-  (threadId: string, identify: typeof note) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | ThreadSupervisor> =>
-    Effect.gen(function* () {
-      const supervisor = yield* ThreadSupervisor
-      const take = Queue.take(yield* (yield* Interrupts).listen)
-      const signals = Effect.gen(function* () {
-        yield* take
-        if (!(yield* supervisor.stop(threadId))) return yield* Effect.interrupt
-        yield* identify(`stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`)
-        yield* take
-        if (!(yield* supervisor.abort(threadId, true))) return yield* Effect.interrupt
-        yield* identify(`aborting thread ${threadId}`)
-        yield* take
-        return yield* Effect.interrupt
-      })
-      return yield* Effect.raceFirst(effect, signals)
-    }).pipe(Effect.scoped)
+const answerInterrupts = (supervisor: ThreadSupervisor["Service"], threadId: string, identify: typeof note) =>
+  Effect.gen(function* () {
+    const take = Queue.take(yield* (yield* Interrupts).listen)
+    yield* take
+    if (!(yield* supervisor.stop(threadId))) return yield* Effect.interrupt
+    yield* identify(`stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`)
+    yield* take
+    if (!(yield* supervisor.abort(threadId, true))) return yield* Effect.interrupt
+  }).pipe(Effect.scoped, Effect.andThen(identify(`aborting thread ${threadId}`)), Effect.andThen(Effect.never))
 
 export const runCommand = Command.make(
   "run",
