@@ -341,12 +341,13 @@ export const S14c: Scenario = {
         ["__proto__"]: "ordinary key",
         absent: undefined,
       },
+      succeeded: new Details(),
     }
     const diagnostic = defineTool({
       description: "Return diagnostic data",
-      args: z.object({ variant: z.enum(["top", "nested", "plain"]) }),
+      args: z.object({ variant: z.enum(["top", "nested", "plain", "succeeded"]) }),
       execute: async (_state, { variant }) => ({
-        status: "error",
+        status: variant === "succeeded" ? "success" : "error",
         error: "denied",
         error_code: "quota",
         error_data: data[variant],
@@ -358,7 +359,18 @@ export const S14c: Scenario = {
       id: "pass_through",
       execute: async (_state, _call, result) => result,
     })
-    for (const hooks of [[], [passThrough]]) {
+    // Hooks sections 5.3 and 5.4: the tool's own status picks the branch, whatever becomes of its data.
+    const branches: Array<unknown> = []
+    const branch = (hook: "after_tool_call_success" | "after_tool_call_failure") =>
+      defineHook({
+        hook,
+        id: hook,
+        execute: async (_state, call) => {
+          branches.push([hook, call.id])
+          return null
+        },
+      })
+    for (const hooks of [[], [passThrough, branch("after_tool_call_success"), branch("after_tool_call_failure")]]) {
       reads = 0
       const provider = new ScriptedProvider([
         {
@@ -382,9 +394,17 @@ export const S14c: Scenario = {
             expect(row.content).toContain("denied\n\nSpindle dropped the error data")
             expect(row.metadata).toEqual({ error_code: "quota" })
           }
+          expect(results[3]?.tool_status).toBe("error")
+          expect(results[3]?.content).toContain("Spindle dropped the error data")
         },
       )
     }
+    expect(branches).toEqual([
+      ["after_tool_call_failure", "top"],
+      ["after_tool_call_failure", "nested"],
+      ["after_tool_call_failure", "plain"],
+      ["after_tool_call_success", "succeeded"],
+    ])
   },
 }
 

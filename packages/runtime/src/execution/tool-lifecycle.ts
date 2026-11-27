@@ -72,7 +72,8 @@ export const completeCall = (
       ? returned
       : yield* transformHooks(
           hooks,
-          returned.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
+          // The tool's own status picks the branch, even when its error data could not be kept.
+          result.status === "success" ? "after_tool_call_success" : "after_tool_call_failure",
           [toolCall],
           returned,
         )
