@@ -1067,6 +1067,20 @@ Package manifests keep the JSON parser of the current engine so syntax errors re
 
 All eight former record guards used the same predicate. Effect 4.1.5 provides it as `Predicate.isObject`. It accepts null-prototype objects and class instances and rejects arrays, functions and null. The issue codes are types and have no runtime exports.
 
+### Settled in M1-15
+
+Each request combines the execution signal with an attempt signal. The stream scope owns the iterator and the attempt signal. It starts closing the iterator before aborting the signal. A pending read can then finish on abort. The scope closes independently of the call so a provider that stalls or throws during cleanup cannot delay a retry or replace the original error. The plain stream runner in the review sketch let a failing finalizer turn a retryable error into a defect. The fetch timeout still covers the headers, error body and streamed body through one signal.
+
+`Effect.retry` numbers the requests through the schedule metadata. An exponential schedule starts at 500 ms and doubles for each retry within the budget. A numeric provider delay replaces that wait, up to 60 seconds. A rejected response has no delay. A graceful stop wakes the wait through a latch and leaves a response already streaming to finish at its boundary. The wait runs inside the schedule's delay modifier, which then returns zero. The sketch checked the stop flag only before sleeping. Execution abort still interrupts the fiber.
+
+The adapter feeds decoded text to `Sse.makeParser`. The parser consumes one BOM. The base already handled a single BOM through its text decoder. The parser has no event size limit here because the base accepted complete events larger than 10 MiB. The adapter keeps fetch and uses no HTTP client bridge.
+
+Six wire inputs changed in the comparison. Bare CR separators and a JSON object split between two data fields now produce the whole response. Both used to give a JSON error. A bare `data` field with no colon now dispatches empty data and produces a JSON error. The base ignored it. An event ending at EOF without a blank line is discarded, whether its last data line has a terminating LF or no line ending. Both previously delivered the finish reason. Two spaces before the done sentinel leave one space in its value, which now produces a JSON error. The base stripped both and ended the stream. The sketch's synthetic blank line at EOF would dispatch an unfinished event.
+
+The script decoder and the runtime use one provider error code schema. A raw script chunk can carry an unknown type, an unexpected field or a nonstandard error code. Those records reach the loop unchanged. A strict chunk union would turn a previously successful script into a load error. The cast stays at that boundary. Unknown error codes still map to the standard unknown code when a consumer interprets them.
+
+S22 runs its existing assertions with Vitest's virtual timers advancing to the next scheduled timeout. The scenario opens several independent managed runtimes through the promise driver. Replacing the timer functions for that test reaches their clocks without changing the driver or the retry policy. It runs with the default test time limit.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
