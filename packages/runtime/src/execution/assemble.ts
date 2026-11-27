@@ -8,7 +8,7 @@ import type {
   ProviderRequest,
   ProviderToolCallPart,
 } from "@standardagents/spec"
-import { Effect, Predicate } from "effect"
+import { Effect, Equal, Predicate } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
@@ -366,11 +366,23 @@ export const assembleRequest = Effect.fnUntraced(function* (
     })
     if (filtered !== snapshot) {
       let byId: Map<string, (typeof rows)[number]> | undefined
+      let retainedIds: Set<string> | undefined
       historyRows = filtered.map((message, index) => {
         let row = rows[index]
         if (row?.message.id !== message.id) {
           byId ??= new Map(rows.map((row) => [row.message.id, row]))
-          row = byId.get(message.id)
+          const stored = byId.get(message.id)
+          // A caller renamed in place keeps its stored position and past visibility. A copy alongside the original is new.
+          if (
+            !stored &&
+            row &&
+            message.tool_calls != null &&
+            Equal.equals(row.message, { ...message, id: row.message.id })
+          ) {
+            retainedIds ??= new Set(filtered.map((entry) => entry.id))
+            if (!retainedIds.has(row.message.id)) return row
+          }
+          row = stored
         }
         return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
       })

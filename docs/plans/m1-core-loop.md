@@ -1099,6 +1099,10 @@ Tools section 8 requires annotations to leave execution and results unchanged. A
 
 A tool past its deadline gives the ordinary failure hooks an error naming the tool and its limit. The run can continue with the next call. The handle expires and loses its hold on the thread, even if an abort is waiting for that tool. A late return or rejection has no effect on the run. The tool shares its execution's abort signal, so timing out one call leaves the signal live. Its JavaScript can still run and produce effects outside the thread. Spindle refuses later writes through its handle and checks writes already in flight again at commit.
 
+### Settled in M1-18
+
+- A history hook that changes only a caller's message id keeps the stored pairing in the model request, even when another caller uses the same tool call id.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

@@ -1,7 +1,7 @@
 import { defineHook, type LLMMessage } from "@standardagents/spec"
 import { expect } from "vitest"
 import { ScriptedProvider } from "../../ScriptedProvider.ts"
-import { history, rolesFor, type Scenario, type Setup, SIDES, using } from "../harness.ts"
+import { history, rolesFor, type Scenario, type Setup, SIDES, stubTool, using } from "../harness.ts"
 
 import { hookIds } from "./fixtures.ts"
 
@@ -184,5 +184,39 @@ export const H11b: Scenario = {
       expect(refused.history).toEqual([{ role: "user", content: "go" }])
       expect(refused.logs).toContain("Hook final_array (prefilter_llm_history")
     }
+  },
+}
+
+export const H11c: Scenario = {
+  name: "H11c keeps each renamed caller paired with its result when two calls reuse an id",
+  requirements: ["41278e5e", "d2ff2793"],
+  run: async (driver) => {
+    const rename = defineHook({
+      hook: "filter_messages",
+      id: "rename",
+      execute: async (_state, messages) =>
+        messages.map((message) => (message.tool_calls ? { ...message, id: `${message.id}-renamed` } : message)),
+    })
+    const call = (name: string) => ({ id: "dup", name, arguments: {} })
+    const provider = new ScriptedProvider([
+      { toolCalls: [call("first")] },
+      { toolCalls: [call("second")] },
+      { text: "done" },
+    ])
+    const tools = { first: stubTool("First", "one"), second: stubTool("Second", "two") }
+    await using(
+      driver,
+      { provider, tools, hooks: [rename], prompt: { hooks: ["rename"] } },
+      async (session, thread) => {
+        await session.send(thread, "go")
+        expect(history(provider.requests[2])).toEqual([
+          { role: "user", content: "go" },
+          { role: "assistant", content: null, toolCalls: [call("first")] },
+          { role: "tool", toolCallId: "dup", toolName: "first", content: "one" },
+          { role: "assistant", content: null, toolCalls: [call("second")] },
+          { role: "tool", toolCallId: "dup", toolName: "second", content: "two" },
+        ])
+      },
+    )
   },
 }
