@@ -102,6 +102,15 @@ it.effect("only the owning flow can set aside an unreadable queue entry", () =>
     expect(yield* runs.nextQueued(id, { flowId: "stale" })).toBeUndefined()
     expect(yield* runs.isQueued(id, queued.seq)).toBe(true)
     expect(yield* runs.nextQueued(id, flow)).toBeUndefined()
+    expect(yield* runs.queueLength(id)).toBe(0)
+    expect(yield* runs.isQueued(id, queued.seq)).toBe(false)
+    const messages = yield* MessageStore
+    expect(
+      yield* Effect.flip(
+        messages.insertMessage(id, { id: "late", role: "user", created_at: 1 }, flow, { dequeue: queued.seq }),
+      ),
+    ).toMatchObject({ _tag: "QueueEntryGone" })
+    expect(yield* messages.getMessage(id, "late")).toBeNull()
     expect(yield* sql`SELECT disposition FROM queue WHERE seq = ${queued.seq}`).toEqual([
       { disposition: "failed_delivery" },
     ])
