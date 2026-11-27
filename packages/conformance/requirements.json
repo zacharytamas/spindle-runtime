@@ -7101,5 +7101,255 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "HumanSide | `label` | `string` | Optional UI/log label |"
+	},
+	{
+		"id": "distribution:packaging:ed20d6ab",
+		"page": "distribution:packaging",
+		"line": 29,
+		"section": "Entry Point Exports",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The package entry point exports named registries for each definition type, plus a `__meta` export with package metadata:"
+	},
+	{
+		"id": "distribution:packaging:a07138cc",
+		"page": "distribution:packaging",
+		"line": 112,
+		"section": "Lazy Loading",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Every definition is wrapped in an async function (`DefinitionLoader<T>`) that returns a Promise."
+	},
+	{
+		"id": "distribution:packaging:55001b09",
+		"page": "distribution:packaging",
+		"line": 151,
+		"section": "package.json Requirements",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Packed agents are identified by the `standardagent` field in `package.json`:"
+	},
+	{
+		"id": "distribution:packaging:494997d8",
+		"page": "distribution:packaging",
+		"line": 219,
+		"section": "Namespace Isolation",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Each packed agent's definitions are isolated by package ID, preventing name collisions with host code or with other packages."
+	},
+	{
+		"id": "distribution:packaging:e20305eb",
+		"page": "distribution:packaging",
+		"line": 228,
+		"section": "Visibility Rules",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Global code sees unpacked definitions and packed entry agents"
+	},
+	{
+		"id": "distribution:packaging:54b9d154",
+		"page": "distribution:packaging",
+		"line": 229,
+		"section": "Visibility Rules",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Packed code sees only its own package contents plus other entry points"
+	},
+	{
+		"id": "distribution:packaging:b3b518a2",
+		"page": "distribution:packaging",
+		"line": 230,
+		"section": "Visibility Rules",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Internal tools/prompts in a package are hidden from outside"
+	},
+	{
+		"id": "distribution:packaging:c3c522e0",
+		"page": "distribution:packaging",
+		"line": 234,
+		"section": "Qualified Names",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A qualified name has the form `{packageId}/{name}`. Code outside a package uses a qualified name for a packed definition."
+	},
+	{
+		"id": "distribution:packaging:dd93c510",
+		"page": "distribution:packaging",
+		"line": 236,
+		"section": "Qualified Names",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For a scoped package, the second slash separates the package ID from the definition name."
+	},
+	{
+		"id": "distribution:packaging:09fbc21c",
+		"page": "distribution:packaging",
+		"line": 236,
+		"section": "Qualified Names",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The name `@scope/name` has one slash and is unqualified."
+	},
+	{
+		"id": "distribution:packaging:fee4ccb8",
+		"page": "distribution:packaging",
+		"line": 251,
+		"section": "Package Signature",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Each packed definition receives a signature marking its package membership: Signatures are injected at load time, not embedded in source, so packed definitions remain portable."
+	},
+	{
+		"id": "distribution:packaging:088535b7",
+		"page": "distribution:packaging",
+		"line": 257,
+		"section": "Discovery",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtimes discover packed agents by: Scanning `node_modules` for packages with `\"standardagent\"` in `package.json`"
+	},
+	{
+		"id": "distribution:packaging:bc06c13d",
+		"page": "distribution:packaging",
+		"line": 258,
+		"section": "Discovery",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtimes discover packed agents by: Checking local `agents/packed/` directory for development packages"
+	},
+	{
+		"id": "distribution:packaging:0329f9d7",
+		"page": "distribution:packaging",
+		"line": 259,
+		"section": "Discovery",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Runtimes discover packed agents by: Importing each package and reading `__meta` for configuration"
+	},
+	{
+		"id": "distribution:packaging:a99f135e",
+		"page": "distribution:packaging",
+		"line": 264,
+		"section": "Naming Conventions",
+		"level": "SHOULD",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Agent, tool, prompt, hook, and effect names use `snake_case`"
+	},
+	{
+		"id": "specification:prompts:bf084ec3",
+		"page": "specification:prompts",
+		"line": 176,
+		"section": "3.4 Subagent Lifecycle Tools",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The names `subagents`, `subagent_create`, and `subagent_message` are reserved in the tool namespace."
+	},
+	{
+		"id": "specification:prompts:d328b163",
+		"page": "specification:prompts",
+		"line": 274,
+		"section": "8. Hook Scoping",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Hook IDs reference the `id` property from `defineHook({ hook, id, execute })`"
+	},
+	{
+		"id": "specification:models:294a7410",
+		"page": "specification:models",
+		"line": 244,
+		"section": "8.3 Runtime Validation",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "When `defineModel` is called, if the provider has a schema and `providerOptions` are provided, the options are validated at runtime:"
+	},
+	{
+		"id": "specification:handlers:cdfccc99",
+		"page": "specification:handlers",
+		"line": 9,
+		"section": "1. Handler Definition",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Handlers live in their own definition directory (`agents/handlers/` in the conventional layout) and are created with `defineHandler()`:"
+	},
+	{
+		"id": "specification:handlers:6ce44191",
+		"page": "specification:handlers",
+		"line": 26,
+		"section": "1. Handler Definition",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `execute` | `(state: ThreadState, message: Message) => Promise<void>` | The turn implementation |"
+	},
+	{
+		"id": "specification:handlers:16efc360",
+		"page": "specification:handlers",
+		"line": 32,
+		"section": "2. Referencing a Handler",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A handler is referenced from exactly one place: the `handler` property of a [side configuration](/0.2.0/specification/agents#12-sideconfig)."
+	},
+	{
+		"id": "specification:handlers:83b82eeb",
+		"page": "specification:handlers",
+		"line": 54,
+		"section": "3. Execution Model",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`maxSteps`, `stopOnResponse`, `stopTool`, and session bindings are not legal on handler sides"
+	},
+	{
+		"id": "specification:tools:43351aae",
+		"page": "specification:tools",
+		"line": 83,
+		"section": "5. Subagent Composition",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Subagent relationships are not tool configuration; a prompt `tools` entry attempting to configure one is a definition-time error."
+	},
+	{
+		"id": "specification:tools:aca6c476",
+		"page": "specification:tools",
+		"line": 85,
+		"section": "5. Subagent Composition",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The relationship names `subagents`, `subagent_create`, and `subagent_message` are reserved in the tool namespace."
+	},
+	{
+		"id": "specification:effects:2179ce3b",
+		"page": "specification:effects",
+		"line": 53,
+		"section": "1.3 Naming",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Effect names are file-based (`agents/effects/send_digest.ts` => `send_digest`)"
 	}
 ]

@@ -1,0 +1,15 @@
+{
+  "name": "standardagent-mixed-keys",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./main.js",
+    "import": "./main.js"
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "standardagent-no-root",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    "./sub": "./main.js"
+  },
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

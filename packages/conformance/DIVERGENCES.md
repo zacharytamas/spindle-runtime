@@ -9,4 +9,48 @@ Add one section per disagreement, with these lines:
 - **Disagreement.** What each side says.
 - **Spindle.** What Spindle does, and the test that shows it.
 
-No entries yet. M1-1 uses one symbol from the package, `SPEC_VERSION`, and its value `0.2.0` matches the version folder that `spec.lock.json` pins.
+M1-1 uses one symbol from the package, `SPEC_VERSION`, and its value `0.2.0` matches the version folder that `spec.lock.json` pins.
+
+Some sections record a point that the spec text leaves open. Spindle takes the stricter reading there and reports an issue, so that a later spec answer can only relax the check.
+
+## User hook types
+
+- **Spec.** Hooks section 1.2, `specification:hooks:de7e582d`. The `hook` property must name one of the 14 types in section 1.1.
+- **Package.** `defineHook` in `@standardagents/spec` 0.45.13 also accepts `user_client_attached`, `user_client_detached`, and `user_value_changed`.
+- **Disagreement.** The three user hook types come from the Users page, which is a Draft in 0.2.0. Section 1.1 does not list them.
+- **Spindle.** A hook with one of these types gets `hook_type_invalid`. The `hook-fields` case in `packages/runtime/test/registry/validate.test.ts` shows it with `agents/hooks/user_value.ts`.
+
+## Environment parts in a structured prompt
+
+- **Spec.** Prompts sections 2.3 and 9.1, `specification:prompts:eb5bda3e`. A structured prompt holds text parts and include parts.
+- **Package.** `PromptPart` in `@standardagents/spec` 0.45.13 also has `PromptEnvPart`, `{ type: 'env', property }`.
+- **Disagreement.** The spec text names two part types. The package type names three.
+- **Spindle.** The part union is a signature, so Spindle accepts an env part with a non-empty `property`. Any other part type gets `prompt_content_invalid`, as the `prompt-required-fields` case in `packages/runtime/test/registry/validate.test.ts` shows.
+
+## Model names with spaces
+
+- **Spec.** Models section 6, `specification:models:debf8c4d`. A model name must not contain spaces.
+- **Package.** `defineModel` in `@standardagents/spec` 0.45.13 checks only that the name is a non-empty string.
+- **Disagreement.** The package accepts `"spaced name"`. The spec rejects it.
+- **Spindle.** A name with white space gets `model_name_invalid`. The `model-fields` case in `packages/runtime/test/registry/validate.test.ts` shows it.
+
+## Which packed agents are entry points
+
+- **Spec.** Packaging, PackedMeta and Visibility Rules, `distribution:packaging:e20305eb`. `__meta.entryAgents` lists the agents visible from outside the package.
+- **Package.** The doc comment on `isVisibleInNamespace` in `@standardagents/spec` 0.45.13 says that its `isEntryPoint` argument means an agent with `exposeAsTool: true`.
+- **Disagreement.** The spec ties visibility to `entryAgents`. The package comment ties it to `exposeAsTool`.
+- **Spindle.** `resolve` passes `isEntryPoint` as true when the package's `__meta.entryAgents` lists the agent. `packages/runtime/test/registry/resolve.test.ts` shows it.
+
+## A definition's identifier and its file name
+
+- **Spec.** Agents section 2.1 and Prompts section 1.1 call `name` the unique identifier of an agent and of a prompt. Models section 3.2 says a fallback names another model "by their `name` property", and Prompts section 8 says "Hook IDs reference the `id` property from `defineHook({ hook, id, execute })`". Effects section 1.3 says "Effect names are file-based". Tools and handlers have no identifier field, and the Packaging example names them by their export keys.
+- **Package.** No symbol covers it.
+- **Disagreement.** The spec gives no rule for an identifier field that differs from the file name or from the packed export key.
+- **Spindle.** The registry finds an agent, a prompt, or a model by its `name` and a hook by its `id`. It finds a tool, a handler, or an effect by its file name, or by its export key in a package. A `name` or `id` that differs from the file name or export key is legal, so it gets the warning `definition_name_mismatch` and never an error. Two definitions of one kind that declare the same identifier in one namespace get `definition_name_duplicate`, whatever their file names. The first owner of M1-2 used the file name for every kind and made a differing field an error. That rule rejected a hook that a prompt named by its `id`, which Prompts section 8 allows. The `name-mismatch`, `hook-fields`, and `duplicate-name` cases in `packages/runtime/test/registry/validate.test.ts` show the current rule.
+
+## An agent in a prompt's tools without exposeAsTool
+
+- **Spec.** Agents section 5 and Tools section 1. An agent with `exposeAsTool: true` that a prompt names in `tools` is a handoff. No page says what happens when the agent does not set `exposeAsTool`.
+- **Package.** No symbol covers it.
+- **Disagreement.** The spec leaves the point open.
+- **Spindle.** A prompt `tools` entry that resolves to an agent without `exposeAsTool: true` gets `prompt_tool_agent_not_exposed`. The `agent-tool-not-exposed` case in `packages/runtime/test/registry/validate.test.ts` shows it.

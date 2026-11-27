@@ -1,0 +1,12 @@
+{
+  "name": "standardagent-escape-main",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "../../../outside.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": []
+  }
+}

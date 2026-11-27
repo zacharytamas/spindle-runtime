@@ -1,57 +1,69 @@
 {
 	"distribution:packaging:3b8a316c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
+		],
+		"reason": "M1-2 rejects a packed agent whose handler the package does not define and a packed tool whose uses target resolves to nothing the package can see. It accepts a uses target that resolves to another package's entry agent, which the package does not include. A later M1 packaging PR owes the rule for that case."
 	},
 	"distribution:packaging:149aa7e2": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement constrains how a package author writes or chooses definitions. A runtime sees no signal at load time that it could check."
 	},
 	"distribution:packaging:ed70cfbb": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement constrains how a package author writes or chooses definitions. A runtime sees no signal at load time that it could check."
 	},
 	"distribution:packaging:d6db1e74": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "The statement constrains how a package author writes or chooses definitions. A runtime sees no signal at load time that it could check."
 	},
 	"distribution:packaging:d318cad3": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
+		],
 		"reason": ""
 	},
 	"distribution:packaging:e7c13b74": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts parent hook disclosures whose object keys are in another order",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a parentHooks array or disclosure copy with a missing element and reads inherited fields"
+		],
+		"reason": "M1-2 rejects a package whose __meta or package.json copy of an entry agent's parentHooks differs from the agent, read index by index and key by key, so a missing element is a difference. It also rejects a required hook that the package does not define. M3 owes activating the declarations when a host composes the entry agent into an enabled direct child relationship."
 	},
 	"distribution:packaging:dcf81bec": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a global prompt that names an internal tool of a package",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a prompt that names a packed entry agent"
+		],
 		"reason": ""
 	},
 	"distribution:packaging:e3d09b4c": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "Which agents should be callable from outside is the author's intent. The runtime reads entryAgents as given."
 	},
 	"distribution:packaging:a16fd662": {
-		"status": "planned",
+		"status": "not-testable",
 		"milestone": "M1",
 		"tests": [],
-		"reason": ""
+		"reason": "Whether an agent is an internal helper is the author's intent. The runtime reads entryAgents as given."
 	},
 	"distribution:packaging:d00eb5d2": {
 		"status": "planned",
@@ -1038,9 +1050,12 @@
 		"reason": ""
 	},
 	"specification:agents:7f7ad6d6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side that sets both prompt and handler",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side with no backing and an agent with one side"
+		],
 		"reason": ""
 	},
 	"specification:agents:6b09f66f": {
@@ -1062,57 +1077,84 @@
 		"reason": ""
 	},
 	"specification:agents:0e84ace1": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M3",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks"
+		],
+		"reason": "M1-2 rejects a required parent hook that is missing from the child's namespace at load time. M3 owes failing composition closed when a parent composes the child."
 	},
 	"specification:agents:ccc22c6c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an agent whose two sides are both human",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects three different errors in one pass"
+		],
 		"reason": ""
 	},
 	"specification:agents:4f6e996c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects subagents on a human side"
+		],
 		"reason": ""
 	},
 	"specification:agents:0f4cb2e7": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side with no backing and an agent with one side",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side that sets both prompt and handler"
+		],
 		"reason": ""
 	},
 	"specification:agents:f58fa457": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side that names an undefined prompt or handler"
+		],
 		"reason": ""
 	},
 	"specification:agents:673c5e84": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship name on both sides or equal to a tool name",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship named after a reserved lifecycle tool"
+		],
 		"reason": ""
 	},
 	"specification:agents:2ae53d29": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects session bindings, maxSteps, and stop bindings on a non-prompt side"
+		],
 		"reason": ""
 	},
 	"specification:agents:6fe4d9ad": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a session binding that is a string, null, an array, or a number"
+		],
 		"reason": ""
 	},
 	"specification:agents:51e46a92": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/cli/validate.test.ts > spindle validate > prints the issues as a JSON list of code, severity, message, and path with --json",
+			"packages/runtime/test/cli/validate.test.ts > spindle validate > prints one line per issue as code, severity, path, and message, and exits 1",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports every issue that the defineAgent helper throws",
+			"packages/runtime/test/cli/validate.test.ts > spindle validate > prints JSON for every issue when a package manifest is not JSON",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports a kind directory or a package scope that is not a directory and goes on",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports each definition or package that throws while Spindle reads it and goes on",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > reports every issue that the defineAgent helper throws inside a packed loader"
+		],
 		"reason": ""
 	},
 	"specification:effects:65e76fed": {
@@ -1122,21 +1164,28 @@
 		"reason": ""
 	},
 	"specification:effects:b7593fb4": {
-		"status": "planned",
-		"milestone": "M4",
-		"tests": [],
-		"reason": ""
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
+		],
+		"reason": "M1-2 rejects an effect file with no default export and a default export that is not the [description, args, handler] tuple. defineEffect returns that tuple with no brand, so the registry cannot tell whether defineEffect made it."
 	},
 	"specification:effects:2591f11c": {
-		"status": "planned",
-		"milestone": "M4",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about names that are not snake_case"
+		],
 		"reason": ""
 	},
 	"specification:effects:aa72cc95": {
-		"status": "planned",
-		"milestone": "M4",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
 		"reason": ""
 	},
 	"specification:effects:dcb27a3b": {
@@ -1170,10 +1219,13 @@
 		"reason": ""
 	},
 	"specification:handlers:54c3a9d8": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a handler named in a prompt's tools",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a handler named in a hook list and an undefined hook"
+		],
+		"reason": "M1-2 rejects a handler named in a prompt's tools or in a hook list. M4 owes the check for effect schedules, which arrive with scheduleEffect."
 	},
 	"specification:handlers:0747a620": {
 		"status": "planned",
@@ -1218,39 +1270,53 @@
 		"reason": ""
 	},
 	"specification:hooks:f3dc7790": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
+		],
+		"reason": "M1-2 rejects a hook whose hook is not one of the 14 types. defineHook returns a plain object with hook, id, and execute, so the registry cannot tell whether defineHook made it."
 	},
 	"specification:hooks:ebcb97e7": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
+		"reason": "M1-2 rejects a hook whose id is missing or not snake_case and two hooks that declare one id. defineHook returns a plain object with hook, id, and execute, so the registry cannot tell whether defineHook made it."
 	},
 	"specification:hooks:986689ca": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
+		],
+		"reason": "M1-2 rejects a hook without an execute function. M1-5 owes calling execute with the arguments and the result of each hook type."
 	},
 	"specification:hooks:de7e582d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute"
+		],
 		"reason": ""
 	},
 	"specification:hooks:f6094d6c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
 		"reason": ""
 	},
 	"specification:hooks:e6324c34": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts several hooks of one type with distinct ids"
+		],
 		"reason": ""
 	},
 	"specification:hooks:95b662e4": {
@@ -1512,26 +1578,34 @@
 		"reason": ""
 	},
 	"specification:models:28c62dc0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about an identifier that differs from its file name and finds the definition by its identifier",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
 		"reason": ""
 	},
 	"specification:models:b3b6b02d": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+		],
+		"reason": "M1-2 rejects a provider that is not a function. M1-4 owes calling the factory and checking that it returns a provider."
 	},
 	"specification:models:a170a848": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+		],
 		"reason": ""
 	},
 	"specification:models:3e6f8c47": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
@@ -1543,19 +1617,19 @@
 	},
 	"specification:models:9e204221": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:models:31f8b939": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
 	"specification:models:568a917b": {
 		"status": "planned",
-		"milestone": "M1",
+		"milestone": "M7",
 		"tests": [],
 		"reason": ""
 	},
@@ -1596,9 +1670,12 @@
 		"reason": ""
 	},
 	"specification:models:6608e845": {
-		"status": "planned",
-		"milestone": "M7",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about an identifier that differs from its file name and finds the definition by its identifier"
+		],
 		"reason": ""
 	},
 	"specification:models:6c863b89": {
@@ -1620,51 +1697,70 @@
 		"reason": ""
 	},
 	"specification:models:debf8c4d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
 		"reason": ""
 	},
 	"specification:models:dd57ce77": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+		],
+		"reason": "M1-2 rejects a provider that is not a function. M1-4 owes calling the factory and checking that it returns a provider."
 	},
 	"specification:models:a8ca6779": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback"
+		],
 		"reason": ""
 	},
 	"specification:models:41315f13": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a model with a bad name, provider, model id, price, or fallback",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about an identifier that differs from its file name and finds the definition by its identifier"
+		],
 		"reason": ""
 	},
 	"specification:prompts:0750ac2a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name"
+		],
 		"reason": ""
 	},
 	"specification:prompts:38d3d091": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:39f746fd": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:3a00b3a4": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:a3e64f93": {
@@ -1740,15 +1836,21 @@
 		"reason": ""
 	},
 	"specification:prompts:97e0539c": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two prompts that include each other",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt that includes itself",
+			"packages/runtime/test/registry/validate.test.ts > validate > includes > rejects an include part that names no defined prompt"
+		],
+		"reason": "M1-2 resolves every include part, rejects an include that names no defined prompt, and rejects a cycle. M1-4 owes the recursive expansion when it renders the system prompt."
 	},
 	"specification:prompts:e9cb2058": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two prompts that include each other"
+		],
 		"reason": ""
 	},
 	"specification:prompts:bf53f925": {
@@ -1764,9 +1866,11 @@
 		"reason": ""
 	},
 	"specification:prompts:9e236144": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a tools entry that configures a subagent relationship"
+		],
 		"reason": ""
 	},
 	"specification:prompts:d0ac352d": {
@@ -1830,45 +1934,59 @@
 		"reason": ""
 	},
 	"specification:prompts:06ac343e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:1cce530d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:f826f18c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:eb5bda3e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt without name, toolDescription, a defined model, valid content, or a defined include"
+		],
 		"reason": ""
 	},
 	"specification:prompts:1c97d1cb": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an invalid toolChoice, reasoning level, or recentImageThreshold"
+		],
 		"reason": ""
 	},
 	"specification:prompts:e71f3157": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an invalid toolChoice, reasoning level, or recentImageThreshold"
+		],
 		"reason": ""
 	},
 	"specification:prompts:c81391fe": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an invalid toolChoice, reasoning level, or recentImageThreshold"
+		],
 		"reason": ""
 	},
 	"specification:providers:418c0a3c": {
@@ -1932,9 +2050,12 @@
 		"reason": ""
 	},
 	"specification:subagents:827f7a60": {
-		"status": "planned",
-		"milestone": "M3",
-		"tests": [],
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship named after a reserved lifecycle tool",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship name on both sides or equal to a tool name"
+		],
 		"reason": ""
 	},
 	"specification:subagents:34e53437": {
@@ -3510,10 +3631,13 @@
 		"reason": ""
 	},
 	"specification:tools:a403d2a5": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M2",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+		],
+		"reason": "M1-2 rejects a packed tool whose uses target resolves to nothing the package can see. It accepts a target that resolves to another package's entry agent, which the package does not include. The M1-4 brief owes an invokeTool call outside uses, M1-6 owes the same for queueTool, and M2 owes the other callable categories."
 	},
 	"specification:tools:462ec47b": {
 		"status": "planned",
@@ -4404,9 +4528,12 @@
 		"reason": ""
 	},
 	"specification:agents:bf19dc18": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a human side whose human is not true or that has a property other than label",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects session bindings, maxSteps, and stop bindings on a non-prompt side"
+		],
 		"reason": ""
 	},
 	"specification:agents:7aa29e92": {
@@ -4452,15 +4579,20 @@
 		"reason": ""
 	},
 	"specification:agents:266d6af4": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape"
+		],
 		"reason": ""
 	},
 	"specification:agents:f9d8302d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a human on side A and maxSessionTurns on every agent shape",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts maxSessionTurns, or no maxSessionTurns, on two-prompt and handler-and-prompt agents"
+		],
 		"reason": ""
 	},
 	"specification:agents:b3f24116": {
@@ -4470,15 +4602,21 @@
 		"reason": ""
 	},
 	"specification:agents:9a55d8e0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects two files that define the same name",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects an agent without a name"
+		],
 		"reason": ""
 	},
 	"specification:agents:78c937cc": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side with no backing and an agent with one side"
+		],
 		"reason": ""
 	},
 	"specification:agents:47d9e86c": {
@@ -4506,10 +4644,12 @@
 		"reason": ""
 	},
 	"specification:agents:13907439": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M1",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts packaging metadata on an agent"
+		],
+		"reason": "M1-2 accepts packageName, version, author, and license on an agent and keeps them on the loaded value. Spindle does not pack agents, so no Spindle code consumes the fields, and no test can show that they are consumed only when an agent is packed."
 	},
 	"specification:agents:e7466e70": {
 		"status": "planned",
@@ -4572,10 +4712,14 @@
 		"reason": ""
 	},
 	"specification:agents:3df5dfaf": {
-		"status": "planned",
+		"status": "partial",
 		"milestone": "M3",
-		"tests": [],
-		"reason": ""
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a hook with an unknown type, a bad id, or no execute",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
+		],
+		"reason": "M1-2 resolves each required hook in the child's own namespace, so a packed child cannot require a hook that only the host defines, and it rejects user-scoped hook types. M3 owes running the hook with the parent's ThreadState."
 	},
 	"specification:agents:695692ce": {
 		"status": "planned",
@@ -4584,9 +4728,12 @@
 		"reason": ""
 	},
 	"specification:agents:c51baf9f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects duplicate and undefined required parent hooks",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
+		],
 		"reason": ""
 	},
 	"specification:agents:f990f511": {
@@ -4644,21 +4791,255 @@
 		"reason": ""
 	},
 	"specification:agents:65d917e9": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side that sets both prompt and handler",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a side with no backing and an agent with one side"
+		],
 		"reason": ""
 	},
 	"specification:agents:bcd0c21d": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a human side whose human is not true or that has a property other than label"
+		],
 		"reason": ""
 	},
 	"specification:agents:945becb5": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M1",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a human side whose human is not true or that has a property other than label"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:ed20d6ab": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in agents/packed and keeps their names apart"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:a07138cc": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:55001b09": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in node_modules by their standardagent field"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:494997d8": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in agents/packed and keeps their names apart",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > keeps two packages that hold the same tool name apart"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:e20305eb": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > lets global code see an unpacked definition",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > lets global code see a packed entry agent by its qualified name",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a prompt that names a packed entry agent"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:54b9d154": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > lets packed code see the contents of its own package",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > lets packed code see the entry agents of another package",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > hides unpacked definitions from packed code",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > hides the internals of another package from packed code"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:b3b518a2": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > hides the internals of a package from global code",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > hides the internals of another package from packed code",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a global prompt that names an internal tool of a package"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:c3c522e0": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > qualified names > reads {packageId}/{name} as a qualified name",
+			"packages/runtime/test/registry/resolve.test.ts > resolve > visibility table > lets global code see a packed entry agent by its qualified name"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:dd93c510": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > qualified names > splits a scoped name at its second slash",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > resolves a scoped package id and name"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:09fbc21c": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/resolve.test.ts > resolve > qualified names > reads a scoped name with one slash as unqualified"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:fee4ccb8": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > attaches a package signature to each packed definition of every kind at load time"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:088535b7": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in node_modules by their standardagent field"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:bc06c13d": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in agents/packed and keeps their names apart"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:0329f9d7": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > discovers packages in node_modules by their standardagent field",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > imports nothing from a package whose entry resolves outside its directory",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > loads the root entry that Node and Bun import for each exports and main shape",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > loads a package whose main is an absolute path inside the package",
+			"packages/runtime/test/registry/validate.test.ts > validate > packages > rejects a package entry that Node or Bun would not import, names the package, and imports nothing",
+			"packages/runtime/test/cli/validate.test.ts > spindle validate > loads each package entry shape when the runtime itself imports it"
+		],
+		"reason": ""
+	},
+	"distribution:packaging:a99f135e": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about names that are not snake_case"
+		],
+		"reason": ""
+	},
+	"specification:prompts:bf084ec3": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship named after a reserved lifecycle tool",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt tool or a provider tool with a reserved lifecycle tool name"
+		],
+		"reason": ""
+	},
+	"specification:prompts:d328b163": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > warns about an identifier that differs from its file name and finds the definition by its identifier",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a handler named in a hook list and an undefined hook"
+		],
+		"reason": ""
+	},
+	"specification:models:294a7410": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects provider options that fail the provider's schema",
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > accepts a local package id, scalar provider options, a Promise from another realm, and inherited fields"
+		],
+		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. It rejects options that the schema rejects and accepts a scalar that the schema allows. M1-4, which adds the first provider with a schema, owes a test that calls defineModel."
+	},
+	"specification:handlers:cdfccc99": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+		],
+		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M2, which runs handler sides, owes the decision."
+	},
+	"specification:handlers:6ce44191": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+		],
+		"reason": "M1-2 rejects a handler whose execute is not a function. M2, which runs handler sides, owes calling execute with the ThreadState and the persisted message."
+	},
+	"specification:handlers:16efc360": {
+		"status": "partial",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a handler named in a prompt's tools",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a handler named in a hook list and an undefined hook"
+		],
+		"reason": "M1-2 rejects a handler named in a prompt's tools or in a hook list. M4 owes the check for effect schedules, which arrive with scheduleEffect."
+	},
+	"specification:handlers:83b82eeb": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects session bindings, maxSteps, and stop bindings on a non-prompt side"
+		],
+		"reason": ""
+	},
+	"specification:tools:43351aae": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a tools entry that configures a subagent relationship"
+		],
+		"reason": ""
+	},
+	"specification:tools:aca6c476": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a relationship named after a reserved lifecycle tool",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects a prompt tool or a provider tool with a reserved lifecycle tool name"
+		],
+		"reason": ""
+	},
+	"specification:effects:2179ce3b": {
+		"status": "covered",
+		"milestone": "M1",
+		"tests": [
+			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues"
+		],
 		"reason": ""
 	}
 }

@@ -1,0 +1,22 @@
+{
+  "name": "standardagent-hooks-trap",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.js",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {
+    "entryAgents": [
+      "relay"
+    ],
+    "parentHooks": {
+      "relay": [
+        {
+          "hook": "share_context",
+          "reason": "Shows the relay context to the parent."
+        }
+      ]
+    }
+  }
+}

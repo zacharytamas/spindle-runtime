@@ -1,0 +1,1 @@
+throw Object.create(null)
