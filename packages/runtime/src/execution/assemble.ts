@@ -12,7 +12,12 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
+import type { Execution } from "./Execution.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
+import type { History } from "./history.ts"
+import { countHooks, has, transformHooks } from "./hooks.ts"
+import type { WriteContext } from "./messages.ts"
+import type { StepEvents } from "./step.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -412,3 +417,54 @@ export const buildRequest = (
     signal,
   }
 }
+
+export const assembleRequest = Effect.fnUntraced(function* (
+  turn: Turn,
+  view: HistoryView,
+  history: History,
+  { hooks, secrets }: WriteContext,
+  run: Execution,
+  { record, observe }: StepEvents,
+) {
+  // Runtime section 4 orders the seven steps of an assembly.
+  const rendered = yield* renderSystemPrompt(turn, secrets)
+  yield* record("assemble", "interpolate the system prompt")
+  const system = yield* transformHooks(hooks, "after_system_message", [], rendered)
+  yield* checkSystemPrompt(turn, system, secrets)
+  yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
+  // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
+  // wrote it. A message written later belongs to the next assembly. Nothing that could let a write in, such as
+  // the trace, runs between the read and the first hook.
+  const { rows } = yield* history.read
+  let historyRows: ReadonlyArray<RequestRow> = rows
+  if (has(hooks, "filter_messages")) {
+    const snapshot = rows.map((row) => row.message)
+    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot)
+    if (filtered !== snapshot) {
+      const byId = new Map(rows.map((row) => [row.message.id, row]))
+      historyRows = filtered.map((message) => {
+        const row = byId.get(message.id)
+        return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
+      })
+    }
+  }
+  yield* record("assemble", `snapshot, ${rows.length} messages`)
+  yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
+  const transformed = toProviderMessages(historyRows, view)
+  yield* record("assemble", `transform, ${transformed.length} provider messages`)
+  const prefiltered = has(hooks, "prefilter_llm_history")
+    ? (yield* transformHooks(hooks, "prefilter_llm_history", [], transformed.map(toLLMMessage))).map(fromLLMMessage)
+    : transformed
+  // Messages section 1.3: a prompt that sets reasoning.include to false sends no reasoning, whatever a hook
+  // put back.
+  const messages = view.includeReasoning ? prefiltered : prefiltered.map(withoutReasoning)
+  yield* checkSystemMessages(messages, secrets)
+  yield* record("assemble", `prefilter_llm_history, ${countHooks(hooks, "prefilter_llm_history")} hooks`)
+  const beforeRequest = run.stopAtBoundary()
+  if (beforeRequest) return undefined
+  yield* checkSystemPrompt(turn, system, secrets)
+  const request = buildRequest(turn, system, messages, run.signal)
+  yield* record("assemble", `dispatch, ${request.messages.length} messages, ${request.tools?.length ?? 0} tools`)
+  yield* observe({ type: "request", request })
+  return request
+})
