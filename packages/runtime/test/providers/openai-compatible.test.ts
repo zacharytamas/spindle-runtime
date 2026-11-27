@@ -783,3 +783,70 @@ describe("openaiCompatible HTTP failures", () => {
     ])
   })
 })
+
+describe("openaiCompatible responses", () => {
+  // Providers sections 5 and 6 and ProviderUsage in @standardagents/spec 0.45.13 make usage and its three counts
+  // required on a response and on a finish chunk, so a provider cannot leave usage out. What the types do let it
+  // leave out are reasoningTokens, cachedTokens, cost, provider, and pricing, so none of them may appear as a zero.
+  // This pins today's behavior.
+  it("reports the required counts as zero and no optional count when the endpoint sends no usage", async () => {
+    const zero = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    const message = { content: "Hi." }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([{ choices: [{ delta: message, finish_reason: "stop" }] }, { choices: [], usage: null }])
+        : Response.json({ choices: [{ message, finish_reason: "stop" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    expect((await provider.generate(request)).usage).toStrictEqual(zero)
+    const finish = (await collect(await provider.stream(request))).at(-1)
+    expect(finish?.type === "finish" ? finish.usage : undefined).toStrictEqual(zero)
+    const bare = { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, prompt_tokens_details: {} }
+    const partial = openaiCompatible({
+      apiKey: "",
+      fetch: async () => Response.json({ choices: [{ message, finish_reason: "stop" }], usage: bare }),
+    })
+    expect((await partial.generate(request)).usage).toStrictEqual({
+      promptTokens: 4,
+      completionTokens: 2,
+      totalTokens: 6,
+    })
+  })
+
+  // Chat completions answers with a choices array whose first entry holds the message. A body with no choice is no
+  // response at all, and Providers section 7 says "Providers throw typed errors for error conditions", so generate
+  // throws a ProviderError rather than return an empty message that looks like a model that said nothing.
+  it("rejects a generate response with no choice as a ProviderError", async () => {
+    for (const body of [{}, { choices: [] }, null, []]) {
+      const outcome = await openaiCompatible({ apiKey: "", fetch: async () => Response.json(body) })
+        .generate(request)
+        .then(
+          (response) => `resolved with ${JSON.stringify(response)}`,
+          (cause: ProviderError) => [cause.constructor.name, cause.origin],
+        )
+      expect([JSON.stringify(body), outcome]).toEqual([
+        JSON.stringify(body),
+        ["ProviderError", "provider:openai_compatible"],
+      ])
+    }
+  })
+
+  // Tolerant neighbor. A minimal body with one choice is a response even with no id, no usage, no role, and no
+  // finish reason, and a choice whose content a filter removed is a response with null content, which the step loop
+  // judges, not the provider.
+  it("accepts a minimal generate response and one whose content was filtered", async () => {
+    const minimal = openaiCompatible({
+      apiKey: "",
+      fetch: async () => Response.json({ choices: [{ message: { content: "Hi." } }] }),
+    })
+    expect(await minimal.generate(request)).toMatchObject({ content: "Hi.", finishReason: "stop" })
+    const filtered = openaiCompatible({
+      apiKey: "",
+      fetch: async () =>
+        Response.json({
+          choices: [{ message: { role: "assistant", content: null }, finish_reason: "content_filter" }],
+        }),
+    })
+    expect(await filtered.generate(request)).toMatchObject({ content: null, finishReason: "content_filter" })
+  })
+})
