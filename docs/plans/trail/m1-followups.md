@@ -133,6 +133,13 @@ A lesson for the milestone revision. Effect's event-stream parser was recommende
 
 Found by the review of the tool time limit and left for the operator's code review. `Callback.within` changes three things on one parameter, the clock, the order of the race, and whether it forks. A tool past its limit does not bound a tool it started with `invokeTool` that has no limit of its own. A general limit given twice keeps the last without a word, while a name given twice is an error, and the number parsing accepts `0x10` and a leading space. Not driven end to end by that review: an abort in `spindle chat` that waits for a tool's limit, and timing on Bun.
 
+Waiting for the operator, from the triage of the bot threads at the stack tip. Both threads are answered and left open.
+
+- A line of 1,024 bytes or more typed or pasted at a macOS terminal never reaches `spindle chat`, which then waits with no message. Linux was not measured. The fix is for the chat to read from a terminal through `node:readline` in raw mode, about 30 lines, in its own PR with a short review. Bun's `readline` in terminal mode is unchecked. Thread on PR 10.
+- A tool that calls `invokeTool` without awaiting it leaves the nested tool running after an ordinary finish releases the thread. Its writes are refused, and the tool time limit does not bound it. Holding the thread until it returns is about 6 lines in `Execution.ts`. Thread on PR 8.
+
+Found by the review of the fix PR and left. A `filter_messages` hook that renames a caller and also adds or removes a message before it still sends the call without its result. A hook that swaps the ids of two callers swaps their results, which follows from an id being a message's identity. With `--thread`, a signal while the chat opens the thread exits with neither the id nor the resume line, and the user typed that id. Request assembly now matches a hook's messages to stored rows in three ways, and one matcher with its limits written down would be easier to check.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
 After them. The tool timeout setting is built, as PR 20. What remains is the updated PR descriptions, after the operator's code review, and the milestone revision.
