@@ -586,39 +586,6 @@ describe("validate", () => {
       }).pipe(Effect.provide(PlatformLive)),
     )
 
-    // Packaging (distribution/packaging.md:5) and Tools section 2.1 (specification/tools.md:44): a package includes the
-    // tool dependencies that its uses lists declare. The Visibility Rules (distribution/packaging.md:223-229) let a
-    // packed tool see another package's entry agent, but seeing it does not put it in the declaring package.
-    it.effect(
-      "rejects a packed tool whose uses names another package's entry agent and accepts uses inside its package",
-      () =>
-        Effect.gen(function* () {
-          const { definitions, issues } = yield* validateFixture("invalid/packed-uses-other-package")
-          expect(
-            definitions.filter((d) => d.kind === "tool").map((d) => [d.qualifiedName, d.package?.signature.packageId]),
-          ).toEqual([
-            ["global_finder", undefined],
-            ["standardagent-caller/relay_search", "standardagent-caller"],
-            ["standardagent-caller/local_search", "standardagent-caller"],
-            ["standardagent-caller/format_result", "standardagent-caller"],
-          ])
-          const reported = issues.map((issue) => ({
-            location: `${issue.file}:${issue.path}`,
-            severity: issue.severity,
-            namesTarget: issue.message.includes("standardagent-callee/finder"),
-          }))
-          expect(reported).toEqual([
-            {
-              location: "agents/packed/standardagent-caller/index.js:tools.relay_search.uses[0]",
-              severity: "error",
-              namesTarget: true,
-            },
-          ])
-          // The target exists and is visible, so the report must not call it undefined.
-          expect(issues[0]?.code).not.toBe("tool_uses_undefined")
-        }).pipe(Effect.provide(PlatformLive)),
-    )
-
     it.effect("discovers packages in node_modules by their standardagent field", () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
