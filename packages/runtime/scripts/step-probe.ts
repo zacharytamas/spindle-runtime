@@ -6,6 +6,7 @@ import path from "node:path"
 import process from "node:process"
 import { Effect, Layer } from "effect"
 import { PlatformLive, platformName, SqliteLive } from "#platform"
+import { layer as supervisorLayer } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../src/execution/trigger.ts"
 import { decodeScript, scriptedProvider } from "../src/providers/script.ts"
 import { Registry } from "../src/registry/Registry.ts"
@@ -57,15 +58,17 @@ const run = async () => {
         }))
         yield* store.appendMessages(thread.id, earlier)
         const started = performance.now()
-        const outcome = yield* sendMessage(thread.id, "go", { provider, stepCap: cap })
+        const { outcome } = yield* sendMessage(thread.id, "go", { provider, stepCap: cap })
+        if (outcome === undefined) return yield* Effect.die("the run had no outcome")
         const elapsed = performance.now() - started
         const { total } = yield* store.getMessages(thread.id, { includeSilent: true, limit: 0 })
         return { outcome, elapsed, rows: total }
       }).pipe(
         Effect.provide(
-          Layer.mergeAll(Registry.layer(project), Layer.provide(layer, SqliteLive({ filename }))).pipe(
-            Layer.provide(PlatformLive),
-          ),
+          Layer.mergeAll(
+            Registry.layer(project),
+            Layer.provideMerge(supervisorLayer(), Layer.provide(layer, SqliteLive({ filename }))),
+          ).pipe(Layer.provide(PlatformLive)),
         ),
       ),
     )

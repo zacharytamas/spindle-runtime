@@ -5,6 +5,7 @@ import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { project } from "../../../conformance/src/scenarios/step-loop.ts"
 import { argumentWatcher } from "../../src/execution/call.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -40,7 +41,7 @@ describe("argumentWatcher", () => {
   })
 })
 
-// M1-6 interrupts an execution to terminate it. A hook that is running then must leave no partial write behind.
+// Terminate and an abort interrupt an execution. A hook that is running then must leave no partial write behind.
 describe("an interrupted hook", () => {
   const run = (position: "before_create_message" | "after_create_message") =>
     Effect.gen(function* () {
@@ -48,13 +49,17 @@ describe("an interrupted hook", () => {
       const inside = new Promise<void>((resolve) => {
         entered = resolve
       })
+      let release!: () => void
+      const cleanup = new Promise<void>((resolve) => {
+        release = resolve
+      })
       const hang = defineHook({
         hook: position,
         id: "hang",
         execute: (async (_state: unknown, message: Message) => {
           if (message.role === "assistant") {
             entered()
-            await new Promise(() => {})
+            await cleanup
           }
           return message
         }) as never,
@@ -64,15 +69,19 @@ describe("an interrupted hook", () => {
       const store = Layer.fresh(layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" }))))
       return yield* Effect.gen(function* () {
         const threads = yield* ThreadStore
+        const supervisor = yield* ThreadSupervisor
         const thread = yield* createThread("assistant")
         const fiber = yield* Effect.forkChild(sendMessage(thread.id, "go"))
         yield* Effect.promise(() => inside)
-        yield* Fiber.interrupt(fiber)
+        yield* supervisor.abort(thread.id)
+        expect((yield* threads.getThread(thread.id)).status.state).toBe("running")
+        release()
+        yield* Fiber.join(fiber)
         const stored = (yield* threads.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
         yield* threads.transaction(threads.appendMessages(thread.id, [{ role: "user", content: "later" }]))
         const after = (yield* threads.getMessages(thread.id, { order: "asc", includeSilent: true })).messages
         return { stored: stored.map((m) => m.content), after: after.map((m) => m.content) }
-      }).pipe(Effect.provide(Layer.merge(registry, store)))
+      }).pipe(Effect.provide(Layer.merge(registry, Layer.provideMerge(supervisorLayer(), store))))
     })
 
   it.effect("in before_create_message stores nothing of the message and leaves no transaction open", () =>

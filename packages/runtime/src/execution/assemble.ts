@@ -12,6 +12,7 @@ import type {
 } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
+import { positions } from "../store/ThreadStore.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
 import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
 
@@ -166,9 +167,12 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
 }
 
 // Read once when the execution starts, so that a message a tool injects later cannot move the start of the turn.
-export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
+export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDelivered?: string) => {
   const other = roleOf(side === "a" ? "b" : "a")
-  const start = history.findLastIndex((message) => message.role === other)
+  const start =
+    firstDelivered !== undefined
+      ? history.findIndex((m) => m.id === firstDelivered)
+      : history.findLastIndex((message) => message.role === other)
   return new Set(history.slice(0, Math.max(0, start)).map((message) => message.id))
 }
 
@@ -179,9 +183,13 @@ export const pastOf = (history: ReadonlyArray<Message>, side: Side) => {
 const NO_CALLS: Array<ProviderToolCallPart> = []
 
 const requestOrder = (history: ReadonlyArray<Message>, parsed: ReadonlyArray<Array<ProviderToolCallPart>>) => {
+  const bySeq = new Map<number, number>()
   const holder = new Map<string, number>()
   const holderOf = (message: Message, index: number) => {
-    if (message.role === "tool") return holder.get(message.tool_call_id ?? "")
+    const position = positions.get(message)
+    if (message.role === "tool")
+      return position?.callerSeq != null ? bySeq.get(position.callerSeq) : holder.get(message.tool_call_id ?? "")
+    if (position) bySeq.set(position.seq, index)
     for (const call of parsed[index] ?? []) holder.set(call.id, index)
     return undefined
   }
@@ -227,6 +235,7 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const own = roleOf(view.side)
   const other = roleOf(view.side === "a" ? "b" : "a")
   const shownCalls = new Map<string, boolean>()
+  const shownBySeq = new Map<number, ReadonlyArray<ProviderToolCallPart>>()
   const messages: Array<ProviderMessage> = []
   const parsed = history.map((message) =>
     (message.role === "user" || message.role === "assistant") && message.tool_calls != null
@@ -236,7 +245,12 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
   const visit = (message: Message, index: number) => {
     const past = view.past.has(message.id)
     if (message.role === "tool") {
-      if (shownCalls.get(message.tool_call_id ?? "") !== true) return
+      const seq = positions.get(message)?.callerSeq
+      const visible =
+        seq == null
+          ? shownCalls.get(message.tool_call_id ?? "")
+          : shownBySeq.get(seq)?.some((call) => call.id === message.tool_call_id)
+      if (!visible) return
       const text = textOf(message)
       messages.push({
         role: "tool",
@@ -252,6 +266,8 @@ export const toProviderMessages = (history: ReadonlyArray<Message>, view: Histor
     } else if (message.role === own) {
       const calls = parsed[index] ?? []
       const showCalls = calls.length > 0 && (!past || view.includePastTools)
+      const position = positions.get(message)
+      if (position && showCalls) shownBySeq.set(position.seq, calls)
       for (const call of calls) shownCalls.set(call.id, showCalls)
       const content = !past || view.includeChat ? message.content : null
       if (past && !showCalls && (content ?? "") === "") return

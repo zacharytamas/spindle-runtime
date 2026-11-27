@@ -4,6 +4,8 @@ import { Effect, FileSystem, Path, Schema } from "effect"
 import { Command } from "effect/cli"
 import { PlatformLive, platformName, runMain } from "#platform"
 import { runCommand } from "./run.ts"
+import { sendCommand } from "./send.ts"
+import { recoverCommand, statusCommand } from "./status.ts"
 import { validateCommand } from "./validate.ts"
 
 const PackageJson = Schema.fromJsonString(Schema.Struct({ version: Schema.String }))
@@ -16,7 +18,9 @@ const packageVersion = Effect.gen(function* () {
   return version
 })
 
-const spindle = Command.make("spindle").pipe(Command.withSubcommands([validateCommand, runCommand]))
+const spindle = Command.make("spindle").pipe(
+  Command.withSubcommands([validateCommand, runCommand, sendCommand, statusCommand, recoverCommand]),
+)
 
 Effect.gen(function* () {
   const version = yield* packageVersion

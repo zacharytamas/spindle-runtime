@@ -13,6 +13,10 @@ export interface Platform {
   >
   readonly SqliteLive: (options: { readonly filename: string }) => Layer.Layer<SqlClient, SqlError>
   readonly runMain: ReturnType<typeof makeRunMain>
+  // The holder record names the process that runs an execution, so that a person can find it.
+  readonly processId: number
+  // Registers the handler that gets the next keyboard interrupt instead of the main fiber, and returns its removal.
+  readonly onInterrupt: (handler: () => void) => () => void
 }
 
 // tsc resolves #platform to node.ts only, so this is what holds bun.ts to the same exports.

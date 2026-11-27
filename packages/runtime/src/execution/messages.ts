@@ -23,6 +23,9 @@ export interface WriteContext {
   readonly call: HookCall | undefined
   // The history of the execution that writes, when an execution writes.
   readonly history: History | undefined
+  // The flow of the execution that writes. Its writes fail once that flow no longer holds the thread.
+  readonly callerSeq?: number
+  readonly flowId?: string
 }
 
 // A write from a hook is one level deeper than the write or the step that called the hook.
@@ -84,13 +87,16 @@ const sameJson = (a: unknown, b: unknown) => {
 
 // Who wrote a message decides what redaction changes. Text that a tool or a hook wrote loses each secret, and the
 // human's message and the model's response keep theirs. A field that a hook changes is the hook's text either way.
-// An injection is a write its caller may refuse. A tool result and a turn are writes the execution needs.
-export type Writer = "injection" | "result" | "turn"
+// An injection is a write its caller may refuse. A tool result and a turn are writes the execution needs. A queued
+// call is the call that a tool or a hook queued, whose arguments that code wrote.
+export type Writer = "injection" | "result" | "turn" | "queued" | "skipped"
 
 const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
   injection: ["content", "metadata"],
+  skipped: ["content", "metadata", "attachments"],
   result: ["content", "metadata", "attachments"],
   turn: [],
+  queued: [],
 }
 
 const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
@@ -98,7 +104,7 @@ const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
 // Threads section 2.3. error_code and error_data are the keys Spindle stores a tool result's error under, so they keep
 // their names. A tool result's own error code is an identifier that the runtime and clients read back, so that one
 // string keeps its value too. Everything else under either key is redacted.
-const redactMetadata = (metadata: Record<string, unknown>, redact: (text: string) => string, result = false) =>
+export const redactMetadata = (metadata: Record<string, unknown>, redact: (text: string) => string, result = false) =>
   Object.fromEntries(
     Object.entries(metadata).map(([key, value]) =>
       result && key === "error_code" && typeof value === "string"
@@ -136,6 +142,8 @@ export const createMessage = Effect.fn("createMessage")(function* (
   write: WriteContext,
   draft: NewMessage,
   writer: Writer,
+  // The queue entry that this message delivers, removed when the message is stored.
+  dequeue?: number,
 ) {
   const store = yield* ThreadStore
   const depth = yield* depthOf(write)
@@ -154,21 +162,44 @@ export const createMessage = Effect.fn("createMessage")(function* (
   })
   const hooked = yield* runHooks(write.hooks, "before_create_message", [], original, { depth, essential, check })
   let redacted = redactWrite(writer, original, hooked, redact)
+  if (writer === "queued" && original.tool_calls) {
+    const calls = JSON.parse(original.tool_calls) as Array<{ function: { arguments: string } }>
+    for (const call of calls)
+      call.function.arguments = JSON.stringify(mapStrings(JSON.parse(call.function.arguments), redact, redact))
+    redacted.tool_calls = JSON.stringify(calls)
+  }
+  if (writer === "skipped")
+    redacted = {
+      ...redacted,
+      role: original.role,
+      name: original.name ?? null,
+      tool_call_id: original.tool_call_id ?? null,
+      tool_status: "error",
+      content: original.content,
+    }
   if (idOwner !== undefined && hooked.id !== original.id && redact(hooked.id) !== hooked.id) {
     const problem = "returned an id that holds a secret value"
     if (!essential) return yield* new HookFailed({ hook: idOwner, position: "before_create_message", problem })
     yield* Effect.logWarning(`Hook ${idOwner} (before_create_message) ${problem}. Spindle kept the generated id.`)
     redacted = { ...redacted, id: original.id }
   }
+  const options =
+    write.flowId === undefined
+      ? {}
+      : {
+          ...(write.callerSeq === undefined ? {} : { callerSeq: write.callerSeq }),
+          flowId: write.flowId,
+          ...(dequeue === undefined ? {} : { dequeue }),
+        }
   // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
   // stored once under an id from the runtime, and its hooks, which have already run, do not run again.
-  const inserted = yield* store.insertMessage(write.threadId, redacted).pipe(
+  const inserted = yield* store.insertMessage(write.threadId, redacted, options).pipe(
     Effect.catchTag("MessageIdTaken", (error) => {
       if (!essential) return Effect.fail(error)
       const id = crypto.randomUUID()
       return Effect.logWarning(
         `Message id ${JSON.stringify(redact(error.messageId))} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
-      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id })))
+      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id }, options)))
     }),
   )
   write.history?.inserted(inserted)

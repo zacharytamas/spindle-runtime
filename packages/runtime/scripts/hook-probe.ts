@@ -3,6 +3,7 @@ import path from "node:path"
 import process from "node:process"
 import { Effect, Layer } from "effect"
 import { PlatformLive, SqliteLive } from "#platform"
+import { layer as supervisorLayer } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, stateAtRest } from "../src/execution/trigger.ts"
 import { Registry } from "../src/registry/Registry.ts"
 import { layer } from "../src/store/sqlite.ts"
@@ -49,9 +50,10 @@ const inject = async () => {
       console.log(`thread ${thread.id}`)
     }).pipe(
       Effect.provide(
-        Layer.mergeAll(Registry.layer(root), Layer.provide(layer, SqliteLive({ filename: path.resolve(db) }))).pipe(
-          Layer.provide(PlatformLive),
-        ),
+        Layer.mergeAll(
+          Registry.layer(root),
+          Layer.provideMerge(supervisorLayer(), Layer.provide(layer, SqliteLive({ filename: path.resolve(db) }))),
+        ).pipe(Layer.provide(PlatformLive)),
       ),
     ),
   )

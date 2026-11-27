@@ -11,6 +11,7 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { platformName, SqliteLive } from "#platform"
 import { layer } from "../src/store/sqlite.ts"
 import { type NewMessage, ThreadStore } from "../src/store/ThreadStore.ts"
+import { admitEntry, drainEntries } from "./store-fixtures.ts"
 
 const USAGE = `Usage: store-probe <command> --db <file> [options]
 
@@ -48,6 +49,22 @@ const fail = (message: string): never => {
 
 const print = (value: unknown) => console.log(JSON.stringify(value, (_, v) => (typeof v === "bigint" ? `${v}n` : v)))
 
+const startRun = (threadId: string) =>
+  ThreadStore.use((store) =>
+    Effect.gen(function* () {
+      if (!(yield* store.claim(threadId, claim)))
+        yield* store.admit(threadId, { kind: "message", message: { role: "user", content: "trigger" } }, claim)
+      return (yield* store.getThread(threadId)).status
+    }),
+  )
+const settleRun = (threadId: string, outcome: { state: "idle" | "failed"; reason: string }) =>
+  ThreadStore.use((store) =>
+    Effect.gen(function* () {
+      yield* store.settle(threadId, claim.flowId, outcome, { continueIfQueued: false, closing: "" })
+      return (yield* store.getThread(threadId)).status
+    }),
+  )
+const claim = { holder: crypto.randomUUID(), flowId: crypto.randomUUID() }
 const withStore = <A, E>(filename: string, use: Effect.Effect<A, E, ThreadStore | SqlClient>) =>
   Effect.runPromise(Effect.provide(use, Layer.provideMerge(layer, SqliteLive({ filename }))))
 
@@ -406,10 +423,10 @@ const commands: Record<string, () => Promise<void>> = {
         const labels: Array<string> = []
         for (let n = 0; n < count; n++) {
           if (n % 3 === 2) {
-            yield* store.enqueue(thread.id, { kind: "tool", toolName: "lookup", args: { n } })
+            yield* admitEntry(thread.id, { kind: "tool", toolName: "lookup", args: { n } }, claim)
             labels.push(`tool:${n}`)
           } else {
-            yield* store.enqueue(thread.id, { kind: "message", message: { role: "user", content: `message ${n}` } })
+            yield* admitEntry(thread.id, { kind: "message", message: { role: "user", content: `message ${n}` } }, claim)
             labels.push(`message:${n}`)
           }
         }
@@ -422,7 +439,16 @@ const commands: Record<string, () => Promise<void>> = {
   dequeue: async () => {
     const taken = await withStore(
       required("db"),
-      ThreadStore.use((store) => store.takeQueue(required("thread"))),
+      ThreadStore.use((store) =>
+        Effect.gen(function* () {
+          const threadId = required("thread")
+          yield* store.recover(threadId)
+          if (!(yield* store.claim(threadId, claim))) return []
+          const taken = yield* drainEntries(threadId, claim.flowId)
+          yield* settleRun(threadId, { state: "idle", reason: "awaiting_human" })
+          return taken
+        }),
+      ),
     )
     const dequeued = taken.map((entry) =>
       entry.kind === "tool" ? `tool:${entry.args.n}` : `message:${entry.message.content.replace("message ", "")}`,
@@ -451,11 +477,13 @@ const commands: Record<string, () => Promise<void>> = {
         const store = yield* ThreadStore
         const thread = yield* store.createThread({ agentId: "status" })
         const initial = (yield* store.getThread(thread.id)).status
-        const first = yield* store.setStatus(thread.id, { state: "idle", reason: "stop_on_response" })
+        yield* startRun(thread.id)
+        const first = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
         yield* Effect.sleep("5 millis")
-        const second = yield* store.setStatus(thread.id, { state: "idle", reason: "stop_on_response" })
+        const second = yield* settleRun(thread.id, { state: "idle", reason: "stop_on_response" })
         yield* Effect.sleep("5 millis")
-        const third = yield* store.setStatus(thread.id, { state: "idle", reason: "stop_tool" })
+        yield* startRun(thread.id)
+        const third = yield* settleRun(thread.id, { state: "idle", reason: "stop_tool" })
         return { thread: thread.id, initial, first, second, third }
       }),
     )

@@ -701,13 +701,6 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         const seen: Array<unknown> = []
         const hooks = [
           defineHook({
-            hook: "after_thread_created",
-            id: "keep_handle",
-            execute: async (state) => {
-              elsewhere = state
-            },
-          }),
-          defineHook({
             hook: "after_system_message",
             id: "write_elsewhere",
             execute: async (state) => {
@@ -746,10 +739,10 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             tools,
             hooks,
             humanOn,
-            agent: { hooks: ["keep_handle"] },
             prompt: { hooks: ["write_elsewhere", "look"] },
           },
           async (session, thread) => {
+            elsewhere = await session.state(thread)
             await send(session, thread, "go")
             expect(seen).toEqual([
               ["system hook", ["go", "before the snapshot"]],
@@ -836,13 +829,6 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
         }
         const hooks = [
           defineHook({
-            hook: "after_thread_created",
-            id: "keep_handle",
-            execute: async (state) => {
-              elsewhere = state
-            },
-          }),
-          defineHook({
             hook: "after_system_message",
             id: "edit_elsewhere",
             execute: async (state) => {
@@ -881,10 +867,10 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             tools,
             hooks,
             humanOn,
-            agent: { hooks: ["keep_handle"] },
             prompt: { hooks: ["edit_elsewhere", "look"] },
           },
           async (session, thread) => {
+            elsewhere = await session.state(thread)
             await send(session, thread, "go")
             expect(seen).toEqual([
               ["filter", ["go"]],
@@ -911,13 +897,6 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
           await elsewhere?.deleteMessage(found?.id ?? "")
         }
         const hooks = [
-          defineHook({
-            hook: "after_thread_created",
-            id: "keep_handle",
-            execute: async (state) => {
-              elsewhere = state
-            },
-          }),
           defineHook({
             hook: "after_system_message",
             id: "delete_elsewhere",
@@ -956,10 +935,10 @@ export const messageScenarios: ReadonlyArray<Scenario> = [
             tools,
             hooks,
             humanOn,
-            agent: { hooks: ["keep_handle"] },
             prompt: { hooks: ["delete_elsewhere", "look"], includeChat: true },
           },
           async (session, thread) => {
+            elsewhere = await session.state(thread)
             await session.seed(thread, [
               { role: human, content: "deleted during the tool" },
               { role: human, content: "deleted before the snapshot" },

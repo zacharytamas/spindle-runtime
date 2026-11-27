@@ -8,7 +8,8 @@ import type {
 } from "@standardagents/spec"
 import { Clock, Context, Data, Duration, Effect } from "effect"
 import type { Definition } from "../registry/Registry.ts"
-import { toJson } from "../store/schema.ts"
+import { isAttachmentRef, toJson } from "../store/schema.ts"
+import { type Callback, invokeCallback } from "./callback.ts"
 import { readResult } from "./tools.ts"
 import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
 
@@ -108,19 +109,6 @@ const isString = (value: unknown) => typeof value === "string"
 // An id is a key that the store, a log line, and every reader hold as it is. Node's SQLite driver ends a string at a
 // NUL character, and UTF-8 has no encoding for a lone surrogate.
 const isSafeId = (id: string) => id !== "" && [...id].length <= 255 && !/[\p{Cc}\uD800-\uDFFF]/u.test(id)
-
-// Messages section 1.2.
-const isAttachmentRef = (value: unknown) =>
-  isRecord(value) &&
-  value.type === "file" &&
-  isString(value.id) &&
-  isString(value.path) &&
-  isString(value.name) &&
-  isString(value.mimeType) &&
-  isCount(value.size) &&
-  optional(value.width, isCount) &&
-  optional(value.height, isCount) &&
-  optional(value.description, isString)
 
 // Messages section 1, as the package's Message type gives it. A hook may leave out a field that type makes optional.
 const isMessage = (value: unknown): value is Message =>
@@ -361,7 +349,7 @@ export interface HookSet {
 // One call of one hook. Its ThreadState refuses every call once the call runs past the hook time limit. A write that
 // the loop, a tool, or a caller at rest makes has depth 0, and a hook called for a write of depth d has depth d + 1,
 // which its own writes carry.
-export interface HookCall {
+export interface HookCall extends Callback {
   readonly hook: string
   readonly position: Position
   readonly depth: number
@@ -369,6 +357,7 @@ export interface HookCall {
 }
 
 export interface HookScope {
+  readonly pending?: Set<Promise<unknown>>
   readonly set: HookSet
   readonly stateFor: (hook: SelectedHook, call: HookCall) => ThreadState
 }
@@ -447,9 +436,15 @@ export class HookFailed extends Data.TaggedError("HookFailed")<{
   }
 }
 
-const callHook = (hook: SelectedHook, args: () => ReadonlyArray<unknown>, timeout: Duration.Duration) =>
+const callHook = (
+  hook: SelectedHook,
+  args: () => ReadonlyArray<unknown>,
+  timeout: Duration.Duration,
+  call: HookCall,
+  pending: HookScope["pending"],
+) =>
   Effect.tryPromise({
-    try: () => Promise.resolve(hook.execute(...args())),
+    try: () => invokeCallback(call, pending, () => hook.execute(...args())),
     catch: () => "threw an error",
   }).pipe(Effect.timeoutOption(timeout), Effect.result)
 
@@ -485,11 +480,12 @@ export const runHooks = <K extends Position>(
         { source: { ...scope.set.source } },
       ]
       const started = yield* Clock.currentTimeMillis
-      const outcome = yield* callHook(hook, args, timeout)
+      const outcome = yield* callHook(hook, args, timeout, call, scope.pending)
       // A hook that blocks the thread can return before the timer that bounds it fires, so the time it took decides.
       call.expired =
         (outcome._tag === "Success" && outcome.success._tag === "None") ||
         (yield* Clock.currentTimeMillis) - started > Duration.toMillis(timeout)
+      if (call.expired && call.promise) scope.pending?.delete(call.promise)
       let problem: string
       let late = ""
       if (call.expired || outcome._tag === "Failure" || outcome.success._tag === "None") {

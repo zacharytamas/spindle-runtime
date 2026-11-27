@@ -339,6 +339,7 @@ export interface ModelCall {
 }
 
 export interface CallContext {
+  readonly stopped: () => boolean
   readonly step: number
   // Yields the provider for one backend request. Infrastructure Providers, Per-request Transport: an extension
   // with createFetch is built again for every request, and a retry is a request.
@@ -387,8 +388,10 @@ const fetchMetadata = (provider: LLMProviderInterface, summary: ResponseSummary,
 
 export const callModel = Effect.fn("callModel")(function* (context: CallContext, request: ProviderRequest) {
   for (let attempt = 1; ; attempt++) {
+    if (context.stopped()) return undefined
     const provider = yield* context.provider
     yield* context.record(`${provider.name} ${request.model} attempt ${attempt}`)
+    if (context.stopped()) return undefined
     const log: ModelCall = { step: context.step, attempt, model: request.model }
     context.calls.push(log)
     const started: Array<StreamedCall> = []
@@ -406,6 +409,7 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
         ...(origin === undefined ? {} : { origin }),
         ...(upstream === undefined ? {} : { upstream }),
       }
+      if (context.stopped()) return undefined
       if (!failure.retryable || attempt > context.retries) return yield* failure
       yield* Effect.sleep(backoff(failure, attempt))
       continue
@@ -430,6 +434,7 @@ export const callModel = Effect.fn("callModel")(function* (context: CallContext,
     if (rejected === undefined) return response
     log.rejected = rejected
     yield* abandon()
+    if (context.stopped()) return undefined
     if (attempt > context.retries)
       return yield* new ResponseRejected({ message: `${rejected} after ${attempt} requests` })
   }

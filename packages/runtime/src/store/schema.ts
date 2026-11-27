@@ -1,13 +1,14 @@
-import type { Message, ThreadStatus } from "@standardagents/spec"
+import type { AttachmentRef, Message, QueueMessageInput, ThreadStatus } from "@standardagents/spec"
 import type { NewMessage, Queued, QueueEntry, Thread } from "./ThreadStore.ts"
+import { positions } from "./ThreadStore.ts"
 
 type Text = string | Uint8Array
 
 // The default decoder drops a leading U+FEFF as a byte-order mark, and that character is part of the text.
 const utf8 = new TextDecoder("utf-8", { ignoreBOM: true })
-function text(value: Text): string
-function text(value: Text | null): string | null
-function text(value: Text | null) {
+export function text(value: Text): string
+export function text(value: Text | null): string | null
+export function text(value: Text | null) {
   return value instanceof Uint8Array ? utf8.decode(value) : value
 }
 
@@ -69,6 +70,8 @@ export const toThread = (row: ThreadRow): Thread => ({
 })
 
 export type MessageRow = {
+  readonly seq?: number
+  readonly caller_seq?: number | null
   readonly id: string
   readonly role: Message["role"]
   readonly content: Text | null
@@ -89,6 +92,8 @@ export type MessageRow = {
 }
 
 export const messageColumns = [
+  "seq",
+  "caller_seq",
   "id",
   "role",
   textColumn("content"),
@@ -121,26 +126,31 @@ const noSubagent = {
   subagent_spawn_group_id: null,
 } satisfies Partial<Message>
 
-export const toMessage = (row: MessageRow): Message => ({
-  id: row.id,
-  role: row.role,
-  content: text(row.content),
-  name: text(row.name),
-  tool_calls: text(row.tool_calls),
-  tool_call_id: text(row.tool_call_id),
-  tool_status: row.tool_status,
-  status: row.status,
-  attachments: row.attachments === null ? null : JSON.parse(row.attachments),
-  reasoning_content: text(row.reasoning_content),
-  reasoning_details: text(row.reasoning_details),
-  prompt: text(row.prompt),
-  created_at: row.created_at,
-  parent_id: text(row.parent_id),
-  depth: row.depth,
-  silent: row.silent === 1,
-  metadata: JSON.parse(row.metadata),
-  ...noSubagent,
-})
+export const toMessage = (row: MessageRow): Message => {
+  const message: Message = {
+    id: row.id,
+    role: row.role,
+    content: text(row.content),
+    name: text(row.name),
+    tool_calls: text(row.tool_calls),
+    tool_call_id: text(row.tool_call_id),
+    tool_status: row.tool_status,
+    status: row.status,
+    attachments: row.attachments === null ? null : JSON.parse(row.attachments),
+    reasoning_content: text(row.reasoning_content),
+    reasoning_details: text(row.reasoning_details),
+    prompt: text(row.prompt),
+    created_at: row.created_at,
+    parent_id: text(row.parent_id),
+    depth: row.depth,
+    silent: row.silent === 1,
+    metadata: JSON.parse(row.metadata),
+    ...noSubagent,
+  }
+  if (row.seq !== undefined && (row.tool_calls !== null || row.caller_seq != null))
+    positions.set(message, { seq: row.seq, callerSeq: row.caller_seq ?? null })
+  return message
+}
 
 export const messageRow = (
   threadId: string,
@@ -169,6 +179,29 @@ export const messageRow = (
   metadata: json.metadata,
 })
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+export const callsIn = (toolCalls: Text): Array<{ readonly id: string; readonly name: string }> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text(toolCalls))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap((entry: unknown) =>
+    isRecord(entry) && typeof entry.id === "string"
+      ? [
+          {
+            id: entry.id,
+            name: isRecord(entry.function) && typeof entry.function.name === "string" ? entry.function.name : "",
+          },
+        ]
+      : [],
+  )
+}
+
 export interface QueueRow {
   readonly seq: number
   readonly kind: QueueEntry["kind"]
@@ -179,13 +212,35 @@ export interface QueueRow {
 export const queuePayload = (entry: QueueEntry): unknown =>
   entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args }
 
+const isCount = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+
+export const isAttachmentRef = (value: unknown): value is AttachmentRef =>
+  isRecord(value) &&
+  value.type === "file" &&
+  typeof value.id === "string" &&
+  typeof value.path === "string" &&
+  typeof value.name === "string" &&
+  typeof value.mimeType === "string" &&
+  isCount(value.size) &&
+  (value.width === undefined || isCount(value.width)) &&
+  (value.height === undefined || isCount(value.height)) &&
+  (value.description === undefined || typeof value.description === "string")
+
+const isQueueMessage = (value: unknown): value is QueueMessageInput =>
+  isRecord(value) &&
+  (value.role === "user" || value.role === "assistant") &&
+  typeof value.content === "string" &&
+  (value.silent === undefined || typeof value.silent === "boolean") &&
+  (value.metadata === undefined || isRecord(value.metadata)) &&
+  (value.attachments === undefined || (Array.isArray(value.attachments) && value.attachments.every(isAttachmentRef)))
+
 export const toQueued = (row: QueueRow): Queued => {
-  const payload = JSON.parse(row.payload)
-  const entry: QueueEntry =
-    row.kind === "message"
-      ? { kind: "message", message: payload }
-      : { kind: "tool", toolName: payload.toolName, args: payload.args }
-  return { ...entry, seq: row.seq, queuedAt: row.queued_at }
+  const payload: unknown = JSON.parse(row.payload)
+  const position = { seq: row.seq, queuedAt: row.queued_at }
+  if (row.kind === "message" && isQueueMessage(payload)) return { ...position, kind: "message", message: payload }
+  if (row.kind === "tool" && isRecord(payload) && typeof payload.toolName === "string" && isRecord(payload.args))
+    return { ...position, kind: "tool", toolName: payload.toolName, args: payload.args }
+  throw new Error("Invalid queued payload")
 }
 
 export interface NotJson {
@@ -250,10 +305,14 @@ export const toJson = (value: unknown): string | NotJson => {
           const prototype = read(path, () => Object.getPrototypeOf(value))
           if (prototype !== null && read(path, () => Object.getPrototypeOf(prototype)) !== null)
             throw new Found(path, `a ${read(path, () => prototype.constructor?.name) ?? "non-plain"} object`)
-          if (typeof read(path, () => (value as { toJSON?: unknown }).toJSON) === "function")
+          const entries = read(path, () => Object.entries(value))
+          const ownToJson = entries.find(([key]) => key === "toJSON")
+          if (
+            typeof (ownToJson ? ownToJson[1] : read(path, () => (value as { toJSON?: unknown }).toJSON)) === "function"
+          )
             throw new Found(path, "an object with a toJSON method")
           const members: Array<string> = []
-          for (const [key, member] of read(path, () => Object.entries(value)))
+          for (const [key, member] of entries)
             if (member !== undefined) members.push(`${JSON.stringify(key)}:${write(member, `${path}.${key}`)}`)
           text = `{${members.join(",")}}`
         }

@@ -1,7 +1,7 @@
 import type { Message } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { SqlError } from "effect/sql/SqlError"
-import { type Inserted, type ThreadNotFound, ThreadStore } from "../store/ThreadStore.ts"
+import { type Inserted, positions, type ThreadNotFound, ThreadStore } from "../store/ThreadStore.ts"
 
 // A stored message's metadata and attachments come from JSON.parse, so they hold only plain objects, arrays, and
 // primitives. On Bun, structuredClone of a history took longer than reading it from the store, and this copy takes
@@ -43,8 +43,12 @@ export const makeHistory = (threadId: string): History => {
     inserted: ({ message, revision }) => {
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
       // The writer gets the same message object back, and injectMessage hands it to the tool or hook that wrote it.
-      else if (revision === copy.revision + 1)
-        copy = { revision, messages: copy.messages.concat([copyMessage(message)]) }
+      else if (revision === copy.revision + 1) {
+        const duplicate = copyMessage(message)
+        const position = positions.get(message)
+        if (position) positions.set(duplicate, position)
+        copy = { revision, messages: copy.messages.concat([duplicate]) }
+      }
     },
   }
 }

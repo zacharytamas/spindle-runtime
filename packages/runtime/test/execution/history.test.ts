@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, type Setup } from "../../../conformance/src/scenarios/step-loop.ts"
@@ -9,7 +9,8 @@ import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
 import { createMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
-import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
@@ -35,20 +36,18 @@ const countingStore = (reads: { count: number }) =>
     }),
   ).pipe(Layer.provide(inMemory()))
 
-const runOnce = (setup: Setup, reads: { count: number }) =>
+const runOnce = (setup: Setup, reads: { count: number }, outside?: (state: ThreadState) => void) =>
   Effect.gen(function* () {
     const thread = yield* createThread("assistant")
-    return yield* sendMessage(thread.id, "go")
-  }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), countingStore(reads))))
-
-const keepHandle = (keep: (state: ThreadState) => void) =>
-  defineHook({
-    hook: "after_thread_created",
-    id: "keep_handle",
-    execute: async (state) => {
-      keep(state)
-    },
-  })
+    if (outside) outside(yield* stateAtRest(thread.id))
+    const { outcome } = yield* sendMessage(thread.id, "go")
+    if (outcome === undefined) return yield* Effect.die("the run had no outcome")
+    return outcome
+  }).pipe(
+    Effect.provide(
+      Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), countingStore(reads))),
+    ),
+  )
 
 describe("the history an execution keeps", () => {
   it.effect("is read whole once over twenty steps that nobody else writes to, and once more after a write", () =>
@@ -58,9 +57,6 @@ describe("the history an execution keeps", () => {
       const perStep: Array<number> = []
       let last: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "after_system_message",
           id: "write_last",
@@ -88,8 +84,11 @@ describe("the history an execution keeps", () => {
       ])
       const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
       const outcome = yield* runOnce(
-        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_last", "count"] } },
+        { provider, tools, hooks, prompt: { hooks: ["write_last", "count"] } },
         reads,
+        (state) => {
+          elsewhere = state
+        },
       )
       expect(outcome.steps).toBe(21)
       expect(perStep).toEqual([...Array.from({ length: 20 }, () => 1), 2])
@@ -142,14 +141,11 @@ describe("the history an execution keeps", () => {
         {
           provider,
           tools,
-          hooks: [
-            keepHandle((state) => {
-              elsewhere = state
-            }),
-          ],
-          agent: { hooks: ["keep_handle"] },
         },
         reads,
+        (state) => {
+          elsewhere = state
+        },
       )
       expect(seen).toEqual({
         quiet: {
@@ -168,9 +164,6 @@ describe("the history an execution keeps", () => {
       let elsewhere: ThreadState | undefined
       const seen: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "after_system_message",
           id: "write_later",
@@ -208,10 +201,9 @@ describe("the history an execution keeps", () => {
         },
         { text: "done" },
       ])
-      yield* runOnce(
-        { provider, tools, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["write_later", "count"] } },
-        reads,
-      )
+      yield* runOnce({ provider, tools, hooks, prompt: { hooks: ["write_later", "count"] } }, reads, (state) => {
+        elsewhere = state
+      })
       expect(seen).toEqual([
         ["filter", 1, ["go"]],
         ["tool", 1, ["go", null]],
@@ -272,9 +264,6 @@ describe("the history an execution keeps", () => {
       let wrote = false
       const seen: Array<unknown> = []
       const hooks = [
-        keepHandle((state) => {
-          elsewhere = state
-        }),
         defineHook({
           hook: "filter_messages",
           id: "compare",
@@ -292,12 +281,15 @@ describe("the history an execution keeps", () => {
         })
       }
       const provider = new ScriptedProvider([{ text: "done" }])
-      const setup = { provider, hooks, agent: { hooks: ["keep_handle"] }, prompt: { hooks: ["compare"] } }
+      const setup = { provider, hooks, prompt: { hooks: ["compare"] } }
       const stored = yield* Effect.gen(function* () {
         const thread = yield* createThread("assistant")
+        elsewhere = yield* stateAtRest(thread.id)
         yield* sendMessage(thread.id, "go", { observe })
         return (yield* (yield* ThreadStore).history(thread.id)).messages
-      }).pipe(Effect.provide(Layer.merge(registryOf(project(setup)), inMemory())))
+      }).pipe(
+        Effect.provide(Layer.merge(registryOf(project(setup)), Layer.provideMerge(supervisorLayer(), inMemory()))),
+      )
       expect(seen).toEqual([[["go"], ["go"]]])
       expect(contents(stored)).toEqual(["go", "gap", "done"])
     }),
@@ -314,4 +306,39 @@ describe("the history an execution keeps", () => {
     expect(copy.metadata?.list).not.toBe(metadata.list)
     expect(copy.attachments?.[0]).not.toBe(attachments[0])
   })
+})
+
+it.effect("runs the committed claim when its sender is interrupted before executor installation", () => {
+  const provider = new ScriptedProvider([{ text: "first" }, { text: "second" }])
+  let cut = true
+  const store = Layer.effect(
+    ThreadStore,
+    Effect.gen(function* () {
+      const original = yield* ThreadStore
+      return ThreadStore.of({
+        ...original,
+        admit: (...args) =>
+          original.admit(...args).pipe(
+            Effect.tap(() =>
+              Effect.withFiberSucceed((fiber) => {
+                if (cut) {
+                  cut = false
+                  fiber.interruptUnsafe()
+                }
+              }),
+            ),
+          ),
+      })
+    }),
+  ).pipe(Layer.provide(inMemory()))
+  return Effect.gen(function* () {
+    const thread = yield* createThread("assistant")
+    const sender = yield* Effect.forkChild(sendMessage(thread.id, "one"))
+    yield* Fiber.await(sender)
+    const supervisor = yield* ThreadSupervisor
+    yield* supervisor.settled(thread.id)
+    expect((yield* supervisor.status(thread.id)).state).toBe("idle")
+    expect((yield* sendMessage(thread.id, "two")).outcome?.status).toBe("idle")
+    expect(provider.requests).toHaveLength(2)
+  }).pipe(Effect.provide(Layer.merge(registryOf(project({ provider })), Layer.provideMerge(supervisorLayer(), store))))
 })

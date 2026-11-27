@@ -147,5 +147,9 @@ if (import.meta.main) {
   }
   const count = (status: string) => Object.values(ledger).filter((entry) => entry.status === status).length
   const partial = count("partial") === 0 ? "" : `, ${count("partial")} partial`
-  console.log(`ledger ok, ${requirementIds.length} requirements, ${count("covered")} covered${partial}`)
+  const m1 = Object.values(ledger).filter((entry) => entry.milestone === "M1")
+  const inM1 = (status: string) => m1.filter((entry) => entry.status === status).length
+  console.log(
+    `ledger ok, ${requirementIds.length} requirements, ${count("covered")} covered${partial}, milestone 1 ${inM1("covered")} covered of ${m1.length}, ${inM1("planned")} planned`,
+  )
 }

@@ -1534,5 +1534,125 @@
     "section": "2.2 Optional",
     "level": "MAY",
     "text": "| `hooks` | `string[]` | - | Fallback hook IDs |"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "9. Queue and Delivery Semantics",
+    "level": "MUST",
+    "text": "Queued messages are durable and ordered:"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "9. Queue and Delivery Semantics",
+    "level": "MUST",
+    "lead": "Queued messages are durable and ordered:",
+    "text": "if active: inject before next model call"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "9. Queue and Delivery Semantics",
+    "level": "MUST",
+    "lead": "Queued messages are durable and ordered:",
+    "text": "if idle: queue and force next turn"
+  },
+  {
+    "page": "infrastructure:runtime",
+    "section": "9. Queue and Delivery Semantics",
+    "level": "MUST",
+    "lead": "Queued messages are durable and ordered:",
+    "text": "if multiple: process in FIFO order"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "3. Controlling Execution",
+    "level": "MUST",
+    "text": "`state.execution.stop()` stops the current execution loop. It does not by itself satisfy a subagent/session terminal boundary. To terminally end the active agent session, use [`state.stopSession()`](/0.2.0/specification/threads#9-subagent-hierarchy-communication-and-termination)."
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4. Run Status",
+    "level": "MUST",
+    "text": "`ThreadState.execution` describes a run from inside it. The **run status**\ndescribes the thread from outside: whether an execution is in flight, and how\nthe last one ended. It is available everywhere `ThreadState` is"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.1 States",
+    "level": "MUST",
+    "text": "The run status describes **execution, not turn ownership**. A run that ends by\nhanding the turn to a human-backed side settles as `idle`; its `reason` (for\nexample `awaiting_human`, `stop_on_response`, or `stop_tool`) carries the\ndetail."
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "4.3 Requirements",
+    "level": "MUST",
+    "text": "`status()` is unrelated to `setStatus(label)`, which writes a label into this thread's entry in its parent's subagent registry."
+  },
+  {
+    "page": "specification:threads",
+    "section": "1.2.2 Methods",
+    "level": "MUST",
+    "text": "| `queueMessage(input)` | `Promise<void>` | Queue a message for delivery on next step |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "1.2.2 Methods",
+    "level": "MUST",
+    "text": "| `queueTool(toolName, args)` | `void` | Queue tool for async execution |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "1.2.2 Methods",
+    "level": "MUST",
+    "text": "| `status()` | `Promise<ThreadStatus>` | Authoritative run status: `idle`, `running`, or `failed`, with `since` and the last stop `reason` |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "1.2.2 Methods",
+    "level": "MUST",
+    "text": "| `terminate()` | `Promise<void>` | Soft-terminate the thread |"
+  },
+  {
+    "page": "specification:threads",
+    "section": "3.1 Queuing Tools",
+    "level": "MUST",
+    "text": "If the thread is currently executing, the tool is added to the queue. Otherwise, a new execution is started."
+  },
+  {
+    "page": "specification:threads",
+    "section": "3.2 Direct Invocation",
+    "level": "MUST",
+    "text": "Invoke a tool and wait for the result:"
+  },
+  {
+    "page": "specification:threads",
+    "section": "8. Lifecycle",
+    "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
+    "text": "Marks the thread inactive and sets `terminated`"
+  },
+  {
+    "page": "specification:threads",
+    "section": "8. Lifecycle",
+    "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
+    "text": "Aborts in-flight execution"
+  },
+  {
+    "page": "specification:threads",
+    "section": "8. Lifecycle",
+    "level": "MUST",
+    "lead": "`terminate()` is a soft shutdown:",
+    "text": "Rejects future `queueMessage()` and execution attempts"
+  },
+  {
+    "page": "specification:threads",
+    "section": "11.1 Thread Lifecycle",
+    "level": "MUST",
+    "text": "**At Rest**: Thread accessible via endpoints"
+  },
+  {
+    "page": "specification:threads",
+    "section": "11.1 Thread Lifecycle",
+    "level": "MUST",
+    "text": "**Resumption**: New execution on next message"
   }
 ]

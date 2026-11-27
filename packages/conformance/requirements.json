@@ -8481,5 +8481,195 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "| `hooks` | `string[]` | - | Fallback hook IDs |"
+	},
+	{
+		"id": "infrastructure:runtime:f2cb78f1",
+		"page": "infrastructure:runtime",
+		"line": 221,
+		"section": "9. Queue and Delivery Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Queued messages are durable and ordered:"
+	},
+	{
+		"id": "infrastructure:runtime:0bf4f9af",
+		"page": "infrastructure:runtime",
+		"line": 222,
+		"section": "9. Queue and Delivery Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Queued messages are durable and ordered: if active: inject before next model call"
+	},
+	{
+		"id": "infrastructure:runtime:66bd1ce0",
+		"page": "infrastructure:runtime",
+		"line": 223,
+		"section": "9. Queue and Delivery Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Queued messages are durable and ordered: if idle: queue and force next turn"
+	},
+	{
+		"id": "infrastructure:runtime:109134a1",
+		"page": "infrastructure:runtime",
+		"line": 224,
+		"section": "9. Queue and Delivery Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Queued messages are durable and ordered: if multiple: process in FIFO order"
+	},
+	{
+		"id": "specification:threads/execution-state:7a032a6c",
+		"page": "specification:threads/execution-state",
+		"line": 70,
+		"section": "3. Controlling Execution",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`state.execution.stop()` stops the current execution loop. It does not by itself satisfy a subagent/session terminal boundary. To terminally end the active agent session, use [`state.stopSession()`](/0.2.0/specification/threads#9-subagent-hierarchy-communication-and-termination)."
+	},
+	{
+		"id": "specification:threads/execution-state:ff3ed10f",
+		"page": "specification:threads/execution-state",
+		"line": 74,
+		"section": "4. Run Status",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`ThreadState.execution` describes a run from inside it. The run status describes the thread from outside: whether an execution is in flight, and how the last one ended. It is available everywhere `ThreadState` is"
+	},
+	{
+		"id": "specification:threads/execution-state:b9a39da8",
+		"page": "specification:threads/execution-state",
+		"line": 99,
+		"section": "4.1 States",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The run status describes execution, not turn ownership. A run that ends by handing the turn to a human-backed side settles as `idle`; its `reason` (for example `awaiting_human`, `stop_on_response`, or `stop_tool`) carries the detail."
+	},
+	{
+		"id": "specification:threads/execution-state:d0569ee5",
+		"page": "specification:threads/execution-state",
+		"line": 122,
+		"section": "4.3 Requirements",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`status()` is unrelated to `setStatus(label)`, which writes a label into this thread's entry in its parent's subagent registry."
+	},
+	{
+		"id": "specification:threads:b7c8285e",
+		"page": "specification:threads",
+		"line": 63,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `queueMessage(input)` | `Promise<void>` | Queue a message for delivery on next step |"
+	},
+	{
+		"id": "specification:threads:304b015d",
+		"page": "specification:threads",
+		"line": 119,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `queueTool(toolName, args)` | `void` | Queue tool for async execution |"
+	},
+	{
+		"id": "specification:threads:7e4cfd7a",
+		"page": "specification:threads",
+		"line": 147,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `status()` | `Promise<ThreadStatus>` | Authoritative run status: `idle`, `running`, or `failed`, with `since` and the last stop `reason` |"
+	},
+	{
+		"id": "specification:threads:f0250a42",
+		"page": "specification:threads",
+		"line": 176,
+		"section": "1.2.2 Methods",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "| `terminate()` | `Promise<void>` | Soft-terminate the thread |"
+	},
+	{
+		"id": "specification:threads:ff27b66e",
+		"page": "specification:threads",
+		"line": 258,
+		"section": "3.1 Queuing Tools",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "If the thread is currently executing, the tool is added to the queue. Otherwise, a new execution is started."
+	},
+	{
+		"id": "specification:threads:a1ac0a36",
+		"page": "specification:threads",
+		"line": 262,
+		"section": "3.2 Direct Invocation",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Invoke a tool and wait for the result:"
+	},
+	{
+		"id": "specification:threads:d0a36934",
+		"page": "specification:threads",
+		"line": 471,
+		"section": "8. Lifecycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`terminate()` is a soft shutdown: Marks the thread inactive and sets `terminated`"
+	},
+	{
+		"id": "specification:threads:54d362c5",
+		"page": "specification:threads",
+		"line": 472,
+		"section": "8. Lifecycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`terminate()` is a soft shutdown: Aborts in-flight execution"
+	},
+	{
+		"id": "specification:threads:9090af10",
+		"page": "specification:threads",
+		"line": 473,
+		"section": "8. Lifecycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "`terminate()` is a soft shutdown: Rejects future `queueMessage()` and execution attempts"
+	},
+	{
+		"id": "specification:threads:b83b63ca",
+		"page": "specification:threads",
+		"line": 590,
+		"section": "11.1 Thread Lifecycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "At Rest: Thread accessible via endpoints"
+	},
+	{
+		"id": "specification:threads:9a66b438",
+		"page": "specification:threads",
+		"line": 591,
+		"section": "11.1 Thread Lifecycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Resumption: New execution on next message"
 	}
 ]

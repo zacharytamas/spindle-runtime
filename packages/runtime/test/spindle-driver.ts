@@ -1,7 +1,16 @@
 import { ConfigProvider, Duration, Effect, FileSystem, Layer, Logger, ManagedRuntime, Path } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { PlatformLive, SqliteLive } from "#platform"
-import type { Project, RunOutcome, RuntimeDriver } from "../../conformance/src/RuntimeDriver.ts"
+import type {
+  LoadOptions,
+  Project,
+  RunOutcome,
+  RuntimeDriver,
+  RuntimeSession,
+  StoredThread,
+} from "../../conformance/src/RuntimeDriver.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import { type Definition, type Kind, Registry } from "../src/registry/Registry.ts"
 import { resolver } from "../src/registry/resolve.ts"
@@ -40,7 +49,155 @@ export const registryOf = (project: Project) => {
   })
 }
 
+type Row = Record<string, unknown>
+
+const text = (value: unknown) => (typeof value === "string" ? value : null)
+const count = (value: unknown) => (typeof value === "number" ? value : null)
+
+// The rows are read with SELECT *, so that a column this version of the store does not have reads as absent.
+const inspectThread = (threadId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient
+    const [thread] = yield* sql.unsafe<Row>("SELECT * FROM threads WHERE id = ?", [threadId])
+    if (thread === undefined) return yield* Effect.die(new Error(`no thread ${threadId}`))
+    const holders = yield* sql.unsafe<Row>("SELECT * FROM holders WHERE id = ?", [thread.holder_id ?? ""])
+    const messages = yield* sql.unsafe<Row>("SELECT * FROM messages WHERE thread_id = ? ORDER BY seq", [threadId])
+    const queue = yield* sql.unsafe<Row>("SELECT * FROM queue WHERE thread_id = ? ORDER BY seq", [threadId])
+    const values = yield* sql.unsafe<Row>("SELECT * FROM kv WHERE thread_id = ? ORDER BY key", [threadId])
+    const flowId = text(thread.flow_id)
+    return {
+      status: {
+        state: thread.run_state as StoredThread["status"]["state"],
+        since: Number(thread.run_since),
+        reason: text(thread.run_reason),
+      },
+      terminated: count(thread.terminated_at),
+      claim: flowId === null ? null : { flowId, pid: count(holders[0]?.pid) },
+      revision: Number(thread.revision),
+      messages: messages.map((row) => ({
+        id: String(row.id),
+        seq: Number(row.seq),
+        role: String(row.role),
+        content: text(row.content),
+        flowId: text(row.flow_id),
+        callerSeq: count(row.caller_seq),
+      })),
+      queue: queue.map((row) => ({
+        seq: Number(row.seq),
+        kind: String(row.kind),
+        payload: String(row.payload),
+        failed: row.disposition === "failed_delivery",
+      })),
+      values: Object.fromEntries(values.map((row) => [String(row.key), JSON.parse(String(row.value))])),
+    } satisfies StoredThread
+  })
+
 const store = (filename: string) => Layer.fresh(storeLayer.pipe(Layer.provide(SqliteLive({ filename }))))
+
+// Each session owns a connection and a distinct holder in this test process.
+const openSession = (
+  registry: ReturnType<typeof registryOf>,
+  filename: string,
+  options: LoadOptions,
+  cleanup: () => Promise<void>,
+): RuntimeSession => {
+  const logs: Array<string> = []
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      registry,
+      Layer.provideMerge(supervisorLayer(), store(filename)),
+      ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
+      Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
+      options.hookTimeoutMs === undefined
+        ? Layer.empty
+        : Layer.succeed(HookTimeout, Duration.millis(options.hookTimeoutMs)),
+    ),
+  )
+  const reader = ManagedRuntime.make(store(filename))
+  // A connection without the store, for the rows themselves.
+  const rows = ManagedRuntime.make(Layer.fresh(SqliteLive({ filename })))
+  const withSql = <A, E>(use: (sql: SqlClient) => Effect.Effect<A, E>) =>
+    rows.runPromise(
+      Effect.gen(function* () {
+        return yield* use(yield* SqlClient)
+      }),
+    )
+  const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
+    reader.runPromise(
+      Effect.gen(function* () {
+        return yield* use(yield* ThreadStore)
+      }),
+    )
+  return {
+    createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
+    state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
+    logs: () => [...logs],
+    send: (threadId, content, sendOptions = {}) =>
+      runtime
+        .runPromise(
+          sendMessage(threadId, content, {
+            ...(sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
+            ...(sendOptions.stepCap === undefined ? {} : { stepCap: sendOptions.stepCap }),
+          }),
+        )
+        .then(
+          (delivery): RunOutcome =>
+            delivery.outcome ?? {
+              status: delivery.status.state === "failed" ? "failed" : "idle",
+              reason: delivery.status.reason ?? "",
+              steps: 0,
+              modelCalls: [],
+            },
+        ),
+    settled: (threadId) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          return yield* supervisor.settled(threadId)
+        }),
+      ),
+    peer: async () => openSession(registry, filename, options, async () => {}),
+    messages: (threadId) =>
+      withStore((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })).then(
+        (result) => result.messages,
+      ),
+    seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
+    abort: (threadId) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          return yield* supervisor.abort(threadId)
+        }),
+      ),
+    inspect: (threadId) => rows.runPromise(inspectThread(threadId)),
+    forceRecover: (threadId) => withStore((s) => s.recover(threadId, true)).then(() => undefined),
+    queueRaw: (threadId, kind, payload) =>
+      withSql((sql) =>
+        sql.unsafe("INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (?, ?, ?, 0)", [
+          threadId,
+          kind,
+          payload,
+        ]),
+      ).then(() => undefined),
+    // A trigger cannot take a bound value, and a thread id is a UUID that the runtime made.
+    breakSettlement: (threadId) =>
+      /^[0-9a-f-]{36}$/.test(threadId)
+        ? withSql((sql) =>
+            sql.unsafe(
+              `CREATE TRIGGER driver_break_settlement BEFORE UPDATE ON threads
+               WHEN OLD.id = '${threadId}' AND OLD.run_state = 'running' AND NEW.run_state <> 'running'
+               BEGIN SELECT RAISE(ABORT, 'the disk is full'); END`,
+            ),
+          ).then(() => undefined)
+        : Promise.reject(new Error(`${threadId} is not a thread id`)),
+    close: async () => {
+      await runtime.dispose()
+      await reader.dispose()
+      await rows.dispose()
+      await cleanup()
+    },
+  }
+}
 
 export const spindleDriver: RuntimeDriver = {
   name: "spindle",
@@ -58,48 +215,13 @@ export const spindleDriver: RuntimeDriver = {
         return { dir, filename: path.join(dir, "spindle.db") }
       }).pipe(Effect.provide(PlatformLive)),
     )
-    const logs: Array<string> = []
-    const runtime = ManagedRuntime.make(
-      Layer.mergeAll(
-        registry,
-        store(filename),
-        ConfigProvider.layer(ConfigProvider.fromEnvRecord(options.instanceEnv ?? {})),
-        Logger.layer([Logger.make((entry) => logs.push(Logger.formatSimple.log(entry)))]),
-        options.hookTimeoutMs === undefined
-          ? Layer.empty
-          : Layer.succeed(HookTimeout, Duration.millis(options.hookTimeoutMs)),
+    return openSession(registry, filename, options, () =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.remove(dir, { recursive: true })
+        }).pipe(Effect.provide(PlatformLive)),
       ),
     )
-    const reader = ManagedRuntime.make(store(filename))
-    const withStore = <A, E>(use: (store: ThreadStore["Service"]) => Effect.Effect<A, E>) =>
-      reader.runPromise(
-        Effect.gen(function* () {
-          return yield* use(yield* ThreadStore)
-        }),
-      )
-    return {
-      createThread: (agent) => runtime.runPromise(Effect.map(createThread(agent), (thread) => thread.id)),
-      state: (threadId) => runtime.runPromise(stateAtRest(threadId)),
-      logs: () => [...logs],
-      send: (threadId, content, sendOptions = {}) =>
-        runtime.runPromise(
-          sendMessage(threadId, content, sendOptions.retries === undefined ? {} : { retries: sendOptions.retries }),
-        ) as Promise<RunOutcome>,
-      messages: (threadId) =>
-        withStore((s) => s.getMessages(threadId, { order: "asc", includeSilent: true })).then(
-          (result) => result.messages,
-        ),
-      seed: (threadId, messages) => withStore((s) => s.appendMessages(threadId, messages)).then(() => undefined),
-      close: async () => {
-        await runtime.dispose()
-        await reader.dispose()
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            const fs = yield* FileSystem.FileSystem
-            yield* fs.remove(dir, { recursive: true })
-          }).pipe(Effect.provide(PlatformLive)),
-        )
-      },
-    }
   },
 }

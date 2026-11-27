@@ -4,16 +4,17 @@ import type { Registry } from "../registry/Registry.ts"
 import { type Thread, ThreadStore } from "../store/ThreadStore.ts"
 import { newSecrets } from "./env.ts"
 import { agentHooks, type HookScope, type HookSet, runHooks } from "./hooks.ts"
-import { createMessage } from "./messages.ts"
-import { type ExecutionOptions, learnSecrets, runExecution } from "./step.ts"
+import { type ExecutionOptions, learnSecrets } from "./step.ts"
+import { ThreadSupervisor } from "./ThreadSupervisor.ts"
 import { makeThreadState } from "./thread-state.ts"
-import { lookup, prepareTurn, roleOf, sidesOf } from "./turn.ts"
+import { lookup, prepareTurn } from "./turn.ts"
 
 // Hooks section 1.3 and Execution State section 1: an operation at rest has no active prompt, so the agent's hooks
 // apply, and state.execution is null. A state that writes text for user code learns the turn's secrets first.
 const atRest = (thread: Thread, options: { readonly learn: boolean; readonly secrets?: Set<string> }) =>
   Effect.gen(function* () {
     const services = yield* Effect.context<Registry | ThreadStore>()
+    const supervisor = yield* ThreadSupervisor
     const agent = yield* lookup<AgentDefinition>("agent", thread.agentId, undefined)
     const set: HookSet =
       agent === undefined
@@ -33,6 +34,7 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
       scope: { agent: agent?.value.env, toolEntry: undefined, prompt: undefined },
       context: {},
       secrets,
+      control: supervisor.control(thread.id),
       invoke: (name: string) =>
         Effect.succeed<ToolResult>({
           status: "error",
@@ -63,22 +65,11 @@ export const createThread = (agentId: string) =>
     return thread
   })
 
-// Runtime section 2: a message from the human side starts an execution of the prompt side. The message is written
-// before the execution starts, at rest. M1-6 queues the message instead when the thread is already executing.
+// Runtime section 2: a message from the human side starts an execution of the prompt side, or enters the running one
+// before its next model call. Either way it goes through the queue, so it is durable when it is accepted, and the
+// execution stores it with the agent's hooks at its next drain.
 export const sendMessage = (threadId: string, content: string, options: ExecutionOptions = {}) =>
   Effect.gen(function* () {
-    const store = yield* ThreadStore
-    const thread = yield* store.getThread(threadId)
-    const { human } = yield* sidesOf(thread.agentId)
-    const rest = yield* atRest(thread, {
-      learn: false,
-      ...(options.secrets === undefined ? {} : { secrets: options.secrets }),
-    })
-    const message = yield* createMessage(
-      { threadId, hooks: rest.hooks, secrets: rest.secrets, call: undefined, history: undefined },
-      { role: roleOf(human), content, status: "completed" },
-      "turn",
-    )
-    if (options.observe !== undefined) yield* options.observe({ type: "message", message })
-    return yield* runExecution(threadId, options)
+    const supervisor = yield* ThreadSupervisor
+    return yield* supervisor.send(threadId, content, options)
   })
