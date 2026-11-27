@@ -186,3 +186,10 @@ From the ten bot threads that the rebase of 2026-11-27 produced. An Opus reviewe
 - No test stalls the reader during a remote wait to show that at most one poll is outstanding. The bound holds by construction. About 60 lines in `test/cli/chat-shared.test.ts`, and sensitive to timing.
 - One tool call can give a `before_create_message` hook two drafts, the unstorable result and its replacement. That is intended, and the plan could say it to hook authors in one sentence.
 
+From the short Opus read of PR 22 (the hold at an ordinary end). Two of its four defects were fixed in the PR: a stop during the wait was thrown away, and the note gave a hook the advice for a tool. These stay:
+
+- An abort during the wait reports `aborted_by_user` and loses a failed last step's error. Keeping the run's own outcome there means a second wait outside the interruptible region and a rule for queued work after an abort, about 15 lines in `Execution.ts` and another review.
+- A nested tool is counted as pending only when its tool code is entered, so one still validating its arguments at the end of the run starts after the thread is released. Counting from the `invokeTool` call would close it.
+- Nothing is printed when a hook that holds the thread is given up at its limit. The hook-note wording has no test of its own.
+- O11 and O12 now test a write that lands while the run is held. A write that commits after settlement, from a hook that expired, has no test.
+
