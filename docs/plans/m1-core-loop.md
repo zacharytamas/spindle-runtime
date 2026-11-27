@@ -1135,6 +1135,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - A failed or interrupted model attempt starts closing its iterator and aborts its request even if the iterator is still closing. A completed attempt keeps its request signal live.
 
+- Spindle checks the prototype of nested objects while copying tool error data. A nested class instance in an object field or array element produces the same stored error and dropped-data note as a top-level instance.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

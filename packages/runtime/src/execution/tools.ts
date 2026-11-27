@@ -223,12 +223,38 @@ const contentOf = (result: ToolResult) =>
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
 
+// Check prototypes before copying fields. Remember each copy so shared getters run once and cycles reach the store.
+const copyErrorData = (value: unknown, copies = new Map<object, object>()): unknown => {
+  if (value === null || typeof value !== "object") return structuredClone(value)
+  const existing = copies.get(value)
+  if (existing !== undefined) return existing
+  if (!isPlain(value)) throw new TypeError("error_data must be a plain JSON object")
+  if (Array.isArray(value)) {
+    const copy = new Array<unknown>(value.length)
+    copies.set(value, copy)
+    // Only indexed elements contribute to the stored JSON array.
+    Array.prototype.forEach.call(value, (item: unknown, index: number) => {
+      copy[index] = copyErrorData(item, copies)
+    })
+    return copy
+  }
+  const copy = {}
+  copies.set(value, copy)
+  for (const key of Object.keys(value)) {
+    Object.defineProperty(copy, key, {
+      value: copyErrorData(Reflect.get(value, key), copies),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  }
+  return copy
+}
+
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
 export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
-  if (result.error_data !== undefined && !isPlain(result.error_data))
-    throw new TypeError("error_data must be a plain JSON object")
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
   const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
@@ -256,9 +282,7 @@ export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): Ne
     attachments: refs.length === 0 ? null : refs,
     metadata: {
       ...(result.error_code === undefined ? {} : { error_code: result.error_code }),
-      // A copy runs every getter of the error data here, inside the caller's try, so one that throws makes the
-      // result unstorable rather than failing the write that redacts it.
-      ...(result.error_data === undefined ? {} : { error_data: structuredClone(result.error_data) }),
+      ...(result.error_data === undefined ? {} : { error_data: copyErrorData(result.error_data) }),
     },
   }
 }

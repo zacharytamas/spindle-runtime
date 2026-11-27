@@ -326,21 +326,49 @@ export const S14c: Scenario = {
         return { summary: "public detail" }
       }
     }
+    let reads = 0
+    const shared = {
+      get code() {
+        return ++reads
+      },
+    }
+    Object.setPrototypeOf(shared, null)
+    const data = {
+      top: new Details(),
+      nested: { list: [{ details: new Details() }] },
+      plain: {
+        list: Object.assign([shared, shared, null, false, 0, ""], { annotation: new Details() }),
+        ["__proto__"]: "ordinary key",
+        absent: undefined,
+      },
+    }
     const diagnostic = defineTool({
-      description: "Return diagnostic data with a prototype",
-      execute: async () => ({ status: "error", error: "denied", error_code: "quota", error_data: new Details() }),
+      description: "Return diagnostic data",
+      args: z.object({ variant: z.enum(["top", "nested", "plain"]) }),
+      execute: async (_state, { variant }) => ({
+        status: "error",
+        error: "denied",
+        error_code: "quota",
+        error_data: data[variant],
+      }),
     })
     const provider = new ScriptedProvider([
-      { toolCalls: [{ id: "c", name: "diagnostic", arguments: {} }] },
+      { toolCalls: Object.keys(data).map((variant) => ({ id: variant, name: "diagnostic", arguments: { variant } })) },
       { text: "done" },
     ])
     await using(driver, { provider, tools: { diagnostic } }, async (session, thread) => {
       await session.send(thread, "go")
       const results = toolResults(await session.messages(thread))
-      expect(results).toMatchObject([
-        { tool_status: "error", content: expect.stringContaining("denied\n\nSpindle dropped the error data") },
-      ])
-      expect(results[0]?.metadata).toEqual({ error_code: "quota" })
+      expect(reads).toBe(1)
+      expect(results[2]?.metadata).toEqual({
+        error_code: "quota",
+        error_data: { list: [{ code: 1 }, { code: 1 }, null, false, 0, ""], ["__proto__"]: "ordinary key" },
+      })
+      for (const row of results.slice(0, 2)) {
+        expect(row.tool_status).toBe("error")
+        expect(row.content).toContain("denied\n\nSpindle dropped the error data")
+        expect(row.metadata).toEqual({ error_code: "quota" })
+      }
     })
   },
 }
