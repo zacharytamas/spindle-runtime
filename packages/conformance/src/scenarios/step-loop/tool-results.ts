@@ -1,4 +1,4 @@
-import { defineTool, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type ThreadState } from "@standardagents/spec"
 import { expect } from "vitest"
 import { z } from "zod"
 import { ScriptedProvider } from "../../ScriptedProvider.ts"
@@ -352,24 +352,39 @@ export const S14c: Scenario = {
         error_data: data[variant],
       }),
     })
-    const provider = new ScriptedProvider([
-      { toolCalls: Object.keys(data).map((variant) => ({ id: variant, name: "diagnostic", arguments: { variant } })) },
-      { text: "done" },
-    ])
-    await using(driver, { provider, tools: { diagnostic } }, async (session, thread) => {
-      await session.send(thread, "go")
-      const results = toolResults(await session.messages(thread))
-      expect(reads).toBe(1)
-      expect(results[2]?.metadata).toEqual({
-        error_code: "quota",
-        error_data: { list: [{ code: 1 }, { code: 1 }, null, false, 0, ""], ["__proto__"]: "ordinary key" },
-      })
-      for (const row of results.slice(0, 2)) {
-        expect(row.tool_status).toBe("error")
-        expect(row.content).toContain("denied\n\nSpindle dropped the error data")
-        expect(row.metadata).toEqual({ error_code: "quota" })
-      }
+    // A hook receives a structured clone, which strips a prototype, so the second run passes each result through one.
+    const passThrough = defineHook({
+      hook: "before_store_tool_result",
+      id: "pass_through",
+      execute: async (_state, _call, result) => result,
     })
+    for (const hooks of [[], [passThrough]]) {
+      reads = 0
+      const provider = new ScriptedProvider([
+        {
+          toolCalls: Object.keys(data).map((variant) => ({ id: variant, name: "diagnostic", arguments: { variant } })),
+        },
+        { text: "done" },
+      ])
+      await using(
+        driver,
+        { provider, tools: { diagnostic }, hooks, prompt: { hooks: hooks.map((hook) => hook.id) } },
+        async (session, thread) => {
+          await session.send(thread, "go")
+          const results = toolResults(await session.messages(thread))
+          expect(reads).toBe(1)
+          expect(results[2]?.metadata).toEqual({
+            error_code: "quota",
+            error_data: { list: [{ code: 1 }, { code: 1 }, null, false, 0, ""], ["__proto__"]: "ordinary key" },
+          })
+          for (const row of results.slice(0, 2)) {
+            expect(row.tool_status).toBe("error")
+            expect(row.content).toContain("denied\n\nSpindle dropped the error data")
+            expect(row.metadata).toEqual({ error_code: "quota" })
+          }
+        },
+      )
+    }
   },
 }
 

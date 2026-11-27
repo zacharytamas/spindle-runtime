@@ -258,6 +258,17 @@ const copyErrorData = (value: unknown, copies = new Map<object, object>()): unkn
   return copy
 }
 
+// A hook receives a structured clone, which strips a prototype. Checking here, before any hook, keeps a class
+// instance from reaching the store as its own fields, and reads each getter of the tool's data once.
+export const checkedResult = (result: ToolResult): ToolResult => {
+  if (result.error_data === undefined) return result
+  try {
+    return { ...result, error_data: copyErrorData(result.error_data) as typeof result.error_data }
+  } catch (cause) {
+    return unstorableResult(result, `reading it threw: ${describe(cause)}`)
+  }
+}
+
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
