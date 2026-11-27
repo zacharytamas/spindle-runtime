@@ -315,6 +315,36 @@ export const S14b: Scenario = {
   },
 }
 
+export const S14c: Scenario = {
+  name: "S14c drops class-instance error data and explains the loss in the stored result",
+  requirements: ["732b2d4b"],
+  run: async (driver) => {
+    class Details {
+      readonly [key: string]: unknown
+      readonly internal = "private detail"
+      toJSON() {
+        return { summary: "public detail" }
+      }
+    }
+    const diagnostic = defineTool({
+      description: "Return diagnostic data with a prototype",
+      execute: async () => ({ status: "error", error: "denied", error_code: "quota", error_data: new Details() }),
+    })
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "c", name: "diagnostic", arguments: {} }] },
+      { text: "done" },
+    ])
+    await using(driver, { provider, tools: { diagnostic } }, async (session, thread) => {
+      await session.send(thread, "go")
+      const results = toolResults(await session.messages(thread))
+      expect(results).toMatchObject([
+        { tool_status: "error", content: expect.stringContaining("denied\n\nSpindle dropped the error data") },
+      ])
+      expect(results[0]?.metadata).toEqual({ error_code: "quota" })
+    })
+  },
+}
+
 export const S15: Scenario = {
   name: "S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
   requirements: ["50d12acc", "1d6d311a", "39260b1a"],

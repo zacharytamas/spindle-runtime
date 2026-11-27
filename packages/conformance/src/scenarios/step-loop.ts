@@ -3,7 +3,7 @@ import { S07, S08, S09, S10, S11, S11b, S21, S22, S27, S36 } from "./step-loop/p
 import { S26, S26b, S26c, S26d, S26e, S26f, S26g, S26h, S26i } from "./step-loop/secrets.ts"
 import { S17, S18, S18b, S18c, S19, S20 } from "./step-loop/stop-rules.ts"
 import { S28, S29, S30, S31, S32, S32b, S33, S33b, S34 } from "./step-loop/thread-state.ts"
-import { S12, S13, S14, S14b, S15, S16, S23 } from "./step-loop/tool-results.ts"
+import { S12, S13, S14, S14b, S14c, S15, S16, S23 } from "./step-loop/tool-results.ts"
 import { S01, S02a, S02b, S02c, S03, S04, S05, S06a, S06b, S24, S35 } from "./step-loop/turn-assembly.ts"
 
 export const stepLoopScenarios: ReadonlyArray<Scenario> = [
@@ -26,6 +26,7 @@ export const stepLoopScenarios: ReadonlyArray<Scenario> = [
   S13,
   S14,
   S14b,
+  S14c,
   S15,
   S16,
   S17,

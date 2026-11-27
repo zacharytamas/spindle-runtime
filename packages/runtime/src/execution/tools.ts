@@ -5,6 +5,7 @@ import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
+import { isPlain } from "./redact.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
 export interface ToolCall {
@@ -226,6 +227,8 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
 export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
+  if (result.error_data !== undefined && !isPlain(result.error_data))
+    throw new TypeError("error_data must be a plain JSON object")
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
   const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
