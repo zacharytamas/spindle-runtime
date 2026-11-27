@@ -1,0 +1,25 @@
+The three lines of lines.txt are the three lines after each prompt below. Input is a pipe, so the command echoes each line it reads.
+
+$ SPINDLE_TEST_BASE_URL=http://localhost:8317/v1 SPINDLE_TEST_MODEL=claude-haiku-5-5 SPINDLE_TEST_API_KEY="$ANTHROPIC_API_KEY" node --disable-warning=ExperimentalWarning packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/hello-world < lines.txt
+spindle: thread f6a4f743-086f-4c6e-99b2-9e08b8356f0c
+spindle: no --db, so the thread lives in memory and ends with this chat
+> The beacon is named Rook Fern. Remember its name and acknowledge briefly.
+Got it. The beacon is named Rook Fern.
+> What is two plus three? Answer briefly.
+Five.
+> What was the name of the beacon in my first message?
+Rook Fern.
+> 
+exit 0
+
+$ SPINDLE_TEST_BASE_URL=http://localhost:8317/v1 SPINDLE_TEST_MODEL=claude-haiku-5-5 SPINDLE_TEST_API_KEY="$ANTHROPIC_API_KEY" bun packages/runtime/dist/cli/main.js chat assistant --dir packages/conformance/fixtures/hello-world < lines.txt
+spindle: thread 3439a4d2-01e2-4b17-b5c4-34a51a8101db
+spindle: no --db, so the thread lives in memory and ends with this chat
+> The beacon is named Rook Fern. Remember its name and acknowledge briefly.
+Got it. The beacon is named Rook Fern.
+> What is two plus three? Answer briefly.
+Five.
+> What was the name of the beacon in my first message?
+Rook Fern.
+> 
+exit 0

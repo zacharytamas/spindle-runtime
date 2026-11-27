@@ -15,7 +15,7 @@ import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { Registry } from "../registry/Registry.ts"
 import { validate } from "../registry/validate.ts"
 import { layer as sqliteStore } from "../store/sqlite.ts"
-import { ThreadStore } from "../store/ThreadStore.ts"
+import { ThreadStore, ThreadTerminated } from "../store/ThreadStore.ts"
 
 export class RunFailed extends Data.TaggedError("RunFailed")<{ readonly message: string }> {
   // runMain logs a failure and its stack unless this is false. The run already printed a plain message.
@@ -27,6 +27,10 @@ export const fail = (message: string) =>
     yield* Console.error(`spindle: ${message}`)
     return yield* new RunFailed({ message })
   })
+
+// For diagnostics assembled from runtime identifiers and already-cleaned fields.
+export const operatorNotes = (console: Console.Console) => (text: string) =>
+  Effect.sync(() => console.error(`spindle: ${text}`))
 
 const loadScript = (file: string) =>
   Effect.gen(function* () {
@@ -53,14 +57,18 @@ const redacting = (console: Console.Console, redact: (text: string) => string): 
 const stillQueued = "Your message is still queued and the next run of this thread will deliver it."
 
 const printer =
-  (modelRole: Message["role"], options: { readonly trace: boolean; readonly dumpRequests: boolean }) =>
+  (
+    modelRole: Message["role"],
+    options: { readonly trace: boolean; readonly dumpRequests: boolean },
+    identify: ReturnType<typeof operatorNotes>,
+  ) =>
   (event: ExecutionEvent): Effect.Effect<void> => {
     const print = (line: string) => Console.log(line)
     if (event.type === "trace") return options.trace ? print(formatTraceEntry(event.entry)) : Effect.void
     if (event.type === "interrupted_while_queued") return Console.error(`spindle: ${stillQueued}`)
     if (event.type === "queued")
-      return Console.error(
-        `spindle: thread ${event.threadId} is running in ${event.pid === null ? "another process" : `process ${event.pid}`}, so the message waits in its queue`,
+      return identify(
+        `thread ${event.threadId} is running in ${event.pid === null ? "another process" : `process ${event.pid}`}, so the message waits in its queue`,
       )
     if (event.type === "request") {
       if (!options.dumpRequests) return Effect.void
@@ -138,7 +146,9 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 export const deliver = (args: DeliveryArgs, target: { readonly agent: string } | { readonly thread: string }) =>
   Console.consoleWith((current) => {
     const secrets = new Set<string>()
-    const console = redacting(current, redactor(secrets))
+    const redact = redactor(secrets)
+    const console = redacting(current, redact)
+    const identify = operatorNotes(current)
     // A log line, such as a hook that failed, goes to standard error with the other notes, through the redactor.
     const logger = Logger.make((entry) => {
       const parts: ReadonlyArray<unknown> = Array.isArray(entry.message) ? entry.message : [entry.message]
@@ -185,40 +195,47 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
           ? yield* loadScript(path.resolve(args.script.value))
           : undefined
         const database = store ?? (yield* openDatabase(filename))
+        const reject = (message: string) => Effect.andThen(identify(message), Effect.fail(new RunFailed({ message })))
         const options = {
           ...(provider === undefined ? {} : { provider }),
           secrets,
-          observe: printer(roleOf(sides.side), args),
+          observe: printer(roleOf(sides.side), args, identify),
         }
         const supervisor = supervisorLayer(options)
         yield* Effect.gen(function* () {
           const threadId = "agent" in target ? (yield* createThread(target.agent)).id : target.thread
           // Another command can name a thread in a database file, so the id comes first, before any reply.
-          if (filename !== ":memory:") yield* Console.error(`spindle: thread ${threadId}`)
-          const delivery = yield* sendMessage(threadId, args.message, options).pipe(answerInterrupts(threadId))
+          if (filename !== ":memory:") yield* identify(`thread ${threadId}`)
+          const delivery = yield* sendMessage(threadId, args.message, options).pipe(
+            answerInterrupts(threadId, identify),
+          )
           const { outcome } = delivery
           const queuedNote = delivery.stillQueued ? `. ${stillQueued}` : ""
           if (outcome !== undefined) {
             if (outcome.reason === "execution_lost")
-              return yield* fail(
+              return yield* reject(
                 `lost thread ${threadId}: another process recovered it by force, so this process stopped working on it${queuedNote}`,
               )
-            yield* Console.error(
-              `spindle: ${outcome.status} (${outcome.reason}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
+            yield* identify(
+              `${outcome.status} (${redact(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
             )
             if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
             return
           }
           const { status } = delivery
-          yield* Console.error(`spindle: ${status.state} (${status.reason ?? "none"}), thread ${threadId}`)
+          yield* identify(`${status.state} (${redact(status.reason ?? "none")}), thread ${threadId}`)
           if (status.state === "failed")
-            return yield* fail(`the run of thread ${threadId} ended ${status.reason}${queuedNote}`)
+            return yield* reject(`the run of thread ${threadId} ended ${redact(status.reason ?? "none")}${queuedNote}`)
         }).pipe(Effect.provide(Layer.provideMerge(supervisor, database)))
       }).pipe(Effect.provide(Registry.layer(root)))
     }).pipe(
       Effect.catchCause((cause) => {
         const failure = Cause.findError(cause)
         if (failure._tag === "Success" && failure.success instanceof RunFailed) return Effect.failCause(cause)
+        if (failure._tag === "Success" && failure.success instanceof ThreadTerminated) {
+          const { message } = failure.success
+          return Effect.andThen(identify(message), Effect.fail(new RunFailed({ message })))
+        }
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
         return fail(describe(cause))
       }),
@@ -233,7 +250,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
 // The first Ctrl-C asks the execution to stop after its current operation. The second interrupts it, and the run
 // settles idle while the thread stays open. A Ctrl-C after that ends the process.
 const answerInterrupts =
-  (threadId: string) =>
+  (threadId: string, identify: ReturnType<typeof operatorNotes>) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | ThreadSupervisor> =>
     Effect.gen(function* () {
       const supervisor = yield* ThreadSupervisor
@@ -247,11 +264,11 @@ const answerInterrupts =
             if (!controlled) return sender.interruptUnsafe(sender.id)
             if (stopping) {
               remove()
-              yield* Console.error(`spindle: aborting thread ${threadId}`)
+              yield* identify(`aborting thread ${threadId}`)
             } else {
               stopping = true
-              yield* Console.error(
-                `spindle: stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`,
+              yield* identify(
+                `stopping thread ${threadId} after its current operation. Press Ctrl-C again to abort it.`,
               )
             }
           }),

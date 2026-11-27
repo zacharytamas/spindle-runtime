@@ -2,6 +2,7 @@ import { BunServices } from "@effect/platform-bun"
 import { Effect, Layer } from "effect"
 import type { Platform } from "./Platform.ts"
 
+export { openChatTerminal } from "./chat-terminal.ts"
 export { onInterrupt, runMain } from "./interrupts.ts"
 
 export const platformName: Platform["platformName"] = "bun"

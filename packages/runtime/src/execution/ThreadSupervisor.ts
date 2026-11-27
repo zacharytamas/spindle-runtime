@@ -27,6 +27,11 @@ export interface Delivery {
   readonly status: ThreadStatus
 }
 
+interface SendOptions extends ExecutionOptions {
+  readonly onAdmitted?: (seq: number) => void
+  readonly onWaiting?: (holder: { readonly pid: number; readonly abortedOperation?: string }) => Effect.Effect<void>
+}
+
 interface Live {
   readonly run: Run
   successor?: Live
@@ -42,13 +47,15 @@ export class ThreadSupervisor extends Context.Service<
     readonly send: (
       threadId: string,
       content: string,
-      options?: ExecutionOptions,
+      options?: SendOptions,
     ) => Effect.Effect<Delivery, unknown, Registry | ThreadStore>
     readonly control: (threadId: string) => ThreadControl
     // Asks the execution that this process runs for the thread to stop at its next boundary, for the human side.
     readonly stop: (threadId: string) => Effect.Effect<boolean>
     // Interrupts that execution. The run settles idle, and the thread stays open.
     readonly abort: (threadId: string, exiting?: boolean) => Effect.Effect<boolean>
+    // The settlement belongs to the execution interrupted here, even if a queued line starts its successor.
+    readonly abortExecution: (threadId: string) => Effect.Effect<Deferred.Deferred<RunOutcome, unknown> | undefined>
     // The outcome of the execution that this process runs for the thread, once it settles.
     readonly settled: (threadId: string) => Effect.Effect<RunOutcome | undefined, unknown>
     readonly status: (threadId: string) => Effect.Effect<ThreadStatus, unknown>
@@ -190,7 +197,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
       const newRun = (): Run => ({
-        pending: new Set(),
+        pending: new Map(),
         releaseWait: new AbortController(),
         flowId: crypto.randomUUID(),
         abort: new AbortController(),
@@ -217,7 +224,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
       // this process, and an active one takes the entry before its next model call.
-      const admit = (threadId: string, entry: QueueEntry, options: ExecutionOptions) =>
+      const admit = (threadId: string, entry: QueueEntry, options: SendOptions) =>
         Effect.gen(function* () {
           if ((yield* WritingHandle)?.flowId === undefined) yield* store.recover(threadId)
           let seq = 0
@@ -226,6 +233,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             (run) =>
               Effect.map(store.admit(threadId, entry, { holder: holder.id, flowId: run.flowId }), (admitted) => {
                 seq = admitted.queued.seq
+                options.onAdmitted?.(seq)
                 return admitted.claimed
               }),
             options,
@@ -302,6 +310,17 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       yield* store.registerHolder(holder)
       yield* Effect.forkIn(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))), scope)
 
+      const abortExecution = (threadId: string, exiting = false) =>
+        Effect.sync(() => {
+          const local = live.get(threadId)
+          if (local?.fiber === undefined) return undefined
+          local.run.stop ??= { reason: "aborted_by_user" }
+          local.run.waitForCallbacks = !exiting
+          if (exiting) local.run.releaseWait.abort()
+          local.fiber.interruptUnsafe()
+          return local.done
+        })
+
       return ThreadSupervisor.of({
         holderId: holder.id,
         // A sender waits for the run that takes its message. When the run it waited behind stopped or failed and left
@@ -325,6 +344,10 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               let local = live.get(threadId)
               let outcome: RunOutcome | undefined
               if (local !== undefined) {
+                if (options.onWaiting) {
+                  const operation = local.run.waitForCallbacks ? local.run.pending.values().next().value : undefined
+                  yield* options.onWaiting({ pid: holder.pid, ...(operation ? { abortedOperation: operation } : {}) })
+                }
                 while (local) {
                   outcome = yield* Deferred.await(local.done)
                   local = local.successor
@@ -333,6 +356,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 const holderNow = yield* store.holderOf(threadId)
                 if (holderNow !== null) {
                   elsewhere = holderNow
+                  if (options.onWaiting) yield* options.onWaiting(holderNow)
                   if (options.observe !== undefined)
                     yield* options.observe({ type: "queued", threadId, pid: holderNow.pid })
                 }
@@ -368,16 +392,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             local.run.stop ??= { reason: "aborted_by_user" }
             return true
           }),
-        abort: (threadId, exiting = false) =>
-          Effect.sync(() => {
-            const local = live.get(threadId)
-            if (local?.fiber === undefined) return false
-            local.run.stop ??= { reason: "aborted_by_user" }
-            local.run.waitForCallbacks = !exiting
-            if (exiting) local.run.releaseWait.abort()
-            local.fiber.interruptUnsafe()
-            return true
-          }),
+        abortExecution,
+        abort: (threadId, exiting) =>
+          Effect.map(abortExecution(threadId, exiting), (settlement) => settlement !== undefined),
         settled: (threadId) =>
           Effect.suspend(() => {
             const local = live.get(threadId)

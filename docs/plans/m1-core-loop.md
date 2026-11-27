@@ -46,7 +46,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
   - [ ] Spec text decides behavior and `@standardagents/spec` decides signatures. Record each disagreement in `packages/conformance/DIVERGENCES.md`.
 - [ ] Before an owner starts M1-4, M1-5, or M1-6, run a spec brief on GPT-6.2 Astra and give the owner its path. The brief reads the PR's spec pages and its plan section. It lists each place where the plan contradicts the spec, the scenarios the PR must pass with their spec lines, the legal inputs that must work and the illegal inputs that must fail, and each requirement that has no entry in `requirements.json`. The first three PRs each passed their own tests and then failed an Astra audit on points the spec text already stated, so the brief moves that reading in front of the build.
 - [ ] Give every spec brief a failure-mode section. It lists what the model, the network, and user code can do wrong at each step, and what the runtime must do then. M1-6 got its section as a supplement at `docs/plans/briefs/m1-6-failures.md`, because its owner was already building. It goes to M1-6's auditors and to its fix round.
-- [ ] Before the M1-7 owner starts, a reviewer on Claude Fable 5.2 writes the PR's conformance scenarios and tests against the real command. The owner implements until they pass. An owner who changes one of those tests records the reason in the PR.
+- [x] Before the M1-7 owner starts, a reviewer on Claude Fable 5.2 writes the PR's conformance scenarios and tests against the real command. The owner implements until they pass. An owner who changes one of those tests records the reason in the PR.
 - [ ] GPT-6.2 Astra implements, and Claude Fable 5.2 reads and judges. The operator decided this on 2026-11-26, and it replaces a decision of the same day that had the roles the other way round.
 - [ ] Settle a rule that crosses PRs in a design note under `docs/design/`, never inside a fix-round brief. The three notes are user code at the edge, secrets, and message invariants. The operator answers their open questions before milestone 2.
 - [ ] Follow this dependency graph. Each owner branches from its parent's branch.
@@ -55,7 +55,7 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
   - [ ] M1-4 after M1-2 and M1-3. The root chains M1-3 onto M1-2 first.
   - [ ] M1-5 after M1-4.
   - [ ] M1-6 after M1-5.
-  - [ ] M1-7 after M1-6.
+  - [x] M1-7 after M1-6. The test branch at `6d91207` sits above `a593851`.
 - [ ] Hold the file boundaries.
   - [ ] M1-2 touches only `packages/runtime/src/registry/**`, `packages/runtime/src/cli/**`, and `packages/conformance/fixtures/**`.
   - [ ] M1-3 touches only `packages/runtime/src/store/**` and `packages/runtime/src/platform/**`.
@@ -74,6 +74,8 @@ Spindle has no browser surface. A live lane drives the `spindle` command or a pr
 - [ ] Add an entry to `packages/conformance/requirements.extra.json` for each requirement with no keyword that you find in the sections your PR implements. Quote the spec text verbatim, then run `node scripts/spec-requirements.mjs --refresh` and `node scripts/seed-ledger.mjs`.
 
 ### Verdict and merge, for every PR
+
+- [ ] By the operator's decision of 2026-11-26, report performance without a timing gate until the runtime conforms to the spec. The verifier checks only that the cost of a step and the number of SQL statements per step do not grow with the length of the thread.
 
 - [ ] A full swarm runs once, at the code-ready head. Another full swarm runs only for new behavior, a redesign, or a large new diff. A rebase, a merge-conflict resolution, or a minor fix gets a single verifier at the new head. Run each full swarm per `<pstack>/skills/swarm/SKILL.md`. One gates lane runs `pnpm check` on Node and on Bun. The ten live lanes come from the PR's **Verify, live** block. The perf lane comes from its **Verify, perf** block. Two audit lanes read the diff and the receipts and distrust the PR body. One audit lane checks the diff against the spec text for the ledger entries the PR marks `covered`. The other audit lane checks the clean-room rule and the platform import rule. The gates lane, the live lanes, and the perf lane run on Claude Sonnet 5.5. The spec audit lane runs on Claude Fable 5.2. The clean-room audit lane runs on Gemini 4 Neon. Every lane brief carries the three owner-brief rules, because a lane on another provider loads no pstack skill.
 - [ ] Until the operator's review of the built stack, run the full swarm on M1-1 only. For each later PR, one Claude Sonnet 5.5 verifier runs the gates and the ten live lanes in sequence in one worktree, and the spec audit lane runs beside it. The full swarm for M1-2 through M1-7 runs after the review, at the reviewed head.
@@ -496,54 +498,56 @@ A thread's run status is one state machine with the states `idle`, `running`, an
 
 ## Chat with an agent from the terminal (M1-7)
 
-`spindle chat` is a loop over one thread. It reads a line, sends the line as a message, prints each record the run persists, and waits for the run to settle. The command holds no state of its own. The thread id is the only thing a later session needs.
+`spindle chat` is a loop over one thread. It reads a line, sends the line as a message, prints each record the run persists, and waits for the run to settle. The session holds a message cursor and its own admission sequences. A later session opens the thread by id in the same database. The output contract and process tests in `docs/plans/briefs/m1-7.md` supersede the earlier terminal and interrupt design.
 
 **Depends on.** M1-6.
 
 **Files.**
 
-- [ ] Create `packages/runtime/src/cli/chat.ts`.
-- [ ] Edit `packages/runtime/src/execution/ThreadSupervisor.ts` to expose a stream of the records a thread persists.
-- [ ] Create `packages/runtime/test/cli/chat.test.ts`.
+- [x] Create `packages/runtime/src/cli/chat.ts`.
+- [x] Expose admission and wait notifications in `execution/ThreadSupervisor.ts`. The store reads records in sequence with `messagesAfter`. Migration 4 links the delivered record to its queue entry.
+- [x] The reviewer supplied `chat.test.ts`, `chat-interrupt.test.ts`, and `chat-shared.test.ts` under `packages/runtime/test/cli/` at `6d91207`.
 
 **Build.**
 
-- [ ] Add `spindle chat <agent>`. It takes `--dir`, `--db`, and `--script` with the same meaning as in `spindle run`, and `--thread <id>` to continue an existing thread.
-- [ ] Validate the project directory before the first prompt. Print the issues that `spindle validate` prints and exit 1 when any issue is an error.
-- [ ] Print the thread id at the start. Print the command that resumes the thread at exit.
-- [ ] Read lines through the Effect `Terminal` service, so the command imports no platform module.
-- [ ] Print each persisted record as the run produces it. An assistant message prints its text. A tool call prints one line with the tool name and its arguments. A tool result prints one line with the tool name and `ok` or the error message.
-- [ ] Make Ctrl-C during a run call `execution.stop()` and return to the prompt. Make Ctrl-C or end of input at the prompt exit with code 0.
-- [ ] Load definitions once per process. To pick up an edited definition, exit and run the resume command.
+- [x] Add `spindle chat <agent>`. It takes `--dir`, `--db`, `--script`, `--dump-requests`, and `--trace` with the same meaning as in `spindle run`, and `--thread <id>` to continue an existing thread.
+- [x] Validate the project directory before the first prompt. Print the same definition errors as `spindle run` and exit 1 when any issue is an error.
+- [x] Print the thread id at the start. Print the command that resumes an open thread in a file at exit. The resume test executes those words.
+- [x] Read complete lines through the shared platform adapter and use Effect `Terminal.display` for output. The pipe and pseudo-terminal tests cover both input modes.
+- [x] Print each persisted record as the run produces it. An assistant message prints its text. A tool call prints one line with the tool name and its arguments. A tool result prints its name, status, and stored content on one line. An empty success prints only the name and `ok`. A longer success shows the first 200 printed characters and appends `...`. Pass `--full-results` to read the whole result.
+- [x] The first Ctrl-C requests a cooperative stop. The second returns the prompt immediately while the abort settles. The interrupt tests inspect the signal, status, queue, and tool results. Make Ctrl-C or end of input at the prompt exit with code 0.
+- [x] Load definitions once per process. To pick up an edited definition, exit and run the resume command.
+
+**Tradeoffs.** The operator chose to show successful tool output on 2026-11-26 so a person testing a definition can see what it returned. The preview keeps a large result from burying the next reply. Errors always print in full.
 
 **You see.**
 
-- [ ] `spindle chat assistant --dir packages/conformance/fixtures/hello-world` prints `thread <id>` and a prompt, and each line you type prints a reply.
-- [ ] At exit the command prints `resume with spindle chat assistant --thread <id>`.
+- [x] A chat prints the thread id and prompt, then a reply to each line. The scripted process tests and the tools transcript exercise this, and so does the hello-world session against a real model in lane 10.
+- [x] With a database file, exit prints `resume with spindle chat assistant --thread <id> --db <file>` and any explicit directory.
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `packages/runtime/test/cli/chat.test.ts` gains one case per build box above, each driven by a test `Terminal` layer with scripted input lines. Run `pnpm vitest run packages/runtime/test/cli/chat.test.ts` on Node and on Bun.
+- [x] All 33 reviewer tests run the source command as a child process on Node and Bun. Two drive a real pseudo-terminal with `python3`. The original 456 tests run alongside them.
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `claude-sonnet-5-5` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. The parent branch has no `spindle chat`, so record that. At the head, pipe three lines into `spindle chat` with a scripted provider. Save `three-turns.txt`. Pass when three replies print in order and the thread holds six messages.
-- [ ] Lane 2. Exit a chat after one turn, then run the printed resume command and send one more line with `--dump-requests`. Save `resume.txt`. Pass when the second session's provider request holds the first session's messages.
-- [ ] Lane 3. Chat with an agent whose script calls one tool that succeeds and one tool that throws. Save `tool-lines.txt`. Pass when the output shows one call line and one result line per tool, with `ok` for the first and the error message for the second.
-- [ ] Lane 4. Send Ctrl-C during a slow tool. Save `interrupt-run.txt`. Pass when the prompt returns, `spindle status` prints `idle` with a stop reason, and the next line gets a reply.
+- [x] Lane 2. Exit a chat after one turn, then run the printed resume command and send one more line with `--dump-requests`. Save `docs/plans/media/m1-7-review-resume.txt`. Pass when the second session's provider request holds the first session's messages.
+- [x] Lane 3. Chat with an agent whose script calls one tool that succeeds and one tool that throws. Save `docs/plans/media/m1-7-review-tools.txt`. Pass when the output shows one call line and one result line per tool, with `ok` for the first and the error message for the second.
+- [x] Lane 4. Send Ctrl-C during a slow tool. Save `docs/plans/media/m1-7-review-interrupt.txt`. Pass when the prompt returns, `spindle status` prints `idle` with a stop reason, and the next line gets a reply.
 - [ ] Lane 5. Send Ctrl-C at the prompt, and in a second run close the input. Save `exit-at-prompt.txt`. Pass when both runs exit with code 0 and both print the resume command.
 - [ ] Lane 6. Run `spindle chat` on the both-sides-human fixture. Save `invalid-directory.txt`. Pass when the issue line prints, the exit code is 1, and no prompt appears.
 - [ ] Lane 7. Chat one turn, exit, edit the text of the prompt file, and resume with `--dump-requests`. Save `edit-and-resume.txt`. Pass when the next request's system message holds the edited text.
 - [ ] Lane 8. Chat against a base URL that refuses connections, then fix the URL and resume. Save `provider-down.txt`. Pass when the first session prints the provider error and stays at the prompt, and the resumed session gets a reply.
 - [ ] Lane 9. Run lane 1 and lane 4 under Bun. Save `chat-bun.txt`. Pass when both meet the same predicates.
-- [ ] Lane 10. Chat three turns with the hello-world fixture against the real model at `SPINDLE_TEST_BASE_URL`, where the third line refers to the first. Save `real-model-chat.txt`. Pass when the third reply uses a fact from the first turn. If no endpoint is set, report `BLOCKED`.
+- [x] Lane 10. Chat three turns with the hello-world fixture against the real model at `SPINDLE_TEST_BASE_URL`, where the third line refers to the first. Save `docs/plans/media/m1-7-review-real-model.txt`. Pass when the third reply uses a fact from the first turn. The root ran it on Node and on Bun, because the owner's environment had no key. Both third replies named the beacon from the first line.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] Metric. Time from process start to the first prompt, and time from a submitted line to the first printed record with a scripted provider. The parent branch has no chat, so the diff-added work is the read loop and the record stream, and the end state is a printed reply.
-- [ ] Probe. Drive `spindle chat` through a pseudo-terminal script in the PR, twenty turns per round, ten rounds on Node and ten rounds on Bun, alternating. Run the M1-4 per-step probe at the parent branch and at the head, interleaved.
-- [ ] Baseline. Record the parent branch's per-step median first, and record that the parent branch has no chat value.
-- [ ] Rule. The PR fails when the first prompt takes more than 1 second, when the first record takes more than 50 milliseconds beyond the per-step median, or when the head's per-step median is more than 20 percent above the parent's.
+- [x] Metric. The reviewer measures time from launch to the first prompt.
+- [x] Probe. The child process test waits for the first prompt and checks the two output streams.
+- [x] Baseline. The parent at `a593851` has no chat command.
+- [x] Rule. The brief retains the five second first prompt check only. It passes on both runtimes.
 
 **Review gate.** The operator reviews before merge.
 
@@ -912,6 +916,17 @@ The M1-6 owner ran each command below on 2026-11-26 on macOS, from the repositor
 - The unit boxes follow the brief. They are Q03 to Q17 and R15 and R16 in `queue.ts` and `run-status.ts`, and scenarios 1 and 2 as process tests. Scenario 17 waits for M4.
 - The ledger has 19 more curated statements from part 4 of the brief, and the count line is `606 RFC 2119 statements, 61 lowercase must or should statements, 267 curated statements with no keyword, 24 pages`. The two Availability items of part 4 were already curated. Three Threads section 8 rows moved from M3 to M1, and `messages:b8f7cd7e` from M2 to M1. 46 entries became `covered` and 8 stayed `partial`, and the ledger holds 356 `covered` and 62 `partial`, against 322 and 58 before. The ledger line now reports the milestone 1 counts, and 12 milestone 1 entries stay `planned`, each with a reason.
 - Lane 9 as written asks the tool to observe the abort on stop. The brief's first correction reverses that, and the lane checks that a stop fires no abort.
+
+### Settled in M1-7
+
+1. With no database file, chat opens SQLite in memory, announces that choice, and prints no resume command. An explicit `:memory:` has the same lifetime. Resuming requires a file. The resume command preserves the original database and directory spelling, including an explicitly supplied `--dir .`, and shell quotes each argument as needed.
+2. Pipe input shows the prompt and an echo of the submitted line. A terminal supplies its own keyboard echo. A scope keeps a UTF-8 reader attached during a run. It pauses the pipe after a chunk yields a line and resumes it when the prompt needs another chunk. It retains complete lines and the final unterminated line, accepts LF and CRLF, and keeps a carriage return inside a line. Empty and whitespace-only lines request another prompt.
+3. The CLI preserves runtime thread ids when printing commands and diagnostics. It masks secret values in agent names and paths. It escapes Unicode direction controls and other control characters except tab and newline. The thread creation hooks share the session's secret values. Human and model messages retain their stored text. A successful tool result shows up to 200 characters of stored content, or all of it with `--full-results`. An error prints its stored text on one line. The CLI also accepts `--trace` and `--dump-requests`.
+4. An admission sequence distinguishes this chat's input from another sender's identical text, even if a hook edits it. A nullable column on the message row records the sequence when delivery consumes the queue entry. Existing messages need no backfill. A resumed session takes its cursor after recovery in the same transaction. It prints from the next committed sequence. Local messages wake the observer directly and a waiting sender can read changes committed by another process.
+5. The first Ctrl-C asks the current operation to finish. The second requests an abort and returns the prompt while chat keeps the settlement of that specific execution. A second abort can then settle before the next delivery finishes. The next submitted line shows the closing records. If a tool or hook still holds the execution, the waiting note names it. Ctrl-C at the prompt or behind a holder exits. Once the senders close, chat checks the last admission and reports a line that remains queued. A failed send reports whether admission committed before the failure.
+6. Both platforms use Effect 4.1.5's shared Node terminal. Its line queue retains lines received together, and `readLine` never requests raw mode. Its separate `readInput` acquires and releases raw mode in a scope. The readline reference has a 10 ms idle lifetime. Chat keeps its own line reader for the session and uses `Terminal.display` for writes without a newline. A closed stdout ends chat with code 1 after cooperative stop. Node can emit the pipe error after the write callback has run. After the thread opens, SIGTERM and SIGHUP print the resume command for a thread in a file and exit 130. A second signal during exit allows the resume line to finish. If the file is gone, both runtimes name the missing database and exit 1. If another process terminates the thread, chat reports termination when the run settles or on the next input, end of input, or Ctrl-C at the prompt. It exits 1 and omits the resume command.
+7. The ledger now names the terminal tests for silent messages, role mapping, redaction, queueing behind a live holder, and a queued line delivered on resume. The silent flag has a witness in the ordinary terminal UI as well as model context and hooks. The separate client API remains due in M6. The ledger has 357 covered statements and 61 partial.
+8. The brief replaces the twenty-turn benchmark with one first-prompt test. The operator requested three scripted transcripts and one real session per runtime. The three scripted transcripts are under `docs/plans/media/`. The owner's environment lacked `ANTHROPIC_API_KEY`, so its real sessions got `401 Missing API key`. The root ran one session on each runtime with the key set on the command line, and both recalled the first line in the third reply. The operator's review remains open.
 
 ## Appendix B. Alternatives rejected
 

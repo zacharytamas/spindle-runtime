@@ -56,11 +56,11 @@ export const stateAtRest = (threadId: string) =>
   })
 
 // Hooks section 1.1: after_thread_created runs after the thread exists and before any message reaches it.
-export const createThread = (agentId: string) =>
+export const createThread = (agentId: string, secrets?: Set<string>) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore
     const thread = yield* store.createThread({ agentId })
-    const rest = yield* atRest(thread, { learn: false })
+    const rest = yield* atRest(thread, { learn: false, ...(secrets ? { secrets } : {}) })
     yield* runHooks(rest.hooks, "after_thread_created", [], undefined)
     return thread
   })

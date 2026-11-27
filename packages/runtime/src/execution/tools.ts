@@ -2,7 +2,7 @@ import type { AttachmentRef, Message, PromptToolConfig, ThreadState, ToolResult 
 import { Data, Effect, Result } from "effect"
 import type { Definition } from "../registry/Registry.ts"
 import type { NewMessage } from "../store/ThreadStore.ts"
-import { type Callback, invokeCallback } from "./callback.ts"
+import { type Callback, invokeCallback, type PendingCallbacks } from "./callback.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
 
@@ -15,7 +15,7 @@ export interface ToolCall {
 }
 
 export interface ToolContext {
-  readonly pending: Set<Promise<unknown>>
+  readonly pending: PendingCallbacks
   readonly turn: Turn
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
@@ -90,7 +90,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   tool: Loaded<FunctionTool>,
   input: unknown,
   stateFor: (callback: Callback) => ThreadState,
-  pending: Set<Promise<unknown>>,
+  pending: PendingCallbacks,
   scope: EnvScope,
 ) {
   const name = tool.definition.qualifiedName
@@ -119,7 +119,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
   const returned = yield* Effect.result(
     Effect.tryPromise({
       try: () =>
-        invokeCallback(callback, pending, () =>
+        invokeCallback(callback, pending, `tool ${name}`, () =>
           schema === null ? tool.value.execute(state) : tool.value.execute(state, args),
         ),
       catch: (cause) => cause,

@@ -1,4 +1,4 @@
-**Status. The first section, "Decisions for the M1-6 fix round", is built in PR 8.**
+**Status. The first section, "Decisions for the M1-6 fix round", is built in PR 8. The operator confirmed its four marked choices on 2026-11-26.**
 
 # Thread ownership
 

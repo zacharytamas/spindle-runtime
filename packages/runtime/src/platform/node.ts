@@ -2,6 +2,7 @@ import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import type { Platform } from "./Platform.ts"
 
+export { openChatTerminal } from "./chat-terminal.ts"
 export { onInterrupt, runMain } from "./interrupts.ts"
 
 export const platformName: Platform["platformName"] = "node"

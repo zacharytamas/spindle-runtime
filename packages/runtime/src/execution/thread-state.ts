@@ -11,7 +11,7 @@ import { type Definition, Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/schema.ts"
 import type { Thread } from "../store/ThreadStore.ts"
 import { HandleExpired, ThreadStore, ValueNotJson, WritingHandle } from "../store/ThreadStore.ts"
-import type { Callback } from "./callback.ts"
+import type { Callback, PendingCallbacks } from "./callback.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
@@ -28,7 +28,7 @@ export interface StopRequest {
 }
 
 export interface Run {
-  readonly pending: Set<Promise<unknown>>
+  readonly pending: PendingCallbacks
   readonly releaseWait: AbortController
   waitForCallbacks?: boolean
   displaced?: boolean

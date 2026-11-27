@@ -7,6 +7,7 @@ import type * as BunPlatform from "./bun.ts"
 import type * as NodePlatform from "./node.ts"
 
 export interface Platform {
+  readonly openChatTerminal: typeof import("./chat-terminal.ts").openChatTerminal
   readonly platformName: "node" | "bun"
   readonly PlatformLive: Layer.Layer<
     ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | Terminal.Terminal
