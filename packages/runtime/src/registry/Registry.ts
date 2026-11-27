@@ -1,10 +1,9 @@
-import type { NamespaceContext } from "@standardagents/spec"
 import { Context, Effect, type FileSystem, Layer, type Path, Result } from "effect"
 import type { Definition, Issue, Kind, Package } from "./definition.ts"
-import { describeCause } from "./import-file.ts"
+import { describeCause, type LoadError } from "./import-file.ts"
 import { loadDirectory } from "./load-directory.ts"
 import { loadPackages } from "./load-packages.ts"
-import { type Resolution, resolver } from "./resolve.ts"
+import { DefinitionIndex } from "./resolve.ts"
 
 export class Registry extends Context.Service<
   Registry,
@@ -13,7 +12,8 @@ export class Registry extends Context.Service<
     readonly definitions: ReadonlyArray<Definition>
     readonly packages: ReadonlyArray<Package>
     readonly issues: ReadonlyArray<Issue>
-    readonly resolve: (kind: Kind, name: string, from: NamespaceContext) => Resolution
+    readonly resolve: DefinitionIndex["resolve"]
+    readonly entryAgent: DefinitionIndex["entryAgent"]
   }
 >()("spindle/Registry") {
   static readonly layer = (root: string): Layer.Layer<Registry, never, FileSystem.FileSystem | Path.Path> =>
@@ -29,29 +29,11 @@ export class Registry extends Context.Service<
           ({ load, ...source }) => Effect.map(Effect.result(load), (result) => ({ source, result })),
           { concurrency: 16 },
         )
-        const byKey = new Map<string, Definition>()
+        const index = new DefinitionIndex()
         const definitions = results.map(({ source, result }) => {
-          if (Result.isFailure(result)) {
-            issues.push(...result.failure.issues)
-            return source
-          }
-          let definition: Definition
-          try {
-            definition = identified({ ...source, value: result.success }, issues)
-          } catch (cause) {
-            issues.push({
-              code: "definition_load_failed",
-              severity: "error",
-              message: `The ${source.kind} threw while Spindle read its identifier. ${describeCause(cause)}`,
-              file: source.file,
-              path: source.path,
-            })
-            return source
-          }
-          const key = `${definition.kind}\u0000${definition.package?.signature.packageId ?? ""}\u0000${definition.name}`
-          const earlier = byKey.get(key)
-          if (earlier === undefined) byKey.set(key, definition)
-          else
+          const definition = finishLoad(source, result, issues)
+          const earlier = index.add(definition)
+          if (earlier)
             issues.push({
               code: "definition_name_duplicate",
               severity: "error",
@@ -63,7 +45,7 @@ export class Registry extends Context.Service<
         })
         for (const pkg of packed.packages)
           for (const agent of pkg.entryAgents)
-            if (!definitions.some((d) => d.package === pkg && d.kind === "agent" && d.name === agent))
+            if (!index.entryAgent(pkg, agent))
               issues.push({
                 code: "package_entry_agent_undefined",
                 severity: "error",
@@ -76,7 +58,8 @@ export class Registry extends Context.Service<
           definitions,
           packages: packed.packages,
           issues,
-          resolve: resolver(definitions),
+          resolve: index.resolve,
+          entryAgent: index.entryAgent,
         }
       }),
     )
@@ -85,12 +68,32 @@ export class Registry extends Context.Service<
 // The spec names a definition by these fields. Tools, handlers, and effects have no such field, so their file name or export key names them.
 const IDENTIFIER: Partial<Record<Kind, "name" | "id">> = { agent: "name", prompt: "name", model: "name", hook: "id" }
 
-const identified = (source: Definition, issues: Array<Issue>): Definition => {
-  const { value } = source
+const finishLoad = (
+  source: Definition,
+  result: Result.Result<unknown, LoadError>,
+  issues: Array<Issue>,
+): Definition => {
+  if (Result.isFailure(result)) {
+    issues.push(...result.failure.issues)
+    return source
+  }
+  const value = result.success
   const field = IDENTIFIER[source.kind]
-  const declared =
-    field !== undefined && typeof value === "object" && value !== null ? Reflect.get(value, field) : undefined
-  if (typeof declared !== "string" || declared === "" || declared === source.name) return source
+  let declared: unknown
+  try {
+    declared =
+      field !== undefined && typeof value === "object" && value !== null ? Reflect.get(value, field) : undefined
+  } catch (cause) {
+    issues.push({
+      code: "definition_load_failed",
+      severity: "error",
+      message: `The ${source.kind} threw while Spindle read its identifier. ${describeCause(cause)}`,
+      file: source.file,
+      path: source.path,
+    })
+    return source
+  }
+  if (typeof declared !== "string" || declared === "" || declared === source.name) return { ...source, value }
   const origin = source.package === undefined ? "file name" : "export key"
   issues.push({
     code: "definition_name_mismatch",
@@ -101,6 +104,7 @@ const identified = (source: Definition, issues: Array<Issue>): Definition => {
   })
   return {
     ...source,
+    value,
     name: declared,
     qualifiedName: source.package === undefined ? declared : `${source.package.signature.packageId}/${declared}`,
   }

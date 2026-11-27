@@ -15,7 +15,7 @@ import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/Thr
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
 import type { Definition, Kind } from "../src/registry/definition.ts"
 import { Registry } from "../src/registry/Registry.ts"
-import { resolver } from "../src/registry/resolve.ts"
+import { DefinitionIndex } from "../src/registry/resolve.ts"
 import { validate } from "../src/registry/validate.ts"
 import { MessageStore } from "../src/store/MessageStore.ts"
 import { RunStore } from "../src/store/RunStore.ts"
@@ -40,12 +40,15 @@ export const registryOf = (project: Project) => {
     ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
     ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
   ]
+  const index = new DefinitionIndex()
+  for (const definition of definitions) index.add(definition)
   return Layer.succeed(Registry, {
     root: "memory",
     definitions,
     packages: [],
     issues: [],
-    resolve: resolver(definitions),
+    resolve: index.resolve,
+    entryAgent: index.entryAgent,
   })
 }
 

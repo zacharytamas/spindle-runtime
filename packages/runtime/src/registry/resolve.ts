@@ -1,5 +1,5 @@
 import { isVisibleInNamespace, type NamespaceContext, parseQualifiedName } from "@standardagents/spec"
-import type { Definition, Kind } from "./definition.ts"
+import type { Definition, Kind, Package } from "./definition.ts"
 
 export type Resolution =
   | { readonly _tag: "Found"; readonly definition: Definition }
@@ -8,16 +8,28 @@ export type Resolution =
 
 const key = (kind: Kind, packageId: string | undefined, name: string) => `${kind}\u0000${packageId ?? ""}\u0000${name}`
 
-export const resolver = (definitions: ReadonlyArray<Definition>) => {
-  const index = new Map<string, Definition>()
-  for (const d of definitions) {
-    const at = key(d.kind, d.package?.signature.packageId, d.name)
-    if (!index.has(at)) index.set(at, d)
+export class DefinitionIndex {
+  private readonly entries = new Map<string, Array<Definition>>()
+
+  add(definition: Definition) {
+    const at = key(definition.kind, definition.package?.signature.packageId, definition.name)
+    const bucket = this.entries.get(at)
+    if (!bucket) {
+      this.entries.set(at, [definition])
+      return
+    }
+    const earlier = Object.hasOwn(definition, "value") ? bucket.find((d) => Object.hasOwn(d, "value")) : undefined
+    bucket.push(definition)
+    return earlier
   }
-  return (kind: Kind, name: string, from: NamespaceContext): Resolution => {
+
+  entryAgent = (pkg: Package, name: string) =>
+    this.entries.get(key("agent", pkg.signature.packageId, name))?.find((d) => d.package === pkg && d.name === name)
+
+  resolve = (kind: Kind, name: string, from: NamespaceContext): Resolution => {
     const [packageId, shortName] = parseQualifiedName(name)
     const home = from.type === "packed" ? from.packageId : undefined
-    const definition = index.get(key(kind, packageId ?? home, shortName))
+    const definition = this.entries.get(key(kind, packageId ?? home, shortName))?.[0]
     if (definition === undefined) return { _tag: "Missing" }
     const signature = definition.package?.signature
     const isEntryPoint = kind === "agent" && definition.package?.entryAgents.includes(shortName) === true

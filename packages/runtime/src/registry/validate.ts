@@ -577,10 +577,7 @@ export const validate = Effect.gen(function* () {
   for (const pkg of registry.packages) {
     try {
       for (const agentName of pkg.entryAgents) {
-        const definition = registry.definitions.find(
-          (d) => d.package === pkg && d.kind === "agent" && d.name === agentName,
-        )
-        const agent = definition?.value
+        const agent = registry.entryAgent(pkg, agentName)?.value
         if (!isRecord(agent) || agent.parentHooks === undefined) continue
         const sources = [
           ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],
