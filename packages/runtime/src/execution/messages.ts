@@ -86,20 +86,6 @@ const sameJson = (a: unknown, b: unknown) => {
   }
 }
 
-// Who wrote a message decides what redaction changes. Text that a tool or a hook wrote loses each secret, and the
-// human's message and the model's response keep theirs. A field that a hook changes is the hook's text either way.
-// An injection is a write its caller may refuse. A tool result and a turn are writes the execution needs. A queued
-// call is the call that a tool or a hook queued, whose arguments that code wrote.
-export type Writer = "injection" | "result" | "turn" | "queued" | "skipped"
-
-const WRITTEN: { readonly [W in Writer]: ReadonlyArray<string> } = {
-  injection: ["content", "metadata"],
-  skipped: ["content", "metadata", "attachments"],
-  result: ["content", "metadata", "attachments"],
-  turn: [],
-  queued: [],
-}
-
 const FIELDS = [...TEXT_FIELDS, "metadata", "attachments"] as const
 
 // Threads section 2.3. error_code and error_data are the keys Spindle stores a tool result's error under, so they keep
@@ -126,82 +112,94 @@ const redactField = (
   return typeof value === "string" ? redact(value) : value
 }
 
-const redactWrite = (writer: Writer, before: Message, after: Message, redact: (text: string) => string): Message => {
-  const redacted: Record<string, unknown> = {}
-  for (const field of FIELDS)
-    if (WRITTEN[writer].includes(field) || !sameJson(before[field], after[field]))
-      redacted[field] = redactField(field, after[field], redact, writer === "result")
-  return { ...after, ...redacted }
+interface WritePolicy {
+  readonly fields?: ReadonlyArray<(typeof FIELDS)[number]>
+  readonly keepErrorCode?: boolean
+  readonly finish?: (message: Message) => Message
+  readonly dequeue?: number
 }
 
-// Hooks section 4.1 and 4.2. A write that the caller may refuse, such as injectMessage, fails when a
-// before_create_message hook fails, and fails with MessageIdTaken when the hooks chose an id that a message holds.
-// A write the execution cannot go on without fails only the hook that went wrong, a hook that chose a taken id
-// included: the next hook gets the message from before it, and the last good message is stored.
-// Redaction is the last step before the store, so that it uses every secret the hooks learned.
-export const createMessage = Effect.fn("createMessage")(function* (
+const secretId = "returned an id that holds a secret value"
+
+const prepareWrite = Effect.fnUntraced(function* <E>(
   write: WriteContext,
   draft: NewMessage,
-  writer: Writer,
-  // The queue entry that this message delivers, removed when the message is stored.
-  dequeue?: number,
+  policy: WritePolicy,
+  before: (...args: Parameters<typeof transformHooks<"before_create_message">>) => Effect.Effect<Message, E>,
+  taken?: (id: string) => Effect.Effect<boolean>,
 ) {
   const store = yield* MessageStore
   const depth = yield* depthOf(write)
-  const essential = writer !== "injection"
   const original = messageOf(draft, crypto.randomUUID(), yield* nowMicros)
-  // An id is stored and printed as it is, so redaction cannot reach it, and a hook may not choose one that holds a
-  // secret value.
   const redact = redactor(write.secrets.values)
-  let idOwner: string | undefined
+  let owner: string | undefined
   const check = Effect.fnUntraced(function* (next: Message, current: Message, hook: string) {
     if (next.id === current.id) return
-    if (redact(next.id) !== next.id) return "returned an id that holds a secret value"
-    if (essential && (yield* store.messageIdTaken(next.id).pipe(Effect.orDie)))
-      return "returned the id of a message that already exists"
-    idOwner = hook
+    if (redact(next.id) !== next.id) return secretId
+    if (taken && (yield* taken(next.id))) return "returned the id of a message that already exists"
+    owner = hook
   })
-  const hooked = yield* (essential
-    ? transformHooks(write.hooks, "before_create_message", [], original, { depth, check })
-    : vetoHooks(write.hooks, "before_create_message", [], original, { depth, check }))
-  let redacted = redactWrite(writer, original, hooked, redact)
-  if (writer === "queued" && original.tool_calls) {
-    const calls = JSON.parse(original.tool_calls) as Array<{ function: { arguments: string } }>
-    for (const call of calls)
-      call.function.arguments = JSON.stringify(mapStrings(JSON.parse(call.function.arguments), redact, redact))
-    redacted.tool_calls = JSON.stringify(calls)
+  const hooked = yield* before(write.hooks, "before_create_message", [], original, { depth, check })
+  const replacements: Record<string, unknown> = {}
+  for (const field of FIELDS)
+    if (policy.fields?.includes(field) || !sameJson(original[field], hooked[field]))
+      replacements[field] = redactField(field, hooked[field], redact, policy.keepErrorCode === true)
+  const redacted = { ...hooked, ...replacements }
+  const message = policy.finish ? policy.finish(redacted) : redacted
+  const unsafeId = hooked.id !== original.id && redact(hooked.id) !== hooked.id ? owner : undefined
+  const insert = (id: string) =>
+    store.insertMessage(write.threadId, { ...message, id }, write.origin, {
+      callerSeq: write.callerSeq,
+      dequeue: policy.dequeue,
+    })
+  const after = Effect.fnUntraced(function* (inserted: Parameters<History["inserted"]>[0]) {
+    write.history?.inserted(inserted)
+    yield* observeHooks(write.hooks, "after_create_message", [inserted.message], depth)
+    return inserted
+  })
+  return { original, message, unsafeId, insert, after, redact }
+})
+
+export const injectMessage = Effect.fn("injectMessage")(function* (write: WriteContext, draft: NewMessage) {
+  const { message, unsafeId, insert, after } = yield* prepareWrite(
+    write,
+    draft,
+    { fields: ["content", "metadata"] },
+    vetoHooks<"before_create_message">,
+  )
+  if (unsafeId !== undefined)
+    return yield* new HookFailed({ hook: unsafeId, position: "before_create_message", problem: secretId })
+  return yield* after(yield* insert(message.id))
+})
+
+export const commitMessage = Effect.fn("commitMessage")(function* (
+  write: WriteContext,
+  draft: NewMessage,
+  policy: WritePolicy = {},
+) {
+  const store = yield* MessageStore
+  const { original, message, unsafeId, insert, after, redact } = yield* prepareWrite(
+    write,
+    draft,
+    policy,
+    transformHooks<"before_create_message">,
+    (id) => store.messageIdTaken(id).pipe(Effect.orDie),
+  )
+  let id = message.id
+  if (unsafeId !== undefined) {
+    yield* Effect.logWarning(`Hook ${unsafeId} (before_create_message) ${secretId}. Spindle kept the generated id.`)
+    id = original.id
   }
-  if (writer === "skipped")
-    redacted = {
-      ...redacted,
-      role: original.role,
-      name: original.name ?? null,
-      tool_call_id: original.tool_call_id ?? null,
-      tool_status: "error",
-      content: original.content,
-    }
-  if (idOwner !== undefined && hooked.id !== original.id && redact(hooked.id) !== hooked.id) {
-    const problem = "returned an id that holds a secret value"
-    if (!essential) return yield* new HookFailed({ hook: idOwner, position: "before_create_message", problem })
-    yield* Effect.logWarning(`Hook ${idOwner} (before_create_message) ${problem}. Spindle kept the generated id.`)
-    redacted = { ...redacted, id: original.id }
-  }
-  const link = { callerSeq: write.callerSeq, dequeue }
-  // A hook's own nested write can take the id after the check above passed it. A write the execution needs is
-  // stored once under an id from the runtime, and its hooks, which have already run, do not run again.
-  const inserted = yield* store.insertMessage(write.threadId, redacted, write.origin, link).pipe(
+  // A nested write can take a checked id. Retry the insert once without replaying a hook's side effects.
+  const inserted = yield* insert(id).pipe(
     Effect.catchTag("MessageIdTaken", (error) => {
-      if (!essential) return Effect.fail(error)
-      const id = crypto.randomUUID()
+      const fresh = crypto.randomUUID()
       return Effect.logWarning(
-        `Message id ${JSON.stringify(redact(error.messageId))} was taken when Spindle stored the message, so Spindle stored it once under the id ${id}.`,
-      ).pipe(Effect.andThen(store.insertMessage(write.threadId, { ...redacted, id }, write.origin, link)))
+        `Message id ${JSON.stringify(redact(error.messageId))} was taken when Spindle stored the message, so Spindle stored it once under the id ${fresh}.`,
+      ).pipe(Effect.andThen(insert(fresh)))
     }),
   )
-  write.history?.inserted(inserted)
-  const stored = inserted.message
-  yield* observeHooks(write.hooks, "after_create_message", [stored], depth)
-  return inserted
+  return yield* after(inserted)
 })
 
 // Threads section 2.3: text that user code writes is redacted before it is stored, as tool output is.

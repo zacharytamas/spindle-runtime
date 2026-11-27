@@ -35,7 +35,7 @@ import type { End, Execution } from "./Execution.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
 import { makeHistory } from "./history.ts"
 import { agentHooks, countHooks, type HookScope, has, observeHooks, transformHooks, turnHooks } from "./hooks.ts"
-import { createMessage } from "./messages.ts"
+import { commitMessage } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { stopReason } from "./stop-rules.ts"
 import { makeThreadState, type ThreadControl } from "./thread-state.ts"
@@ -449,7 +449,20 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
                 catch: (cause) => new ResultUnreadable({ message: `reading it threw: ${describe(cause)}` }),
               }).pipe(
                 Effect.flatMap((message) =>
-                  createMessage({ ...write, callerSeq }, message, skipped ? "skipped" : "result"),
+                  commitMessage({ ...write, callerSeq }, message, {
+                    fields: ["content", "metadata", "attachments"],
+                    keepErrorCode: !skipped,
+                    ...(skipped && {
+                      finish: (redacted: Message) => ({
+                        ...redacted,
+                        role: message.role,
+                        name: message.name ?? null,
+                        tool_call_id: message.tool_call_id ?? null,
+                        tool_status: "error" as const,
+                        content: message.content ?? null,
+                      }),
+                    }),
+                  }),
                 ),
               )
             // Runtime section 5.2: a failure between the tool's return and its stored result fails this one call.
@@ -487,7 +500,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               argumentsText,
               problem: tool === undefined ? `The queued tool ${entry.toolName} is no longer defined` : undefined,
             }
-            const { message, seq } = yield* createMessage(
+            const { message, seq } = yield* commitMessage(
               write,
               {
                 role: roleOf(turn.side),
@@ -499,8 +512,15 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
                 status: "completed",
                 metadata: { queued: true },
               },
-              "queued",
-              entry.seq,
+              {
+                dequeue: entry.seq,
+                finish: (message) => ({
+                  ...message,
+                  tool_calls: JSON.stringify([
+                    hookCall(call, JSON.stringify(mapStrings(JSON.parse(argumentsText), redact, redact))),
+                  ]),
+                }),
+              },
             )
             yield* record("drain", `tool ${name} ${call.id}`)
             yield* observe({ type: "message", message })
@@ -531,7 +551,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               prompted = true
               continue
             }
-            const { message } = yield* createMessage(delivery, draftOf(entry.message), "turn", entry.seq)
+            const { message } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
             first ??= message.id
             yield* record("drain", `message ${message.id}`)
             yield* observe({ type: "message", message })
@@ -635,11 +655,7 @@ export const prepareSteps = (threadId: string, run: Execution, control: ThreadCo
               run.recordStep()
               turnSteps += 1
               const calls = toolCallsOf(response)
-              const { message: assistant, seq } = yield* createMessage(
-                write,
-                responseMessage(turn, response, calls),
-                "turn",
-              )
+              const { message: assistant, seq } = yield* commitMessage(write, responseMessage(turn, response, calls))
               yield* record("persist-response", `${assistant.id}, ${calls.length} tool calls`)
               yield* observe({ type: "message", message: assistant })
               if (calls.length === 0) {

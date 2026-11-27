@@ -8,7 +8,7 @@ import { appendMessages } from "../../scripts/store-fixtures.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
-import { createMessage } from "../../src/execution/messages.ts"
+import { commitMessage } from "../../src/execution/messages.ts"
 import type { ExecutionEvent } from "../../src/execution/step.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
@@ -269,7 +269,7 @@ describe("the history an execution keeps", () => {
         },
       }
       const write = { origin: external, threadId: thread.id, hooks, secrets: newSecrets(), call: undefined, history }
-      const own = createMessage(write, { role: "assistant", content: "rolled back" }, "turn")
+      const own = commitMessage(write, { role: "assistant", content: "rolled back" })
       expect(yield* Effect.flip(store.transaction(Effect.andThen(own, Effect.fail("crash"))))).toBe("crash")
       yield* appendMessages(thread.id, [{ role: "user", content: "from another writer" }])
       expect(contents((yield* history.read).rows.map((row) => row.message))).toEqual(["first", "from another writer"])
