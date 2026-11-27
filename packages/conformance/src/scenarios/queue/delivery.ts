@@ -270,10 +270,12 @@ export const Q08: Scenario = {
       expect(await session.settled(thread)).toMatchObject({ status: "idle", reason: "stop_on_response", steps: 1 })
       const stored = await session.messages(thread)
       const [call] = callsOf(stored[0])
+      // No prompt produced the caller of a queued tool (Messages section 1, specification/threads/messages.md:24). Q44
+      // proves it on its own.
       expect(stored[0]).toMatchObject({
         role: "assistant",
         content: null,
-        prompt: "assistant",
+        prompt: null,
         metadata: { queued: true },
       })
       expect(call).toEqual({
@@ -406,5 +408,52 @@ export const Q40: Scenario = {
         ["user", "B"],
       ],
     })
+  },
+}
+
+export const Q44: Scenario = {
+  name: "Q44 records no prompt on the caller message of a queued tool and the producing prompt on each model response",
+  requirements: ["778b4467"],
+  run: async (driver) => {
+    // Messages section 1 (specification/threads/messages.md:24): prompt is the "Name of the prompt that produced the
+    // message", typed string | null. queueTool (specification/threads.md:246-258) runs a tool that no model response
+    // asked for, so no prompt produced the message that holds its call, whether a tool queues it during a run or a
+    // caller queues it at rest. The prompt is named helper so that the agent's name cannot pass for it.
+    for (const humanOn of SIDES) {
+      const relay = defineTool({
+        description: "Queue echo",
+        execute: async (state: ThreadState) => {
+          state.queueTool("echo", { text: "from a tool" })
+          return ok("queued")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_relay", name: "relay", arguments: {} }] },
+        { text: "relayed" },
+        { text: "saw it" },
+      ])
+      await using(
+        driver,
+        { provider, humanOn, tools: { echo, relay }, side: { prompt: "helper" }, prompt: { name: "helper" } },
+        async (session, thread) => {
+          await session.send(thread, "go")
+          ;(await session.state(thread)).queueTool("echo", { text: "at rest" })
+          expect(await session.settled(thread)).toMatchObject({ status: "idle" })
+          const stored = await session.messages(thread)
+          const callers = stored.filter((message) => callsOf(message).some((call) => call.function.name === "echo"))
+          expect(callers.map((message) => [callsOf(message)[0]?.function.arguments, message.prompt])).toEqual([
+            ['{"text":"from a tool"}', null],
+            ['{"text":"at rest"}', null],
+          ])
+          const modelCall = stored.find((message) => callsOf(message).some((call) => call.id === "c_relay"))
+          expect(modelCall?.prompt).toBe("helper")
+          const responses = stored.filter((message) => message.content === "relayed" || message.content === "saw it")
+          expect(responses.map((message) => [message.content, message.prompt])).toEqual([
+            ["relayed", "helper"],
+            ["saw it", "helper"],
+          ])
+        },
+      )
+    }
   },
 }

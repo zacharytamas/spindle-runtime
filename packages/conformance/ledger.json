@@ -1,11 +1,11 @@
 {
 	"distribution:packaging:3b8a316c": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects packages with missing metadata, dependencies, entry agents, or parent hook copies"
 		],
-		"reason": "The validator rejects a missing uses target, but accepts a packed tool naming another installed package’s entry agent. It must check that the declaring package includes the dependency."
+		"reason": ""
 	},
 	"distribution:packaging:149aa7e2": {
 		"status": "not-testable",
@@ -2698,20 +2698,27 @@
 		"reason": ""
 	},
 	"specification:threads:b97f0023": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects invalid pagination, keys, non-JSON values and unknown definition names"
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects invalid pagination, keys, non-JSON values and unknown definition names",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses an unknown message order and reads each legal order",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses a message id or a value key that is not a string",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > rejects injectMessage(null) through its promise instead of throwing",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses wrong-typed message options, inputs and updates and stores nothing for them",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses wrong-typed names on getChildThread, instanceEnv, envType and setStatus",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > refuses invokeTool arguments that are not an object inside a calling tool"
 		],
-		"reason": "Invalid counts, malformed Unicode keys and non-JSON values reject. getMessages accepts an unknown order, numeric message ids and value keys resolve, and injectMessage(null) throws before returning a promise. The parameter checks at the ThreadState boundary are incomplete."
+		"reason": ""
 	},
 	"specification:threads:86d51bef": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > propagates SQLite failures through every M1 storage-backed operation"
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > propagates SQLite failures through every M1 storage-backed operation",
+			"packages/runtime/test/execution/thread-state.test.ts > ThreadState > instanceEnv rejects when its configuration source fails and resolves undefined for an absent key"
 		],
-		"reason": "The SQLite-backed methods surface storage failures. instanceEnv resolves to undefined when its configuration source fails, masking the error as an absent key. See Instance environment read failures in DIVERGENCES.md."
+		"reason": ""
 	},
 	"specification:threads:a22d57c1": {
 		"status": "partial",
@@ -6312,12 +6319,13 @@
 		"reason": ""
 	},
 	"specification:threads/messages:778b4467": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B"
+			"packages/runtime/test/conformance.test.ts > queue > Q44 records no prompt on the caller message of a queued tool and the producing prompt on each model response",
+			"packages/runtime/test/execution/ownership.test.ts > preserves the result prompt when termination closes a queued call"
 		],
-		"reason": "A model response records its producing prompt. A programmatic queueTool call also records the active prompt on its synthetic caller message although no prompt produced it."
+		"reason": ""
 	},
 	"specification:threads/messages:61c7bee3": {
 		"status": "covered",
@@ -6339,15 +6347,14 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:04d1538b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
 			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
-			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
-			"packages/runtime/test/conformance.test.ts > ownership > O10 refuses a handle that a hook of an inbound message kept, after the hook returned and after the thread was terminated"
+			"packages/runtime/test/conformance.test.ts > messages > M9 gives the create hooks of an inbound message the execution that delivers it, and null to an injection at rest"
 		],
-		"reason": "A tool and request hooks see the active execution. The create hooks for an inbound queued message receive execution: null even while status() reports running and the delivery flow holds the claim."
+		"reason": ""
 	},
 	"specification:threads/execution-state:048a4525": {
 		"status": "covered",

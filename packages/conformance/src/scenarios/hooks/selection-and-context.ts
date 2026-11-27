@@ -191,7 +191,7 @@ export const H21: Scenario = {
     expect(first("before_create_message")).toEqual([
       "before_create_message",
       "string",
-      "at rest",
+      "running",
       [["id", "role", "content", "status"]],
       "agent",
     ])
@@ -208,7 +208,7 @@ export const H21: Scenario = {
     expect(first("after_create_message")).toEqual([
       "after_create_message",
       "string",
-      "at rest",
+      "running",
       [["id", "role", "content", "status"]],
       "agent",
     ])
@@ -219,9 +219,11 @@ export const H21: Scenario = {
       [["id", "role", "content", "status"]],
       "agent",
     ])
+    // The create hooks of the human's message run inside the execution that delivers it, so only the creation of the
+    // thread runs at rest (Execution State section 1, specification/threads/execution-state.md:3,8-12). M9 proves it.
     expect(
       calls.filter((call) => (call as Array<unknown>)[2] === "at rest").map((call) => (call as Array<unknown>)[0]),
-    ).toEqual(["after_thread_created", "before_create_message", "after_create_message"])
+    ).toEqual(["after_thread_created"])
     expect(first("tool_call_started")).toEqual([
       "tool_call_started",
       "string",

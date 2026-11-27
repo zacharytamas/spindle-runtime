@@ -408,7 +408,8 @@ export const O10: Scenario = {
     const provider = new ScriptedProvider([{ text: "done" }])
     await usingPeer(driver, { provider, hooks: [keep], agent: { hooks: ["keep"] } }, async (session, thread) => {
       expect(await session.send(thread, "first")).toMatchObject({ status: "idle" })
-      expect(executionSeen).toBeNull()
+      // The hook sees the execution that delivers its message. The handle it kept is refused all the same.
+      expect(executionSeen).not.toBeNull()
       const kept = handle as ThreadState
       const afterReturn = await attempt(() => kept.injectMessage({ role: "user", content: "after the hook returned" }))
       await (await session.state(thread)).terminate()

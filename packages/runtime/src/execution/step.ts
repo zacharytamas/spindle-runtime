@@ -16,7 +16,7 @@ import { commitMessage, type WriteContext } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { reasoningSource, responseCalls, responseMessage, stopToolOutcome } from "./response.ts"
 import { stopReason } from "./stop-rules.ts"
-import { atRestHooks, makeThreadState, type ThreadControl } from "./thread-state.ts"
+import { agentHookScope, makeThreadState, type ThreadControl } from "./thread-state.ts"
 import { completeCall, streamedHooks } from "./tool-lifecycle.ts"
 import { invokeTool, runToolCall, scopeFor, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
@@ -107,12 +107,15 @@ export const learnSecrets = Effect.fn("learnSecrets")(function* (turn: Turn, sec
     ...declared.map(({ variable, scope }) => ({ name: variable.name, scope })),
     ...[...secrets.names].map((name) => ({ name, scope: promptScope(turn) })),
   ]
+  // Learning reads every declared name, used or not. A value that cannot be read cannot be learned, and it must not
+  // fail a run that never asks for it. The read that a tool or a prompt asks for still fails with its own error.
+  const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
   for (const { name, scope } of lookups) {
-    const found = yield* lookupEnv(scope, name)
+    const found = yield* readable(lookupEnv(scope, name))
     if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
     // A definition default hides the instance value from the lookup, and that value is still the operator's secret.
     // An instance value equal to the default is text the definition already shows.
-    const instance = yield* instanceEnv(name)
+    const instance = yield* readable(instanceEnv(name))
     if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
   }
 })
@@ -363,9 +366,14 @@ export const prepareSteps = Effect.fnUntraced(function* (
       const set = yield* turnHooks(turn)
       const history = makeHistory(threadId)
       const base = { thread, services, secrets, control, history, run }
-      // Inbound messages use the agent's hooks and see no active prompt.
-      const hooks = atRestHooks(
-        { ...base, owner: run, scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined } },
+      // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.
+      const hooks = agentHookScope(
+        {
+          ...base,
+          owner: run,
+          execution: { side: turn.side, promptPath: [turn.prompt.qualifiedName], history, run },
+          scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined },
+        },
         yield* agentHooks(turn.agent),
       )
       const delivery: WriteContext = {

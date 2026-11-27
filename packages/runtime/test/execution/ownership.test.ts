@@ -3,12 +3,12 @@ import { defineTool } from "@standardagents/spec"
 import { Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { gate, ok, project } from "../../../conformance/src/scenarios/harness.ts"
+import { gate, ok, project, using } from "../../../conformance/src/scenarios/harness.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread } from "../../src/execution/trigger.ts"
 import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
-import { registryOf } from "../spindle-driver.ts"
+import { registryOf, spindleDriver } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
 
 it.effect("the control poll settles a claim of its live holder with no execution behind it", () =>
@@ -84,3 +84,41 @@ for (const mode of ["control poll", "local replacement", "local termination", "s
       )
     }).pipe(Effect.provide(Layer.merge(registry, inMemory)))
   })
+
+it("preserves the result prompt when termination closes a queued call", async () => {
+  const entered = gate()
+  const leave = gate()
+  const wait = defineTool({
+    description: "Wait for termination",
+    execute: async () => {
+      entered.release()
+      await leave.opened
+      return ok("late")
+    },
+  })
+  await using(
+    spindleDriver,
+    {
+      provider: new ScriptedProvider([]),
+      tools: { wait },
+      side: { prompt: "helper" },
+      prompt: { name: "helper" },
+    },
+    async (session, thread) => {
+      const state = await session.state(thread)
+      try {
+        state.queueTool("wait", {})
+        await entered.opened
+        await state.terminate()
+        const stored = await session.messages(thread)
+        expect(stored.map((message) => [message.role, message.prompt])).toEqual([
+          ["assistant", null],
+          ["tool", "helper"],
+        ])
+        expect(stored[1]?.tool_status).toBe("error")
+      } finally {
+        leave.release()
+      }
+    },
+  )
+})

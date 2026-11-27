@@ -1,4 +1,5 @@
 import { Config, Effect, Option } from "effect"
+import { SetupError } from "./turn.ts"
 
 export type EnvRecord = Readonly<Record<string, string>> | undefined
 
@@ -41,16 +42,17 @@ export const addSecret = (secrets: Secrets, value: string) => {
 const own = (record: EnvRecord, name: string) =>
   record !== undefined && Object.hasOwn(record, name) && typeof record[name] === "string" ? record[name] : undefined
 
-export const instanceEnv = (name: string): Effect.Effect<string | undefined> =>
-  Effect.gen(function* () {
-    return Option.getOrUndefined(yield* Config.option(Config.String(name)))
-  }).pipe(Effect.orElseSucceed(() => undefined))
+export const instanceEnv = (name: string) =>
+  Config.option(Config.String(name)).pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.mapError(() => new SetupError({ message: `Instance environment read failed for ${name}` })),
+  )
 
-export const lookupEnv = (scope: EnvScope, name: string): Effect.Effect<Resolved | undefined> => {
+export const lookupEnv = (scope: EnvScope, name: string): Effect.Effect<Resolved | undefined, SetupError> => {
   const declared = own(scope.agent, name) ?? own(scope.toolEntry, name) ?? own(scope.prompt, name)
   if (declared !== undefined) return Effect.succeed({ value: declared, fromInstance: false })
   return Effect.map(instanceEnv(name), (value) => (value === undefined ? undefined : { value, fromInstance: true }))
 }
 
-export const resolveEnv = (scope: EnvScope, name: string): Effect.Effect<string | undefined> =>
+export const resolveEnv = (scope: EnvScope, name: string): Effect.Effect<string | undefined, SetupError> =>
   Effect.map(lookupEnv(scope, name), (found) => found?.value)

@@ -169,9 +169,101 @@ export const M2: Scenario = {
             ["user", "go"],
           ])
           expect(calls).toEqual([
-            ["agent_before", "go", agent, true],
-            ["agent_after", "go", agent, true],
+            // A send starts an execution, and the hooks of its message run inside it.
+            ["agent_before", "go", agent, false],
+            ["agent_after", "go", agent, false],
             ["prompt_before", "answer", { kind: "prompt", promptName: "helper" }, false],
+          ])
+        },
+      )
+    }
+  },
+}
+
+export const M9: Scenario = {
+  name: "M9 gives the create hooks of an inbound message the execution that delivers it, and null to an injection at rest",
+  requirements: ["04d1538b"],
+  run: async (driver) => {
+    // Execution State section 1 (specification/threads/execution-state.md:3,8-12): execution is present while a thread
+    // is actively running, in tools and hooks, and null when the thread is at rest. A sent message and a message a
+    // tool queues are stored by the execution that takes them (Messages section 4, specification/threads/messages.md:
+    // 165-167), so their create hooks run during that execution. Each hook's flow id is compared with the flow id that
+    // filter_messages sees for the request of the same execution, so a stale or invented execution cannot pass.
+    for (const humanOn of SIDES) {
+      const { human, model } = rolesFor(humanOn)
+      const created: Array<[string, string | null, string | null]> = []
+      const requests: Array<string | null> = []
+      let toolFlow: string | undefined
+      const record =
+        (id: string) =>
+        async (state: ThreadState, message: Message): Promise<Message> => {
+          created.push([id, message.content, state.execution?.flowId ?? null])
+          return message
+        }
+      const hooks = [
+        defineHook({ hook: "before_create_message", id: "inbound_before", execute: record("before") }),
+        defineHook({
+          hook: "after_create_message",
+          id: "inbound_after",
+          execute: async (state, message) => {
+            await record("after")(state, message)
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "request_flow",
+          execute: async (state, messages) => {
+            requests.push(state.execution?.flowId ?? null)
+            return messages
+          },
+        }),
+      ]
+      const tools = {
+        enqueue: defineTool({
+          description: "Queue a message from the human's side",
+          execute: async (state: ThreadState) => {
+            toolFlow = state.execution?.flowId
+            await state.queueMessage({ role: human, content: "queued by a tool" })
+            return ok("queued")
+          },
+        }),
+      }
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c_enqueue", name: "enqueue", arguments: {} }] },
+        { text: "first run done" },
+        { text: "second run done" },
+      ])
+      await using(
+        driver,
+        { provider, tools, hooks, humanOn, agent: { hooks: ["inbound_before", "inbound_after", "request_flow"] } },
+        async (session, thread) => {
+          await session.send(thread, "go")
+          // A message from the model side's perspective asks nothing of the model side, so this stays an injection at
+          // rest whatever a later milestone decides about injections that ask for a turn.
+          await (await session.state(thread)).injectMessage({ role: model, content: "noted at rest" })
+          await session.send(thread, "again")
+          const [first, , second] = requests
+          expect(requests).toEqual([first, first, second])
+          expect(typeof first).toBe("string")
+          expect(typeof second).toBe("string")
+          expect(second).not.toBe(first)
+          expect(toolFlow).toBe(first)
+          const inbound = (content: string) => created.filter(([, text]) => text === content)
+          expect(inbound("go")).toEqual([
+            ["before", "go", first],
+            ["after", "go", first],
+          ])
+          expect(inbound("queued by a tool")).toEqual([
+            ["before", "queued by a tool", first],
+            ["after", "queued by a tool", first],
+          ])
+          expect(inbound("again")).toEqual([
+            ["before", "again", second],
+            ["after", "again", second],
+          ])
+          expect(inbound("noted at rest")).toEqual([
+            ["before", "noted at rest", null],
+            ["after", "noted at rest", null],
           ])
         },
       )

@@ -7,7 +7,7 @@ import { newSecrets } from "./env.ts"
 import { agentHooks, type HookSet, observeHooks } from "./hooks.ts"
 import { type ExecutionOptions, learnSecrets } from "./step.ts"
 import { ThreadSupervisor } from "./ThreadSupervisor.ts"
-import { atRestHooks, makeThreadState } from "./thread-state.ts"
+import { agentHookScope, makeThreadState } from "./thread-state.ts"
 import { lookup, prepareTurn } from "./turn.ts"
 
 // Hooks section 1.3 and Execution State section 1: an operation at rest has no active prompt, so the agent's hooks
@@ -37,7 +37,7 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
       secrets,
       control: supervisor.control(thread.id),
     }
-    const hooks = atRestHooks(base, set)
+    const hooks = agentHookScope(base, set)
     return { hooks, secrets, state: makeThreadState({ ...base, from: agent, hooks }) }
   })
 
