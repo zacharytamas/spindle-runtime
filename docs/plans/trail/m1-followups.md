@@ -123,6 +123,10 @@ Seven code quality reviews found that no PR of the stack meets the operator's ba
 
 Found by the structure reviews and left. A `filter_messages` hook that returns a crafted `tool_calls` name on a visible call ends the run with `fatal_error`, where a value from a hook should never crash the loop. `extraContent` in a dispatched request is the history cache's own object, so a provider that mutates its request edits the cached history. The drain delivers every queued entry in one pass and stores a queued tool as the prompt side's call, which a handler side in milestone 2 cannot use.
 
+Found by the review of structure PR 6 and left for the operator's code review, because none changes what a user sees. `settlement.isDone` in `Execution.ts` is read only by one test. `withProject` in `cli/shared.ts` takes seven positional parameters and carries a rule only the chat uses. The chat repeats the thread check that `open` already makes. `chat.ts` still squashes a cause and tests `instanceof` although the send's error channel is typed. A `waiting` event is dropped while the chat is stopping, which matters only for a Ctrl-C inside a window of microseconds. `runMain` hands an interrupt to every open subscription, and no command opens two. A command that fails on a store error prints `Failed to prepare statement` without SQLite's reason. On Node, two interrupts under 3 ms apart at the prompt end the chat by the signal more often than before (60 of 160 against 32), always after the resume line.
+
+Older than the structure PRs, confirmed by that review. A line typed within half a millisecond of a Ctrl-C is echoed and not stored, with no note. A keyboard cannot produce that gap.
+
 To check inside the PR that owns the code. A settlement that may run twice on a database error. `before_create_message` running twice when a tool result cannot be stored. Request assembly that parses every stored message at every step.
 
 After them. The tool timeout setting, the updated PR descriptions, and the milestone revision.
