@@ -150,3 +150,42 @@ it("runs a repeated hook definition once at its first position in the list", asy
   )
   expect(seen).toEqual(["first", "second"])
 })
+
+it("redacts queued arguments again when the create hook learns their value", async () => {
+  const token = "late-queued-token"
+  const before: string[] = []
+  const reveal = defineHook({
+    hook: "before_create_message",
+    id: "reveal",
+    execute: async (state, message) => {
+      if (message.metadata?.queued && message.tool_calls) {
+        before.push(JSON.parse(message.tool_calls)[0].function.arguments)
+        await state.instanceEnv?.("TOKEN")
+      }
+      return message
+    },
+  })
+  const queue = defineTool({
+    description: "Queue a call before the secret lookup",
+    execute: async (state) => {
+      state.queueTool("worker", { text: token })
+      return { status: "success" as const }
+    },
+  })
+  const worker = defineTool({
+    description: "Accept the queued call",
+    execute: async () => ({ status: "success" as const }),
+  })
+  const provider = new ScriptedProvider([{ toolCalls: [{ id: "c", name: "queue", arguments: {} }] }, { text: "done" }])
+  await using(
+    spindleDriver,
+    { provider, tools: { queue, worker }, hooks: [reveal], prompt: { hooks: ["reveal"] } },
+    async (session, thread) => {
+      await session.send(thread, "go")
+      const queued = (await session.messages(thread)).find((message) => message.metadata?.queued)
+      expect(JSON.parse(queued?.tool_calls ?? "[]")[0].function.arguments).toBe(JSON.stringify({ text: "[redacted]" }))
+    },
+    { instanceEnv: { TOKEN: token } },
+  )
+  expect(before).toEqual([JSON.stringify({ text: token })])
+})
