@@ -296,8 +296,9 @@ async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
     { maxEventSize: Infinity },
   )
   // The parser consumes the leading BOM. Leave it in the decoded text so only one BOM is stripped.
-  for await (const text of body.pipeThrough(new TextDecoderStream("utf-8", { ignoreBOM: true }))) {
-    parser.feed(text)
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true })
+  for await (const bytes of body) {
+    parser.feed(decoder.decode(bytes, { stream: true }))
     yield* events
     events.length = 0
   }

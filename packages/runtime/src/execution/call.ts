@@ -254,7 +254,7 @@ const streamResponse = (
     const cleanup = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
       Effect.forkDetach(Scope.close(scope, exit), { startImmediately: true }),
     )
-    const scoped = yield* Effect.abortSignal
+    const scoped = yield* Scope.provide(Effect.abortSignal, cleanup)
     const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])
     const onError = (cause: unknown) => failureOf(cause, provider)
     const iterable = yield* Effect.tryPromise({ try: () => provider.stream({ ...request, signal }), catch: onError })
