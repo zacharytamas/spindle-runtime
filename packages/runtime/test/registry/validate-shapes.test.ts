@@ -201,4 +201,27 @@ describe("validate messages", () => {
       expect(broken?.message).not.toContain(runtime)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
+
+  // A project resolves its own copy of zod, which is not the copy Spindle resolves, so a class check against
+  // Spindle's zod would refuse every legal schema. The fixture is copied beside a second real copy of the package.
+  it.effect("accepts a Zod object schema that a second copy of zod made", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-zod-copy-" })
+      yield* fs.copy(yield* fixture("invalid/tool-args-shape"), root)
+      const modules = yield* path.fromFileUrl(new URL("../../node_modules", import.meta.url))
+      yield* fs.makeDirectory(path.join(root, "node_modules", "@standardagents"), { recursive: true })
+      yield* fs.copy(yield* fs.realPath(path.join(modules, "zod")), path.join(root, "node_modules", "zod"))
+      yield* fs.symlink(
+        yield* fs.realPath(path.join(modules, "@standardagents", "spec")),
+        path.join(root, "node_modules", "@standardagents", "spec"),
+      )
+      const report = yield* validateRoot(root)
+      expect(located(report.issues)).toEqual([
+        error("agents/tools/json_schema_args.ts:args"),
+        error("agents/tools/string_args.ts:args"),
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
 })
