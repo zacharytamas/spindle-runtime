@@ -16,7 +16,7 @@ import { commitMessage, type WriteContext } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { reasoningSource, responseCalls, responseMessage, stopToolOutcome } from "./response.ts"
 import { stopReason } from "./stop-rules.ts"
-import { atRestHooks, makeThreadState, type ThreadControl } from "./thread-state.ts"
+import { agentHookScope, makeThreadState, type ThreadControl } from "./thread-state.ts"
 import { completeCall, streamedHooks } from "./tool-lifecycle.ts"
 import { invokeTool, runToolCall, scopeFor, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
@@ -363,9 +363,14 @@ export const prepareSteps = Effect.fnUntraced(function* (
       const set = yield* turnHooks(turn)
       const history = makeHistory(threadId)
       const base = { thread, services, secrets, control, history, run }
-      // Inbound messages use the agent's hooks and see no active prompt.
-      const hooks = atRestHooks(
-        { ...base, owner: run, scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined } },
+      // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.
+      const hooks = agentHookScope(
+        {
+          ...base,
+          owner: run,
+          execution: { side: turn.side, promptPath: [turn.prompt.qualifiedName], history, run },
+          scope: { agent: turn.agent.value.env, toolEntry: undefined, prompt: undefined },
+        },
         yield* agentHooks(turn.agent),
       )
       const delivery: WriteContext = {

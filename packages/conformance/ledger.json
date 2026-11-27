@@ -6343,15 +6343,14 @@
 		"reason": ""
 	},
 	"specification:threads/execution-state:04d1538b": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S31 gives tools execution state with a flow id per execution, the root prompt path, and an abort signal",
 			"packages/runtime/test/conformance.test.ts > hooks > H21 calls each of the thirteen hook types with ThreadState first, its own arguments, and the context last",
-			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run",
-			"packages/runtime/test/conformance.test.ts > ownership > O10 refuses a handle that a hook of an inbound message kept, after the hook returned and after the thread was terminated"
+			"packages/runtime/test/conformance.test.ts > messages > M9 gives the create hooks of an inbound message the execution that delivers it, and null to an injection at rest"
 		],
-		"reason": "A tool and request hooks see the active execution. The create hooks for an inbound queued message receive execution: null even while status() reports running and the delivery flow holds the claim."
+		"reason": ""
 	},
 	"specification:threads/execution-state:048a4525": {
 		"status": "covered",

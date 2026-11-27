@@ -533,8 +533,8 @@ export const makeThreadState = (state: StateContext): ThreadState => {
 }
 
 // At rest a caller shares its context with the creation hooks. Each inbound delivery hook gets a fresh context.
-export function atRestHooks(
-  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner"> & {
+export function agentHookScope(
+  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner" | "execution"> & {
     context?: Record<string, unknown>
   },
   set: HookSet,
@@ -545,7 +545,6 @@ export function atRestHooks(
     stateFor: (hook, call) =>
       makeThreadState({
         ...base,
-        execution: undefined,
         context: base.context ?? {},
         from: hook.definition,
         hooks,
