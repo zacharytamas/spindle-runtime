@@ -1,20 +1,15 @@
-import { Console, Data, Effect, Path, Runtime } from "effect"
+import { Console, Effect, Path } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { type Definition, type Issue, KINDS, PLURAL, Registry } from "../registry/Registry.ts"
 import { counts, type Validation, validate } from "../registry/validate.ts"
 
-export class IssuesFound extends Data.TaggedError("IssuesFound")<{ readonly errors: number }> {
-  // runMain logs a failure and its stack unless this is false. The issue lines are already printed.
-  override readonly [Runtime.errorReported] = false
-}
+import { CommandFailed, commandErrors, plural } from "./shared.ts"
 
 const location = (issue: Issue) => (issue.path === "" ? issue.file : `${issue.file}:${issue.path}`)
 
 const ESCAPES: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\u2028": "\\u2028", "\u2029": "\\u2029" }
 
 const oneLine = (text: string) => text.replace(/[\n\r\u2028\u2029]/g, (separator) => ESCAPES[separator] ?? separator)
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
 
 const listRow = (definition: Definition) => [
   definition.kind,
@@ -41,7 +36,7 @@ const table = (rows: ReadonlyArray<ReadonlyArray<string>>) => {
   )
 }
 
-export const formatText = ({ definitions, issues }: Validation, options: { readonly list: boolean }) => {
+const formatText = ({ definitions, issues }: Validation, options: { readonly list: boolean }) => {
   const lines: Array<string> = []
   if (options.list) {
     const sorted = [...definitions].sort(
@@ -57,7 +52,7 @@ export const formatText = ({ definitions, issues }: Validation, options: { reado
   return lines
 }
 
-export const formatJson = ({ definitions, issues }: Validation, options: { readonly list: boolean }) => {
+const formatJson = ({ definitions, issues }: Validation, options: { readonly list: boolean }) => {
   const plain = issues.map(({ code, severity, message, file, path }) => ({ code, severity, message, file, path }))
   if (!options.list) return JSON.stringify(plain, null, 2)
   const rows = definitions.map((definition) => {
@@ -87,6 +82,6 @@ export const validateCommand = Command.make(
       if (json) yield* Console.log(formatJson(result, { list }))
       else for (const line of formatText(result, { list })) yield* Console.log(line)
       const errors = result.issues.filter((issue) => issue.severity === "error").length
-      if (errors > 0) return yield* new IssuesFound({ errors })
-    }),
+      if (errors > 0) return yield* new CommandFailed()
+    }).pipe(commandErrors()),
 ).pipe(Command.withDescription("Load the definitions in a project and report every issue"))

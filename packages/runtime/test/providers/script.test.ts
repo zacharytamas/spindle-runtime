@@ -1,10 +1,16 @@
 import type { ProviderStreamChunk } from "@standardagents/spec"
+import { Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
-import { scriptedProvider } from "../../src/providers/script.ts"
+import { decodeScript, scriptedProvider } from "../../src/providers/script.ts"
 
 const request = { model: "m", messages: [] }
 
 describe("scriptedProvider", () => {
+  it.each(["statusCode", "retryAfter"])("rejects an overflowing JSON number in %s", async (field) => {
+    const text = `{"responses":[{"error":{"message":"busy","${field}":1e400}}]}`
+    expect(Exit.isFailure(await Effect.runPromiseExit(decodeScript(text)))).toBe(true)
+  })
+
   it("returns from generate the text, calls, finish, and usage that stream yields for the same response", async () => {
     const chunks: Array<ProviderStreamChunk> = [
       { type: "content-delta", delta: "Looking." },

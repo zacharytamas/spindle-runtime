@@ -1,33 +1,33 @@
-import * as Runtime from "effect/Runtime"
+import { EventEmitter } from "node:events"
+import { Context, Effect, Queue, Runtime, type Scope } from "effect"
 
-const handlers: Array<() => void> = []
-
-// A command that answers the keyboard interrupt itself registers a handler, and the last one registered gets SIGINT.
-// With no handler, SIGINT and SIGTERM interrupt the main fiber, as the runners of the platform packages do.
-export const onInterrupt = (handler: () => void): (() => void) => {
-  handlers.push(handler)
-  return () => {
-    const index = handlers.lastIndexOf(handler)
-    if (index !== -1) handlers.splice(index, 1)
-  }
-}
-
-export const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
-  const onSignal = (signal: string) => {
-    const handler = signal === "SIGINT" ? handlers.at(-1) : undefined
-    if (handler !== undefined) return handler()
-    fiber.interruptUnsafe(fiber.id)
-  }
-  fiber.addObserver((exit) => {
-    process.removeListener("SIGINT", onSignal)
-    process.removeListener("SIGTERM", onSignal)
-    process.removeListener("SIGHUP", onSignal)
-    teardown(exit, (code) => {
-      // The main scope has closed. Flush both streams before exiting even if an abandoned tool still holds a timer.
-      process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
-    })
+const listen = (signals: EventEmitter): Effect.Effect<Queue.Dequeue<void>, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const queue = yield* Queue.make<void>()
+    const offer = () => Queue.offerUnsafe(queue, undefined)
+    yield* Effect.acquireRelease(
+      Effect.sync(() => signals.on("SIGINT", offer)),
+      () => Effect.sync(() => signals.off("SIGINT", offer)),
+    )
+    return queue
   })
-  process.on("SIGINT", onSignal)
-  process.on("SIGTERM", onSignal)
-  process.on("SIGHUP", onSignal)
-})
+
+export const Interrupts = Context.Reference("spindle/Interrupts", { defaultValue: () => ({ listen: listen(process) }) })
+
+export const runMain = <A, E>(effect: Effect.Effect<A, E>) => {
+  const keyboard = new EventEmitter()
+  Runtime.makeRunMain(({ fiber, teardown }) => {
+    const onSignal = (signal: string) => {
+      if (signal !== "SIGINT" || !keyboard.emit(signal)) fiber.interruptUnsafe(fiber.id)
+    }
+    const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
+    for (const signal of signals) process.on(signal, onSignal)
+    fiber.addObserver((exit) => {
+      for (const signal of signals) process.off(signal, onSignal)
+      teardown(exit, (code) => {
+        // An abandoned tool may keep a timer alive. Flush the exit lines before ending the process.
+        process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
+      })
+    })
+  })(Effect.provideService(effect, Interrupts, { listen: listen(keyboard) }))
+}

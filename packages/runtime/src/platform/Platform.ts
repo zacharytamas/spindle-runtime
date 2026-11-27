@@ -1,6 +1,5 @@
 import { Effect, type FileSystem, Layer, type Path, type Stdio, type Terminal } from "effect"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { makeRunMain } from "effect/Runtime"
 import type { SqlClient } from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import type * as BunPlatform from "./bun.ts"
@@ -14,12 +13,11 @@ export interface Platform {
     ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Stdio.Stdio | Terminal.Terminal
   >
   readonly SqliteLive: (options: { readonly filename: string }) => Layer.Layer<SqlClient, SqlError>
-  readonly runMain: ReturnType<typeof makeRunMain>
+  readonly runMain: typeof import("./interrupts.ts").runMain
   readonly processAlive: (pid: number) => Effect.Effect<boolean>
   // The holder record names the process that runs an execution, so that a person can find it.
   readonly processId: number
-  // Registers the handler that gets the next keyboard interrupt instead of the main fiber, and returns its removal.
-  readonly onInterrupt: (handler: () => void) => () => void
+  readonly Interrupts: typeof import("./interrupts.ts").Interrupts
 }
 
 // Loading node:sqlite prints a warning on Node 22. Load the driver only when a command opens a database.

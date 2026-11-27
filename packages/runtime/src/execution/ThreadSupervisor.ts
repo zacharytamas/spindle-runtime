@@ -5,7 +5,6 @@ import { processId } from "#platform"
 import type { Registry } from "../registry/Registry.ts"
 import {
   external,
-  type Holder,
   originFlow,
   type QueueEntry,
   type ThreadNotFound,
@@ -28,21 +27,22 @@ import { roleOf, type SetupError, sidesOf } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
 
-export class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
+class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
 
 export interface Delivery {
   readonly stillQueued?: boolean
   // The outcome of the execution that took the message, when this process ran it.
   readonly outcome?: RunOutcome
-  // The holder that ran the thread, when another process did.
-  readonly elsewhere?: Holder
   // The run status once no execution holds the thread.
   readonly status: ThreadStatus
 }
 
+export type WaitingHolder = { kind: "remote"; pid: number } | { kind: "local"; pid: number; abortedOperation?: string }
+
 interface SendOptions extends ExecutionOptions {
+  readonly interruptedWhileQueued?: Effect.Effect<void>
   readonly onAdmitted?: (seq: number) => void
-  readonly onWaiting?: (holder: { readonly pid: number; readonly abortedOperation?: string }) => Effect.Effect<void>
+  readonly onWaiting?: (holder: WaitingHolder) => Effect.Effect<void>
 }
 
 export class ThreadSupervisor extends Context.Service<
@@ -269,7 +269,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const message: QueueMessageInput = { role: roleOf(human), content }
             const admitted = yield* admit(threadId, { kind: "message", message }, options, external)
             let started = admitted.started
-            let elsewhere: Holder | undefined
             while (true) {
               if (started !== undefined) {
                 const outcome = yield* started.settlement.await
@@ -280,23 +279,22 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               if (local !== undefined) {
                 if (options.onWaiting) {
                   const operation = local.waitingOn
-                  yield* options.onWaiting({ pid: holder.pid, ...(operation ? { abortedOperation: operation } : {}) })
+                  yield* options.onWaiting({
+                    kind: "local",
+                    pid: holder.pid,
+                    ...(operation ? { abortedOperation: operation } : {}),
+                  })
                 }
                 outcome = yield* local.lastOutcome
               } else {
                 const holderNow = yield* runStore.holderOf(threadId)
-                if (holderNow !== null) {
-                  elsewhere = holderNow
-                  if (options.onWaiting) yield* options.onWaiting(holderNow)
-                  if (options.observe !== undefined)
-                    yield* options.observe({ type: "queued", threadId, pid: holderNow.pid })
-                }
+                if (holderNow && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: holderNow.pid })
               }
               const status = yield* awaitRest(threadId).pipe(
                 Effect.onInterrupt(() =>
                   Effect.gen(function* () {
-                    if (options.observe && (yield* runStore.isQueued(threadId, admitted.seq)))
-                      yield* options.observe({ type: "interrupted_while_queued" })
+                    if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
+                      yield* options.interruptedWhileQueued
                   }),
                 ),
               )
@@ -305,8 +303,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
               const stillQueued = yield* runStore.isQueued(threadId, admitted.seq)
               if (status.reason === "execution_lost" || !stillQueued) {
-                const delivery = { status, stillQueued, ...(elsewhere === undefined ? {} : { elsewhere }) }
-                return outcome === undefined ? delivery : { ...delivery, outcome }
+                return { status, stillQueued, ...(outcome && { outcome }) }
               }
               started = yield* claimWith(
                 threadId,

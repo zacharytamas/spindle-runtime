@@ -1027,6 +1027,32 @@ Stored hook returns pass through the JSON writer before shape checks. Request ho
 
 Assembly skips argument decoding for excluded calls. Legacy and synthetic results can still require hidden call ids for shadowing. Assembly reads only the ids it needs from hidden calls, so a malformed name on a hidden call cannot end the run. Each reordered result group grows in place.
 
+### Settled in M1-13
+
+The six commands use `cli/shared.ts` for plain failures and exit status. Validate keeps issue lines on stdout. Run, send and chat share script decoding, secret learning, validation, output redaction and supervisor setup. Generated thread ids pass through untouched. Send builds the store once to look up the agent and keeps that store for delivery. A new run or chat checks the project before opening the database.
+
+A command subscribes to `Interrupts.listen` for a scope and takes keyboard interrupts from its queue. Each invocation of the main runner has its own signal dispatch. Outside a subscription SIGINT interrupts main, as SIGTERM and SIGHUP always do. Run releases its subscription on the second press. Chat joins its send before the exit check for a durable queued line. A signal during admission or exit still allows the resume line to print.
+
+One chat fiber reads the following events in order. It owns the phase, transcript cursor, admissions and any report held over from an abort.
+
+| Event | Phase and action |
+|---|---|
+| Line | At the prompt, echo piped input and start one send for a nonblank line. Blank input checks the thread and prompts again. End of input exits. |
+| Admission | Remember the committed sequence so its human record stays out of the transcript and a later send failure gets the right note. |
+| Wait begins | Move from running to waiting. Name the local operation or the remote process. Only a remote wait starts a periodic read of committed records. |
+| Remote poll | Flush new records while waiting. |
+| Execution record, trace or request | A successor observation ends the wait. Finish the previous report before printing new output. Acknowledge the observation after writing and checking for a closed pipe. |
+| Aborted run settled | Keep the report until the next nonblank line at the prompt, or print it during the active turn. |
+| Keyboard interrupt | Exit at the prompt or behind a holder. A running turn moves to stopping. A second press there aborts the execution and prompts while its operations drain. |
+| Output closed | Exit at the prompt or while waiting. Ask a local run to stop and enter closing until its send completes. |
+| Send finished | Ignore completion of a superseded send. Report a current delivery or failure and prompt again. In closing, print the closed-output note and exit. |
+
+The execution already returns an awaitable settlement and rejects a cooperative stop during a hold. Chat turns that settlement into an event. It needs no execution phase broadcast or readiness poll. A successor can inherit its predecessor's observer, so completion carries the sending fiber's identity and observations follow the thread. The event queue wakes the consumer in a microtask so handing off a record does not introduce an extra host event-loop turn for a pending signal. The save acknowledgement keeps a broken output pipe from allowing the next model call to start. The final check drains committed admissions left in the event queue after the send scope closes.
+
+The holder callback replaces the queued execution event and the unused holder in the delivery result. Interrupted delivery has its own conditional note after the store confirms that the message still waits. The common command root and subprocess test harness already existed. Run already supplied its secret set to thread creation.
+
+A script's `statusCode` and `retryAfter` accept finite JSON numbers. An exponent that overflows is a script error. Neither a status code nor a delay uses infinity as a sentinel. The Effect checker's `schemaNumber` rule is a warning.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

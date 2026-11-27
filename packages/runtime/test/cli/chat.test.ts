@@ -249,6 +249,41 @@ describe("spindle chat", () => {
     60_000,
   )
 
+  it.live("an interrupt pending inside a synchronous tool reaches the prompt after the reply", () =>
+    Effect.gen(function* () {
+      const { gate, db, at } = yield* setup
+      const fs = yield* FileSystem.FileSystem
+      const dir = at("project")
+      yield* fs.copy(queue, dir)
+      yield* fs.symlink(conformanceModules, `${dir}/node_modules`)
+      yield* write(
+        `${dir}/agents/tools/hold.ts`,
+        `
+        import fs from "node:fs"
+        const dir = process.env.SPINDLE_GATE_DIR
+        export default { description: "Block the JS thread until released", args: null, execute() {
+          fs.writeFileSync(dir + "/entered", "")
+          const deadline = Date.now() + 5000
+          while (!fs.existsSync(dir + "/release")) {
+            if (Date.now() >= deadline) throw new Error("release gate timed out")
+          }
+          return {status: "success", result: "released"}
+        } }
+      `,
+      )
+      const session = yield* chat(gate, ["assistant", "--dir", dir, "--db", db])
+      yield* session.type(`${call("hold", {})}\n`)
+      yield* until("the synchronous tool to enter", exists(at("entered")))
+      yield* session.signal("SIGINT")
+      yield* touch(at("release"))
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      const thread = yield* threadOf(session)
+      expect(yield* statusOf(db, thread)).toEqual(["idle", "stop_on_response"])
+      expect(linesOf(session.err())).toEqual([note.thread(thread), note.resume("assistant", thread, db, dir)])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.live(
     "the printed resume command runs as printed and its request holds the first chat's messages (lane 2, O2, O14)",
     () =>
@@ -334,6 +369,23 @@ describe("spindle chat", () => {
         expect(yield* threadsIn(db)).toEqual([])
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
+  )
+
+  it.live("opens a chat when the project has only naming warnings", () =>
+    Effect.gen(function* () {
+      const { gate, at } = yield* setup
+      const fs = yield* FileSystem.FileSystem
+      const dir = at("project")
+      yield* fs.copy(fixture("invalid/naming-warnings"), dir)
+      yield* write(
+        `${dir}/agents/agents/chat.ts`,
+        'export default {name:"chat",sideA:{prompt:"MainPrompt"},sideB:{human:true}}',
+      )
+      const session = yield* chat(gate, ["chat", "--dir", dir])
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      expect(linesOf(session.err())).toEqual([note.thread(yield* threadOf(session)), note.memory])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.live(
@@ -460,6 +512,18 @@ describe("spindle chat", () => {
         expect(yield* requesters(gate)).toHaveLength(1)
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
+  )
+
+  it.live("preserves leading and trailing whitespace in a nonblank line", () =>
+    Effect.gen(function* () {
+      const { gate, db } = yield* setup
+      const session = yield* chat(gate, ["assistant", "--dir", queue, "--db", db])
+      const text = "  padded\t "
+      yield* session.type(`${text}\n`)
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      expect((yield* messagesOf(db, yield* threadOf(session)))[0]).toEqual(["user", text])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.live(
