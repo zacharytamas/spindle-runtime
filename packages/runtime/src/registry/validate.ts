@@ -73,7 +73,10 @@ const checkDisclosures = (registry: Registry["Service"], issues: Array<Issue>) =
         const copies = Predicate.isObject(value) ? value : {}
         const disclosed = keysOf(copies)
         for (const name of new Set([...pkg.entryAgents, ...disclosed])) {
-          const entry = pkg.entryAgents.includes(name) ? registry.entryAgent(pkg, name)?.value : undefined
+          const definition = pkg.entryAgents.includes(name) ? registry.entryAgent(pkg, name) : undefined
+          // An entry agent that failed to load has its own issue, and its parentHooks cannot be compared.
+          if (definition !== undefined && definition.value === undefined) continue
+          const entry = definition?.value
           const hooks = Predicate.isObject(entry) ? entry.parentHooks : undefined
           if (hooks === undefined ? !disclosed.includes(name) : sameValue(copies[name], hooks)) continue
           const message =
