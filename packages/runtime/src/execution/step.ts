@@ -107,12 +107,15 @@ export const learnSecrets = Effect.fn("learnSecrets")(function* (turn: Turn, sec
     ...declared.map(({ variable, scope }) => ({ name: variable.name, scope })),
     ...[...secrets.names].map((name) => ({ name, scope: promptScope(turn) })),
   ]
+  // Learning reads every declared name, used or not. A value that cannot be read cannot be learned, and it must not
+  // fail a run that never asks for it. The read that a tool or a prompt asks for still fails with its own error.
+  const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
   for (const { name, scope } of lookups) {
-    const found = yield* lookupEnv(scope, name)
+    const found = yield* readable(lookupEnv(scope, name))
     if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
     // A definition default hides the instance value from the lookup, and that value is still the operator's secret.
     // An instance value equal to the default is text the definition already shows.
-    const instance = yield* instanceEnv(name)
+    const instance = yield* readable(instanceEnv(name))
     if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
   }
 })
