@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineTool, type ExecutionState, type SkillsNamespace, type ThreadState } from "@standardagents/spec"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { expectTypeOf } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
@@ -268,6 +268,40 @@ describe("ThreadState", () => {
         Layer.merge(
           registryOf(project({ provider: new ScriptedProvider([]), tools: { noop: stubTool("Do nothing", "ok") } })),
           Layer.provideMerge(supervisorLayer(), inMemory),
+        ),
+      ),
+    ),
+  )
+
+  // Threads section 2.3 (specification/threads.md:227-230): instanceEnv "returns `undefined` when the key is not
+  // configured and rejects when the runtime cannot read its instance environment". One provider serves all three keys,
+  // so the rejection comes from the failing read and from nothing else in the setup.
+  it.effect("instanceEnv rejects when its configuration source fails and resolves undefined for an absent key", () =>
+    Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const state = yield* stateAtRest(id)
+      yield* Effect.promise(async () => {
+        const settle = (name: string) =>
+          (state.instanceEnv?.(name) ?? Promise.resolve("no instanceEnv")).then(
+            (value) => ({ resolved: value }),
+            () => ({ rejected: true }),
+          )
+        expect(await settle("SPINDLE_PRESENT")).toEqual({ resolved: "present value" })
+        expect(await settle("SPINDLE_ABSENT")).toEqual({ resolved: undefined })
+        expect(await settle("SPINDLE_UNREADABLE")).toEqual({ rejected: true })
+      })
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(project({ provider: new ScriptedProvider([]) })),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(
+            ConfigProvider.make((path) =>
+              path[0] === "SPINDLE_UNREADABLE"
+                ? Effect.fail(new ConfigProvider.SourceError({ message: "the configuration store is offline" }))
+                : Effect.succeed(path[0] === "SPINDLE_PRESENT" ? ConfigProvider.makeValue("present value") : undefined),
+            ),
+          ),
         ),
       ),
     ),
