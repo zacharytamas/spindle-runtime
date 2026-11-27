@@ -1,4 +1,4 @@
-export const REDACTED = "[redacted]"
+const REDACTED = "[redacted]"
 
 // Threads section 2.3: secret values are redacted from tool output and logs. Text that a tool or a hook wrote loses
 // each secret wherever it appears, property names of JSON text included. Serialized text holds a value in its

@@ -2,7 +2,7 @@ import type { ThreadRunState, ThreadStatus } from "@standardagents/spec"
 
 // Execution State section 4.2. A code from one list never settles a run into the other state. A code from neither
 // list is a runtime's own and may settle either way.
-export const IDLE_REASONS: ReadonlyArray<string> = [
+const IDLE_REASONS: ReadonlyArray<string> = [
   "stop_on_response",
   "stop_tool",
   "awaiting_human",
@@ -18,7 +18,7 @@ export const IDLE_REASONS: ReadonlyArray<string> = [
   "handler_idle",
 ]
 
-export const FAILED_REASONS: ReadonlyArray<string> = [
+const FAILED_REASONS: ReadonlyArray<string> = [
   "step_error",
   "repeated_tool_error",
   "session_fail",

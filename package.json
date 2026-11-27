@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm --filter spindle-runtime build",
+    "fallow": "DO_NOT_TRACK=1 FALLOW_TELEMETRY_DISABLED=1 FALLOW_UPDATE_CHECK=off fallow dead-code",
     "lint": "biome check",
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
     "test": "vitest run --reporter=verbose --reporter=json --outputFile.json=node_modules/.cache/spindle/vitest.json",
@@ -23,6 +24,7 @@
     "@types/bun": "1.4.5",
     "@types/node": "22.20.7",
     "effect": "4.1.5",
+    "fallow": "3.49.0",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.2"

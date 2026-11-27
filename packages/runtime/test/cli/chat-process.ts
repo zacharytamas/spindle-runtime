@@ -23,7 +23,7 @@ export interface Session extends Pick<Child, "pid" | "exit" | "signal"> {
   readonly end: Effect.Effect<void>
 }
 
-export const launch = (gate: string, words: ReadonlyArray<string>, env: Record<string, string> = {}) =>
+const launch = (gate: string, words: ReadonlyArray<string>, env: Record<string, string> = {}) =>
   Effect.gen(function* () {
     const keys = yield* Queue.unbounded<Uint8Array, Cause.Done>()
     const output = { out: "", err: "" }
