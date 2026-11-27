@@ -8,7 +8,7 @@ import type {
   ProviderUsage,
   ResponseSummary,
 } from "@standardagents/spec"
-import { Data, Effect, type Fiber, Predicate, Schedule, Scope, Stream } from "effect"
+import { Data, Effect, Exit, type Fiber, Predicate, Schedule, Scope, Stream } from "effect"
 import { isTimeout, providerErrorCode } from "../providers/errors.ts"
 import type { SetupError } from "./turn.ts"
 
@@ -254,7 +254,16 @@ const streamResponse = (
     const cleanup = yield* Effect.acquireRelease(Scope.make(), (scope, exit) =>
       Effect.forkDetach(Scope.close(scope, exit), { startImmediately: true }),
     )
-    const scoped = yield* Scope.provide(Effect.abortSignal, cleanup)
+    // The attempt's signal fires only when the attempt fails or is interrupted. A provider may keep using the
+    // request's signal after a response that completed.
+    const attempt = yield* Scope.provide(
+      Effect.acquireRelease(
+        Effect.sync(() => new AbortController()),
+        (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
+      ),
+      cleanup,
+    )
+    const scoped = attempt.signal
     const signal = request.signal === undefined ? scoped : AbortSignal.any([request.signal, scoped])
     const onError = (cause: unknown) => failureOf(cause, provider)
     const iterable = yield* Effect.tryPromise({ try: () => provider.stream({ ...request, signal }), catch: onError })

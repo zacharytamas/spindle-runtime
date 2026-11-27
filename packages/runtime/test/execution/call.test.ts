@@ -74,3 +74,24 @@ it.effect("a slow or failing iterator finalizer cannot replace the provider fail
     }
   }),
 )
+
+it.effect("a provider's request signal fires after an attempt that failed and not after one that completed", () =>
+  Effect.gen(function* () {
+    const scripted = new ScriptedProvider([
+      { reject: new ProviderError("busy", "server_error", 503, 0) },
+      { text: "ok" },
+    ])
+    const signals: Array<AbortSignal | undefined> = []
+    const provider = {
+      ...scripted,
+      generate: scripted.generate.bind(scripted),
+      stream: (request: Parameters<typeof scripted.stream>[0]) => {
+        signals.push(request.signal)
+        return scripted.stream(request)
+      },
+    }
+    expect((yield* callModel(context(Effect.succeed(provider), new Execution("flow")), request))?.content).toBe("ok")
+    yield* Effect.yieldNow
+    expect(signals.map((signal) => signal?.aborted)).toEqual([true, false])
+  }),
+)
