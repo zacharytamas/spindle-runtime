@@ -1105,6 +1105,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - Once creation commits, chat and run report the durable thread id even when a signal interrupts the creation hook. Chat prints its usual resume command on that exit, and a hook that finishes normally still runs before the thread announcement.
 
+- During JSON validation, console.log, console.info and console.debug from project code write to standard error. The command restores those methods before printing the JSON. Direct writes to process.stdout still reach standard output.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

@@ -4,6 +4,7 @@ import { Command } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { PlatformLive, platformName } from "#platform"
 import { spindle } from "../../src/cli/main.ts"
+import { spindle as startSpindle } from "./processes.ts"
 
 const run = (...args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
@@ -96,6 +97,27 @@ describe("spindle validate", () => {
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(lines.at(-1)).toBe("0 errors, 4 warnings")
     }),
+  )
+
+  it.live("keeps definition console output on stderr during JSON validation", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* fs.makeTempDirectoryScoped()
+      yield* fs.makeDirectory(`${root}/agents/tools`, { recursive: true })
+      yield* fs.writeFileString(
+        `${root}/agents/tools/noisy.js`,
+        [
+          'console.log("loading log")',
+          'console.info("loading info")',
+          'console.debug("loading debug")',
+          'export default { description: "Noisy tool", execute: async () => ({ status: "success" }) }',
+        ].join("\n"),
+      )
+      const child = yield* startSpindle(root, ["validate", "--json", root])
+      expect(yield* child.exit).toBe(0)
+      expect(JSON.parse(child.out.join("\n"))).toEqual([])
+      expect(child.err).toEqual(["loading log", "loading info", "loading debug"])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 
   it.effect("prints the issues as a JSON list of code, severity, message, and path with --json", () =>

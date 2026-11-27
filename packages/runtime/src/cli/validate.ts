@@ -79,7 +79,21 @@ export const validateCommand = Command.make(
   ({ dir, json, list }) =>
     Effect.gen(function* () {
       const path = yield* Path.Path
-      const result = yield* validate.pipe(Effect.provide(Registry.layer(path.resolve(dir))))
+      const load = validate.pipe(Effect.provide(Registry.layer(path.resolve(dir))))
+      const result = yield* json
+        ? Effect.acquireUseRelease(
+            Effect.sync(() => {
+              const { log, info, debug } = console
+              console.log = console.info = console.debug = console.error
+              return { log, info, debug }
+            }),
+            () => load,
+            (saved) =>
+              Effect.sync(() => {
+                Object.assign(console, saved)
+              }),
+          )
+        : load
       if (json) yield* Console.log(formatJson(result, { list }))
       else for (const line of formatText(result, { list })) yield* Console.log(line)
       const errors = result.issues.filter((issue) => issue.severity === "error").length
