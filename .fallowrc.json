@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "supportEntry": [
+    "packages/runtime/scripts/{hook,queue,step}-probe.ts",
+    "packages/conformance/fixtures/generate-large.mjs",
+    "scripts/seed-ledger.mjs"
+  ],
+  "dynamicallyLoaded": ["packages/conformance/fixtures/*/**/*.{ts,mts,js,mjs}"],
+  "ignoreExports": [
+    {
+      "file": "packages/runtime/src/platform/Platform.ts",
+      "exports": ["Implementations"]
+    },
+    {
+      "file": "packages/runtime/src/store/sqlite.ts",
+      "exports": ["layer"]
+    }
+  ],
+  "rules": {
+    "complexity-crap": "off",
+    "boundary-violation": "off",
+    "policy-violation": "off",
+    "complexity-cyclomatic": "warn",
+    "complexity-cognitive": "warn",
+    "complexity-file-lines": "warn",
+    "introduced-clone-group": "warn",
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error"
+  },
+  "duplicates": {
+    "mode": "semantic",
+    "minTokens": 50,
+    "minLines": 5,
+    "minOccurrences": 2,
+    "ignore": ["packages/conformance/fixtures/**", "packages/conformance/src/scenarios/**", "packages/runtime/test/**"]
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    "maxUnitSize": 60,
+    "maxFileLines": 800,
+    "ignore": ["packages/conformance/fixtures/**", "packages/runtime/test/**", "packages/conformance/test/**"]
+  },
+  "overrides": [
+    {
+      "files": ["packages/runtime/src/execution/call.ts", "packages/runtime/src/execution/callback.ts"],
+      "rules": {
+        "unused-class-members": "off"
+      }
+    }
+  ]
+}
