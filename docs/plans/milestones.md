@@ -2,7 +2,7 @@
 
 Revised on 2026-11-27, after milestone 1 was built and reviewed. This replaces the table that was Appendix E of `m1-core-loop.md`.
 
-Everything here is a proposal until the operator accepts it. The section "Decisions the operator owes" lists what is open.
+The operator accepted the list and the rules on 2026-11-27. The answers to the six design questions are still recommendations, and the section "Decisions the operator owes" lists what is open.
 
 ## What milestone 1 cost
 
@@ -131,10 +131,14 @@ Each has a recommendation. None is decided.
 5. **Where does trusted access end?** Recommendation: tools and hooks in the process are trusted. Anything that crosses an endpoint or a stream is an untrusted client and receives only stored, redacted data. The M4 design note settles the details.
 6. **Is there a total budget of time or writes for one operation and everything its hooks start?** Recommendation: a time budget only. A nested hook or tool inherits its parent's deadline, which it does not today. No budget on writes.
 
+## Decided by the operator on 2026-11-27
+
+- M1c exists. Provider hardening moves into it from M7.
+- M2 and M3 are each split in two.
+- The client API comes before code execution.
+- At most three pull requests are open at a time.
+
 ## Decisions the operator owes
 
-- Whether M1c exists, and whether provider hardening belongs in it.
-- Whether M2 and M3 are split.
-- Whether the client API moves ahead of code execution.
 - The six design questions above. Questions 1 to 4 and 6 block M2b, and question 5 blocks M4.
-- Whether rule 3, at most three open pull requests, is acceptable. It means the operator reads and lands code more often.
+- Whether the official client may be used to test M5, once its license is checked against the clean-room rule.
