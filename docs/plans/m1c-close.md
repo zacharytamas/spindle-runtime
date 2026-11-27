@@ -68,10 +68,10 @@ Tests and ledger only. A test that exposes a defect stops the builder, who repor
 
 Each item is a test against a local server that sends the bytes named, with no real endpoint.
 
-- [ ] Event data that spans several `data:` lines is joined as the event-stream standard says.
+- [ ] Event data that spans several `data:` lines is joined as the event-stream standard says. One JSON object per `data:` line with no blank line between them still works, because real endpoints send that.
 - [ ] A `Retry-After` header that holds an HTTP date is honored, and one that holds neither a number nor a date is ignored.
 - [ ] Status 408 is retryable.
-- [ ] Usage is absent, not zero, when the endpoint sends none.
+- [ ] Usage stays as three zero counts when the endpoint sends none, and no optional count appears. The spec package makes the three counts required, so they cannot be absent. A test pins this.
 - [ ] `extra_content` on a tool call survives a round trip to the next request.
 - [ ] `generate` rejects an empty JSON object as a response.
 - [ ] `user` and the `stream_options` sibling are forwarded, or `DIVERGENCES.md` says why not.
