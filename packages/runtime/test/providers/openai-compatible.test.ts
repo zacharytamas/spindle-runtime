@@ -651,3 +651,78 @@ describe("provider config slots", () => {
     }),
   )
 })
+
+// M1c-3. Each strict expectation below sits beside the tolerant input that real endpoints send, which must keep
+// working. The event-stream rules come from the WHATWG HTML standard, section 9.2 Server-sent events, "Interpreting
+// an event stream".
+describe("openaiCompatible event stream", () => {
+  const chunked = (parts: ReadonlyArray<Uint8Array>) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start: (controller) => {
+          for (const part of parts) controller.enqueue(part)
+          controller.close()
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    )
+  const streamOf = async (response: () => Response) =>
+    collect(await openaiCompatible({ apiKey: "", fetch: transport(response).fetch }).stream(request))
+  const zero = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+
+  // WHATWG: each data field appends its value and a newline to the data buffer, and dispatch drops the last newline,
+  // so the data lines of one event are joined with a newline. JSON allows a newline wherever white space goes. The
+  // last line also has no space after its colon, which the standard allows.
+  it("joins the data lines of one event with a newline before it parses them", async () => {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = [
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+        "",
+        'data: {"choices":[{"delta":',
+        'data: {"content":"lo"},',
+        'data:"finish_reason":"stop"}]}',
+        "",
+        "data: [DONE]",
+        "",
+        "",
+      ].join(eol)
+      expect(await streamOf(() => new Response(body))).toEqual([
+        { type: "content-delta", delta: "Hel" },
+        { type: "content-delta", delta: "lo" },
+        { type: "content-done" },
+        { type: "finish", finishReason: "stop", usage: zero },
+      ])
+    }
+  })
+
+  // Tolerant neighbors of the test above. Endpoints send `data:` with and without the space, CRLF line endings,
+  // comment lines as keep-alives (WHATWG: a line that starts with a colon is ignored), and id or event fields that a
+  // chat completions client has no use for. The single-line-event form without a blank line is covered by "reads each
+  // data line as one event, with or without a blank line after it" above, and must still hold after the join.
+  it("reads the event-stream forms that real endpoints send", async () => {
+    const whole = await streamOf(() => sse(streamed))
+    const lines = streamed.map((event) => JSON.stringify(event))
+    const forms = [
+      `${lines.map((line) => `data:${line}\n\n`).join("")}data:[DONE]\n\n`,
+      `${lines.map((line) => `data: ${line}\r\n\r\n`).join("")}data: [DONE]\r\n\r\n`,
+      `: OPENROUTER PROCESSING\n\n${lines.map((line) => `:keep-alive\ndata: ${line}\n\n`).join("")}data: [DONE]\n\n`,
+      `${lines.map((line, index) => `id: ${index}\nevent: message\ndata: ${line}\n\n`).join("")}data: [DONE]\n\n`,
+    ]
+    for (const body of forms) expect(await streamOf(() => new Response(body))).toEqual(whole)
+  })
+
+  // Tolerant neighbor. TCP may cut an event anywhere, inside a field name, a line ending, or a multi-byte character.
+  it("reads one small event split across network chunks at every byte position", async () => {
+    const event = { choices: [{ delta: { content: "héllo ☃" }, finish_reason: "stop" }] }
+    const bytes = new TextEncoder().encode(`data: ${JSON.stringify(event)}\r\n\r\ndata: [DONE]\r\n\r\n`)
+    const expected = [
+      { type: "content-delta", delta: "héllo ☃" },
+      { type: "content-done" },
+      { type: "finish", finishReason: "stop", usage: zero },
+    ]
+    for (let cut = 1; cut < bytes.length; cut++)
+      expect(await streamOf(() => chunked([bytes.slice(0, cut), bytes.slice(cut)]))).toEqual(expected)
+    const single = Array.from(bytes, (byte) => Uint8Array.of(byte))
+    expect(await streamOf(() => chunked(single))).toEqual(expected)
+  })
+})
