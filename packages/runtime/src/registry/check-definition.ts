@@ -223,16 +223,7 @@ const checkAgent = (at: Site, agent: unknown) => {
     }
 }
 
-const checkPrompt = (at: Site, prompt: unknown) => {
-  if (!Predicate.isObject(prompt))
-    return at.report("prompt_content_invalid", "", "A prompt definition must be an object")
-  if (!isNonEmptyString(prompt.name)) at.report("prompt_name_missing", "name", "name must be a non-empty string")
-  at.snakeCase()
-  if (!isNonEmptyString(prompt.toolDescription))
-    at.report("prompt_tool_description_missing", "toolDescription", "toolDescription must be a non-empty string")
-  let model: unknown
-  if (!hasName(prompt, "model")) at.report("prompt_model_undefined", "model", "model must name a defined model")
-  else model = at.reference("model", () => prompt.model, "prompt_model_undefined", "model")?.value
+const checkPromptContent = (at: Site, prompt: Shape) => {
   if (Array.isArray(prompt.prompt)) {
     for (const [index, part] of (prompt.prompt as Array<unknown>).entries()) {
       const path = `prompt[${index}]`
@@ -254,6 +245,11 @@ const checkPrompt = (at: Site, prompt: unknown) => {
     }
   } else if (typeof prompt.prompt !== "string")
     at.report("prompt_content_invalid", "prompt", "prompt must be a string or an array of prompt parts")
+}
+
+const checkPromptOptions = (at: Site, prompt: Shape) => {
+  if (prompt.includeChat !== undefined && typeof prompt.includeChat !== "boolean")
+    at.report("prompt_content_invalid", "includeChat", "includeChat must be a boolean")
   if (prompt.toolChoice !== undefined && !isOneOf(["auto", "none", "required"], prompt.toolChoice))
     at.report("prompt_tool_choice_invalid", "toolChoice", "toolChoice must be one of auto, none, or required")
   if (prompt.reasoning !== undefined) {
@@ -271,6 +267,9 @@ const checkPrompt = (at: Site, prompt: unknown) => {
       "recentImageThreshold",
       "recentImageThreshold must be a positive integer",
     )
+}
+
+const checkPromptTools = (at: Site, prompt: Shape, model: unknown) => {
   const providerTools = Predicate.isObject(model) && isStringArray(model.providerTools) ? model.providerTools : []
   if (prompt.tools !== undefined && !Array.isArray(prompt.tools))
     at.report("prompt_tool_undefined", "tools", "tools must be an array")
@@ -323,6 +322,21 @@ const checkPrompt = (at: Site, prompt: unknown) => {
       }
       at.report("prompt_tool_undefined", path, at.describe("tool", name, tool))
     }
+}
+
+const checkPrompt = (at: Site, prompt: unknown) => {
+  if (!Predicate.isObject(prompt))
+    return at.report("prompt_content_invalid", "", "A prompt definition must be an object")
+  if (!isNonEmptyString(prompt.name)) at.report("prompt_name_missing", "name", "name must be a non-empty string")
+  at.snakeCase()
+  if (!isNonEmptyString(prompt.toolDescription))
+    at.report("prompt_tool_description_missing", "toolDescription", "toolDescription must be a non-empty string")
+  let model: unknown
+  if (!hasName(prompt, "model")) at.report("prompt_model_undefined", "model", "model must name a defined model")
+  else model = at.reference("model", () => prompt.model, "prompt_model_undefined", "model")?.value
+  checkPromptContent(at, prompt)
+  checkPromptOptions(at, prompt)
+  checkPromptTools(at, prompt, model)
   at.hookList("hooks", prompt.hooks)
   if (!Predicate.isObject(prompt)) return
   return at.edgesTo(
