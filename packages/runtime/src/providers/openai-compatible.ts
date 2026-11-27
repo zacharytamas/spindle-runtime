@@ -444,10 +444,11 @@ async function* guarded(
 }
 
 const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
-  const choice =
-    Predicate.isObject(body) && Array.isArray(body.choices) && Predicate.isObject(body.choices[0])
-      ? body.choices[0]
-      : {}
+  if (!Predicate.isObject(body) || !Array.isArray(body.choices) || !Predicate.isObject(body.choices[0]))
+    throw new ProviderError("The endpoint sent no completion choice", "unknown", undefined, undefined, {
+      origin: ORIGIN,
+    })
+  const choice = body.choices[0]
   const message = Predicate.isObject(choice.message) ? choice.message : {}
   const toolCalls: Array<ProviderToolCallPart> = []
   for (const part of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
@@ -473,8 +474,8 @@ const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
     ...(details.length === 0 ? {} : { reasoningDetails: details }),
     ...(toolCalls.length === 0 ? {} : { toolCalls }),
     finishReason: finishReason(choice.finish_reason),
-    usage: usageOf(Predicate.isObject(body) ? body.usage : undefined),
-    ...(Predicate.isObject(body) && typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
+    usage: usageOf(body.usage),
+    ...(typeof body.id === "string" ? { metadata: { requestId: body.id } } : {}),
   }
 }
 
