@@ -164,7 +164,10 @@ export const requestBody = (request: ProviderRequest, stream: boolean): Json => 
   }
   if (stream) {
     body.stream = true
-    body.stream_options = { include_usage: true }
+    body.stream_options = {
+      ...(Predicate.isObject(body.stream_options) ? body.stream_options : {}),
+      include_usage: true,
+    }
   }
   return body
 }
