@@ -169,8 +169,9 @@ export const M2: Scenario = {
             ["user", "go"],
           ])
           expect(calls).toEqual([
-            ["agent_before", "go", agent, true],
-            ["agent_after", "go", agent, true],
+            // A send starts an execution, and the hooks of its message run inside it.
+            ["agent_before", "go", agent, false],
+            ["agent_after", "go", agent, false],
             ["prompt_before", "answer", { kind: "prompt", promptName: "helper" }, false],
           ])
         },
