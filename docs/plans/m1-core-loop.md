@@ -1081,6 +1081,16 @@ The script decoder and the runtime use one provider error code schema. A raw scr
 
 S22 runs its existing assertions with Vitest's virtual timers advancing to the next scheduled timeout. The scenario opens several independent managed runtimes through the promise driver. Replacing the timer functions for that test reaches their clocks without changing the driver or the retry policy. It runs with the default test time limit.
 
+### Settled in M1-16
+
+Fallow 3.49.0 runs once outside the runtime matrix. On a pull request it audits changes against the target branch and reports new dead code, duplication and complexity. An introduced dead-code error fails the job. On a push to main it checks the whole tree and fails on any dead-code error. Run `pnpm fallow` for the same full check locally. The job has read access to the source. Telemetry and update checks are off.
+
+The hook and step probes are manual commands. CLI tests start the queue probe through a path helper. The fixture generator and ledger seed script are maintainer commands. These five files have support entries. The store probe and its helper already have callers the analyzer can follow. Conformance fixture modules below the fixture directories load by path. Marking them as dynamic entries keeps their imports in the graph, including imports of the public runtime package. Fallow follows both branches of `#platform` from the package manifest.
+
+Two named exports have exceptions. The `Implementations` type in `Platform.ts` checks both adapters at compile time. The SQLite store and thread supervisor each export an Effect `layer` and the CLI imports both. Exempting the SQLite export resolves that pair. Class member checks are off only in `execution/call.ts` and `execution/callback.ts`. The retry policy reads the provider failure's `retryable` getter. Hooks expire callbacks and read their expiry flag, and thread state checks expiry and completion. The syntactic analysis misses those uses.
+
+Semantic duplication reports blocks of at least 50 tokens and five lines with at least two occurrences. New clone groups are warnings and the percentage gate is off. The duplication scan skips conformance fixtures, scenario setups and runtime tests because their repeated examples are intentional. Complexity warns above 20 cyclomatic points, 15 cognitive points or 800 lines per file. The health report also lists functions over 60 lines. It excludes fixtures and both packages' tests to keep test setup out of the scores. The coverage-based CRAP rule is off because the suite supplies no measured coverage to Fallow. The boundary and policy rules are off because Biome checks platform imports and globals and this project supplies no Fallow policy pack.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
