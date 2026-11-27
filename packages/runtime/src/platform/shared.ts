@@ -1,4 +1,5 @@
-import { pathToFileURL } from "node:url"
+import { realpathSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 
 export { openChatTerminal } from "./chat-terminal.ts"
 export { Interrupts, runMain } from "./interrupts.ts"
@@ -12,5 +13,10 @@ export const isMain = (meta: ImportMeta): boolean => {
   const entry = process.argv[1]
   if (entry === undefined || process.execArgv.some((arg) => /^(?:-[ep]|--(?:eval|print)(?:=|$))/.test(arg)))
     return false
-  return meta.url === import.meta.resolve(pathToFileURL(entry).href)
+  try {
+    const url = new URL(meta.url)
+    return !url.search && !url.hash && realpathSync(fileURLToPath(url)) === realpathSync(entry)
+  } catch {
+    return false
+  }
 }

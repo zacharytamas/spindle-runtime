@@ -1115,6 +1115,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - A tool result with a class instance as its error_data takes the unstorable-result fallback. The stored error retains the tool's text and code and explains why it dropped the data.
 
+- On Node versions without import.meta.main, the entry check compares the real paths of the module and the command. A symlinked entry is recognized with either symlink preservation flag.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
