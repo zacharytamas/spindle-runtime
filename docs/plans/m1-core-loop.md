@@ -1053,6 +1053,20 @@ The holder callback replaces the queued execution event and the unused holder in
 
 A script's `statusCode` and `retryAfter` accept finite JSON numbers. An exponent that overflows is a script error. Neither a status code nor a delay uses infinity as a sentinel. The Effect checker's `schemaNumber` rule is a warning.
 
+### Settled in M1-14
+
+Discovery produces a loader for each definition. The registry runs each loader once. A successful definition carries its original value, including an explicit `undefined`. A failed definition keeps its name and location so listing and reference resolution still see it. Execution uses the same definition object and narrows its value at the boundary after validation.
+
+Each kind has a synchronous check. A check reports issues at its definition and resolves references in that definition's namespace. The prompt and model checks also produce the edges for one depth-first cycle search. They read the final include or fallback list after the other checks. Authored getters and proxies can change or throw on that later read. A fixture exercises this case. The checks retain the original handling of sparse arrays, inherited fields, infinite prices and errors at field paths. Decoding whole definitions with Schema would change those reads and require another layer to reproduce the issue messages.
+
+The namespace index uses the first discovered definition for each kind, package id and name. Duplicate diagnostics remember the first successful load under the name it had at identification. A later identifier getter can rename the shared package signature. The registry builds its lookup index after those getters finish. Package disclosures use the owner object and literal export name, including a name containing a slash. These observations happen at different times and use different keys. Combining them in one table made a valid project report a missing entry agent.
+
+The seven kind directories can be read together. Those reads and npm directory discovery run concurrently, with two discovery operations and up to seven kind reads. Each consumes results in input order. Package entry checks run three filesystem queries together. Package imports stay serial in npm order followed by local order. An entry module can change what the next package exports or what exists on disk, and the first accepted package id wins. The final definition loads retain their concurrency of sixteen. The dynamic import remains in `Registry.ts` because both runtimes include the importing filename in some errors. Discovery takes the importer as an argument.
+
+Package manifests keep the JSON parser of the current engine so syntax errors retain their text. The Effect JSON schema reports a generic parse failure. Metadata checks stop at the first invalid field. Keeping the original metadata object preserves its getters and its separate disclosure check. One promise boundary handles synchronous loader exceptions, foreign thenables and errors while attaching a signature. The CLI already used the typed schema decoder, and the registry tests now read definition values directly.
+
+All eight former record guards used the same predicate. Effect 4.1.5 provides it as `Predicate.isObject`. It accepts null-prototype objects and class instances and rejects arrays, functions and null. The issue codes are types and have no runtime exports.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.
