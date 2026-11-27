@@ -2,6 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import {
   defineModel,
   defineProvider,
+  defineTool,
   type ProviderError,
   type ProviderFactoryWithOptions,
   type ProviderReasoningDetail,
@@ -12,10 +13,13 @@ import {
 } from "@standardagents/spec"
 import { ConfigProvider, Effect, Exit } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { ok, using } from "../../../conformance/src/scenarios/harness.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { SetupError } from "../../src/execution/turn.ts"
 import { providerFor } from "../../src/providers/config.ts"
 import { openaiCompatible, requestBody } from "../../src/providers/openai-compatible.ts"
+import { spindleDriver } from "../spindle-driver.ts"
 
 interface Sent {
   readonly url: string
@@ -848,5 +852,116 @@ describe("openaiCompatible responses", () => {
         }),
     })
     expect(await filtered.generate(request)).toMatchObject({ content: null, finishReason: "content_filter" })
+  })
+})
+
+// ProviderToolCallPart.extraContent in @standardagents/spec 0.45.13: "Provider-specific metadata that must round-trip
+// with the tool call", such as a thought signature that has to be echoed back on the next turn. On the chat
+// completions wire of endpoints that send it, it is the extra_content member of a tool_calls entry, in a response
+// message and in a streamed delta alike. DIVERGENCES.md, "Stream chunks that only the package declares", says that
+// Spindle keeps extraContent in metadata.tool_call_extra and sends it back with the call.
+describe("openaiCompatible extra_content", () => {
+  const extra = { google: { thought_signature: "sig-1" } }
+  const wireCall = (fields: Record<string, unknown>) => ({
+    id: "call_g",
+    type: "function",
+    function: { name: "noop", arguments: "{}" },
+    ...fields,
+  })
+
+  it("reads extra_content on a tool call from generate and stream", async () => {
+    const message = { content: null, tool_calls: [wireCall({ extra_content: extra })] }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([
+            { choices: [{ delta: { tool_calls: [{ index: 0, ...wireCall({ extra_content: extra }) }] } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : Response.json({ choices: [{ message, finish_reason: "tool_calls" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    expect((await provider.generate(request)).toolCalls).toEqual([
+      { id: "call_g", name: "noop", arguments: {}, extraContent: extra },
+    ])
+    // The package lets either tool-call-start or tool-call-done carry it, and callModel reads both.
+    const carried = (await collect(await provider.stream(request))).flatMap((chunk) =>
+      (chunk.type === "tool-call-start" || chunk.type === "tool-call-done") && chunk.id === "call_g"
+        ? [chunk.extraContent]
+        : [],
+    )
+    expect(carried).toContainEqual(extra)
+  })
+
+  it("sends extraContent back as extra_content on the tool call it came with", () => {
+    const body = requestBody(
+      {
+        model: "m",
+        messages: [
+          {
+            role: "assistant",
+            content: null,
+            toolCalls: [
+              { id: "call_g", name: "noop", arguments: {}, extraContent: extra },
+              { id: "call_h", name: "noop", arguments: {} },
+            ],
+          },
+        ],
+      },
+      false,
+    )
+    expect(body.messages).toEqual([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_g", type: "function", function: { name: "noop", arguments: "{}" }, extra_content: extra },
+          { id: "call_h", type: "function", function: { name: "noop", arguments: "{}" } },
+        ],
+      },
+    ])
+  })
+
+  // Tolerant neighbor. A call without extra_content, or with a null one, carries no extraContent.
+  it("gives no extraContent to a call that arrives without an object in extra_content", async () => {
+    const message = { content: null, tool_calls: [wireCall({}), wireCall({ id: "call_n", extra_content: null })] }
+    const { fetch } = transport((entry) =>
+      entry.body.stream === true
+        ? sse([
+            { choices: [{ delta: { tool_calls: message.tool_calls.map((call, index) => ({ index, ...call })) } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : Response.json({ choices: [{ message, finish_reason: "tool_calls" }] }),
+    )
+    const provider = openaiCompatible({ apiKey: "", fetch })
+    for (const call of (await provider.generate(request)).toolCalls ?? [])
+      expect(call).not.toHaveProperty("extraContent")
+    for (const chunk of await collect(await provider.stream(request))) expect(chunk).not.toHaveProperty("extraContent")
+  })
+
+  // The whole trip through the runtime: the endpoint sends extra_content, the step loop stores the call, runs the
+  // tool, and the next request carries extra_content on that call.
+  it("carries extra_content from a streamed response to the next request through a run", async () => {
+    const { sent, fetch } = transport(() =>
+      sent.length === 1
+        ? sse([
+            { choices: [{ delta: { tool_calls: [{ index: 0, ...wireCall({ extra_content: extra }) }] } }] },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ])
+        : sse([{ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }]),
+    )
+    const tools = { noop: defineTool({ description: "Does nothing", execute: async () => ok("noop") }) }
+    const model = { provider: (config: { apiKey: string }) => openaiCompatible({ ...config, apiKey: "", fetch }) }
+    await using(spindleDriver, { provider: new ScriptedProvider([]), model, tools }, async (session, thread) => {
+      expect(await session.send(thread, "go")).toMatchObject({ status: "idle", steps: 2 })
+      const assistant = (await session.messages(thread)).find((message) => message.role === "assistant")
+      expect(assistant?.metadata).toMatchObject({ tool_call_extra: { call_g: extra } })
+    })
+    expect(sent).toHaveLength(2)
+    const replayed = ((sent[1]?.body.messages ?? []) as Array<Record<string, unknown>>).find(
+      (message) => message.role === "assistant",
+    )
+    expect(replayed?.tool_calls).toEqual([
+      { id: "call_g", type: "function", function: { name: "noop", arguments: "{}" }, extra_content: extra },
+    ])
   })
 })
