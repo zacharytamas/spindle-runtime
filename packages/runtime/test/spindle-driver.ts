@@ -28,7 +28,7 @@ const definition = (kind: Kind, name: string, value: unknown): Definition => ({
   package: undefined,
   file: `memory/${kind}s/${name}`,
   path: "",
-  load: Effect.succeed(value),
+  value,
 })
 
 // The scenarios define a project in memory, so this registry holds the values without a directory.
@@ -40,13 +40,10 @@ export const registryOf = (project: Project) => {
     ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
     ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
   ]
-  const loaded = new Map<Definition, unknown>()
-  for (const entry of definitions) loaded.set(entry, Effect.runSync(entry.load))
   return Layer.succeed(Registry, {
     root: "memory",
     definitions,
     packages: [],
-    loaded,
     issues: [],
     resolve: resolver(definitions),
   })

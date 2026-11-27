@@ -1,6 +1,6 @@
 import { Effect, FileSystem, Path } from "effect"
-import { type Definition, type Issue, KINDS, PLURAL } from "./definition.ts"
-import { importFile, LoadError, reportDefects } from "./import-file.ts"
+import { type Issue, KINDS, PLURAL } from "./definition.ts"
+import { type Discovered, importFile, LoadError, reportDefects } from "./import-file.ts"
 
 const EXTENSIONS = [".ts", ".mts", ".js", ".mjs"]
 
@@ -17,7 +17,7 @@ const exportsNoDefinition = (value: unknown) =>
 export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const definitions: Array<Definition> = []
+  const definitions: Array<Discovered> = []
   const issues: Array<Issue> = []
   const agentsDir = path.join(root, "agents")
   // A failed check counts as present, so the read that follows reports the cause as an issue.
@@ -81,7 +81,7 @@ export const loadDirectory = Effect.fn("loadDirectory")(function* (root: string)
         package: undefined,
         file,
         path: "",
-        load: yield* Effect.cached(reportDefects(load, { kind, file, path: "" })),
+        load: reportDefects(load, { kind, file, path: "" }),
       })
     }
   }

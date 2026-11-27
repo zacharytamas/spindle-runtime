@@ -130,7 +130,6 @@ export interface Validation {
 export const validate = Effect.gen(function* () {
   const registry = yield* Registry
   const issues: Array<Issue> = [...registry.issues]
-  const loaded = registry.loaded
 
   const site = (definition: Definition) => {
     const report = (code: IssueCode, path: string, message: string, severity: Issue["severity"] = "error"): void => {
@@ -176,7 +175,7 @@ export const validate = Effect.gen(function* () {
   }
 
   const loadedFound = (resolution: Resolution) =>
-    resolution._tag === "Found" ? loaded.get(resolution.definition) : undefined
+    resolution._tag === "Found" ? resolution.definition.value : undefined
 
   const toolNames = (prompt: unknown): Array<string> =>
     isRecord(prompt) && Array.isArray(prompt.tools)
@@ -283,7 +282,7 @@ export const validate = Effect.gen(function* () {
     if (!isNonEmptyString(prompt.model)) at.report("prompt_model_undefined", "model", "model must name a defined model")
     else {
       const resolution = at.resolve("model", prompt.model)
-      if (resolution._tag === "Found") model = loaded.get(resolution.definition)
+      if (resolution._tag === "Found") model = resolution.definition.value
       else at.report("prompt_model_undefined", "model", at.describe("model", prompt.model, resolution))
     }
     if (Array.isArray(prompt.prompt)) {
@@ -362,7 +361,7 @@ export const validate = Effect.gen(function* () {
         if (subprompt._tag === "Found") continue
         const agent = at.resolve("agent", name)
         if (agent._tag === "Found") {
-          const target = loaded.get(agent.definition)
+          const target = agent.definition.value
           if (isRecord(target) && target.exposeAsTool !== true)
             at.report(
               "prompt_tool_agent_not_exposed",
@@ -514,7 +513,9 @@ export const validate = Effect.gen(function* () {
 
   const includes = new Map<Definition, ReadonlyArray<Edge>>()
   const fallbacks = new Map<Definition, ReadonlyArray<Edge>>()
-  for (const [definition, value] of loaded) {
+  for (const definition of registry.definitions) {
+    if (!Object.hasOwn(definition, "value")) continue
+    const { value } = definition
     try {
       checks[definition.kind](definition, value)
       if (definition.kind === "prompt" && isRecord(value))
@@ -579,7 +580,7 @@ export const validate = Effect.gen(function* () {
         const definition = registry.definitions.find(
           (d) => d.package === pkg && d.kind === "agent" && d.name === agentName,
         )
-        const agent = definition && loaded.get(definition)
+        const agent = definition?.value
         if (!isRecord(agent) || agent.parentHooks === undefined) continue
         const sources = [
           ["__meta", "parentHooks", pkg.meta.parentHooks, pkg.file],

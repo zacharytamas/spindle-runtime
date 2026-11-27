@@ -278,14 +278,14 @@ const selectHooks = Effect.fn("selectHooks")(function* (
   const byPosition = new Map<string, Array<SelectedHook>>()
   const seen = new Set<Definition>()
   for (const id of ids) {
-    const found = yield* lookup<unknown>("hook", id, from)
+    const found = yield* lookup("hook", id, from)
     if (found === undefined || !isHook(found.value))
       return yield* new SetupError({ message: `${from.qualifiedName} names hook ${id}, which is not a defined hook` })
-    if (seen.has(found.definition)) continue
-    seen.add(found.definition)
+    if (seen.has(found)) continue
+    seen.add(found)
     byPosition.set(found.value.hook, [
       ...(byPosition.get(found.value.hook) ?? []),
-      { id: found.value.id, definition: found.definition, execute: found.value.execute },
+      { id: found.value.id, definition: found, execute: found.value.execute },
     ])
   }
   return { source, byPosition } satisfies HookSet
@@ -295,13 +295,13 @@ const selectHooks = Effect.fn("selectHooks")(function* (
 export const turnHooks = (turn: Turn) => {
   const listed = turn.prompt.value.hooks ?? []
   return listed.length > 0
-    ? selectHooks(listed, turn.prompt.definition, { kind: "prompt", promptName: turn.prompt.definition.qualifiedName })
+    ? selectHooks(listed, turn.prompt, { kind: "prompt", promptName: turn.prompt.qualifiedName })
     : agentHooks(turn.agent)
 }
 
 // Hooks section 1.3: an operation at rest has no active prompt and uses the agent's list.
 export const agentHooks = (agent: Loaded<AgentDefinition>) =>
-  selectHooks(agent.value.hooks ?? [], agent.definition, { kind: "agent", agentName: agent.definition.qualifiedName })
+  selectHooks(agent.value.hooks ?? [], agent, { kind: "agent", agentName: agent.qualifiedName })
 
 export class HookExpired extends Data.TaggedError("HookExpired")<{
   readonly hook: string

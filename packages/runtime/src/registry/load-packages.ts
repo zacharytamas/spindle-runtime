@@ -1,7 +1,7 @@
 import type { PackageSignature } from "@standardagents/spec"
 import { Effect, FileSystem, Path, Result } from "effect"
-import { type Definition, type Issue, KINDS, type Package, PLURAL } from "./definition.ts"
-import { describeCause, fieldIssues, importFile, LoadError, reportDefects } from "./import-file.ts"
+import { type Issue, KINDS, type Package, PLURAL } from "./definition.ts"
+import { type Discovered, describeCause, fieldIssues, importFile, LoadError, reportDefects } from "./import-file.ts"
 
 type Source = PackageSignature["source"]
 
@@ -88,7 +88,7 @@ const withSignature = (definition: unknown, signature: PackageSignature): unknow
 export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const definitions: Array<Definition> = []
+  const definitions: Array<Discovered> = []
   const packages: Array<Package> = []
   const issues: Array<Issue> = []
   const issue = (code: Issue["code"], file: string, message: string, severity: Issue["severity"] = "error") =>
@@ -288,7 +288,7 @@ export const loadPackages = Effect.fn("loadPackages")(function* (root: string) {
           package: pkg,
           file,
           path: at,
-          load: yield* Effect.cached(reportDefects(load, { kind, file, path: at })),
+          load: reportDefects(load, { kind, file, path: at }),
         })
       }
     }

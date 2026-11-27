@@ -15,8 +15,7 @@ import { Registry } from "../registry/Registry.ts"
 
 export class SetupError extends Data.TaggedError("SetupError")<{ readonly message: string }> {}
 
-export interface Loaded<A> {
-  readonly definition: Definition
+export interface Loaded<A> extends Definition {
   readonly value: A
 }
 
@@ -54,19 +53,29 @@ export interface Turn {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-export const isFunctionTool = (value: unknown): value is FunctionTool =>
-  isRecord(value) &&
-  typeof value.execute === "function" &&
-  typeof value.description === "string" &&
-  (value.args === null ||
-    value.args === undefined ||
-    (isRecord(value.args) && typeof value.args.safeParseAsync === "function"))
+export const isFunctionTool = (definition: Definition | undefined): definition is Loaded<FunctionTool> => {
+  const value = definition?.value
+  return (
+    isRecord(value) &&
+    typeof value.execute === "function" &&
+    typeof value.description === "string" &&
+    (value.args === null ||
+      value.args === undefined ||
+      (isRecord(value.args) && typeof value.args.safeParseAsync === "function"))
+  )
+}
 
-export const lookup = Effect.fn("lookup")(function* <A>(kind: Kind, name: string, from: Definition | undefined) {
+type Values = Record<Kind, unknown> & { agent: AgentDefinition; prompt: PromptDefinition; model: ModelDefinition }
+
+export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
+  kind: K,
+  name: string,
+  from: Definition | undefined,
+) {
   const registry = yield* Registry
   const resolution = registry.resolve(kind, name, from === undefined ? { type: "global" } : namespaceOf(from))
-  if (resolution._tag !== "Found" || !registry.loaded.has(resolution.definition)) return undefined
-  return { definition: resolution.definition, value: registry.loaded.get(resolution.definition) as A } as Loaded<A>
+  if (resolution._tag !== "Found" || !Object.hasOwn(resolution.definition, "value")) return undefined
+  return resolution.definition as Loaded<Values[K]>
 })
 
 const backingOf = (side: unknown) => {
@@ -78,7 +87,7 @@ const backingOf = (side: unknown) => {
 }
 
 export const sidesOf = Effect.fn("sidesOf")(function* (agentName: string) {
-  const agent = yield* lookup<AgentDefinition>("agent", agentName, undefined)
+  const agent = yield* lookup("agent", agentName, undefined)
   if (agent === undefined) return yield* new SetupError({ message: `No agent named ${agentName} is defined` })
   const a = backingOf(agent.value.sideA)
   const b = backingOf(agent.value.sideB)
@@ -104,12 +113,12 @@ const exposedTools = Effect.fn("exposedTools")(function* (
   const tools = new Map<string, ExposedTool>()
   for (const entry of prompt.value.tools ?? []) {
     const name = typeof entry === "string" ? entry : entry.name
-    const found = yield* lookup<unknown>("tool", name, prompt.definition)
-    if (found === undefined || !isFunctionTool(found.value)) {
+    const tool = yield* lookup("tool", name, prompt)
+    if (!isFunctionTool(tool)) {
       const other =
-        (yield* lookup("prompt", name, prompt.definition)) !== undefined
+        (yield* lookup("prompt", name, prompt)) !== undefined
           ? "a prompt tool"
-          : (yield* lookup("agent", name, prompt.definition)) !== undefined
+          : (yield* lookup("agent", name, prompt)) !== undefined
             ? "an agent handoff"
             : (model.value.providerTools ?? []).includes(name)
               ? "a provider tool"
@@ -117,29 +126,28 @@ const exposedTools = Effect.fn("exposedTools")(function* (
       return yield* new SetupError({
         message:
           other === undefined
-            ? `Prompt ${prompt.definition.qualifiedName} lists tool ${name}, which is not a defined function tool`
-            : `Prompt ${prompt.definition.qualifiedName} lists ${name}, which is ${other}. This version of Spindle runs function tools only.`,
+            ? `Prompt ${prompt.qualifiedName} lists tool ${name}, which is not a defined function tool`
+            : `Prompt ${prompt.qualifiedName} lists ${name}, which is ${other}. This version of Spindle runs function tools only.`,
       })
     }
-    const tool = found as Loaded<FunctionTool>
-    if (tools.has(tool.definition.name))
+    if (tools.has(tool.name))
       return yield* new SetupError({
-        message: `Prompt ${prompt.definition.qualifiedName} lists two tools named ${tool.definition.name}`,
+        message: `Prompt ${prompt.qualifiedName} lists two tools named ${tool.name}`,
       })
     const parameters = yield* Effect.try({
       try: () => parametersOf(tool.value.args ?? null),
       catch: (cause) =>
         new SetupError({
-          message: `The arguments of tool ${tool.definition.qualifiedName} have no JSON Schema form: ${cause instanceof Error ? cause.message : String(cause)}`,
+          message: `The arguments of tool ${tool.qualifiedName} have no JSON Schema form: ${cause instanceof Error ? cause.message : String(cause)}`,
         }),
     })
-    tools.set(tool.definition.name, {
-      name: tool.definition.name,
+    tools.set(tool.name, {
+      name: tool.name,
       tool,
       entry: typeof entry === "string" ? undefined : (entry as PromptToolConfig),
       definition: {
         type: "function",
-        function: { name: tool.definition.name, description: tool.value.description, parameters },
+        function: { name: tool.name, description: tool.value.description, parameters },
       },
     })
   }
@@ -154,25 +162,25 @@ const exposedStopTool = Effect.fn("exposedStopTool")(function* (
   tools: ReadonlyMap<string, ExposedTool>,
 ) {
   if (config.stopTool === undefined) return config
-  const target = yield* lookup<unknown>("tool", config.stopTool, agent.definition)
-  const exposed = [...tools.values()].find((tool) => tool.tool.definition === target?.definition)
+  const target = yield* lookup("tool", config.stopTool, agent)
+  const exposed = [...tools.values()].find((tool) => tool.tool === target)
   return exposed === undefined ? config : { ...config, stopTool: exposed.name }
 })
 
 export const prepareTurn = Effect.fn("prepareTurn")(function* (agentName: string) {
   const { agent, side, human, config } = yield* sidesOf(agentName)
-  const prompt = yield* lookup<PromptDefinition>("prompt", config.prompt, agent.definition)
+  const prompt = yield* lookup("prompt", config.prompt, agent)
   if (prompt === undefined)
     return yield* new SetupError({ message: `Agent ${agentName} names prompt ${config.prompt}, which is not defined` })
-  const model = yield* lookup<ModelDefinition>("model", prompt.value.model, prompt.definition)
+  const model = yield* lookup("model", prompt.value.model, prompt)
   if (model === undefined)
     return yield* new SetupError({
-      message: `Prompt ${prompt.definition.qualifiedName} names model ${prompt.value.model}, which is not defined`,
+      message: `Prompt ${prompt.qualifiedName} names model ${prompt.value.model}, which is not defined`,
     })
   const tools = yield* exposedTools(prompt, model)
   if (prompt.value.toolChoice === "required" && tools.size === 0)
     return yield* new SetupError({
-      message: `Prompt ${prompt.definition.qualifiedName} sets toolChoice to required but lists no tools`,
+      message: `Prompt ${prompt.qualifiedName} sets toolChoice to required but lists no tools`,
     })
   return {
     agent,

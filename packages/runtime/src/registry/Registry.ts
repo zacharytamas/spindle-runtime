@@ -12,7 +12,6 @@ export class Registry extends Context.Service<
     readonly root: string
     readonly definitions: ReadonlyArray<Definition>
     readonly packages: ReadonlyArray<Package>
-    readonly loaded: ReadonlyMap<Definition, unknown>
     readonly issues: ReadonlyArray<Issue>
     readonly resolve: (kind: Kind, name: string, from: NamespaceContext) => Resolution
   }
@@ -25,18 +24,20 @@ export class Registry extends Context.Service<
         const packed = yield* loadPackages(root)
         const found = [...local.definitions, ...packed.definitions]
         const issues = [...local.issues, ...packed.issues]
-        const results = yield* Effect.forEach(found, (d) => Effect.result(d.load), { concurrency: 16 })
-        const loaded = new Map<Definition, unknown>()
+        const results = yield* Effect.forEach(
+          found,
+          ({ load, ...source }) => Effect.map(Effect.result(load), (result) => ({ source, result })),
+          { concurrency: 16 },
+        )
         const byKey = new Map<string, Definition>()
-        const definitions = found.map((source, index) => {
-          const result = results[index]
-          if (result === undefined || Result.isFailure(result)) {
-            if (result !== undefined) issues.push(...result.failure.issues)
+        const definitions = results.map(({ source, result }) => {
+          if (Result.isFailure(result)) {
+            issues.push(...result.failure.issues)
             return source
           }
           let definition: Definition
           try {
-            definition = identified(source, result.success, issues)
+            definition = identified({ ...source, value: result.success }, issues)
           } catch (cause) {
             issues.push({
               code: "definition_load_failed",
@@ -47,7 +48,6 @@ export class Registry extends Context.Service<
             })
             return source
           }
-          loaded.set(definition, result.success)
           const key = `${definition.kind}\u0000${definition.package?.signature.packageId ?? ""}\u0000${definition.name}`
           const earlier = byKey.get(key)
           if (earlier === undefined) byKey.set(key, definition)
@@ -74,7 +74,6 @@ export class Registry extends Context.Service<
         return {
           root,
           definitions,
-          loaded,
           packages: packed.packages,
           issues,
           resolve: resolver(definitions),
@@ -86,7 +85,8 @@ export class Registry extends Context.Service<
 // The spec names a definition by these fields. Tools, handlers, and effects have no such field, so their file name or export key names them.
 const IDENTIFIER: Partial<Record<Kind, "name" | "id">> = { agent: "name", prompt: "name", model: "name", hook: "id" }
 
-const identified = (source: Definition, value: unknown, issues: Array<Issue>): Definition => {
+const identified = (source: Definition, issues: Array<Issue>): Definition => {
+  const { value } = source
   const field = IDENTIFIER[source.kind]
   const declared =
     field !== undefined && typeof value === "object" && value !== null ? Reflect.get(value, field) : undefined

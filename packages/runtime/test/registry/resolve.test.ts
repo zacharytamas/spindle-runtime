@@ -1,5 +1,4 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
 import type { Definition, Kind, Package } from "../../src/registry/definition.ts"
 import { resolver } from "../../src/registry/resolve.ts"
 
@@ -23,7 +22,7 @@ const definition = (kind: Kind, name: string, owner?: Package): Definition => ({
   package: owner,
   file: owner?.file ?? `agents/${kind}s/${name}.ts`,
   path: "",
-  load: Effect.succeed({}),
+  value: {},
 })
 
 const definitions = [

@@ -1,6 +1,10 @@
 import { Data, Effect } from "effect"
 import type { Definition, Issue } from "./definition.ts"
 
+export interface Discovered extends Omit<Definition, "value"> {
+  readonly load: Effect.Effect<unknown, LoadError>
+}
+
 export class LoadError extends Data.TaggedError("LoadError")<{ readonly issues: ReadonlyArray<Issue> }> {}
 
 const TYPESCRIPT_SYNTAX =

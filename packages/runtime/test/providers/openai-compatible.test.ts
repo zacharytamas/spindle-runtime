@@ -462,15 +462,12 @@ describe("provider config slots", () => {
     },
   })
   const loaded = (provider: ProviderFactoryWithOptions) => ({
-    definition: {
-      kind: "model" as const,
-      name: "lane",
-      qualifiedName: "lane",
-      package: undefined,
-      file: "memory",
-      path: "",
-      load: Effect.void,
-    },
+    kind: "model" as const,
+    name: "lane",
+    qualifiedName: "lane",
+    package: undefined,
+    file: "memory",
+    path: "",
     value: defineModel({ name: "lane", provider, model: "native-model" }),
   })
   const build = (provider: ProviderFactoryWithOptions, env: Record<string, string>) => {

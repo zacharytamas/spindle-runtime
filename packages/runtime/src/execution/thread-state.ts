@@ -211,11 +211,13 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     check()
     return Effect.runSyncWith(state.services)(history.read).rows.map(({ message }) => copyMessage(message))
   }
-  const load = (kind: "model" | "prompt" | "agent") => (name: string) =>
-    run(lookup<unknown>(kind, name, state.from)).then((found) => {
-      if (found === undefined) throw new Error(`No ${kind} named ${name} is defined`)
-      return found.value
-    }) as Promise<never>
+  const load =
+    (kind: "model" | "prompt" | "agent") =>
+    <T = unknown>(name: string) =>
+      run(lookup(kind, name, state.from)).then((found) => {
+        if (found === undefined) throw new Error(`No ${kind} named ${name} is defined`)
+        return found.value as T
+      })
   const names = (kind: "model" | "prompt" | "agent") => () => {
     check()
     return registry.definitions

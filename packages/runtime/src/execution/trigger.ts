@@ -1,4 +1,3 @@
-import type { AgentDefinition } from "@standardagents/spec"
 import { Effect } from "effect"
 import type { Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/model.ts"
@@ -17,7 +16,7 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
   Effect.gen(function* () {
     const services = yield* Effect.context<Registry | Stores>()
     const supervisor = yield* ThreadSupervisor
-    const agent = yield* lookup<AgentDefinition>("agent", thread.agentId, undefined)
+    const agent = yield* lookup("agent", thread.agentId, undefined)
     const set: HookSet =
       agent === undefined
         ? { source: { kind: "agent", agentName: thread.agentId }, byPosition: new Map() }
@@ -39,7 +38,7 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
       control: supervisor.control(thread.id),
     }
     const hooks = atRestHooks(base, set)
-    return { hooks, secrets, state: makeThreadState({ ...base, from: agent?.definition, hooks }) }
+    return { hooks, secrets, state: makeThreadState({ ...base, from: agent, hooks }) }
   })
 
 // The ThreadState an endpoint or another caller outside an execution sees.

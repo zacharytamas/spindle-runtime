@@ -101,7 +101,7 @@ export const providerFor = Effect.fn("providerFor")(function* (
   const factory = model.value.provider as ProviderFactoryWithOptions
   const definition = factory.providerDefinition
   const { config, missing } = yield* resolveConfig(model, secrets)
-  const name = model.definition.qualifiedName
+  const name = model.qualifiedName
   if (missing.length > 0)
     return yield* new SetupError({
       message: `The provider of model ${name} needs ${missing.join(", ")}, which ${missing.length === 1 ? "has" : "have"} no value`,

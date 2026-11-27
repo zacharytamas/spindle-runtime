@@ -185,7 +185,7 @@ const prepareSide = Effect.fnUntraced(function* (
     ...thread,
     execution: {
       side: turn.side,
-      promptPath: [turn.prompt.definition.qualifiedName],
+      promptPath: [turn.prompt.qualifiedName],
       history,
       run,
     },
@@ -200,7 +200,7 @@ const prepareSide = Effect.fnUntraced(function* (
       makeThreadState({
         ...base,
         scope: scopeFor(turn, entry),
-        from: tool.definition,
+        from: tool,
         caller: tool,
         callback,
         invoke: (name, args) => invokeTool(toolContext, tool, name, args).pipe(Effect.provideContext(services)),
@@ -209,7 +209,7 @@ const prepareSide = Effect.fnUntraced(function* (
   const promptState = makeThreadState({
     ...base,
     scope: promptScope(turn),
-    from: turn.prompt.definition,
+    from: turn.prompt,
   })
   // A scripted run still learns the secret values of the model's real provider config.
   yield* learnSecrets(turn, secrets)

@@ -1,6 +1,4 @@
 import { DEFINITION_ISSUE_CODES, type NamespaceContext, type PackageSignature } from "@standardagents/spec"
-import type { Effect } from "effect"
-import type { LoadError } from "./import-file.ts"
 
 export const KINDS = ["agent", "prompt", "tool", "model", "hook", "handler", "effect"] as const
 export type Kind = (typeof KINDS)[number]
@@ -93,7 +91,7 @@ export interface Definition {
   readonly package: Package | undefined
   readonly file: string
   readonly path: string
-  readonly load: Effect.Effect<unknown, LoadError>
+  readonly value?: unknown
 }
 
 export const namespaceOf = (definition: Definition): NamespaceContext =>
