@@ -936,7 +936,7 @@ The workspace type check runs `effect-tsgo tsc` from `@effect/tsgo@0.73.7` with 
 - The workspace also treats `duplicatePackage`, `effectInFailure`, `effectInVoidSuccess`, `layerMergeAllWithDependencies`, `lazyPromiseInEffectSync`, `promiseInEffectSuccess`, and `scopeInLayerEffect` as errors.
 - The practice rules at warning are `effectTryWithoutCatch`, `globalDateInEffect`, `globalErrorInEffectCatch`, `missingConcurrencyOption`, `preferTypedSchemaDecoder`, and `unknownInEffectCatch`.
 - M1-12 removed the cast on the hook runner and raised `unsafeEffectTypeAssertion` to error.
-- `tryCatchInEffectGen` stays at suggestion for the two remaining checks in registry validation that read user definitions and package disclosures. The store and hooks splits handled the other three paths.
+- M1-14 raised `tryCatchInEffectGen` to warning. Plain functions catch exceptions from authored definitions and package disclosures.
 - M1-11 raised `globalErrorInEffectFailure` to warning. A missing definition and an unset environment variable still reject at the promise boundary with a plain JavaScript `Error`.
 - M1-11 raised `returnEffectInGen` to warning. Provider setup resolves the configuration and transport once. It constructs an ordinary provider immediately and shares the instance. With `createFetch` it retains the factory operation and runs it once per request.
 - `schemaNumber` stays at suggestion for the script provider's `statusCode` and `retryAfter`. JSON exponents can overflow to infinity, which the current decoder accepts. The CLI split should settle that input contract before raising the rule to warning.
