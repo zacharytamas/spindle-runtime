@@ -1117,6 +1117,8 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 - On Node versions without import.meta.main, the entry check compares the real paths of the module and the command. A symlinked entry is recognized with either symlink preservation flag.
 
+- The conformance harness fails the scenario when admission has not occurred after 500 polls.
+
 ## Appendix B. Alternatives rejected
 
 - **Cloudflare Workers as the host.** The one existing runtime already covers Workers, and its license forbids production use off its own hosting. The operator chose self-hosted.

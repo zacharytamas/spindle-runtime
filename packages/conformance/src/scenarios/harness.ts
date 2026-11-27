@@ -197,4 +197,5 @@ export const waitForAdmission = async (admitted: () => Promise<boolean>) => {
     if (await admitted()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
+  throw new Error("Admission did not happen within 500 polls")
 }
