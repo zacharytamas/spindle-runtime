@@ -117,6 +117,7 @@ const nativeMessage = (message: ProviderMessage): Json => {
               id: call.id,
               type: "function",
               function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+              ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
             })),
           }
     }
@@ -343,6 +344,7 @@ interface WireCall {
   id: string
   name: string
   arguments: string
+  extraContent?: Json
 }
 
 // A call whose argument text is not a JSON object gets no tool-call-done, so the runtime never runs it. A stream
@@ -397,6 +399,7 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
           call = { id: typeof part.id === "string" ? part.id : `call_${index}`, name: "", arguments: "" }
           calls.set(index, call)
         }
+        if (Predicate.isObject(part.extra_content)) call.extraContent = part.extra_content
         if (call.name === "" && typeof fn.name === "string" && fn.name !== "") {
           call.name = fn.name
           yield { type: "tool-call-start", id: call.id, name: call.name }
@@ -422,7 +425,13 @@ async function* streamChunks(body: ReadableStream<Uint8Array>, exclude: boolean)
   if (sawContent) yield { type: "content-done" }
   for (const call of calls.values()) {
     const parsed = parseArguments(call.arguments)
-    if (parsed !== undefined) yield { type: "tool-call-done", id: call.id, arguments: parsed }
+    if (parsed !== undefined)
+      yield {
+        type: "tool-call-done",
+        id: call.id,
+        arguments: parsed,
+        ...(call.extraContent === undefined ? {} : { extraContent: call.extraContent }),
+      }
   }
   yield {
     type: "finish",
@@ -463,7 +472,12 @@ const responseOf = (body: unknown, exclude: boolean): ProviderResponse => {
         undefined,
         { origin: ORIGIN },
       )
-    toolCalls.push({ id: String(part.id), name: String(part.function.name), arguments: parsed })
+    toolCalls.push({
+      id: String(part.id),
+      name: String(part.function.name),
+      arguments: parsed,
+      ...(Predicate.isObject(part.extra_content) ? { extraContent: part.extra_content } : {}),
+    })
   }
   const reasoning = exclude ? undefined : reasoningText(message)
   const details: Array<ProviderReasoningDetail> = []
