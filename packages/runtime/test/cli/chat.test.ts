@@ -249,6 +249,41 @@ describe("spindle chat", () => {
     60_000,
   )
 
+  it.live("an interrupt pending inside a synchronous tool reaches the prompt after the reply", () =>
+    Effect.gen(function* () {
+      const { gate, db, at } = yield* setup
+      const fs = yield* FileSystem.FileSystem
+      const dir = at("project")
+      yield* fs.copy(queue, dir)
+      yield* fs.symlink(conformanceModules, `${dir}/node_modules`)
+      yield* write(
+        `${dir}/agents/tools/hold.ts`,
+        `
+        import fs from "node:fs"
+        const dir = process.env.SPINDLE_GATE_DIR
+        export default { description: "Block the JS thread until released", args: null, execute() {
+          fs.writeFileSync(dir + "/entered", "")
+          const deadline = Date.now() + 5000
+          while (!fs.existsSync(dir + "/release")) {
+            if (Date.now() >= deadline) throw new Error("release gate timed out")
+          }
+          return {status: "success", result: "released"}
+        } }
+      `,
+      )
+      const session = yield* chat(gate, ["assistant", "--dir", dir, "--db", db])
+      yield* session.type(`${call("hold", {})}\n`)
+      yield* until("the synchronous tool to enter", exists(at("entered")))
+      yield* session.signal("SIGINT")
+      yield* touch(at("release"))
+      yield* session.end
+      expect(yield* session.exit).toBe(0)
+      const thread = yield* threadOf(session)
+      expect(yield* statusOf(db, thread)).toEqual(["idle", "stop_on_response"])
+      expect(linesOf(session.err())).toEqual([note.thread(thread), note.resume("assistant", thread, db, dir)])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
   it.live(
     "the printed resume command runs as printed and its request holds the first chat's messages (lane 2, O2, O14)",
     () =>

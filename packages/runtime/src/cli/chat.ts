@@ -1,5 +1,5 @@
 import type { Message, ThreadStatus } from "@standardagents/spec"
-import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Option, Queue } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Option, Queue, Scheduler } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { Interrupts, openChatTerminal } from "#platform"
 import { toolCallsOf } from "../execution/assemble.ts"
@@ -335,7 +335,10 @@ export const chatCommand = Command.make(
             const thread = yield* openThread(args.agent, filename, args.thread, secrets, identify, clean)
             return yield* Effect.uninterruptibleMask((restore) =>
               Effect.gen(function* () {
-                const events = yield* Queue.make<Event>()
+                // A transcript acknowledgement must not give pending OS signals an extra event-loop turn.
+                const events = yield* Queue.make<Event>().pipe(
+                  Effect.provideService(Scheduler.Scheduler, new Scheduler.MixedScheduler("sync")),
+                )
                 const own = new Set<number>()
                 const conversation = yield* Effect.exit(
                   restore(converse({ ...args, ...thread, role, identify, clean }, events, own).pipe(Effect.scoped)),
