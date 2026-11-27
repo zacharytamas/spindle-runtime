@@ -6,7 +6,7 @@ The work is for people who want to run Standard Agents outside Standard Agents H
 The program enforces one rule. A requirement counts as implemented only when the ledger maps it to a passing test.
 Core code imports Effect services only. The Node module and the Bun module under `src/platform/` supply the implementations.
 The PR ids in order are M1-1, M1-2, M1-3, M1-4, M1-5, M1-6, and M1-7.
-Later milestones get their own plan files. Appendix E lists them.
+Later milestones get their own plan files. `docs/plans/milestones.md` lists them.
 
 ## How to read this
 
@@ -1191,14 +1191,4 @@ A tool past its deadline gives the ordinary failure hooks an error naming the to
 
 ## Appendix E. Later milestones
 
-Each milestone gets its own plan file when the one before it lands. The first four make up version 1.
-
-| Milestone | Scope | Spec pages |
-|---|---|---|
-| M2 | Handler sides, two prompt sides, session tools, handoff tools, prompt tools, and thread environment values. | Agents, Handlers, Prompts, Threads sections 2 and 6 |
-| M3 | The thread filesystem and subagents, with attachment copying and parent hooks. | Filesystem, Subagents, Runtime sections 7 and 8 |
-| M4 | Scheduled effects, `decide()`, thread endpoints, and an HTTP server on `NodeHttpServer` and `BunHttpServer`. | Effects, Decisions, Endpoints |
-| M5 | `runCode` in a sandbox. A prototype picks the engine first. | Code Execution, Runtime first section 14 |
-| M6 | The Thread Client API over HTTP and WebSocket, tested with the official client. | Client API |
-| M7 | Model fallbacks and pricing, type registry generation, agent skills, and runtime streams. | Models, Type Registry, Threads section 7.4, Runtime Streams |
-| Later | Users, when the page leaves Draft. | Users |
+The list of later milestones was revised after milestone 1 was built. It is in `docs/plans/milestones.md`.
