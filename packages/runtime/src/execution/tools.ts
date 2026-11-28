@@ -6,7 +6,14 @@ import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { isPlain } from "./redact.ts"
-import { type FunctionTool, isFunctionTool, type Loaded, lookup, type PromptSideValue } from "./turn.ts"
+import {
+  type AutomatedSide,
+  type FunctionTool,
+  isFunctionTool,
+  type Loaded,
+  lookup,
+  type PromptSideValue,
+} from "./turn.ts"
 
 export interface ToolCall {
   readonly id: string
@@ -16,11 +23,11 @@ export interface ToolCall {
   readonly problem: string | undefined
 }
 
-export interface ToolContext {
+export interface ToolContext<T extends AutomatedSide = AutomatedSide> {
   readonly scope: Scope.Scope
   readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
-  readonly turn: PromptSideValue
+  readonly turn: T
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
     entry: PromptToolConfig | undefined,
@@ -47,10 +54,10 @@ export const notRun = Object.freeze({
 
 export const failed = (error: string): ToolResult => ({ status: "error", error })
 
-export const scopeFor = (turn: PromptSideValue, entry: PromptToolConfig | undefined): EnvScope => ({
+export const scopeFor = (turn: AutomatedSide, entry: PromptToolConfig | undefined): EnvScope => ({
   agent: turn.agent.value.env,
   toolEntry: entry?.env,
-  prompt: turn.prompt.value.env,
+  prompt: turn.kind === "prompt" ? turn.prompt.value.env : undefined,
 })
 
 const optionalString = (value: unknown) => value === undefined || typeof value === "string"
@@ -159,7 +166,7 @@ export const readResult = (value: unknown): ToolResult | undefined => {
   return isToolResult(result) ? result : undefined
 }
 
-export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext, call: ToolCall) {
+export const runToolCall = Effect.fn("runToolCall")(function* (context: ToolContext<PromptSideValue>, call: ToolCall) {
   if (call.problem !== undefined) return failed(call.problem)
   const exposed = context.turn.tools.get(call.name)
   if (exposed === undefined) {
@@ -214,16 +221,20 @@ export const queueTarget = Effect.fn("queueTarget")(function* (
 // Tools section 2.1: invokeTool returns an error result for a target outside a supplied uses list.
 export const invokeTool = Effect.fn("invokeTool")(function* (
   context: ToolContext,
-  caller: Loaded<FunctionTool>,
+  from: Definition,
+  caller: Loaded<FunctionTool> | undefined,
   name: string,
   input: unknown,
   onExecute: () => void,
 ) {
-  const target = yield* lookup("tool", name, caller)
-  const outside = yield* outsideUses(caller, name, target)
+  const target = yield* lookup("tool", name, from)
+  const outside = caller === undefined ? undefined : yield* outsideUses(caller, name, target)
   if (outside !== undefined) return failed(outside)
-  if (!isFunctionTool(target)) return failed(yield* notAFunctionTool(name, caller, "invokeTool"))
-  const entry = [...context.turn.tools.values()].find((exposed) => exposed.tool === target)?.entry
+  if (!isFunctionTool(target)) return failed(yield* notAFunctionTool(name, from, "invokeTool"))
+  const entry =
+    context.turn.kind === "prompt"
+      ? [...context.turn.tools.values()].find((exposed) => exposed.tool === target)?.entry
+      : undefined
   return (yield* executeTool(context, target, entry, input, onExecute)) ?? notRun
 })
 
@@ -282,7 +293,7 @@ export const checkedResult = (result: ToolResult): ToolResult => {
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
-export const storedResult = (turn: PromptSideValue, call: ToolCall, result: ToolResult): NewMessage => {
+export const storedResult = (turn: AutomatedSide, call: ToolCall, result: ToolResult): NewMessage => {
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
   const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)
@@ -303,7 +314,7 @@ export const storedResult = (turn: PromptSideValue, call: ToolCall, result: Tool
     role: "tool",
     name: call.name,
     tool_call_id: call.id,
-    prompt: turn.prompt.qualifiedName,
+    prompt: turn.kind === "prompt" ? turn.prompt.qualifiedName : null,
     status: "completed",
     tool_status: dropped.length === 0 ? result.status : "error",
     content: [contentOf(result), ...dropped].filter((part) => part !== "").join("\n\n"),

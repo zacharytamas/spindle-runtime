@@ -30,7 +30,7 @@ export interface History {
   readonly inserted: (inserted: HistoryRow & { readonly revision: number | null }) => void
 }
 
-export const makeHistory = (threadId: string): History => {
+export const makeHistory = (threadId: string, onInsert?: (row: HistoryRow) => void): History => {
   let copy: { rows: Chunk.Chunk<HistoryRow>; revision: number } | undefined
   const snapshot = Effect.gen(function* () {
     const store = yield* MessageStore
@@ -52,7 +52,9 @@ export const makeHistory = (threadId: string): History => {
     // A revision at or below the copy's means a read after the insert already holds it. One past the copy's means
     // nobody else wrote in between. Anything else, or an insert that a caller's transaction may still roll back,
     // leaves the copy stale.
-    inserted: ({ message, revision, seq, callerSeq }) => {
+    inserted: (row) => {
+      onInsert?.(row)
+      const { message, revision, seq, callerSeq } = row
       if (copy === undefined || revision === null || revision > copy.revision + 1) copy = undefined
       // The writer gets the same message object back, and injectMessage hands it to the tool or hook that wrote it.
       else if (revision === copy.revision + 1) {

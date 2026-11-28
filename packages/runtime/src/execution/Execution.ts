@@ -5,9 +5,9 @@ import { RunStore } from "../store/RunStore.ts"
 import { ProviderFailure } from "./call.ts"
 import type { Callback } from "./callback.ts"
 import { CLOSING } from "./run-status.ts"
-import type { ExecutionOptions, prepareSteps, RunOutcome, SideScope } from "./step.ts"
+import type { ExecutionOptions, prepareSteps, RunOutcome, SideScope, ToolScope } from "./step.ts"
 import { atRuntimeCap } from "./stop-rules.ts"
-import { type PromptSideValue, SetupError, type Side, type SideValue } from "./turn.ts"
+import { type HandlerSideValue, type PromptSideValue, SetupError, type Side, type SideValue } from "./turn.ts"
 
 export interface End extends Pick<RunOutcome, "status" | "reason" | "error" | "stopTool"> {
   readonly continueIfQueued?: boolean
@@ -49,6 +49,7 @@ function failure(cause: Cause.Cause<{ readonly message: string }>): End | FlowEn
 class TurnController {
   active: SideValue | undefined
   pending: Side | undefined
+  readonly handlerScopes = new Map<HandlerSideValue, ToolScope<HandlerSideValue>>()
   readonly scopes = new Map<PromptSideValue, SideScope>()
 
   takeTarget() {
@@ -79,6 +80,8 @@ export class Execution {
   readonly #steps = { a: 0, b: 0 }
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
   #tookEntry = false
+  #completedTurns = 0
+  #stopSession: Side | undefined
   #sessionEnd: End | undefined
 
   readonly #onTake: ((seq: number, run: Execution) => void) | undefined
@@ -103,12 +106,15 @@ export class Execution {
   recordStep(side: Side) {
     this.#steps[side]++
   }
-  completeTurn(threadId: string, view: SideScope["view"], limit: number | undefined) {
+  completeTurn(threadId: string, view: SideScope["view"] | undefined, limit: number | undefined, turnCap: number) {
     return Effect.gen({ self: this }, function* () {
-      const completed = yield* (yield* RunStore).completeTurn(threadId, this.flowId)
-      view.turnStartSeq = Math.max(view.turnStartSeq, completed.last_seq + 1)
+      const completed = yield* (yield* RunStore).completeTurn(threadId, this.flowId, view !== undefined)
+      this.#completedTurns++
+      if (view) view.turnStartSeq = Math.max(view.turnStartSeq, completed.last_seq + 1)
       if (limit !== undefined && completed.session_turns >= limit)
         this.#sessionEnd = { status: "idle", reason: "max_session_turns", continueIfQueued: false }
+      else if (limit === undefined && this.#completedTurns >= turnCap)
+        this.#sessionEnd = { status: "idle", reason: "max_total_turns" }
       return this.#sessionEnd
     }).pipe(Effect.uninterruptible)
   }
@@ -116,12 +122,17 @@ export class Execution {
     return this.#phase === "ended"
   }
   stopAtBoundary() {
-    return this.#stop === undefined ? undefined : this.abortEnd
+    return this.#stop === undefined && !this.#stopSession ? undefined : this.abortEnd
   }
   get stoppedBy() {
-    return this.#stop === "user" ? undefined : this.#stop
+    return this.#stop === "user" ? undefined : (this.#stop ?? this.#stopSession)
+  }
+  stopSession() {
+    this.#stopSession = this.turns.active?.side
+    this.#stopRequested.openUnsafe()
   }
   get abortEnd() {
+    if (this.#stop === undefined && this.#stopSession) return { status: "idle", reason: "state_stop_session" } as const
     return { status: "idle", reason: this.#stop === "user" ? "aborted_by_user" : "aborted" } as const
   }
   requestStop(by: Side | "user" = "user") {
@@ -226,7 +237,10 @@ export class Execution {
         return proposed
       }
       const notificationError = yield* this.#waitForCallbacks(notify)
-      return this.#sessionEnd ?? (notificationError ? failure(notificationError) : proposed)
+      return (
+        this.#sessionEnd ??
+        (this.#stopSession ? this.abortEnd : notificationError ? failure(notificationError) : proposed)
+      )
     })
   }
 
@@ -282,6 +296,7 @@ export class Execution {
     }).pipe(
       Effect.onExit((exit) => {
         this.turns.scopes.clear()
+        this.turns.handlerScopes.clear()
         remove()
         return Deferred.done(this.#done, exit)
       }),

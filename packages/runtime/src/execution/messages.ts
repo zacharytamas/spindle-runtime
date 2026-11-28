@@ -115,6 +115,7 @@ interface WritePolicy {
   readonly fields?: ReadonlyArray<(typeof FIELDS)[number]>
   readonly keepErrorCode?: boolean
   readonly finish?: (message: Message) => Message
+  readonly deliveredTo?: "a" | "b"
   readonly resultPrompt?: string
   readonly dequeue?: number
 }
@@ -151,6 +152,7 @@ const prepareWrite = Effect.fnUntraced(function* <E>(
     store.insertMessage(write.threadId, { ...message, id }, write.origin, {
       callerSeq: write.callerSeq,
       dequeue: policy.dequeue,
+      deliveredTo: policy.deliveredTo,
       resultPrompt: policy.resultPrompt,
     })
   const after = Effect.fnUntraced(function* (inserted: Parameters<History["inserted"]>[0]) {

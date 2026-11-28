@@ -439,7 +439,7 @@ it.effect("rule 64: a setup failure returns with the message still queued after 
   }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
 })
 
-it.live("rule 63: awaiting a human with a queued tool ahead of the send returns after zero steps", () => {
+it.live("rule 63: a missing handler with a queued tool ahead of the send returns after zero steps", () => {
   const setup = {
     models: [],
     prompts: [],
@@ -452,7 +452,15 @@ it.live("rule 63: awaiting a human with a queued tool ahead of the send returns 
     yield* supervisor.control(id).queueTool("work", {}, { kind: "external" })
     yield* supervisor.settled(id)
     const delivery = yield* supervisor.send(id, "hello")
-    expect(delivery).toMatchObject({ stillQueued: true, outcome: { reason: "awaiting_human", steps: 0 } })
+    expect(delivery).toMatchObject({
+      stillQueued: true,
+      outcome: {
+        status: "failed",
+        reason: "fatal_error",
+        steps: 0,
+        error: { message: expect.stringContaining("worker") },
+      },
+    })
     expect(yield* RunStore.use((store) => store.queueLength(id))).toBe(2)
   }).pipe(
     Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
