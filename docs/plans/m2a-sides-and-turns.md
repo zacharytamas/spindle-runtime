@@ -96,7 +96,7 @@ Base is the M2b design branch, `m2b/design`. Introduces the typed `SideValue` un
 
 ## Handler-backed sides, handler-compatible tool drain, and root `stopSession` (M2a-2)
 
-Base is `main` after `M2a-1` lands. Activates `HandlerSideValue` across all handler pairings (`handler x human`, `human x handler`, `prompt x handler`, `handler x prompt`, `handler x handler`), enforces the `defineHandler` brand, implements one-at-a-time durable handler delivery and failure semantics, adds side-attributed queued tools for handler sides, and implements root-thread `state.stopSession()`.
+Base is the `M2a-1` branch. Activates `HandlerSideValue` across all handler pairings (`handler x human`, `human x handler`, `prompt x handler`, `handler x prompt`, `handler x handler`), enforces the `defineHandler` brand, implements one-at-a-time durable handler delivery and failure semantics, adds side-attributed queued tools for handler sides, and implements root-thread `state.stopSession()`.
 
 ### Scope
 
@@ -151,7 +151,7 @@ Base is `main` after `M2a-1` lands. Activates `HandlerSideValue` across all hand
 
 ## Direct execution outside a calling tool (M2a-3)
 
-Base is `main` after `M2a-2` lands. Enables `invokeTool` from hooks inside an execution, `invokeTool` on a handle at rest (and from at-rest hooks), and `runAgent` on handles at rest or inside an execution, with full claim, status, watermark wakeup, `ThreadBusy`, abort, crash recovery, and terminated-thread enforcement.
+Base is the `M2a-2` branch. Enables `invokeTool` from hooks inside an execution, `invokeTool` on a handle at rest (and from at-rest hooks), and `runAgent` on handles at rest or inside an execution, with full claim, status, watermark wakeup, `ThreadBusy`, abort, crash recovery, and terminated-thread enforcement.
 
 ### Scope
 
