@@ -273,44 +273,57 @@ it.effect("a sender whose queued entry fails delivery learns that it was not del
   )
 })
 
-it.effect("a sender whose claim first runs older work for the opposite side waits for its own delivery", () => {
-  const providerA = new ScriptedProvider([
-    { toolCalls: [{ id: "park", name: "park", arguments: {} }] },
-    { text: "answered the second send" },
-  ])
-  const providerB = new ScriptedProvider([{ text: "answered parked work" }])
-  const park = defineTool({
-    description: "Leave work for B in the next session",
-    execute: async (state) => {
-      await state.queueMessage({ role: "assistant", content: "for B" })
-      return ok("parked")
-    },
-  })
-  const setup = dualProject({
-    providerA,
-    providerB,
-    tools: { park },
-    sideA: { stopTool: "park" },
-    agent: { maxSessionTurns: 1 },
-  })
-  return Effect.gen(function* () {
-    const thread = yield* createThread("pair")
-    const first = yield* sendMessage(thread.id, "first")
-    expect(first.outcome?.reason).toBe("max_session_turns")
-    const second = yield* sendMessage(thread.id, "second")
-    expect(second.outcome?.reason).toBe("max_session_turns")
-    expect(providerB.requests).toHaveLength(1)
-    expect(providerA.requests[1]?.messages).toContainEqual({ role: "user", content: "second" })
-    expect(yield* RunStore.use((store) => store.queueLength(thread.id))).toBe(0)
-  }).pipe(
-    Effect.provide(
-      Layer.merge(
-        registryOf(setup),
-        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
+for (const [title, stop] of [
+  ["a sender whose claim first runs older work for the opposite side waits for its own delivery", false],
+  ["a sender reclaims its entry after older work on the opposite side stops cooperatively", true],
+] as const)
+  it.effect(title, () => {
+    const providerA = new ScriptedProvider([
+      { toolCalls: [{ id: "park", name: "park", arguments: {} }] },
+      { text: "answered the second send" },
+    ])
+    const providerB = new ScriptedProvider([
+      stop ? { toolCalls: [{ id: "stop", name: "stop", arguments: {} }] } : { text: "answered parked work" },
+    ])
+    const stopTool = defineTool({
+      description: "Stop this run",
+      execute: async (state) => {
+        state.execution?.stop()
+        return ok("stopped")
+      },
+    })
+    const park = defineTool({
+      description: "Leave work for B in the next session",
+      execute: async (state) => {
+        await state.queueMessage({ role: "assistant", content: "for B" })
+        return ok("parked")
+      },
+    })
+    const setup = dualProject({
+      providerA,
+      providerB,
+      tools: { park, stop: stopTool },
+      sideA: { stopTool: "park" },
+      agent: { maxSessionTurns: 1 },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("pair")
+      const first = yield* sendMessage(thread.id, "first")
+      expect(first.outcome?.reason).toBe("max_session_turns")
+      const second = yield* sendMessage(thread.id, "second")
+      expect(second.outcome?.reason).toBe("max_session_turns")
+      expect(providerB.requests).toHaveLength(1)
+      expect(providerA.requests[1]?.messages).toContainEqual({ role: "user", content: "second" })
+      expect(yield* RunStore.use((store) => store.queueLength(thread.id))).toBe(0)
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          registryOf(setup),
+          Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
+        ),
       ),
-    ),
-  )
-})
+    )
+  })
 
 it.effect("a forceTurn from a delivery to a human expires before queued work continues", () => {
   const hook = defineHook({
@@ -393,6 +406,34 @@ it.effect("an abort observing a counted session cap preserves its reason, counte
       sessionTurns: 0,
       pending: 1,
       requests: 1,
+    })
+  }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
+})
+
+it.effect("a repeated setup failure returns after one reclaim and reports its message still queued", () => {
+  let attempts = 0
+  const setup = project({
+    provider: new ScriptedProvider([]),
+    model: {
+      provider: () => {
+        attempts++
+        throw new Error("model setup failed")
+      },
+    },
+  })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const delivery = yield* sendMessage(id, "go")
+    expect({
+      attempts,
+      stillQueued: delivery.stillQueued,
+      reason: delivery.outcome?.reason,
+      pending: yield* RunStore.use((store) => store.queueLength(id)),
+    }).toEqual({
+      attempts: 2,
+      stillQueued: true,
+      reason: "fatal_error",
+      pending: 1,
     })
   }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
 })

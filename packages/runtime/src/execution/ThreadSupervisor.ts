@@ -17,7 +17,6 @@ import { ThreadStore } from "../store/ThreadStore.ts"
 import { Execution } from "./Execution.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
-import { atRuntimeCap } from "./stop-rules.ts"
 import { type AdmissionError, queuedMessage, type ThreadControl } from "./thread-state.ts"
 import { loadAgent, roleOf, type SetupError, senderSide } from "./turn.ts"
 
@@ -224,15 +223,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
       yield* Effect.forkScoped(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))))
 
-      const deliveryFromClaim = Effect.fnUntraced(function* (threadId: string, seq: number, started: Execution) {
-        const outcome = yield* started.settlement.await
-        const status = yield* statusOf(threadId)
-        const disposition = yield* runStore.queueDisposition(threadId, seq)
-        if (disposition === "failed_delivery")
-          return { outcome, status, failedDelivery: true as const, stillQueued: false }
-        // A cap may park this sender behind older work addressed to the other side.
-        if (disposition !== "pending" || !atRuntimeCap(outcome.reason)) return { outcome, status }
-      })
       const waitOnHolder = Effect.fnUntraced(function* (threadId: string, options: SendOptions) {
         const local = live.get(threadId)
         if (local) {
@@ -252,33 +242,41 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       ) =>
         Effect.gen(function* () {
           let started = admitted.started
+          let failedHead: number | undefined
           while (true) {
-            if (started) {
-              const delivery = yield* deliveryFromClaim(threadId, admitted.seq, started)
-              if (delivery) return delivery
-            }
-            const outcome = yield* waitOnHolder(threadId, options)
-            const status = yield* awaitRest(threadId).pipe(
-              Effect.onInterrupt(() =>
-                Effect.gen(function* () {
-                  if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
-                    yield* options.interruptedWhileQueued
-                }),
-              ),
-            )
-            const current = yield* threadStore.getThread(threadId)
+            const outcome = started ? yield* started.settlement.await : yield* waitOnHolder(threadId, options)
+            // A holding abort can already have started a successor. Wait for its delivery while preserving the
+            // original sender's abort outcome. A sender whose entry was taken need not wait for unrelated work.
+            if (started && outcome?.reason === "aborted_by_user" && (yield* runStore.isQueued(threadId, admitted.seq)))
+              yield* started.lastOutcome
+            const status = started
+              ? yield* statusOf(threadId)
+              : yield* awaitRest(threadId).pipe(
+                  Effect.onInterrupt(() =>
+                    Effect.gen(function* () {
+                      if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
+                        yield* options.interruptedWhileQueued
+                    }),
+                  ),
+                )
             const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
-            if (current.terminated !== null && disposition !== "failed_delivery")
+            const result = { status, ...(outcome && { outcome }) }
+            if (started && disposition === undefined) return result
+            if (disposition === "failed_delivery")
+              return { ...result, failedDelivery: true as const, stillQueued: false }
+            const current = yield* threadStore.getThread(threadId)
+            if (current.terminated !== null)
               return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
             const stillQueued = disposition === "pending"
-            if (status.reason === "execution_lost" || !stillQueued) {
-              return {
-                status,
-                stillQueued,
-                ...(disposition === "failed_delivery" && { failedDelivery: true as const }),
-                ...(outcome && { outcome }),
-              }
-            }
+            if (!stillQueued || status.reason === "execution_lost" || outcome?.reason === "execution_lost")
+              return { ...result, stillQueued }
+
+            // A broken setup can settle before it takes even the FIFO head. Retry once while that same head remains.
+            if (outcome?.reason === "fatal_error" && outcome.steps === 0) {
+              const head = yield* runStore.pendingHeadSeq(threadId)
+              if (head !== undefined && head === failedHead) return { ...result, stillQueued }
+              failedHead = head
+            } else failedHead = undefined
             started = yield* claimWith(
               threadId,
               (flowId) => runStore.claim(threadId, { holder: holder.id, flowId }),

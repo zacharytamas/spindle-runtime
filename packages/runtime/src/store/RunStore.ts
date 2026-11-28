@@ -255,6 +255,15 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       }
     }, unyielding),
 
+    pendingHeadSeq: Effect.fn("RunStore.pendingHeadSeq")(
+      (threadId: string) =>
+        Effect.map(
+          sql<{ seq: number }>`SELECT seq FROM queue WHERE ${pending(sql, threadId)} ORDER BY seq LIMIT 1`,
+          (rows) => rows[0]?.seq,
+        ),
+      unyielding,
+    ),
+
     queueLength: Effect.fn("RunStore.queueLength")(
       (threadId: string) =>
         Effect.map(
