@@ -412,6 +412,14 @@ const invalid: ReadonlyArray<Case> = [
     "no-agents-directory",
     [error("agents_directory_missing", "agents")],
   ],
+  [
+    "rule 8: rejects an unbranded plain object exported from agents/handlers and packed handlers while accepting defineHandler",
+    "unbranded-handler",
+    [
+      error("handler_invalid", "agents/handlers/plain.ts"),
+      error("handler_invalid", "agents/packed/standardagent-unbranded-handler/index.js:handlers.plain"),
+    ],
+  ],
 ]
 
 describe("validate", () => {

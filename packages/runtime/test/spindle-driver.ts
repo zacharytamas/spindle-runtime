@@ -33,12 +33,14 @@ const definition = (kind: Kind, name: string, value: unknown): Definition => ({
 
 // The scenarios define a project in memory, so this registry holds the values without a directory.
 export const registryOf = (project: Project) => {
+  const handlers = (project as { readonly handlers?: Readonly<Record<string, unknown>> }).handlers ?? {}
   const definitions = [
     ...project.agents.map((agent) => definition("agent", agent.name, agent)),
     ...project.prompts.map((prompt) => definition("prompt", prompt.name, prompt)),
     ...project.models.map((model) => definition("model", model.name, model)),
     ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
     ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
+    ...Object.entries(handlers).map(([name, handler]) => definition("handler", name, handler)),
   ]
   return Layer.succeed(Registry, {
     root: "memory",

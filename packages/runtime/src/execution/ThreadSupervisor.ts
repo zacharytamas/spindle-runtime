@@ -22,7 +22,7 @@ import { loadAgent, roleOf, type SetupError, senderSide } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
 
-class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
+export class InvalidOption extends Data.TaggedError("InvalidOption")<{ readonly message: string }> {}
 
 export interface Delivery {
   readonly failedDelivery?: true
@@ -68,6 +68,8 @@ const isCount = (value: unknown) => typeof value === "number" && Number.isSafeIn
 const checkOptions = (options: ExecutionOptions) => {
   if (options.retries !== undefined && !isCount(options.retries))
     return new InvalidOption({ message: `retries must be a whole number of 0 or more, got ${options.retries}` })
+  if (options.turnCap !== undefined && !(isCount(options.turnCap) && options.turnCap > 0))
+    return new InvalidOption({ message: `turnCap must be a whole number above 0, got ${options.turnCap}` })
   if (options.stepCap !== undefined && !(isCount(options.stepCap) && options.stepCap > 0))
     return new InvalidOption({ message: `stepCap must be a whole number above 0, got ${options.stepCap}` })
   return undefined
@@ -149,6 +151,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         waitForDelivery = false,
       ) =>
         Effect.gen(function* () {
+          const invalid = checkOptions({ ...defaults, ...options })
+          if (invalid) return yield* invalid
           if (originFlow(origin) === null) yield* runStore.recoverLost(threadId)
           let seq = 0
           const started = yield* claimWith(
@@ -183,8 +187,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           Effect.flatMap(queuedMessage(input, secrets), (message) =>
             Effect.asVoid(admit(threadId, { kind: "message", message }, {}, origin)),
           ),
-        queueTool: (target, args, origin) =>
-          Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args }, {}, origin)),
+        queueTool: (target, args, origin, side = null) =>
+          Effect.asVoid(admit(threadId, { kind: "tool", toolName: target, args, side }, {}, origin)),
         status: statusOf(threadId),
         terminate: (origin) => terminate(threadId, origin),
       })
@@ -308,8 +312,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         holderId: holder.id,
         send: (threadId, content, options = {}) =>
           Effect.gen(function* () {
-            const invalid = checkOptions(options)
-            if (invalid !== undefined) return yield* invalid
             const thread = yield* threadStore.getThread(threadId)
             const agent = yield* loadAgent(thread.agentId)
             const message: QueueMessageInput = { role: roleOf(senderSide(agent)), content }

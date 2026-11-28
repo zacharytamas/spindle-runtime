@@ -35,7 +35,7 @@ const printer =
     const message = event.message
     if (message.role === "tool")
       return print(`[tool result] ${message.name} ${message.tool_status}: ${message.content ?? ""}`)
-    if (!isModelMessage(message, modelRole)) return Effect.void
+    if (!event.handlerOutput && !isModelMessage(message, modelRole)) return Effect.void
     return Effect.gen(function* () {
       if (message.content !== null && message.content !== "") yield* print(message.content)
       for (const call of toolCallsOf(message)) yield* print(toolCallLine(call))
@@ -129,7 +129,7 @@ const answerInterrupts = (supervisor: ThreadSupervisor["Service"], threadId: str
 export const runCommand = Command.make(
   "run",
   {
-    agent: Argument.String("agent").pipe(Argument.withDescription("The agent whose prompt side answers")),
+    agent: Argument.String("agent").pipe(Argument.withDescription("The agent that receives the message")),
     ...deliveryFlags,
     db: Flag.String("db").pipe(
       Flag.withDescription("The SQLite database file. Without it the thread lives in memory and ends with the run."),
@@ -137,4 +137,4 @@ export const runCommand = Command.make(
     ),
   },
   (args) => deliver(args, { agent: args.agent }),
-).pipe(Command.withDescription("Send one message to an agent and print the reply of its prompt side"))
+).pipe(Command.withDescription("Send one message to an agent and print its replies"))

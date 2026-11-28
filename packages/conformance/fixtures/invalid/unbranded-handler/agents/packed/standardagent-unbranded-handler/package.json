@@ -1,0 +1,9 @@
+{
+  "name": "standardagent-unbranded-handler",
+  "version": "1.0.0",
+  "type": "module",
+  "keywords": [
+    "standardagent"
+  ],
+  "standardagent": {}
+}

@@ -12,6 +12,7 @@ import { type CallContext, callModel, type ModelCall, type ModelResponse } from 
 import { drainQueue, queueRecipient } from "./drain.ts"
 import type { End, Execution } from "./Execution.ts"
 import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
+import { type HandlerCall, HandlerDeliveries, handlerTurn } from "./handler.ts"
 import { type History, makeHistory } from "./history.ts"
 import { agentHooks, type HookScope, turnHooks } from "./hooks.ts"
 import { commitMessage, type WriteContext } from "./messages.ts"
@@ -24,29 +25,35 @@ import { invokeTool, runToolCall, scopeFor, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
 import {
   type AgentSides,
+  type AutomatedSide,
+  type HandlerSideValue,
   loadAgent,
   otherSide,
   type PromptSideValue,
   prepareSideValue,
-  SetupError,
   type SideValue,
 } from "./turn.ts"
 
 export type ExecutionEvent =
   | { readonly type: "trace"; readonly entry: TraceEntry }
-  | { readonly type: "message"; readonly message: Message }
+  | { readonly type: "message"; readonly message: Message; readonly handlerOutput?: boolean }
   | { readonly type: "request"; readonly request: ProviderRequest }
 
-export interface SideScope {
-  readonly turn: PromptSideValue
+export interface ToolScope<T extends AutomatedSide = AutomatedSide> {
+  readonly turn: T
   readonly write: WriteContext
-  readonly toolContext: ToolContext
+  readonly toolContext: ToolContext<T>
+}
+
+export interface SideScope extends ToolScope<PromptSideValue> {
   readonly view: HistoryView
   readonly provider: CallContext["provider"]
   readonly streamed: CallContext["streamed"]
 }
 
 export interface ThreadScope {
+  readonly deliveries: HandlerDeliveries
+  readonly handlerCalls: Array<HandlerCall>
   readonly sides: AgentSides
   readonly context: Record<string, unknown>
   readonly thread: Thread
@@ -69,6 +76,7 @@ export interface ExecutionOptions {
   readonly onHold?: (operation: string) => Effect.Effect<void>
   readonly toolTimeout?: ToolContext["toolTimeout"]
   readonly retries?: number
+  readonly turnCap?: number
   readonly stepCap?: number
   readonly provider?: LLMProviderInterface
   // The execution adds each secret value it resolves, so that a caller can redact what it prints.
@@ -100,6 +108,7 @@ export interface RunOutcome {
   readonly steps: number
   readonly error?: RunError
   readonly stopTool?: StopToolOutcome
+  readonly handlerCalls: ReadonlyArray<HandlerCall>
   readonly trace: ReadonlyArray<TraceEntry>
   readonly modelCalls: ReadonlyArray<ModelCall>
 }
@@ -141,6 +150,7 @@ export const prepareSides = Effect.fn("prepareSides")(function* (agent: AgentSid
 
 function stepLog(threadId: string, run: Execution, secrets: Secrets, options: ExecutionOptions) {
   const flowId = run.flowId
+  const handlerCalls: Array<HandlerCall> = []
   const trace: Array<TraceEntry> = []
   const modelCalls: Array<ModelCall> = []
   const pending: Array<Fiber.Fiber<void>> = []
@@ -190,18 +200,47 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
         ...(end.error === undefined ? {} : { error: redactError(end.error) }),
         trace: brief ? [] : trace,
         modelCalls: calls,
+        handlerCalls: handlerCalls.map((call) => (call.error ? { ...call, error: redactError(call.error) } : call)),
       } satisfies RunOutcome
     })
 
-  return { record, observe, report, modelCalls, pending, counter, redact }
+  return { record, observe, report, handlerCalls, modelCalls, pending, counter, redact }
 }
+
+const prepareToolContext = Effect.fnUntraced(function* <T extends AutomatedSide>(
+  thread: ThreadScope,
+  turn: T,
+  hooks: HookScope,
+  options: ExecutionOptions,
+) {
+  const toolContext: ToolContext<T> = {
+    execution: thread.run,
+    secrets: thread.secrets,
+    scope: yield* Effect.scope,
+    toolTimeout: options.toolTimeout,
+    turn,
+    stateFor: (tool, entry, callback) =>
+      makeThreadState({
+        ...thread,
+        execution: { history: thread.history, run: thread.run },
+        hooks,
+        scope: scopeFor(turn, entry),
+        from: tool,
+        caller: tool,
+        callback,
+        invoke: (name, args, onExecute) =>
+          invokeTool(toolContext, tool, tool, name, args, onExecute).pipe(Effect.provideContext(thread.services)),
+      }),
+  }
+  return toolContext
+})
 
 const prepareSide = Effect.fnUntraced(function* (
   thread: ThreadScope,
   turn: PromptSideValue,
   options: ExecutionOptions,
 ) {
-  const { run, history, secrets, services } = thread
+  const { run, history, secrets } = thread
   const cached = run.turns.scopes.get(turn)
   if (cached) return cached
   const hooks: HookScope = {
@@ -215,22 +254,7 @@ const prepareSide = Effect.fnUntraced(function* (
     hooks,
   }
   const write = { ...thread.delivery, hooks }
-  const toolContext: ToolContext = {
-    execution: run,
-    scope: yield* Effect.scope,
-    toolTimeout: options.toolTimeout,
-    turn,
-    stateFor: (tool, entry, callback) =>
-      makeThreadState({
-        ...base,
-        scope: scopeFor(turn, entry),
-        from: tool,
-        caller: tool,
-        callback,
-        invoke: (name, args, onExecute) =>
-          invokeTool(toolContext, tool, name, args, onExecute).pipe(Effect.provideContext(services)),
-      }),
-  }
+  const toolContext = yield* prepareToolContext(thread, turn, hooks, options)
   const promptState = makeThreadState({
     ...base,
     scope: promptScope(turn),
@@ -318,23 +342,29 @@ const promptStep = Effect.fnUntraced(function* (side: SideScope, thread: ThreadS
 
 const idle = (reason: string, continueIfQueued = false): End => ({ status: "idle", reason, continueIfQueued })
 
-// Only a completed prompt turn advances the durable counter. A human destination goes
+// A completed prompt turn advances the durable counter. A human destination goes
 // through the store's atomic queue check so admission racing settlement cannot lose a wakeup.
 const afterStep = Effect.fnUntraced(function* (
   side: SideScope,
   thread: ThreadScope,
   step: NonNullable<Effect.Success<ReturnType<typeof promptStep>>>,
   sideSteps: number,
-  stepCap: number,
+  options: ExecutionOptions,
 ) {
   const { run, sides } = thread
+  const stepCap = options.stepCap ?? 1000
   const forced = run.turns.takeTarget()
   const { calls, results, response } = step
   const progress = { text: response.content, calls, sideSteps, totalSteps: run.steps }
   const reason = forced === undefined ? stopReason(progress, side.turn.config, stepCap) : "force_turn"
   if (reason === undefined) return undefined
   if (reason === "max_total_steps") return idle(reason)
-  const sessionEnd = yield* run.completeTurn(thread.thread.id, side.view, sides.agent.value.maxSessionTurns)
+  const sessionEnd = yield* run.completeTurn(
+    thread.thread.id,
+    side.view,
+    sides.agent.value.maxSessionTurns,
+    options.turnCap ?? 1000,
+  )
   if (sessionEnd) return sessionEnd
   const next = sides[forced ?? otherSide(side.turn.side)]
   if (next.kind === "human") {
@@ -361,10 +391,23 @@ const promptTurn = Effect.fnUntraced(function* (
     if (steps === 0 && !handoff && !prompted) return idle("awaiting_human", true)
     const step = yield* promptStep(side, thread, options.retries ?? 2)
     if (!step || run.stopAtBoundary()) return run.abortEnd
-    const boundary = yield* afterStep(side, thread, step, ++steps, options.stepCap ?? 1000)
+    const boundary = yield* afterStep(side, thread, step, ++steps, options)
     if (boundary) return boundary
     yield* record("stop", "continue")
   }
+})
+
+const prepareHandler = Effect.fnUntraced(function* (
+  thread: ThreadScope,
+  turn: HandlerSideValue,
+  options: ExecutionOptions,
+) {
+  const cached = thread.run.turns.handlerScopes.get(turn)
+  if (cached) return cached
+  const write = thread.delivery
+  const scope = { turn, write, toolContext: yield* prepareToolContext(thread, turn, write.hooks, options) }
+  thread.run.turns.handlerScopes.set(turn, scope)
+  return scope
 })
 
 // A new run takes the destination of its FIFO head. Work addressed to a human
@@ -373,26 +416,27 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
   const { run, sides } = thread
   const head = yield* (yield* RunStore).nextQueued(thread.thread.id, run)
   run.turns.active = queueRecipient(sides, head)
-  let handoff = false
+  let reason = "queue"
   while (true) {
     if (run.stopAtBoundary()) return run.abortEnd
     const active: SideValue = run.turns.active
-    switch (active.kind) {
-      case "human":
-        return idle("awaiting_human")
-      case "handler":
-        return yield* new SetupError({ message: `Spindle does not yet execute handler ${active.config.handler}` })
-      case "prompt": {
-        const side: SideScope = yield* prepareSide(thread, active, options)
-        const boundary: End | { next: SideValue; reason: string } = yield* promptTurn(side, thread, options, handoff)
-        run.turns.pending = undefined
-        yield* thread.record("stop", boundary.reason)
-        if (!("next" in boundary)) return boundary
-        run.turns.active = boundary.next
-        handoff = true
-        break
-      }
+    if (active.kind === "human") return idle("awaiting_human")
+    let boundary: End | { next: SideValue; reason: string }
+    if (active.kind === "handler") {
+      const side: ToolScope<HandlerSideValue> = yield* prepareHandler(thread, active, options)
+      boundary = yield* handlerTurn(side, thread, reason === "force_turn", options.turnCap ?? 1000)
+    } else {
+      const side: SideScope = yield* prepareSide(thread, active, options)
+      const peer = sides[otherSide(active.side)]
+      thread.deliveries.begin(peer.kind === "handler" ? active.role : undefined)
+      boundary = yield* promptTurn(side, thread, options, reason !== "queue")
+      thread.deliveries.finish(peer, "next" in boundary)
     }
+    run.turns.pending = undefined
+    yield* thread.record("stop", boundary.reason)
+    if (!("next" in boundary)) return boundary
+    run.turns.active = boundary.next
+    reason = boundary.reason
   }
 })
 
@@ -411,7 +455,12 @@ export const prepareSteps = Effect.fnUntraced(function* (
       const thread = yield* (yield* ThreadStore).getThread(threadId)
       const services = yield* Effect.context<Registry | Stores>()
       const sides = yield* prepareSides(yield* loadAgent(thread.agentId), secrets)
-      const history = makeHistory(threadId)
+      const deliveries = new HandlerDeliveries()
+      const history = makeHistory(threadId, {
+        onInsert: (row) => deliveries.inserted(row),
+        onUpdate: (message) => deliveries.updated(message),
+        onDelete: (messageId) => deliveries.deleted(messageId),
+      })
       const base = { thread, services, secrets, control, history, run, sides, context: {} }
       // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.
       const hooks = agentHookScope(
@@ -431,7 +480,7 @@ export const prepareSteps = Effect.fnUntraced(function* (
         history,
         origin: { kind: "flow", flowId: run.flowId },
       }
-      const scope: ThreadScope = { ...base, ...log, delivery, executionStartSeq }
+      const scope: ThreadScope = { ...base, ...log, delivery, deliveries, executionStartSeq }
       return scope
     }),
   )

@@ -40,7 +40,12 @@ export type NewMessage = Pick<Message, "role"> &
 
 export type QueueEntry =
   | { readonly kind: "message"; readonly message: QueueMessageInput }
-  | { readonly kind: "tool"; readonly toolName: string; readonly args: Readonly<Record<string, unknown>> }
+  | {
+      readonly kind: "tool"
+      readonly side?: "a" | "b" | null
+      readonly toolName: string
+      readonly args: Readonly<Record<string, unknown>>
+    }
 
 export type Queued = QueueEntry & { readonly seq: number; readonly queuedAt: number }
 

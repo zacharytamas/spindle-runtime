@@ -196,7 +196,9 @@ export interface QueueRow {
 }
 
 export const queuePayload = (entry: QueueEntry): unknown =>
-  entry.kind === "message" ? entry.message : { toolName: entry.toolName, args: entry.args }
+  entry.kind === "message"
+    ? entry.message
+    : { toolName: entry.toolName, args: entry.args, ...(entry.side !== undefined && { side: entry.side }) }
 
 const attachment = Schema.Struct({
   type: Schema.Literal("file"),
@@ -236,7 +238,13 @@ const matchesMessage = Schema.is(
   }),
 )
 const isQueueMessage = (value: unknown): value is QueueMessageInput => matchesMessage(value)
-const isQueueTool = Schema.is(Schema.Struct({ toolName: Schema.String, args: record }))
+const isQueueTool = Schema.is(
+  Schema.Struct({
+    toolName: Schema.String,
+    args: record,
+    side: Schema.optionalKey(Schema.NullOr(Schema.Literals(["a", "b"]))),
+  }),
+)
 const parsePayload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 export const decodeQueued = (row: QueueRow): Queued | undefined => {
@@ -244,5 +252,11 @@ export const decodeQueued = (row: QueueRow): Queued | undefined => {
   const position = { seq: row.seq, queuedAt: row.queued_at }
   if (row.kind === "message" && isQueueMessage(payload)) return { ...position, kind: "message", message: payload }
   if (row.kind === "tool" && isQueueTool(payload))
-    return { ...position, kind: "tool", toolName: payload.toolName, args: payload.args }
+    return {
+      ...position,
+      kind: "tool",
+      toolName: payload.toolName,
+      args: payload.args,
+      ...(payload.side !== undefined && { side: payload.side }),
+    }
 }

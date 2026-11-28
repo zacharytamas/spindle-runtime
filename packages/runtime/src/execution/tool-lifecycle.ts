@@ -6,7 +6,7 @@ import type { StreamedCalls } from "./call.ts"
 import { countHooks, type HookScope, observeHooks, transformHooks } from "./hooks.ts"
 import { commitMessage } from "./messages.ts"
 import { argumentsOf } from "./response.ts"
-import type { SideScope, ThreadScope } from "./step.ts"
+import type { ThreadScope, ToolScope } from "./step.ts"
 import {
   checkedResult,
   describe,
@@ -56,7 +56,7 @@ export const streamedHooks = (hooks: HookScope, turn: PromptSideValue): Streamed
 // Hooks section 5: the branch the tool's own outcome picks, then before_store_tool_result, then the stored
 // message, then tool_call_done with what was stored.
 export const completeCall = (
-  { turn, write }: SideScope,
+  { turn, write }: ToolScope,
   { run, record, observe }: ThreadScope,
   callerSeq: number,
   call: ToolCall,

@@ -28,6 +28,7 @@ import {
 import {
   decodeQueued,
   type MessageRow,
+  messageColumns,
   messageRow,
   type QueueRow,
   queuePayload,
@@ -36,6 +37,7 @@ import {
   type ThreadRow,
   text,
   threadColumns,
+  toMessage,
   toStatus,
   toThread,
 } from "./schema.ts"
@@ -58,7 +60,7 @@ const sessionEnds = new Set([
   "execution_lost",
 ])
 
-export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
+export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCursor }: Database) => {
   const hasPending = (threadId: string) =>
     Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} LIMIT 1`, (rows) => rows.length > 0)
   const queueDisposition = Effect.fn("RunStore.queueDisposition")(function* (threadId: string, seq: number) {
@@ -215,13 +217,39 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       unyielding,
     ),
 
-    completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string) {
+    advanceDelivery: Effect.fn("RunStore.advanceDelivery")(
+      function* (threadId: string, flowId: string, side: "a" | "b", seq: number, messageId: string) {
+        const [message] =
+          yield* sql<MessageRow>`SELECT ${sql.literal(messageColumns)} FROM messages WHERE thread_id = ${threadId} AND id = ${messageId}`
+        if (message === undefined) {
+          const row = yield* selectRun(threadId)
+          const refusal = authorize(threadId, row, { kind: "flow", flowId })
+          if (refusal) return yield* refusal
+          return null
+        }
+        const cursor = deliveryCursor(side)
+        const rows = yield* sql`UPDATE threads SET ${cursor} = ${seq}
+          WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running' AND ${cursor} < ${seq} RETURNING id`
+        if (rows.length) return toMessage(message)
+        const row = yield* selectRun(threadId)
+        const refusal = authorize(threadId, row, { kind: "flow", flowId })
+        if (refusal) return yield* refusal
+        return null
+      },
+      sql.withTransaction,
+      unyielding,
+    ),
+
+    completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string, needBoundary = true) {
+      const boundary = needBoundary
+        ? sql`(SELECT coalesce(max(seq), 0) FROM messages WHERE thread_id = ${threadId})`
+        : sql.literal("0")
       const [updated] = yield* sql<{
         session_turns: number
         last_seq: number
       }>`UPDATE threads SET session_turns = session_turns + 1
         WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running'
-        RETURNING session_turns, (SELECT coalesce(max(seq), 0) FROM messages WHERE thread_id = ${threadId}) AS last_seq`
+        RETURNING session_turns, ${boundary} AS last_seq`
       if (updated) return updated
       const row = yield* selectRun(threadId)
       return yield* new FlowEnded({ threadId, flowId, why: row.terminated_at === null ? "superseded" : "terminated" })

@@ -17,7 +17,7 @@ import { type MessageRow, messageColumns, messageRow, stored, toMessage } from "
 
 const isCount = Schema.is(Schema.Natural)
 
-export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
+export const makeMessageStore = ({ sql, selectRun, runRows, openCalls, deliveryCursor }: Database) => {
   const messageIdTaken = (id: string) =>
     Effect.map(sql`SELECT 1 FROM messages WHERE id = ${id}`, (rows) => rows.length > 0)
   const revision = (threadId: string) => Effect.map(selectRun(threadId), (row) => row.revision)
@@ -43,6 +43,7 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
       link: {
         readonly callerSeq?: number | undefined
         readonly dequeue?: number | undefined
+        readonly deliveredTo?: "a" | "b" | undefined
         readonly resultPrompt?: string | undefined
       } = {},
     ) {
@@ -51,7 +52,7 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
         Effect.gen(function* () {
           const thread = yield* selectRun(threadId)
           const flowId = originFlow(origin)
-          const { callerSeq, dequeue, resultPrompt } = flowId === null ? {} : link
+          const { callerSeq, dequeue, resultPrompt, deliveredTo } = flowId === null ? {} : link
           const refusal = authorize(threadId, thread, origin, "insert")
           if (refusal) return yield* refusal
           if (dequeue !== undefined) {
@@ -76,6 +77,8 @@ export const makeMessageStore = ({ sql, selectRun, runRows, openCalls }: Databas
             seq: number
           }>`INSERT INTO messages ${sql.insert({ ...row, ...facts })} RETURNING seq`
           if (!inserted) return yield* Effect.die("Message insert returned no sequence")
+          if (deliveredTo)
+            yield* sql`UPDATE threads SET ${deliveryCursor(deliveredTo)} = ${inserted.seq} WHERE id = ${threadId}`
           // The insert trigger added one, and BEGIN IMMEDIATE kept every other writer out since the read.
           return {
             message: toMessage(row),

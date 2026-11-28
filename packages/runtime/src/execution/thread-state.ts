@@ -32,6 +32,7 @@ import { copyMessage, type History } from "./history.ts"
 import { type HookCall, HookExpired, type HookScope, type HookSet } from "./hooks.ts"
 import { injectMessage, redactMetadata, updateMessage } from "./messages.ts"
 import { isPlain, mapStrings, redactor } from "./redact.ts"
+import type { InvalidOption } from "./ThreadSupervisor.ts"
 import { describe, failed, notRun, QueueRefused, queueTarget, redactAttachment } from "./tools.ts"
 import { type FunctionTool, type Loaded, lookup, otherSide } from "./turn.ts"
 
@@ -43,7 +44,7 @@ interface ExecutionRecord {
 // The members of ThreadState that reach past one execution: the queue, the run status, and termination. An execution
 // that one of them starts runs with the services of the caller.
 type WriteError = ThreadNotFound | SqlError | FlowEnded | ThreadTerminated | HandleExpired
-export type AdmissionError = WriteError | ValueNotJson
+export type AdmissionError = WriteError | ValueNotJson | InvalidOption
 
 export interface ThreadControl {
   readonly queueMessage: (
@@ -56,6 +57,7 @@ export interface ThreadControl {
     target: string,
     args: Record<string, unknown>,
     origin: WriteOrigin,
+    side?: "a" | "b" | null,
   ) => Effect.Effect<void, AdmissionError, Registry | Stores>
   readonly status: Effect.Effect<ThreadStatus, ThreadNotFound | SqlError>
   readonly terminate: (origin: WriteOrigin) => Effect.Effect<number, WriteError>
@@ -318,7 +320,13 @@ function messageMethods(
     },
     deleteMessage: (id) =>
       typeof id === "string"
-        ? run(messageStore.deleteMessage(threadId, id, origin))
+        ? run(
+            Effect.tap(messageStore.deleteMessage(threadId, id, origin), (removed) =>
+              Effect.sync(() => {
+                if (removed) write.history?.deleted(id)
+              }),
+            ),
+          )
         : invalid("deleteMessage takes a string id"),
     queueMessage: (input) => run(state.control.queueMessage(input, state.secrets, origin)),
   }
@@ -410,7 +418,7 @@ function toolMethods(
             mapStrings(plain, check, check)
             if (found) return yield* new SecretInArguments()
           }
-          yield* state.control.queueTool(target, plain, origin)
+          yield* state.control.queueTool(target, plain, origin, state.execution?.run.turns.active?.side ?? null)
         }),
       ),
     // A nested call is pending from here, before its lookup and its validation, so the run waits for it.
@@ -453,7 +461,7 @@ function unavailableMethods(check: () => void) {
   }
   return {
     notifyParent: unavailableAsync("notifyParent", "M3, because this thread has no parent"),
-    stopSession: unavailableAsync("stopSession", "M2"),
+
     setEnv: unavailableAsync("setEnv", "M2"),
     scheduleEffect: unavailableAsync("scheduleEffect", "M4"),
     getScheduledEffects: unavailableAsync("getScheduledEffects", "M4"),
@@ -522,6 +530,19 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ...environment(state, bridge),
     ...toolMethods(state, bridge),
     ...unavailableMethods(check),
+    stopSession: async (options = {}) => {
+      check()
+      if (!state.execution) return invalid("stopSession needs an active execution")
+      if (
+        !isRecord(options) ||
+        Array.isArray(options) ||
+        (["result", "notifyParent", "status"] as const).some(
+          (key) => options[key] !== undefined && typeof options[key] !== "string",
+        )
+      )
+        return invalid("stopSession takes an options object with optional string result, notifyParent and status")
+      state.execution.run.stopSession()
+    },
     getChildThread: (id) =>
       typeof id === "string" ? run(Effect.succeed(null)) : invalid("getChildThread takes a string reference id"),
     getParentThread: () => run(Effect.succeed(null)),

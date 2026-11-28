@@ -1,4 +1,9 @@
-import { parseQualifiedName, RESERVED_RELATIONSHIP_NAMES, validateAgentDefinition } from "@standardagents/spec"
+import {
+  isHandler,
+  parseQualifiedName,
+  RESERVED_RELATIONSHIP_NAMES,
+  validateAgentDefinition,
+} from "@standardagents/spec"
 import { Predicate } from "effect"
 import { ZodObject } from "zod"
 import { type Definition, type Issue, issue, type Kind, namespaceOf } from "./definition.ts"
@@ -504,6 +509,8 @@ const checkHandler = (at: Site, handler: unknown) => {
   if (!Predicate.isObject(handler))
     return at.report("handler_invalid", "", "A handler definition must be an object from defineHandler()")
   if (typeof handler.execute !== "function") at.report("handler_invalid", "execute", "execute must be a function")
+  else if (!isHandler(handler))
+    at.report("handler_invalid", "", "A handler definition must be branded by defineHandler()")
   if (handler.description !== undefined && typeof handler.description !== "string")
     at.report("handler_invalid", "description", "description must be a string")
 }

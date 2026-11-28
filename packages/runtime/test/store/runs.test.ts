@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { defineTool, type ThreadState } from "@standardagents/spec"
+import { definePrompt, defineTool, type ThreadState } from "@standardagents/spec"
 import { Effect, Fiber, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { gate, ok, project } from "../../../conformance/src/scenarios/harness.ts"
+import { handlerOf, handlerProject } from "../../../conformance/src/scenarios/handlers/fixtures.ts"
+import { gate, ok, project, stubTool } from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { admitEntry, drainEntries, settleRun, startRun } from "../../scripts/store-fixtures.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
@@ -293,6 +295,331 @@ describe("ThreadStore", () => {
           ),
         )
       }),
+    )
+  })
+
+  describe("handler delivery cursors and queued tool side (rules 12, 20, 21, 27, §3)", () => {
+    const readCursors = (threadId: string) =>
+      SqlClient.use((sql) =>
+        Effect.map(
+          sql<{ side_a_delivered_seq: number; side_b_delivered_seq: number; session_turns: number }>`
+            SELECT side_a_delivered_seq, side_b_delivered_seq, session_turns FROM threads WHERE id = ${threadId}`,
+          (rows) => rows[0],
+        ),
+      )
+
+    const messageSeqOf = (threadId: string, id: string) =>
+      SqlClient.use((sql) =>
+        Effect.map(
+          sql<{ seq: number }>`SELECT seq FROM messages WHERE thread_id = ${threadId} AND id = ${id}`,
+          (rows) => rows[0]?.seq,
+        ),
+      )
+
+    it.effect("migration 0008 initializes side_a_delivered_seq and side_b_delivered_seq to 0", () =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore
+        const thread = yield* store.createThread({ agentId: "relay" })
+        expect(yield* readCursors(thread.id)).toEqual({
+          side_a_delivered_seq: 0,
+          side_b_delivered_seq: 0,
+          session_turns: 0,
+        })
+      }).pipe(Effect.provide(inMemory)),
+    )
+
+    it.effect(
+      "rules 12, 20: atomic dequeue advances delivered_seq before handler.execute runs, persists across reopen, and preserves session_turns on handler_error",
+      () =>
+        withDatabaseFile((filename) =>
+          Effect.gen(function* () {
+            const observedInHandler: Array<{
+              readonly msgSeq: number | undefined
+              readonly cursorA: number | undefined
+              readonly queueLeft: number
+            }> = []
+            let readInside: (messageId: string) => Promise<{
+              readonly msgSeq: number | undefined
+              readonly cursorA: number | undefined
+              readonly queueLeft: number
+            }> = () => Promise.reject(new Error("reader not initialized"))
+
+            const cursor_handler = handlerOf(async (_state, message) => {
+              observedInHandler.push(await readInside(message.id))
+              if (message.content === "throws") throw new Error("handler boom")
+            })
+            let threadId = ""
+            const setup = handlerProject({
+              sideA: { handler: "cursor_handler" },
+              sideB: { human: true },
+              handlers: { cursor_handler },
+              agent: { maxSessionTurns: 5 },
+            })
+            const runWith = <A, E>(
+              body: Effect.Effect<
+                A,
+                E,
+                | ThreadStore
+                | RunStore
+                | ThreadSupervisor
+                | SqlClient
+                | import("../../src/registry/Registry.ts").Registry
+                | import("../../src/store/MessageStore.ts").MessageStore
+              >,
+            ) =>
+              body.pipe(
+                Effect.provide(
+                  Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), storeAt(filename))),
+                ),
+              )
+
+            yield* runWith(
+              Effect.gen(function* () {
+                const services = yield* Effect.context<SqlClient | RunStore>()
+                const runService = Effect.runPromiseWith(services)
+                const thread = yield* createThread("relay")
+                threadId = thread.id
+                readInside = (messageId) =>
+                  runService(
+                    Effect.gen(function* () {
+                      const cursors = yield* readCursors(threadId)
+                      const msgSeq = yield* messageSeqOf(threadId, messageId)
+                      const queueLeft = yield* RunStore.use((r) => r.queueLength(threadId))
+                      return { msgSeq, cursorA: cursors?.side_a_delivered_seq, queueLeft }
+                    }),
+                  )
+                const first = yield* sendMessage(threadId, "ok")
+                expect(first.outcome).toMatchObject({ status: "idle", reason: "handler_idle" })
+                expect(yield* readCursors(threadId)).toEqual({
+                  side_a_delivered_seq: observedInHandler[0]?.msgSeq,
+                  side_b_delivered_seq: 0,
+                  session_turns: 1,
+                })
+                // Cursor was already advanced and queue row removed BEFORE handler.execute ran!
+                expect(observedInHandler[0]).toEqual({
+                  msgSeq: expect.any(Number),
+                  cursorA: observedInHandler[0]?.msgSeq,
+                  queueLeft: 0,
+                })
+              }),
+            )
+
+            // Reopen DB: throwing handler still advances side_a_delivered_seq before throwing and preserves session_turns = 2.
+            yield* runWith(
+              Effect.gen(function* () {
+                const services = yield* Effect.context<SqlClient | RunStore>()
+                const runService = Effect.runPromiseWith(services)
+                readInside = (messageId) =>
+                  runService(
+                    Effect.gen(function* () {
+                      const cursors = yield* readCursors(threadId)
+                      const msgSeq = yield* messageSeqOf(threadId, messageId)
+                      const queueLeft = yield* RunStore.use((r) => r.queueLength(threadId))
+                      return { msgSeq, cursorA: cursors?.side_a_delivered_seq, queueLeft }
+                    }),
+                  )
+                const second = yield* sendMessage(threadId, "throws")
+                expect(second.outcome).toMatchObject({ status: "failed", reason: "handler_error" })
+                expect(observedInHandler[1]).toEqual({
+                  msgSeq: expect.any(Number),
+                  cursorA: observedInHandler[1]?.msgSeq,
+                  queueLeft: 0,
+                })
+                expect(yield* readCursors(threadId)).toEqual({
+                  side_a_delivered_seq: observedInHandler[1]?.msgSeq,
+                  side_b_delivered_seq: 0,
+                  session_turns: 2,
+                })
+              }),
+            )
+          }),
+        ),
+    )
+
+    it.effect("rule 21: advances side_b_delivered_seq before each peer-produced message invocation in seq order", () =>
+      withDatabaseFile((filename) =>
+        Effect.gen(function* () {
+          let threadId = ""
+          const observed: Array<{
+            readonly content: string | null
+            readonly msgSeq: number | undefined
+            readonly cursorB: number | undefined
+          }> = []
+          let readSnapshot: (
+            content: string | null,
+            messageId: string,
+          ) => Promise<{
+            readonly content: string | null
+            readonly msgSeq: number | undefined
+            readonly cursorB: number | undefined
+          }> = () => Promise.reject(new Error("reader not initialized"))
+          const peer_handler = handlerOf(async (_state, message) => {
+            observed.push(await readSnapshot(message.content, message.id))
+          })
+          const provider = new ScriptedProvider([
+            { text: "M1", toolCalls: [{ id: "c1", name: "work", arguments: {} }] },
+            { text: "M2" },
+          ])
+          const setup = handlerProject({
+            sideA: { prompt: "worker" },
+            sideB: { handler: "peer_handler" },
+            provider,
+            prompts: [
+              definePrompt({
+                name: "worker",
+                toolDescription: "Worker",
+                model: "scripted",
+                prompt: "Work.",
+                tools: ["work"],
+              }),
+            ],
+            tools: { work: stubTool("Work", "worked") },
+            handlers: { peer_handler },
+          })
+          yield* Effect.gen(function* () {
+            const services = yield* Effect.context<SqlClient>()
+            const runSql = Effect.runPromiseWith(services)
+            const thread = yield* createThread("relay")
+            threadId = thread.id
+            readSnapshot = (content, messageId) =>
+              runSql(
+                Effect.gen(function* () {
+                  const cursors = yield* readCursors(threadId)
+                  const msgSeq = yield* messageSeqOf(threadId, messageId)
+                  return { content, msgSeq, cursorB: cursors?.side_b_delivered_seq }
+                }),
+              )
+            const { outcome } = yield* sendMessage(threadId, "go")
+            expect(outcome).toMatchObject({ status: "idle", reason: "handler_idle", steps: 2 })
+            expect(observed).toHaveLength(2)
+            expect(observed[0]?.content).toBe("M1")
+            expect(observed[0]?.cursorB).toBe(observed[0]?.msgSeq)
+            expect(observed[1]?.content).toBe("M2")
+            expect(observed[1]?.cursorB).toBe(observed[1]?.msgSeq)
+            expect((observed[1]?.msgSeq ?? 0) > (observed[0]?.msgSeq ?? 0)).toBe(true)
+          }).pipe(
+            Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), storeAt(filename)))),
+          )
+        }),
+      ),
+    )
+
+    it.effect(
+      "rule 27: queueTool records side: null at rest and side: currentSide during side A and side B executions",
+      () =>
+        Effect.gen(function* () {
+          const readQueuedToolPayloads = (threadId: string) =>
+            SqlClient.use((sql) =>
+              Effect.map(
+                sql<{
+                  payload: string
+                }>`SELECT payload FROM queue WHERE thread_id = ${threadId} AND kind = 'tool' ORDER BY seq`,
+                (rows) => rows.map((row) => JSON.parse(row.payload) as Record<string, unknown>),
+              ),
+            )
+          const noop = stubTool("No-op", "ok")
+          // Observe queue payloads while a handler holds the thread so entries stay in queue until inspected.
+          const enteredA = gate()
+          const releaseA = gate()
+          let capturedSideA: ReadonlyArray<Record<string, unknown>> = []
+          let capturedSideB: ReadonlyArray<Record<string, unknown>> = []
+          const handler_a = handlerOf(async (state, message) => {
+            if (message.content === "from-a") {
+              state.queueTool("noop", { who: "a" })
+              enteredA.release()
+              await releaseA.opened
+              await state.injectMessage({ role: "assistant", content: "hand-to-b" })
+            }
+          })
+          const enteredB = gate()
+          const releaseB = gate()
+          const handler_b = handlerOf(async (state) => {
+            state.queueTool("noop", { who: "b" })
+            enteredB.release()
+            await releaseB.opened
+          })
+          const setup = handlerProject({
+            sideA: { handler: "handler_a" },
+            sideB: { handler: "handler_b" },
+            handlers: { handler_a, handler_b },
+            tools: { noop },
+          })
+          const awaitGateOrExit = <A, E>(opened: Promise<void>, fiber: Fiber.Fiber<A, E>, label: string) =>
+            Effect.raceFirst(
+              Effect.promise(() => opened),
+              Effect.flatMap(Fiber.await(fiber), (exit) =>
+                Effect.die(
+                  exit._tag === "Failure"
+                    ? `execution failed before ${label}`
+                    : `execution settled before ${label}: ${JSON.stringify(exit.value)}`,
+                ),
+              ),
+            )
+          yield* Effect.gen(function* () {
+            const thread = yield* createThread("relay")
+            const running = yield* Effect.forkChild(sendMessage(thread.id, "from-a"))
+            yield* awaitGateOrExit(enteredA.opened, running, "entering handler A")
+            // Also queue at rest while the thread is held so its payload stays in queue for inspection!
+            const rest = yield* stateAtRest(thread.id)
+            rest.queueTool("noop", { who: "rest" })
+            capturedSideA = yield* readQueuedToolPayloads(thread.id)
+            releaseA.release()
+            yield* awaitGateOrExit(enteredB.opened, running, "entering handler B")
+            capturedSideB = yield* readQueuedToolPayloads(thread.id)
+            releaseB.release()
+            yield* Fiber.join(running)
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                releaseA.release()
+                releaseB.release()
+              }),
+            ),
+            Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
+          )
+          expect(capturedSideA).toEqual([
+            { toolName: "noop", args: { who: "a" }, side: "a" },
+            { toolName: "noop", args: { who: "rest" }, side: null },
+          ])
+          expect(capturedSideB.at(-1)).toEqual({ toolName: "noop", args: { who: "b" }, side: "b" })
+
+          // Verify prompt side B also records side: "b" in queue payload.
+          const enteredPromptB = gate()
+          const releasePromptB = gate()
+          let promptBPayloads: ReadonlyArray<Record<string, unknown>> = []
+          const q_from_b = defineTool({
+            description: "Queue tool from prompt side B",
+            execute: async (state: ThreadState) => {
+              state.queueTool("noop", { who: "prompt-b" })
+              enteredPromptB.release()
+              await releasePromptB.opened
+              return ok("queued")
+            },
+          })
+          const dual = dualProject({
+            providerA: new ScriptedProvider([{ text: "A1" }]),
+            providerB: new ScriptedProvider([
+              { toolCalls: [{ id: "c1", name: "q_from_b", arguments: {} }] },
+              { text: "B done" },
+            ]),
+            tools: { q_from_b, noop },
+            promptA: { tools: [] },
+            promptB: { tools: ["q_from_b", "noop"] },
+            agent: { maxSessionTurns: 2 },
+          })
+          yield* Effect.gen(function* () {
+            const thread = yield* createThread("pair")
+            const running = yield* Effect.forkChild(sendMessage(thread.id, "go"))
+            yield* Effect.promise(() => enteredPromptB.opened)
+            promptBPayloads = yield* readQueuedToolPayloads(thread.id)
+            releasePromptB.release()
+            yield* Fiber.join(running)
+          }).pipe(
+            Effect.ensuring(Effect.sync(releasePromptB.release)),
+            Effect.provide(Layer.merge(registryOf(dual), Layer.provideMerge(supervisorLayer(), inMemory))),
+          )
+          expect(promptBPayloads).toEqual([{ toolName: "noop", args: { who: "prompt-b" }, side: "b" }])
+        }),
     )
   })
 })

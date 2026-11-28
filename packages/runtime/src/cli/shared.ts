@@ -19,9 +19,11 @@ import { ThreadStore } from "../store/ThreadStore.ts"
 // A hook always has a time limit. A tool has one only when the operator sets it. The kind is read before the
 // operation is redacted, because a secret can be the word that names the kind.
 export const holdNote = (threadId: string, operation: string, clean: (text: string) => string, exit: string) =>
-  operation.startsWith("tool ")
-    ? `${clean(operation)} has not returned. Thread ${threadId} stays held until it returns. Press Ctrl-C twice to ${exit}. Use --tool-timeout to bound tool calls.`
-    : `${clean(operation)} has not returned. Thread ${threadId} stays held until it returns or reaches its time limit. Press Ctrl-C twice to ${exit}.`
+  operation.startsWith("handler ")
+    ? `${clean(operation)} has not returned. Thread ${threadId} stays held until it returns. Press Ctrl-C twice to ${exit}.`
+    : operation.startsWith("tool ")
+      ? `${clean(operation)} has not returned. Thread ${threadId} stays held until it returns. Press Ctrl-C twice to ${exit}. Use --tool-timeout to bound tool calls.`
+      : `${clean(operation)} has not returned. Thread ${threadId} stays held until it returns or reaches its time limit. Press Ctrl-C twice to ${exit}.`
 
 export const note = (text: string) => Console.error(`spindle: ${text}`)
 export const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))

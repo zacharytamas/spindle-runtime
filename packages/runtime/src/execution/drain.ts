@@ -1,13 +1,14 @@
 import type { AttachmentRef, QueueMessageInput } from "@standardagents/spec"
 import { Effect } from "effect"
 import { Registry } from "../registry/Registry.ts"
+import { MessageStore } from "../store/MessageStore.ts"
 import type { NewMessage, Queued } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { commitMessage } from "./messages.ts"
 import { mapStrings } from "./redact.ts"
-import type { SideScope, ThreadScope } from "./step.ts"
+import type { SideScope, ThreadScope, ToolScope } from "./step.ts"
 import { callStarted, completeCall, hookCall } from "./tool-lifecycle.ts"
-import { executeTool, failed, type ToolCall } from "./tools.ts"
+import { executeTool, failed, learnToolVariables, scopeFor, type ToolCall } from "./tools.ts"
 import { type AgentSides, isFunctionTool, otherSide, roleOf } from "./turn.ts"
 
 // Messages section 4: a queued message is stored with its own perspective and payload. Admission let only attachment
@@ -21,9 +22,8 @@ const draftOf = (input: QueueMessageInput): NewMessage => ({
   ...((input.attachments ?? []).length === 0 ? {} : { attachments: input.attachments as Array<AttachmentRef> }),
 })
 
-// Threads section 3.1: a queued tool runs without a model response that asks for it. Spindle stores it as a
-// call of the prompt side with its result after it, so the next request shows both, and marks the call queued.
-const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { readonly kind: "tool" }) =>
+// Synthetic calls use the owning side’s role and hooks. A handler has no result prompt.
+export const runQueuedTool = (side: ToolScope, thread: ThreadScope, entry: Queued & { readonly kind: "tool" }) =>
   Effect.gen(function* () {
     const registry = yield* Registry
     const { turn, toolContext, write } = side
@@ -32,8 +32,10 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
       (candidate) => candidate.kind === "tool" && candidate.qualifiedName === entry.toolName,
     )
     const tool = isFunctionTool(definition) ? definition : undefined
-    const exposed = [...turn.tools.values()].find((candidate) => candidate.tool === definition)
+    const exposed =
+      turn.kind === "prompt" ? [...turn.tools.values()].find((candidate) => candidate.tool === definition) : undefined
     const name = exposed?.name ?? definition?.name ?? entry.toolName
+    if (tool !== undefined) yield* learnToolVariables(scopeFor(turn, exposed?.entry), tool, thread.secrets)
     const argumentsText = JSON.stringify(mapStrings(entry.args, redact, redact))
     const call: ToolCall = {
       id: `queued-${crypto.randomUUID()}`,
@@ -53,7 +55,7 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
       },
       {
         dequeue: entry.seq,
-        resultPrompt: turn.prompt.qualifiedName,
+        ...(turn.kind === "prompt" && { resultPrompt: turn.prompt.qualifiedName }),
         finish: (message) => ({
           ...message,
           tool_calls: JSON.stringify([
@@ -76,19 +78,38 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
     )
   })
 
-// The automated peer delivers messages for a human. Until tools carry an explicit
-// owner, the first prompt side takes an unassigned queued tool (design rule 28).
+// A tool queued at rest belongs to the first prompt side, or the first handler if there is no prompt.
 export function queueRecipient(sides: AgentSides, entry: Queued | undefined) {
-  if (entry?.kind !== "message") return sides.a.kind === "prompt" ? sides.a : sides.b
+  if (entry?.kind === "tool" && entry.side) return sides[entry.side]
+  if (entry?.kind !== "message") {
+    if (sides.a.kind === "prompt") return sides.a
+    return sides.b.kind === "prompt" || sides.a.kind === "human" ? sides.b : sides.a
+  }
   const target = entry.message.role === "user" ? sides.a : sides.b
   return target.kind === "human" ? sides[otherSide(target.side)] : target
 }
+
+export const deliverQueued = Effect.fnUntraced(function* (
+  thread: ThreadScope,
+  entry: Queued & { kind: "message" },
+  deliveredTo?: "a" | "b",
+) {
+  const { message } = yield* commitMessage(thread.delivery, draftOf(entry.message), {
+    dequeue: entry.seq,
+    ...(deliveredTo && { deliveredTo }),
+  })
+  yield* thread.record("drain", `message ${message.id}`)
+  const current = deliveredTo ? yield* (yield* MessageStore).getMessage(thread.thread.id, message.id) : message
+  if (!current) return undefined
+  yield* thread.observe({ type: "message", message: current })
+  return current
+})
 
 // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
 // leaves the queue in the transaction that stores what it delivers. The result says whether the prompt side got
 // something to act on: a queued tool, or a message from the other side's perspective.
 export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope) {
-  const { record, observe, run, delivery } = thread
+  const { record, run, delivery } = thread
   const runStore = yield* RunStore
   let drained = false
   let prompted = false
@@ -101,10 +122,8 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
       prompted = true
       continue
     }
-    const { message } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
-    yield* record("drain", `message ${message.id}`)
-    yield* observe({ type: "message", message })
-    if (message.role !== roleOf(side.turn.side)) prompted = true
+    const message = yield* deliverQueued(thread, entry)
+    if (message && message.role !== roleOf(side.turn.side)) prompted = true
   }
   if (!drained) yield* record("drain", "none")
   return prompted

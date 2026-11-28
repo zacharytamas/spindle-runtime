@@ -76,6 +76,7 @@ export const database = (sql: SqlClient) => {
       const ids = new Set(answered.map((row) => text(row.id)))
       return callsIn(caller.tool_calls ?? "[]").filter((call) => !ids.has(call.id))
     })
-  return { sql, threadRows, runRows, selectRun, openCalls }
+  const deliveryCursor = (side: "a" | "b") => sql(side === "a" ? "side_a_delivered_seq" : "side_b_delivered_seq")
+  return { deliveryCursor, sql, threadRows, runRows, selectRun, openCalls }
 }
 export type Database = ReturnType<typeof database>

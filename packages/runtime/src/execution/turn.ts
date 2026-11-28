@@ -1,5 +1,6 @@
 import type {
   AgentDefinition,
+  HandlerDefinition,
   HandlerSide,
   HumanSide,
   ModelDefinition,
@@ -11,6 +12,7 @@ import type {
   ToolArgs,
   VariableDefinition,
 } from "@standardagents/spec"
+import { isHandler } from "@standardagents/spec"
 import { Data, Effect, Predicate } from "effect"
 import { type Definition, type Kind, namespaceOf } from "../registry/definition.ts"
 import { Registry } from "../registry/Registry.ts"
@@ -56,10 +58,16 @@ export interface PromptSideValue extends SideIdentity {
   readonly tools: ReadonlyMap<string, ExposedTool>
 }
 
-export type SideValue =
-  | PromptSideValue
-  | (SideIdentity & { readonly kind: "human"; readonly config: HumanSide })
-  | (SideIdentity & { readonly kind: "handler"; readonly config: HandlerSide })
+export interface HandlerSideValue extends SideIdentity {
+  readonly kind: "handler"
+  readonly agent: Loaded<AgentDefinition>
+  readonly config: HandlerSide
+  readonly handler: Loaded<HandlerDefinition>
+}
+
+export type AutomatedSide = PromptSideValue | HandlerSideValue
+
+export type SideValue = AutomatedSide | (SideIdentity & { readonly kind: "human"; readonly config: HumanSide })
 
 export interface AgentSides {
   readonly agent: Loaded<AgentDefinition>
@@ -81,7 +89,12 @@ export const isFunctionTool = (definition: Definition | undefined): definition i
   )
 }
 
-type Values = Record<Kind, unknown> & { agent: AgentDefinition; prompt: PromptDefinition; model: ModelDefinition }
+type Values = Record<Kind, unknown> & {
+  agent: AgentDefinition
+  prompt: PromptDefinition
+  model: ModelDefinition
+  handler: HandlerDefinition
+}
 
 export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
   kind: K,
@@ -185,7 +198,18 @@ export const prepareSideValue = Effect.fn("prepareSideValue")(function* (agent: 
     return yield* new SetupError({ message: `Agent ${agent.qualifiedName} must define a backing for both sides` })
   const role = roleOf(side)
   if (config.human) return { kind: "human", side, role, config } as const
-  if (config.handler !== undefined) return { kind: "handler", side, role, config } as const
+  if (config.handler !== undefined) {
+    const handler = yield* lookup("handler", config.handler, agent)
+    if (!handler)
+      return yield* new SetupError({
+        message: `Agent ${agent.qualifiedName} names handler ${config.handler}, which is not defined`,
+      })
+    if (!isHandler(handler.value) || typeof handler.value.execute !== "function")
+      return yield* new SetupError({
+        message: `Agent ${agent.qualifiedName} needs a handler defined with defineHandler() for ${config.handler}`,
+      })
+    return { kind: "handler", agent, side, role, config, handler } satisfies HandlerSideValue
+  }
   const prompt = yield* lookup("prompt", config.prompt, agent)
   if (prompt === undefined)
     return yield* new SetupError({

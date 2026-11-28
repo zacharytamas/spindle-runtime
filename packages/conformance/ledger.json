@@ -1414,45 +1414,64 @@
 		"reason": "M1-2 rejects a handler named in a prompt's tools or in a hook list. M4 owes the check for effect schedules, which arrive with scheduleEffect."
 	},
 	"specification:handlers:0747a620": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD02 (rules 1, 2, 4, 5, 21, 22, 32) runs prompt x handler and handler x prompt delivering every prompt-role message including tool_calls and excluding role: tool",
+			"packages/runtime/test/conformance.test.ts > handlers > HD04 (rules 19, 20, §3) serializes queued messages without concurrent invocation and isolates a hung handler from other threads",
+			"packages/runtime/test/conformance.test.ts > handlers > HD15 (rules 12, 20, 21, §3) never redelivers a message after forced recovery mid-handler and preserves undrained queued entries"
+		],
 		"reason": ""
 	},
 	"specification:handlers:ab2038a6": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD04 (rules 19, 20, §3) serializes queued messages without concurrent invocation and isolates a hung handler from other threads"
+		],
 		"reason": ""
 	},
 	"specification:handlers:78f43349": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD08 (rule 26, decision 5, §3) persists inbound message and writes on sync throw, rejection, or throwing thenable, logs redacted runtime error, never redelivers, and settles failed (handler_error) preserving session_turns",
+			"packages/runtime/test/conformance.test.ts > handlers > HD15 (rules 12, 20, 21, §3) never redelivers a message after forced recovery mid-handler and preserves undrained queued entries"
+		],
 		"reason": ""
 	},
 	"specification:handlers:dea03971": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD04 (rules 19, 20, §3) serializes queued messages without concurrent invocation and isolates a hung handler from other threads"
+		],
 		"reason": ""
 	},
 	"specification:handlers:2c8bc235": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD08 (rule 26, decision 5, §3) persists inbound message and writes on sync throw, rejection, or throwing thenable, logs redacted runtime error, never redelivers, and settles failed (handler_error) preserving session_turns"
+		],
 		"reason": ""
 	},
 	"specification:handlers:00d791ec": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD09 (rules 23, 26, decision 5) continues delivering peer's remaining messages then queued entries after a handler throw, settling handler_error only if the last delivery threw",
+			"packages/runtime/test/conformance.test.ts > handlers > HD12 (rules 14, 18) root-thread state.stopSession() ends the session with state_stop_session, resets session_turns, gives sibling tools notRun, ignores forceTurn, keeps thread open, and rejects at rest"
+		],
 		"reason": ""
 	},
 	"specification:handlers:ea88514a": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD01 (rules 1, 2, 4, 5, 19, 20, 22, 32) delivers full persisted Messages on handler x human and human x handler with zero steps, empty promptPath, and no auto-reply",
+			"packages/runtime/test/conformance.test.ts > handlers > HD07 (rules 6, 7, 25, §1.5, §3) ignores handler return values, isolates mutated messages, expires handles, exposes ThreadState capabilities, and shares context"
+		],
 		"reason": ""
 	},
 	"specification:hooks:f3dc7790": {
@@ -3753,9 +3772,11 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
 			"packages/runtime/test/conformance.test.ts > queue > Q23 ends an execution at the step cap although a hook queues a message on every response, and the next send delivers it",
 			"packages/runtime/test/conformance.test.ts > sides > T10 (rules 14, 15) forceTurn targeting a human side settles forced_human_turn, yields to maxSessionTurns, and is ignored by stop()",
-			"packages/runtime/test/conformance.test.ts > sides > T05 (rules 9, 10, 11) enforces maxSessionTurns on prompt x prompt, counts multi-step turns as one, keeps queued work pending, and resets"
+			"packages/runtime/test/conformance.test.ts > sides > T05 (rules 9, 10, 11) enforces maxSessionTurns on prompt x prompt, counts multi-step turns as one, keeps queued work pending, and resets",
+			"packages/runtime/test/conformance.test.ts > handlers > HD01 (rules 1, 2, 4, 5, 19, 20, 22, 32) delivers full persisted Messages on handler x human and human x handler with zero steps, empty promptPath, and no auto-reply",
+			"packages/runtime/test/conformance.test.ts > handlers > HD12 (rules 14, 18) root-thread state.stopSession() ends the session with state_stop_session, resets session_turns, gives sibling tools notRun, ignores forceTurn, keeps thread open, and rejects at rest"
 		],
-		"reason": "Prompt exchanges report forced_human_turn and max_session_turns. Handler and state_stop_session reasons arrive in M2a-2, session tools in M2b, and client handling of unknown codes in M5."
+		"reason": "Handler delivery reports handler_idle and root stopSession reports state_stop_session. Session tools arrive in M2b and client handling of unknown codes in M5."
 	},
 	"specification:threads/execution-state:7029c151": {
 		"status": "partial",
@@ -5130,13 +5151,15 @@
 		"reason": ""
 	},
 	"specification:threads/messages:b8f7cd7e": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
-			"packages/runtime/test/cli/chat.test.ts > spindle chat > an agent whose prompt is side B prints the reply and stores the line in the human side's role (O4)"
+			"packages/runtime/test/cli/chat.test.ts > spindle chat > an agent whose prompt is side B prints the reply and stores the line in the human side's role (O4)",
+			"packages/runtime/test/conformance.test.ts > handlers > HD01 (rules 1, 2, 4, 5, 19, 20, 22, 32) delivers full persisted Messages on handler x human and human x handler with zero steps, empty promptPath, and no auto-reply",
+			"packages/runtime/test/conformance.test.ts > handlers > HD02 (rules 1, 2, 4, 5, 21, 22, 32) runs prompt x handler and handler x prompt delivering every prompt-role message including tool_calls and excluding role: tool"
 		],
-		"reason": "Q05 shows the mapping with a prompt on either side and the human on the other. A handler-backed side arrives in M2a, which owes the mapping for it."
+		"reason": ""
 	},
 	"specification:threads/messages:3170d519": {
 		"status": "planned",
@@ -5276,9 +5299,11 @@
 		"reason": ""
 	},
 	"specification:agents:b3f24116": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD10 (rules 9, 10, 11, 12) counts handler turns uniformly toward maxSessionTurns with zero steps, keeps queued work pending, and resets for a new session"
+		],
 		"reason": ""
 	},
 	"specification:agents:9a55d8e0": {
@@ -5353,9 +5378,11 @@
 		"reason": ""
 	},
 	"specification:agents:3df00a7e": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD03 (rules 1, 2, 19, 22, 23, 32) runs handler x handler ping-pong with serialized multi-message handoff and zero model calls"
+		],
 		"reason": ""
 	},
 	"specification:agents:9b948743": {
@@ -5695,21 +5722,23 @@
 		"reason": "M1-2 checks providerOptions against the provider's schema in the registry, without calling defineModel. openaiCompatible declares no providerOptions schema, so no Spindle provider exercises the defineModel path. The first Spindle provider with a schema owes it, and none is planned before M7."
 	},
 	"specification:handlers:cdfccc99": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/registry/validate.test.ts > validate > valid fixtures > loads one definition of every kind from agents-basic with no issues",
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rule 8: rejects an unbranded plain object exported from agents/handlers and packed handlers while accepting defineHandler"
 		],
-		"reason": "M1-2 loads handlers from agents/handlers. It does not require the brand that defineHandler adds, because a plain object passes every other check. M2a, which runs handler sides, owes the decision."
+		"reason": ""
 	},
 	"specification:handlers:6ce44191": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1",
 		"tests": [
-			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects"
+			"packages/runtime/test/registry/validate.test.ts > validate > invalid fixtures > rejects malformed tools, handlers, and effects",
+			"packages/runtime/test/conformance.test.ts > handlers > HD01 (rules 1, 2, 4, 5, 19, 20, 22, 32) delivers full persisted Messages on handler x human and human x handler with zero steps, empty promptPath, and no auto-reply"
 		],
-		"reason": "M1-2 rejects a handler whose execute is not a function. M2a, which runs handler sides, owes calling execute with the ThreadState and the persisted message."
+		"reason": ""
 	},
 	"specification:handlers:16efc360": {
 		"status": "partial",
@@ -6899,6 +6928,63 @@
 		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > sides > T01 (rules 1, 2, 4, 5, 32) alternates prompt x prompt A to B to A with reused tool call IDs and independent step counts"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:16911055": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD02 (rules 1, 2, 4, 5, 21, 22, 32) runs prompt x handler and handler x prompt delivering every prompt-role message including tool_calls and excluding role: tool"
+		],
+		"reason": ""
+	},
+	"specification:handlers:ec8cd3e4": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD01 (rules 1, 2, 4, 5, 19, 20, 22, 32) delivers full persisted Messages on handler x human and human x handler with zero steps, empty promptPath, and no auto-reply"
+		],
+		"reason": ""
+	},
+	"specification:handlers:409ce981": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD03 (rules 1, 2, 19, 22, 23, 32) runs handler x handler ping-pong with serialized multi-message handoff and zero model calls"
+		],
+		"reason": ""
+	},
+	"specification:handlers:0d6ca25b": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD08 (rule 26, decision 5, §3) persists inbound message and writes on sync throw, rejection, or throwing thenable, logs redacted runtime error, never redelivers, and settles failed (handler_error) preserving session_turns"
+		],
+		"reason": ""
+	},
+	"specification:handlers:15c20fb2": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD09 (rules 23, 26, decision 5) continues delivering peer's remaining messages then queued entries after a handler throw, settling handler_error only if the last delivery threw"
+		],
+		"reason": ""
+	},
+	"specification:handlers:295e5c90": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD07 (rules 6, 7, 25, §1.5, §3) ignores handler return values, isolates mutated messages, expires handles, exposes ThreadState capabilities, and shares context"
+		],
+		"reason": ""
+	},
+	"infrastructure:runtime:2178d58c": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > handlers > HD02 (rules 1, 2, 4, 5, 21, 22, 32) runs prompt x handler and handler x prompt delivering every prompt-role message including tool_calls and excluding role: tool",
+			"packages/runtime/test/conformance.test.ts > handlers > HD04 (rules 19, 20, §3) serializes queued messages without concurrent invocation and isolates a hung handler from other threads"
 		],
 		"reason": ""
 	}
