@@ -94,11 +94,14 @@ export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
   return resolution.definition as Loaded<Values[K]>
 })
 
+const hasBacking = (side: AgentDefinition["sideA"] | undefined) =>
+  side && (side.human === true || typeof side.prompt === "string" || typeof side.handler === "string")
+
 export const loadAgent = Effect.fn("loadAgent")(function* (agentName: string) {
   const agent = yield* lookup("agent", agentName, undefined)
   if (agent === undefined) return yield* new SetupError({ message: `No agent named ${agentName} is defined` })
   for (const side of [agent.value.sideA, agent.value.sideB]) {
-    if (!side || !(side.human === true || typeof side.prompt === "string" || typeof side.handler === "string"))
+    if (!hasBacking(side))
       return yield* new SetupError({ message: `Agent ${agentName} must define a backing for both sides` })
   }
   if (agent.value.sideA.human && agent.value.sideB.human)
@@ -176,8 +179,10 @@ const exposedStopTool = Effect.fn("exposedStopTool")(function* (
   return exposed === undefined ? config : { ...config, stopTool: exposed.name }
 })
 
-const prepareSideValue = Effect.fn("prepareSideValue")(function* (agent: Loaded<AgentDefinition>, side: Side) {
+export const prepareSideValue = Effect.fn("prepareSideValue")(function* (agent: Loaded<AgentDefinition>, side: Side) {
   const config = side === "a" ? agent.value.sideA : agent.value.sideB
+  if (!hasBacking(config))
+    return yield* new SetupError({ message: `Agent ${agent.qualifiedName} must define a backing for both sides` })
   const role = roleOf(side)
   if (config.human) return { kind: "human", side, role, config } as const
   if (config.handler !== undefined) return { kind: "handler", side, role, config } as const
@@ -206,8 +211,4 @@ const prepareSideValue = Effect.fn("prepareSideValue")(function* (agent: Loaded<
     model,
     tools,
   } satisfies PromptSideValue
-})
-
-export const prepareSides = Effect.fn("prepareSides")(function* (agent: Loaded<AgentDefinition>) {
-  return { agent, a: yield* prepareSideValue(agent, "a"), b: yield* prepareSideValue(agent, "b") } satisfies AgentSides
 })

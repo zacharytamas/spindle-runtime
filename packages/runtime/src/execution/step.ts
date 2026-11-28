@@ -1,5 +1,5 @@
 import type { LLMProviderInterface, Message, ProviderRequest, ToolResult } from "@standardagents/spec"
-import { type Context, Effect, Fiber } from "effect"
+import { type Context, Effect, Fiber, Result } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
 import type { Thread } from "../store/model.ts"
@@ -26,7 +26,7 @@ import {
   loadAgent,
   otherSide,
   type PromptSideValue,
-  prepareSides,
+  prepareSideValue,
   roleOf,
   SetupError,
   type SideValue,
@@ -114,15 +114,17 @@ const secretScopes = (turn: PromptSideValue) => [
   })),
 ]
 
-export const learnSecrets = Effect.fnUntraced(function* (sides: AgentSides, secrets: Secrets) {
-  const prompts = [sides.a, sides.b].filter((side) => side.kind === "prompt")
+const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
+
+export const prepareSides = Effect.fn("prepareSides")(function* (agent: AgentSides["agent"], secrets: Secrets) {
+  const a = yield* Effect.result(prepareSideValue(agent, "a"))
+  const b = yield* Effect.result(prepareSideValue(agent, "b"))
+  const prompts = [Result.getOrUndefined(a), Result.getOrUndefined(b)].filter((side) => side?.kind === "prompt")
   const scopes = prompts.flatMap(secretScopes)
-  for (const turn of prompts) yield* resolveConfig(turn.model, secrets)
+  for (const turn of prompts) yield* resolveConfig(turn.model, secrets, (name: string) => readable(instanceEnv(name)))
   for (const { variables } of scopes)
     for (const variable of variables) if (variable.type === "secret") secrets.names.add(variable.name)
 
-  // A read that a tool or prompt actually requests still reports its own failure.
-  const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
   for (const { variables, scope } of scopes) {
     const names = new Set([...secrets.names, ...variables.map((variable) => variable.name)])
     for (const name of names) {
@@ -133,6 +135,7 @@ export const learnSecrets = Effect.fnUntraced(function* (sides: AgentSides, secr
       if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
     }
   }
+  return { agent, a: yield* Effect.fromResult(a), b: yield* Effect.fromResult(b) } satisfies AgentSides
 })
 
 function stepLog(threadId: string, run: Execution, secrets: Secrets, options: ExecutionOptions) {
@@ -422,8 +425,7 @@ export const prepareSteps = Effect.fnUntraced(function* (
     Effect.gen(function* () {
       const thread = yield* (yield* ThreadStore).getThread(threadId)
       const services = yield* Effect.context<Registry | Stores>()
-      const sides = yield* prepareSides(yield* loadAgent(thread.agentId))
-      yield* learnSecrets(sides, secrets)
+      const sides = yield* prepareSides(yield* loadAgent(thread.agentId), secrets)
       const history = makeHistory(threadId)
       const base = { thread, services, secrets, control, history, run, sides, context: {} }
       // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.

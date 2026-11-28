@@ -4,9 +4,9 @@ import { Flag } from "effect/cli"
 import { isolateDefinitionLoads, SqliteLive } from "#platform"
 import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
-import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
+import { type ExecutionEvent, prepareSides } from "../execution/step.ts"
 import { layer as supervisorLayer } from "../execution/ThreadSupervisor.ts"
-import { loadAgent, otherSide, prepareSides, roleOf, senderSide } from "../execution/turn.ts"
+import { loadAgent, lookup, otherSide, roleOf, senderSide } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { issue } from "../registry/definition.ts"
 import { describeCause } from "../registry/load-error.ts"
@@ -213,11 +213,8 @@ export const withProject = <A, E, R>(
       )).agentId
     }
     return yield* Effect.gen(function* () {
-      yield* loadAgent(agent).pipe(
-        Effect.flatMap(prepareSides),
-        Effect.flatMap((sides) => learnSecrets(sides, newSecrets(secrets))),
-        Effect.ignore,
-      )
+      const definition = yield* lookup("agent", agent, undefined)
+      if (definition) yield* Effect.ignore(prepareSides(definition, newSecrets(secrets)))
       if ("agent" in target && target.resume && filename === ":memory:") return yield* fail("--thread needs --db")
       const { issues } = yield* validate
       const errors = issues.filter((issue) => issue.severity === "error")

@@ -312,6 +312,62 @@ describe("ThreadState", () => {
     },
   )
 
+  it.effect("an at-rest writer learns the valid side's secrets when its peer cannot prepare", () => {
+    const setup = dualProject({
+      providerA: new ScriptedProvider([]),
+      providerB: new ScriptedProvider([]),
+      promptA: { variables: [{ name: "SIDE_TOKEN", type: "secret", required: false, description: "Token" }] },
+      promptB: { model: "missing" },
+    })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("pair")
+      const state = yield* stateAtRest(id)
+      yield* Effect.promise(() => state.injectMessage({ role: "user", content: "marker-one" }))
+      const stored = yield* Effect.promise(() => state.getMessages())
+      expect(stored.messages.map((message) => message.content)).toEqual(["[redacted]"])
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(setup),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(ConfigProvider.fromEnvRecord({ SIDE_TOKEN: "marker-one" })),
+        ),
+      ),
+    )
+  })
+
+  it.effect("an unreadable provider setting leaves the other settings available for redaction", () => {
+    const provider = new ScriptedProvider([])
+    Object.assign(provider.factory, {
+      configSlots: {
+        first: { type: "secret", defaultEnv: "UNREADABLE" },
+        second: { type: "secret", defaultEnv: "READABLE" },
+      },
+    })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const state = yield* stateAtRest(id)
+      const written = yield* Effect.promise(() => state.injectMessage({ role: "user", content: "marker-two" }))
+      expect(written.content).toBe("[redacted]")
+      const delivery = yield* sendMessage(id, "go")
+      expect(delivery.outcome?.error?.message).toContain("Instance environment read failed for UNREADABLE")
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(project({ provider })),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(
+            ConfigProvider.make((path) =>
+              path[0] === "UNREADABLE"
+                ? Effect.fail(new ConfigProvider.SourceError({ message: "read failed" }))
+                : Effect.succeed(path[0] === "READABLE" ? ConfigProvider.makeValue("marker-two") : undefined),
+            ),
+          ),
+        ),
+      ),
+    )
+  })
+
   // Threads section 2.3 (specification/threads.md:227-230): instanceEnv "returns `undefined` when the key is not
   // configured and rejects when the runtime cannot read its instance environment". One provider serves all three keys,
   // so the rejection comes from the failing read and from nothing else in the setup.
