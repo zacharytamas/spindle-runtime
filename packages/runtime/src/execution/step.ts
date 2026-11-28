@@ -414,8 +414,14 @@ const advance = Effect.fnUntraced(function* (
       boundary.reason !== "force_turn" &&
       boundary.next.kind === "prompt" &&
       (yield* (yield* RunStore).nextQueued(thread.thread.id, run))?.kind === "agent"
-    )
+    ) {
+      if (active.kind === "handler" && thread.deliveries.inbox[active.side].length > 0) {
+        run.turns.active = active
+        reason = "handler_delivery"
+        continue
+      }
       return idle(boundary.reason, true)
+    }
     run.turns.active = boundary.next
     reason = boundary.reason
   }
