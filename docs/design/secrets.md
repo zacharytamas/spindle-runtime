@@ -123,7 +123,7 @@ Context assembly proceeds in this order for every top-level prompt and every nes
 | `system` | `content` | none |
 | `user` | String `content`, or `text.text`, `image_url.image_url.url`, `file.filename`, the `mediaType` of image and file parts, and the header of a `data:` URI in `image.data` or `file.data` (the part before the first comma) in `ContentPart[]` | The encoded payload after the first comma of `image.data` and `file.data` |
 | `assistant` | `content`, `reasoning`, `text` field of `text` and `summary` entries in `reasoningDetails`, and every string value and object key in `toolCalls[].arguments` and `toolCalls[].extraContent` | `toolCalls[].id`, `toolCalls[].name`, opaque `encrypted` entries in `reasoningDetails` |
-| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and the text, url, filename, `mediaType` and `data:` URI header fields of `ContentPart[]` | `toolCallId`, `toolName`, base64 bytes in `image.data` and `file.data` |
+| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and the text, url, filename, `mediaType` and `data:` URI header fields of `ContentPart[]` | `toolCallId`, `toolName`, the encoded payload after the first comma of `image.data` and `file.data` |
 
 Static tool definitions (`request.tools`) and `request.model` are not mutated, because rewriting JSON Schema property names or model identifiers would break provider calls. Developers must keep credentials in provider transport config slots, never in tool definitions or `providerOptions`.
 
