@@ -72,7 +72,7 @@ This floor changes milestone 1's no-floor rule. The updated limit is to be recor
 18. When `setEnv` writes a secret-classified value during an execution, that value enters the execution's `Secrets` set before `setEnv` resolves, and any previous secret value for that key remains in `Secrets` for the rest of that execution.
 19. When a nested tool reachable only through `invokeTool` or a nested prompt tool starts, Spindle registers its `type: 'secret'` variable declarations and learns their values into the execution's `Secrets` set before user code runs.
 20. A provider config env source that declares neither `valueType` nor a non-secret slot `type` registers its name and resolved string value as a secret.
-21. Substring redaction replaces a secret value only when `[...secret].length >= 8` and `secret.trim() !== ""`, matching both the literal string and its once-JSON-escaped spelling with longer secrets replaced first.
+21. Substring redaction replaces a secret value only when `[...secret].length >= 8` and `secret.trim() !== ""`, matching the literal string, its once-JSON-escaped spelling, and its spelling after the argument sanitization of section 2.1 rule 9, with longer secrets replaced first. Eligibility is measured on the secret as stored. So a secret first learned by a request hook after an argument was sanitized is still caught in the final check.
 22. Direct `{ type: 'env', property }` interpolation in `renderSystemPrompt` refuses any secret-classified or instance-sourced variable regardless of value length, even when the value has fewer than 8 code points.
 
 ## 2. Thread arguments and prompt interpolation
@@ -121,9 +121,9 @@ Context assembly proceeds in this order for every top-level prompt and every nes
 | Role | Redacted fields | Preserved identifiers and untouched binary fields |
 |---|---|---|
 | `system` | `content` | none |
-| `user` | String `content`, or `text.text`, `image_url.image_url.url`, and `file.filename` in `ContentPart[]` | Base64 bytes in `image.data` and `file.data` |
+| `user` | String `content`, or `text.text`, `image_url.image_url.url`, `file.filename`, and the `mediaType` of image and file parts in `ContentPart[]` | Base64 bytes in `image.data` and `file.data` |
 | `assistant` | `content`, `reasoning`, `text` field of `text` and `summary` entries in `reasoningDetails`, and every string value and object key in `toolCalls[].arguments` and `toolCalls[].extraContent` | `toolCalls[].id`, `toolCalls[].name`, opaque `encrypted` entries in `reasoningDetails` |
-| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and text/url/filename fields of `ContentPart[]` | `toolCallId`, `toolName`, base64 bytes in `image.data` and `file.data` |
+| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and the text, url, filename and `mediaType` fields of `ContentPart[]` | `toolCallId`, `toolName`, base64 bytes in `image.data` and `file.data` |
 
 Static tool definitions (`request.tools`) and `request.model` are not mutated, because rewriting JSON Schema property names or model identifiers would break provider calls. Developers must keep credentials in provider transport config slots, never in tool definitions or `providerOptions`.
 
@@ -247,7 +247,7 @@ Every entry below states what can go wrong, what Spindle must do, and any docume
 
 ### 6.4 User code in function tools
 
-1. **Tool returns a secret in output, error data, JSON keys, or attachment fields.** Write-time redaction replaces eligible secrets in `content`, `metadata` (keys and values, preserving top-level `error_code` and `error_data` keys and a tool result's own `error_code` value), and attachment `name` and `description`. `storedResult` keeps only the spec's `AttachmentRef` fields, closing milestone 1's extra-property escape route.
+1. **Tool returns a secret in output, error data, JSON keys, or attachment fields.** Write-time redaction replaces eligible secrets in `content`, `metadata` (keys and values, preserving top-level `error_code` and `error_data` keys and a tool result's own `error_code` value), and attachment `name` and `description`. `storedResult` keeps only the spec's `AttachmentRef` fields, closing milestone 1's extra-property escape route. The same whitelist runs again at the final write boundary, after every `before_create_message` hook and for injected messages too, so a hook cannot add a property back.
 2. **Tool queues a secret in `queueTool` arguments.** `queueTool` validates plain JSON arguments and scans every key and string value for known secrets (at least 8 non-whitespace code points). If any matches, `queueTool` synchronously throws `SecretInArguments` without persisting to `queue` and without including the secret in the error message.
 3. **Tool writes a secret with `setValue`.** Durable `kv` is unredacted general thread state. Trusted code must store credentials through `setEnv`, not `setValue`.
 4. **Nested-only tool copies its own secret variable default.** Before executing any tool through `invokeTool`, Spindle registers that tool's `type: 'secret'` variable declarations and learns their values into the execution's `Secrets` set so its defaults are redacted on write and in the final check.
