@@ -6,7 +6,7 @@ import { newSecrets } from "../execution/env.ts"
 import { redactor } from "../execution/redact.ts"
 import { type ExecutionEvent, learnSecrets } from "../execution/step.ts"
 import { layer as supervisorLayer } from "../execution/ThreadSupervisor.ts"
-import { prepareTurn, roleOf, sidesOf } from "../execution/turn.ts"
+import { loadAgent, otherSide, prepareSides, roleOf, senderSide } from "../execution/turn.ts"
 import { decodeScript, scriptedProvider } from "../providers/script.ts"
 import { issue } from "../registry/definition.ts"
 import { describeCause } from "../registry/load-error.ts"
@@ -181,6 +181,11 @@ const toolTimeoutFor = Effect.fnUntraced(function* (values: ReadonlyArray<string
   return (qualifiedName: string) => named.get(qualifiedName) ?? general
 })
 
+export const isModelMessage = (message: Message, initialModelRole: Message["role"]) =>
+  message.role === initialModelRole ||
+  message.prompt != null ||
+  (message.metadata?.queued === true && message.tool_calls != null)
+
 export const withProject = <A, E, R>(
   dir: string,
   db: string,
@@ -208,8 +213,9 @@ export const withProject = <A, E, R>(
       )).agentId
     }
     return yield* Effect.gen(function* () {
-      yield* prepareTurn(agent).pipe(
-        Effect.flatMap((turn) => learnSecrets(turn, newSecrets(secrets))),
+      yield* loadAgent(agent).pipe(
+        Effect.flatMap(prepareSides),
+        Effect.flatMap((sides) => learnSecrets(sides, newSecrets(secrets))),
         Effect.ignore,
       )
       if ("agent" in target && target.resume && filename === ":memory:") return yield* fail("--thread needs --db")
@@ -219,7 +225,7 @@ export const withProject = <A, E, R>(
         yield* Console.error(`${issue.code} ${issue.file}${issue.path === "" ? "" : `:${issue.path}`} ${issue.message}`)
       if (errors.length) return yield* fail(`${root} has ${plural(errors.length, "definition error")}`)
       const toolTimeout = yield* toolTimeoutFor(toolTimeouts)
-      const { side } = yield* sidesOf(agent)
+      const side = otherSide(senderSide(yield* loadAgent(agent)))
       const provider = Option.isSome(script) ? yield* loadScript(path.resolve(script.value)) : undefined
       const role = roleOf(side)
       const supervisor = supervisorLayer({

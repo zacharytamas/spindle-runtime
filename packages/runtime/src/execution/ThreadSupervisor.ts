@@ -17,8 +17,9 @@ import { ThreadStore } from "../store/ThreadStore.ts"
 import { Execution } from "./Execution.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
+import { atRuntimeCap } from "./stop-rules.ts"
 import { type AdmissionError, queuedMessage, type ThreadControl } from "./thread-state.ts"
-import { roleOf, type SetupError, sidesOf } from "./turn.ts"
+import { loadAgent, roleOf, type SetupError, senderSide } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
 
@@ -223,6 +224,27 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
       yield* Effect.forkScoped(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))))
 
+      const deliveryFromClaim = Effect.fnUntraced(function* (threadId: string, seq: number, started: Execution) {
+        const outcome = yield* started.settlement.await
+        const status = yield* statusOf(threadId)
+        const disposition = yield* runStore.queueDisposition(threadId, seq)
+        if (disposition === "failed_delivery")
+          return { outcome, status, failedDelivery: true as const, stillQueued: false }
+        // A cap may park this sender behind older work addressed to the other side.
+        if (disposition !== "pending" || !atRuntimeCap(outcome.reason)) return { outcome, status }
+      })
+      const waitOnHolder = Effect.fnUntraced(function* (threadId: string, options: SendOptions) {
+        const local = live.get(threadId)
+        if (local) {
+          const operation = local.waitingOn
+          if (options.onWaiting)
+            yield* options.onWaiting({ kind: "local", pid: holder.pid, ...(operation && { operation }) })
+          return yield* local.lastOutcome
+        }
+        const remote = yield* runStore.holderOf(threadId)
+        if (remote && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: remote.pid })
+      })
+
       const waitForDelivery = (
         threadId: string,
         admitted: { seq: number; started: Execution | undefined },
@@ -231,30 +253,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         Effect.gen(function* () {
           let started = admitted.started
           while (true) {
-            if (started !== undefined) {
-              const outcome = yield* started.settlement.await
-              const status = yield* statusOf(threadId)
-              const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
-              return disposition === "failed_delivery"
-                ? { outcome, status, failedDelivery: true as const, stillQueued: false }
-                : { outcome, status }
+            if (started) {
+              const delivery = yield* deliveryFromClaim(threadId, admitted.seq, started)
+              if (delivery) return delivery
             }
-            const local = live.get(threadId)
-            let outcome: RunOutcome | undefined
-            if (local !== undefined) {
-              if (options.onWaiting) {
-                const operation = local.waitingOn
-                yield* options.onWaiting({
-                  kind: "local",
-                  pid: holder.pid,
-                  ...(operation && { operation }),
-                })
-              }
-              outcome = yield* local.lastOutcome
-            } else {
-              const holderNow = yield* runStore.holderOf(threadId)
-              if (holderNow && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: holderNow.pid })
-            }
+            const outcome = yield* waitOnHolder(threadId, options)
             const status = yield* awaitRest(threadId).pipe(
               Effect.onInterrupt(() =>
                 Effect.gen(function* () {
@@ -294,8 +297,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const invalid = checkOptions(options)
             if (invalid !== undefined) return yield* invalid
             const thread = yield* threadStore.getThread(threadId)
-            const { human } = yield* sidesOf(thread.agentId)
-            const message: QueueMessageInput = { role: roleOf(human), content }
+            const agent = yield* loadAgent(thread.agentId)
+            const message: QueueMessageInput = { role: roleOf(senderSide(agent)), content }
             return yield* Effect.acquireUseRelease(
               admit(threadId, { kind: "message", message }, options, external, true),
               (admitted) => waitForDelivery(threadId, admitted, options),

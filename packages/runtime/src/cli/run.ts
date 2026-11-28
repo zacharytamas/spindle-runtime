@@ -12,6 +12,7 @@ import {
   deliveryFlags,
   fail,
   holdNote,
+  isModelMessage,
   note,
   plural,
   requestText,
@@ -34,7 +35,7 @@ const printer =
     const message = event.message
     if (message.role === "tool")
       return print(`[tool result] ${message.name} ${message.tool_status}: ${message.content ?? ""}`)
-    if (message.role !== modelRole) return Effect.void
+    if (!isModelMessage(message, modelRole)) return Effect.void
     return Effect.gen(function* () {
       if (message.content !== null && message.content !== "") yield* print(message.content)
       for (const call of toolCallsOf(message)) yield* print(toolCallLine(call))

@@ -18,6 +18,7 @@ import {
   describe,
   fail,
   holdNote,
+  isModelMessage,
   note,
   requestText,
   toolCallLine,
@@ -45,7 +46,7 @@ const messageLines = (message: Message, chat: Conversation, own: boolean) => {
     const preview = chat.fullResults ? text : text.replace(/^(.{200}).+$/su, "$1...")
     return [`${label} ok: ${preview}`]
   }
-  if (message.role === chat.role)
+  if (isModelMessage(message, chat.role))
     return [
       ...(content ? [chat.clean(content)] : []),
       ...toolCallsOf(message).map((call) => chat.clean(toolCallLine(call))),

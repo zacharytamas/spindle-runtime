@@ -8,7 +8,7 @@ import { agentHooks, type HookSet, observeHooks } from "./hooks.ts"
 import { type ExecutionOptions, learnSecrets } from "./step.ts"
 import { ThreadSupervisor } from "./ThreadSupervisor.ts"
 import { agentHookScope, makeThreadState } from "./thread-state.ts"
-import { lookup, prepareTurn } from "./turn.ts"
+import { lookup, prepareSides } from "./turn.ts"
 
 // Hooks section 1.3 and Execution State section 1: an operation at rest has no active prompt, so the agent's hooks
 // apply, and state.execution is null. A state that writes text for user code learns the turn's secrets first.
@@ -23,9 +23,9 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
         : yield* agentHooks(agent)
     const secrets = newSecrets(options.secrets)
     // A turn that cannot be prepared fails in its run with its own message. What it learned before that still counts.
-    if (options.learn || set.byPosition.size > 0)
-      yield* prepareTurn(thread.agentId).pipe(
-        Effect.flatMap((turn) => learnSecrets(turn, secrets)),
+    if (agent && (options.learn || set.byPosition.size > 0))
+      yield* prepareSides(agent).pipe(
+        Effect.flatMap((sides) => learnSecrets(sides, secrets)),
         Effect.ignore,
       )
     const base = {

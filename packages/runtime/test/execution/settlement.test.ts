@@ -5,6 +5,7 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { gate, ok, project } from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage } from "../../src/execution/trigger.ts"
@@ -266,6 +267,45 @@ it.effect("a sender whose queued entry fails delivery learns that it was not del
       Layer.merge(
         registryOf(project({ provider, tools: { wait } })),
         Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provideMerge(SqliteLive({ filename: ":memory:" })))),
+      ),
+    ),
+  )
+})
+
+it.effect("a sender whose claim first runs older work for the opposite side waits for its own delivery", () => {
+  const providerA = new ScriptedProvider([
+    { toolCalls: [{ id: "park", name: "park", arguments: {} }] },
+    { text: "answered the second send" },
+  ])
+  const providerB = new ScriptedProvider([{ text: "answered parked work" }])
+  const park = defineTool({
+    description: "Leave work for B in the next session",
+    execute: async (state) => {
+      await state.queueMessage({ role: "assistant", content: "for B" })
+      return ok("parked")
+    },
+  })
+  const setup = dualProject({
+    providerA,
+    providerB,
+    tools: { park },
+    sideA: { stopTool: "park" },
+    agent: { maxSessionTurns: 1 },
+  })
+  return Effect.gen(function* () {
+    const thread = yield* createThread("pair")
+    const first = yield* sendMessage(thread.id, "first")
+    expect(first.outcome?.reason).toBe("max_session_turns")
+    const second = yield* sendMessage(thread.id, "second")
+    expect(second.outcome?.reason).toBe("max_session_turns")
+    expect(providerB.requests).toHaveLength(1)
+    expect(providerA.requests[1]?.messages).toContainEqual({ role: "user", content: "second" })
+    expect(yield* RunStore.use((store) => store.queueLength(thread.id))).toBe(0)
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        registryOf(setup),
+        Layer.provideMerge(supervisorLayer(), layer.pipe(Layer.provide(SqliteLive({ filename: ":memory:" })))),
       ),
     ),
   )
