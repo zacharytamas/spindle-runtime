@@ -8671,5 +8671,25 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "Resumption: New execution on next message"
+	},
+	{
+		"id": "specification:threads/execution-state:0b7bee20",
+		"page": "specification:threads/execution-state",
+		"line": 3,
+		"section": "Execution State",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Execution state carries step counts, the active dual-side, cancellation, and controls for stopping or forcing turns."
+	},
+	{
+		"id": "specification:agents:7d581abd",
+		"page": "specification:agents",
+		"line": 223,
+		"section": "9.2 Worker / Reviewer (prompt × prompt)",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "Two models converse; each side sees itself as `assistant` and the other as `user`."
 	}
 ]
