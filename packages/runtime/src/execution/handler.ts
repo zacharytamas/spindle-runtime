@@ -1,6 +1,7 @@
 import type { Message } from "@standardagents/spec"
 import { Effect, Result } from "effect"
 import { describeCause } from "../registry/load-error.ts"
+import { MessageStore } from "../store/MessageStore.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { Callback } from "./callback.ts"
 import { deliverQueued, queueRecipient, runQueuedTool } from "./drain.ts"
@@ -89,8 +90,11 @@ export interface HandlerCall {
 
 const nextPeerMessage = Effect.fnUntraced(function* (thread: ThreadScope, side: Side) {
   const store = yield* RunStore
+  const messages = yield* MessageStore
   for (let row = thread.deliveries.take(side); row !== undefined; row = thread.deliveries.take(side)) {
-    if (yield* store.advanceDelivery(thread.thread.id, thread.run.flowId, side, row.seq)) return row.message
+    const current = yield* messages.getMessage(thread.thread.id, row.message.id)
+    if (current === null) continue
+    if (yield* store.advanceDelivery(thread.thread.id, thread.run.flowId, side, row.seq)) return current
   }
 })
 

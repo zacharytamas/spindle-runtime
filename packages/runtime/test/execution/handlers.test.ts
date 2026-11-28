@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineHook, defineTool, type HandlerDefinition, type ThreadState } from "@standardagents/spec"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import * as Statement from "effect/sql/Statement"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
@@ -327,4 +327,53 @@ describe("handler runtime loading, turnCap, stopSession, and performance guard",
       }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
     },
   )
+
+  it.effect("external stateAtRest edits and deletes on buffered peer messages take effect before dispatch", () => {
+    const received: Array<{ content: string | null; metadata: unknown }> = []
+    let secondId = ""
+    let thirdId = ""
+    let onFirstReady: (() => void) | undefined
+    const firstReady = new Promise<void>((resolve) => {
+      onFirstReady = resolve
+    })
+    let releaseFirst: (() => void) | undefined
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const writer = handlerOf(async (state) => {
+      await state.injectMessage({ role: "assistant", content: "first" })
+      secondId = (await state.injectMessage({ role: "assistant", content: "stale" })).id
+      thirdId = (await state.injectMessage({ role: "assistant", content: "to-delete" })).id
+    })
+    const reader = handlerOf(async (_state, message) => {
+      received.push({ content: message.content, metadata: message.metadata })
+      if (message.content === "first") {
+        onFirstReady?.()
+        await firstDone
+      }
+    })
+    const setup = handlerProject({
+      sideA: { handler: "writer" },
+      sideB: { handler: "reader" },
+      handlers: { writer, reader },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("relay")
+      const running = yield* Effect.forkChild(sendMessage(thread.id, "go"))
+      yield* Effect.promise(() => firstReady)
+      const rest = yield* stateAtRest(thread.id)
+      yield* Effect.promise(() => rest.updateMessage(secondId, { content: "refreshed", metadata: { ext: true } }))
+      yield* Effect.promise(() => rest.deleteMessage(thirdId))
+      releaseFirst?.()
+      const { outcome } = yield* Fiber.join(running)
+      expect(outcome).toMatchObject({ status: "idle", reason: "handler_idle", steps: 0 })
+      expect(received).toEqual([
+        { content: "first", metadata: {} },
+        { content: "refreshed", metadata: { ext: true } },
+      ])
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => releaseFirst?.())),
+      Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))),
+    )
+  })
 })
