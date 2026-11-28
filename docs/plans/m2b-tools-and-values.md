@@ -31,6 +31,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 - [ ] One test file while iterating. The full `pnpm check` and `bun --bun run check` once at the end.
 - [ ] `pnpm fallow` reports no issue.
+- [ ] A pull request that adds a curated statement to `requirements.extra.json` refreshes `requirements.json` with `node scripts/spec-requirements.mjs --refresh` in the same commit, because `pnpm requirements` and the ledger check both read it.
 - [ ] The ledger line changes only by the statements the pull request names (plus any curated statements from `docs/design/secrets.md` section 7 added to `requirements.extra.json`).
 - [ ] Bot threads are read against the head, answered, and resolved before the root reports the pull request ready.
 
@@ -40,7 +41,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 **Review depth.** High risk (security boundary and schema migration). Failing tests written first by Gemini 4 Neon, followed by a 30-minute Gemini 4 Neon reading review after the GPT-6.2 Astra build.
 
-**Modules it may touch.** `packages/runtime/src/store/migrations/` (one new `thread_env` migration), `packages/runtime/src/store/sqlite.ts`, `packages/runtime/src/store/ThreadStore.ts`, `packages/runtime/src/store/model.ts`, `packages/runtime/src/store/schema.ts`, `packages/runtime/src/execution/env.ts`, `packages/runtime/src/execution/redact.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/trigger.ts`, `packages/runtime/src/providers/config.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/ledger.json`, and tests.
+**Modules it may touch.** `packages/runtime/src/store/migrations/` (one new `thread_env` migration), `packages/runtime/src/store/sqlite.ts`, `packages/runtime/src/store/ThreadStore.ts`, `packages/runtime/src/store/model.ts`, `packages/runtime/src/store/schema.ts`, `packages/runtime/src/execution/env.ts`, `packages/runtime/src/execution/redact.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/trigger.ts`, `packages/runtime/src/providers/config.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and tests.
 
 **Shared state it may change.** New SQLite table `thread_env`, and the in-memory `Secrets` set of executions and at-rest handles.
 
@@ -82,7 +83,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 **Review depth.** High risk (nested execution loop, shared step cap and secrets, scoped history, and message parentage). Failing tests written first by Gemini 4 Neon, followed by a 30-minute Gemini 4 Neon reading review after the GPT-6.2 Astra build.
 
-**Modules it may touch.** `packages/runtime/src/execution/prompt-tool.ts` (new), `packages/runtime/src/execution/turn.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/tool-lifecycle.ts`, `packages/runtime/src/execution/assemble.ts`, `packages/runtime/src/execution/drain.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/ledger.json`, and tests.
+**Modules it may touch.** `packages/runtime/src/execution/prompt-tool.ts` (new), `packages/runtime/src/execution/turn.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/tool-lifecycle.ts`, `packages/runtime/src/execution/assemble.ts`, `packages/runtime/src/execution/drain.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and tests.
 
 **Shared state it may change.** Persisted `messages` rows with `parent_id` and `depth > 0`, and shared execution `Secrets`, step counter, and callback tracking. No SQLite migration.
 
@@ -102,7 +103,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 **Review depth.** High risk (mutates thread agent ownership mid-execution and crosses M2a's side-switching boundary). Failing tests written first by Gemini 4 Neon, followed by a 30-minute Gemini 4 Neon reading review after the GPT-6.2 Astra build.
 
-**Modules it may touch.** `packages/runtime/src/store/ThreadStore.ts` (fenced `setAgent`), `packages/runtime/src/execution/stop-rules.ts`, `packages/runtime/src/execution/response.ts`, `packages/runtime/src/execution/turn.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/tool-lifecycle.ts`, `packages/runtime/src/execution/drain.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/Execution.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/runtime/src/registry/check-definition.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/ledger.json`, and tests.
+**Modules it may touch.** `packages/runtime/src/store/ThreadStore.ts` (fenced `setAgent`), `packages/runtime/src/execution/stop-rules.ts`, `packages/runtime/src/execution/response.ts`, `packages/runtime/src/execution/turn.ts`, `packages/runtime/src/execution/tools.ts`, `packages/runtime/src/execution/tool-lifecycle.ts`, `packages/runtime/src/execution/drain.ts`, `packages/runtime/src/execution/step.ts`, `packages/runtime/src/execution/Execution.ts`, `packages/runtime/src/execution/thread-state.ts`, `packages/runtime/src/registry/check-definition.ts`, `packages/conformance/DIVERGENCES.md`, `packages/conformance/requirements.extra.json`, `packages/conformance/requirements.json`, `packages/conformance/ledger.json`, and tests.
 
 **Shared state it may change.** Persisted `threads.agent_id` (and validated handoff `threads.arguments`), active side value in M2a's step loop, and `Execution` session-stop state. No SQLite migration.
 

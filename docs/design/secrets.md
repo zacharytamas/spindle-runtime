@@ -81,16 +81,17 @@ Standard Agent Specification `0.2.0` defines no inline placeholder syntax such a
 
 ### 2.1 Validation and sanitization rules
 
-1. `createThread` accepts an optional `arguments` object, validates it against the agent's side A prompt `requiredSchema` when that prompt defines one, and persists the validated plain JSON object in `threads.arguments`.
-2. `ThreadState.arguments` returns a deep-frozen copy of the thread's creation arguments (or the nested prompt's validated invocation arguments inside a prompt tool) so user code cannot mutate it across calls or participants.
-3. Before interpolating any thread or invocation argument key in `renderSystemPrompt`, Spindle validates the argument object against the rendering prompt's `requiredSchema` with `safeParseAsync`.
+1. `createThread` accepts an optional `arguments` object, validates it against the agent's side A prompt `requiredSchema` when that prompt defines one, and persists the caller's original plain JSON object in `threads.arguments`, not the schema's parsed output. A schema with a `transform` therefore validates the same input at every render.
+2. `ThreadState.arguments` returns a deep-frozen copy of the thread's original creation arguments (or the nested prompt's original invocation arguments inside a prompt tool) so user code cannot mutate it across calls or participants.
+3. Before interpolating any thread or invocation argument key in `renderSystemPrompt`, Spindle validates the stored original argument object against the rendering prompt's `requiredSchema` with `safeParseAsync`, and interpolates from that parse's output. It never parses a parse's output again.
 4. A prompt that defines no `requiredSchema` interpolates no thread or invocation argument key through `{ type: 'env', property }`.
 5. If validation against `requiredSchema` fails during `renderSystemPrompt`, assembly fails with `SetupError` before any model request on a top-level prompt, or returns an error `ToolResult` on a nested prompt tool.
 6. Only top-level own keys of the validated `requiredSchema` result are eligible as interpolated argument values, and they are available to both the root prompt and any prompt reached through `{ type: 'include' }`.
 7. If an argument key shares its name with a variable marked `'secret'` by any active declaration or provider config, `renderSystemPrompt` refuses the interpolation even when the key is in `requiredSchema`, failing with `SetupError` on a top-level prompt or returning an error `ToolResult` on a nested prompt tool.
 8. Non-string validated argument values are converted with `JSON.stringify`, and `undefined` optional fields fall through to declared text `env` lookup or interpolate as `""`.
 9. Every interpolated argument string is sanitized before insertion by normalizing `\r\n` and `\r` to `\n` and stripping ASCII control characters (`U+0000` to `U+0008`, `U+000B`, `U+000C`, `U+000E` to `U+001F`, `U+007F`) and Unicode bidirectional override characters (`U+200E`, `U+200F`, `U+202A` to `U+202E`, `U+2066` to `U+2069`).
-10. A known secret inside a validated thread argument is redacted from the rendered system prompt by the final check before dispatch.
+10. Redaction runs on each argument string before sanitization. Spindle replaces every known secret that meets the floor of section 1.3, measured on the secret as stored, with `[redacted]`, and only then applies rule 9. A secret such as `pass\u202Eword123` is therefore redacted before the bidirectional character is stripped, and cannot reach the prompt as `password123`.
+11. A known secret inside a validated thread argument is also redacted from the rendered system prompt by the final check before dispatch.
 
 ## 3. The final check at the end of assembly
 
@@ -156,9 +157,9 @@ Two tensions arise from operator decisions 2 and 4 and are to be recorded in `DI
 4. A known secret of at least 8 non-whitespace code points learned by `filter_messages` or `prefilter_llm_history` is redacted from the leading `system` prompt as well as from history messages in that same assembly.
 5. Canonical human and model messages stored in SQLite keep their original text, while the outgoing `ProviderRequest` redacts eligible secrets from replayed human content, model content, reasoning, tool-call arguments, and extra content.
 6. The final check never mutates `toolCalls[].id`, `toolCalls[].name`, `toolCallId`, or `toolName`.
-7. A request containing an `assistant` message with a `toolCalls` entry that lacks an immediately following matching `tool` message is refused before dispatch.
-8. A request containing a `tool` message with no immediately preceding `assistant` message listing its `toolCallId` is refused before dispatch.
-9. A request containing a non-`tool` message between an `assistant` message with `toolCalls` and any of its `tool` results is refused before dispatch.
+7. The result group of an `assistant` message with `toolCalls` is the run of contiguous `tool` messages directly after it. A request in which a call has no result in its group is refused before dispatch.
+8. A request containing a `tool` message that is not in the result group of an `assistant` message listing its `toolCallId` is refused before dispatch. `assistant(calls A, B), tool(A), tool(B)` is valid.
+9. A request in which a message of another role ends a result group before every call of its `assistant` message has a result is refused before dispatch.
 10. A request containing duplicate call IDs in one `assistant` message or duplicate `tool` messages for one `toolCallId` in one group is refused before dispatch.
 11. A request whose `tool` messages appear in a different order within the contiguous group directly after their `assistant` message, with a valid one-to-one match of call IDs, is accepted.
 12. When the final check refuses a top-level prompt request, the provider is not called, no `request` observation fires, stored messages do not change, and the execution settles `failed` with reason `fatal_error` and a diagnostic naming the pairing defect.
@@ -261,7 +262,7 @@ Every entry below states what can go wrong, what Spindle must do, and any docume
 ### 6.6 `setEnv` callers and type disagreements
 
 1. **Declared type is `'secret'` while `setEnv` writes `{ type: 'text' }`.** The stricter classification wins. `envType` returns `'secret'`, the value enters `Secrets` and is redacted wherever eligible, and `{ type: 'env' }` system-prompt interpolation is refused. The `thread_env` row preserves `'text'` in SQLite so the stricter rule is enforced dynamically without destroying stored metadata.
-2. **Declared type is `'text'` while `setEnv` omits `type` or passes `{ type: 'secret' }`.** The stricter classification wins. `envType` returns `'secret'`, the value enters `Secrets` and is redacted wherever eligible, and `{ type: 'env' }` system-prompt interpolation is refused.
+2. **Declared type is `'text'` while `setEnv` passes `{ type: 'secret' }`, or omits `type` on a key that is not yet stored or is stored as `'secret'`.** Omitting `type` on a key stored as `'text'` keeps `'text'` under section 1.4 rule 3. The stricter classification wins. `envType` returns `'secret'`, the value enters `Secrets` and is redacted wherever eligible, and `{ type: 'env' }` system-prompt interpolation is refused.
 3. **Credential stored with `{ type: 'text' }` and no secret declaration.** `envType` returns `'text'`, and Spindle does not sniff patterns to guess secrecy. If those exact bytes were also learned from an actual secret source (such as `instanceEnv` or another `'secret'` key), that secret source still triggers redaction.
 4. **Short non-secret word stored with default `'secret'` type.** Calling `setEnv('GATE', 'open')` stores `type: 'secret'`. `envType('GATE')` returns `'secret'` and direct `{ type: 'env', property: 'GATE' }` interpolation is refused, while substring redaction skips `'open'` because it is shorter than 8 code points.
 5. **Secret rotation via `setEnv`.** Calling `setEnv('API_TOKEN', newToken)` without `options.type` keeps `type: 'secret'`, registers `newToken` into `Secrets`, and retains the previous value in `Secrets` for the remainder of the current execution so an earlier read cannot leak.
