@@ -46,7 +46,7 @@ it.effect("every store operation prevents scheduler yields while using the conne
         queueDisposition: runs.queueDisposition(id, 1),
         isQueued: runs.isQueued(id, 1),
         nextQueued: runs.nextQueued(id, claim),
-        pendingHeadSeq: runs.pendingHeadSeq(id),
+        senderState: runs.senderState(id, 1),
         queueLength: runs.queueLength(id),
         holderOf: runs.holderOf(id),
         owned: runs.owned(claim.holder),

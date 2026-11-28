@@ -78,11 +78,18 @@ export class Execution {
   readonly turns = new TurnController()
   readonly #steps = { a: 0, b: 0 }
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
-  #successor: Execution | undefined
+  #tookEntry = false
   #sessionEnd: End | undefined
 
-  constructor(flowId: string) {
+  readonly #onTake: ((seq: number, run: Execution) => void) | undefined
+
+  constructor(flowId: string, onTake?: (seq: number, run: Execution) => void) {
+    this.#onTake = onTake
     this.flowId = flowId
+  }
+  recordTaken(seq: number) {
+    this.#tookEntry = true
+    this.#onTake?.(seq, this)
   }
   get sideASteps() {
     return this.#steps.a
@@ -158,11 +165,6 @@ export class Execution {
     return this.settlement
   }
 
-  readonly lastOutcome: Effect.Effect<RunOutcome, SqlError | ThreadNotFound> = Effect.flatMap(
-    this.settlement.await,
-    (outcome) => this.#successor?.lastOutcome ?? Effect.succeed(outcome),
-  )
-
   #waitForCallbacks(notify: NonNullable<ExecutionOptions["onHold"]>) {
     return Effect.gen({ self: this }, function* () {
       let notificationError: Cause.Cause<never> | undefined
@@ -192,6 +194,7 @@ export class Execution {
             { flowId: this.flowId },
             { state: end.status, reason: end.reason },
             {
+              tookEntry: this.#tookEntry,
               continueIfQueued: !!end.continueIfQueued && (this.#stop === undefined || this.#stopFromCancel),
               // A cancelled run never takes queued work itself. At the cap it still ends as the cap ends a run.
               settleOnly: this.#phase === "holding" || this.#phase === "dropping",
@@ -274,7 +277,7 @@ export class Execution {
     // Mask the driver before its first turn. Only the work between settlement boundaries is interruptible.
     const publish = Effect.gen({ self: this }, function* () {
       const { outcome, restart } = yield* this.#finish(threadId, steps, onHold)
-      if (restart) this.#successor = yield* resume
+      if (restart) yield* resume
       return outcome
     }).pipe(
       Effect.onExit((exit) => {
