@@ -14,9 +14,9 @@ Milestone M2a closes all 20 M2a ledger statements, closes 5 M1 partial statement
 
 ### Order and limits
 
-- [ ] Milestone 2 is one linear stack that the operator lands as a whole (decided 2026-11-27). Nothing merges before then. The order is this design pull request, the M2b design pull request, `M2a-1`, `M2a-2`, `M2a-3`, then `M2b-1` to `M2b-4`.
+- [ ] At most three pull requests are open at a time, each based on the one below it. The operator lands them, bottom first. The order is this design pull request, the M2b design pull request, `M2a-1`, `M2a-2`, `M2a-3`, then `M2b-1` to `M2b-4`.
 - [x] Decisions 1 to 7 in `docs/design/sides-and-turns.md` are settled before `M2a-1` starts.
-- [ ] Each pull request is based on the branch below it and starts when that branch is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
+- [ ] Each pull request is based on the open branch below it, or on `main` once that has landed. It starts when a slot is free and the branch below it is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
 - [ ] Each pull request adds at most one migration with the next sequential number (`0007`, `0008`, `0009`).
 
 ### Roles
@@ -38,7 +38,7 @@ Milestone M2a closes all 20 M2a ledger statements, closes 5 M1 partial statement
 
 ## Side model, shared context, two prompt sides, `maxSessionTurns`, and `forceTurn` (M2a-1)
 
-Base is the M2b design branch, `m2b/design`. Introduces the typed `SideValue` union (`human`, `prompt`, `handler`), `TurnController` (ready for M2b handoffs without loop branching on tool kind), shared execution `context`, per-side step counts, durable `session_turns`, `prompt x prompt` alternating turns, `maxSessionTurns`, `forceTurn`, and O(1) `turnStartSeq` history slicing.
+Base is the M2b design branch, `m2b/design`, or `main` once that has landed. Introduces the typed `SideValue` union (`human`, `prompt`, `handler`), `TurnController` (ready for M2b handoffs without loop branching on tool kind), shared execution `context`, per-side step counts, durable `session_turns`, `prompt x prompt` alternating turns, `maxSessionTurns`, `forceTurn`, and O(1) `turnStartSeq` history slicing.
 
 ### Scope
 
@@ -96,7 +96,7 @@ Base is the M2b design branch, `m2b/design`. Introduces the typed `SideValue` un
 
 ## Handler-backed sides, handler-compatible tool drain, and root `stopSession` (M2a-2)
 
-Base is the `M2a-1` branch. Activates `HandlerSideValue` across all handler pairings (`handler x human`, `human x handler`, `prompt x handler`, `handler x prompt`, `handler x handler`), enforces the `defineHandler` brand, implements one-at-a-time durable handler delivery and failure semantics, adds side-attributed queued tools for handler sides, and implements root-thread `state.stopSession()`.
+Base is the `M2a-1` branch, or `main` once that has landed. Activates `HandlerSideValue` across all handler pairings (`handler x human`, `human x handler`, `prompt x handler`, `handler x prompt`, `handler x handler`), enforces the `defineHandler` brand, implements one-at-a-time durable handler delivery and failure semantics, adds side-attributed queued tools for handler sides, and implements root-thread `state.stopSession()`.
 
 ### Scope
 
@@ -151,7 +151,7 @@ Base is the `M2a-1` branch. Activates `HandlerSideValue` across all handler pair
 
 ## Direct execution outside a calling tool (M2a-3)
 
-Base is the `M2a-2` branch. Enables `invokeTool` from hooks inside an execution, `invokeTool` on a handle at rest (and from at-rest hooks), and `runAgent` on handles at rest or inside an execution, with full claim, status, watermark wakeup, `ThreadBusy`, abort, crash recovery, and terminated-thread enforcement.
+Base is the `M2a-2` branch, or `main` once that has landed. Enables `invokeTool` from hooks inside an execution, `invokeTool` on a handle at rest (and from at-rest hooks), and `runAgent` on handles at rest or inside an execution, with full claim, status, watermark wakeup, `ThreadBusy`, abort, crash recovery, and terminated-thread enforcement.
 
 ### Scope
 
