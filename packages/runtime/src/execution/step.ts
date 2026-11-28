@@ -1,9 +1,9 @@
 import type { LLMProviderInterface, Message, ProviderRequest, ToolResult } from "@standardagents/spec"
 import { type Context, Effect, Fiber, Result } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
-import type { Registry } from "../registry/Registry.ts"
+import { Registry } from "../registry/Registry.ts"
 import { MessageStore } from "../store/MessageStore.ts"
-import type { Thread } from "../store/model.ts"
+import type { Queued, Thread } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
@@ -11,17 +11,18 @@ import { assembleRequest, type HistoryView, promptScope } from "./assemble.ts"
 import { type CallContext, callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { drainQueue, queueRecipient } from "./drain.ts"
 import type { End, Execution } from "./Execution.ts"
-import { addSecret, instanceEnv, lookupEnv, newSecrets, type Secrets } from "./env.ts"
+import { instanceEnv, learnVariable, newSecrets, type Secrets } from "./env.ts"
 import { type HandlerCall, HandlerDeliveries, handlerTurn } from "./handler.ts"
 import { type History, makeHistory } from "./history.ts"
-import { agentHooks, type HookScope, turnHooks } from "./hooks.ts"
+import { agentHooks, turnHooks } from "./hooks.ts"
 import { commitMessage, type WriteContext } from "./messages.ts"
 import { mapStrings, redactor } from "./redact.ts"
 import { reasoningSource, responseCalls, responseMessage, stopToolOutcome } from "./response.ts"
 import { stopReason } from "./stop-rules.ts"
-import { agentHookScope, makeThreadState, type ThreadControl } from "./thread-state.ts"
+import { makeThreadState, type ThreadControl } from "./thread-state.ts"
 import { completeCall, streamedHooks } from "./tool-lifecycle.ts"
-import { invokeTool, runToolCall, scopeFor, type ToolContext } from "./tools.ts"
+import { makeToolScope } from "./tool-scope.ts"
+import { runToolCall, scopeFor, type ToolContext } from "./tools.ts"
 import type { Phase, TraceEntry } from "./trace.ts"
 import {
   type AgentSides,
@@ -137,13 +138,7 @@ export const prepareSides = Effect.fn("prepareSides")(function* (agent: AgentSid
 
   for (const { variables, scope } of scopes) {
     const names = new Set([...secrets.names, ...variables.map((variable) => variable.name)])
-    for (const name of names) {
-      const found = yield* readable(lookupEnv(scope, name))
-      if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
-      // A definition can hide a different instance value, which still belongs to the operator.
-      const instance = yield* readable(instanceEnv(name))
-      if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
-    }
+    for (const name of names) yield* learnVariable(scope, name, secrets)
   }
   return { agent, a: yield* Effect.fromResult(a), b: yield* Effect.fromResult(b) } satisfies AgentSides
 })
@@ -207,34 +202,6 @@ function stepLog(threadId: string, run: Execution, secrets: Secrets, options: Ex
   return { record, observe, report, handlerCalls, modelCalls, pending, counter, redact }
 }
 
-const prepareToolContext = Effect.fnUntraced(function* <T extends AutomatedSide>(
-  thread: ThreadScope,
-  turn: T,
-  hooks: HookScope,
-  options: ExecutionOptions,
-) {
-  const toolContext: ToolContext<T> = {
-    execution: thread.run,
-    secrets: thread.secrets,
-    scope: yield* Effect.scope,
-    toolTimeout: options.toolTimeout,
-    turn,
-    stateFor: (tool, entry, callback) =>
-      makeThreadState({
-        ...thread,
-        execution: { history: thread.history, run: thread.run },
-        hooks,
-        scope: scopeFor(turn, entry),
-        from: tool,
-        caller: tool,
-        callback,
-        invoke: (name, args, onExecute) =>
-          invokeTool(toolContext, tool, tool, name, args, onExecute).pipe(Effect.provideContext(thread.services)),
-      }),
-  }
-  return toolContext
-})
-
 const prepareSide = Effect.fnUntraced(function* (
   thread: ThreadScope,
   turn: PromptSideValue,
@@ -243,20 +210,12 @@ const prepareSide = Effect.fnUntraced(function* (
   const { run, history, secrets } = thread
   const cached = run.turns.scopes.get(turn)
   if (cached) return cached
-  const hooks: HookScope = {
-    execution: run,
-    set: yield* turnHooks(turn),
-    stateFor: (hook, call) => makeThreadState({ ...base, scope: promptScope(turn), from: hook.definition, call }),
-  }
-  const base = {
-    ...thread,
-    execution: { history, run },
-    hooks,
-  }
+  const { hooks, toolContext } = yield* makeToolScope(thread, turn, yield* turnHooks(turn), options)
   const write = { ...thread.delivery, hooks }
-  const toolContext = yield* prepareToolContext(thread, turn, hooks, options)
   const promptState = makeThreadState({
-    ...base,
+    ...thread,
+    execution: { run, history, toolContext },
+    hooks,
     scope: promptScope(turn),
     from: turn.prompt,
   })
@@ -405,39 +364,86 @@ const prepareHandler = Effect.fnUntraced(function* (
   const cached = thread.run.turns.handlerScopes.get(turn)
   if (cached) return cached
   const write = thread.delivery
-  const scope = { turn, write, toolContext: yield* prepareToolContext(thread, turn, write.hooks, options) }
+  const { toolContext } = yield* makeToolScope(thread, turn, write.hooks.set, options)
+  const scope = { turn, write, toolContext }
   thread.run.turns.handlerScopes.set(turn, scope)
   return scope
 })
 
+const takeTurn = Effect.fnUntraced(function* (
+  thread: ThreadScope,
+  active: SideValue,
+  reason: string,
+  options: ExecutionOptions,
+) {
+  if (active.kind === "human") return idle("awaiting_human")
+  if (active.kind === "handler") {
+    const side = yield* prepareHandler(thread, active, options)
+    return yield* handlerTurn(side, thread, reason === "force_turn", options.turnCap ?? 1000)
+  }
+  const side = yield* prepareSide(thread, active, options)
+  const peer = thread.sides[otherSide(active.side)]
+  thread.deliveries.begin(peer.kind === "handler" ? active.role : undefined)
+  const boundary = yield* promptTurn(side, thread, options, reason !== "queue")
+  thread.deliveries.finish(peer, "next" in boundary)
+  return boundary
+})
+
 // A new run takes the destination of its FIFO head. Work addressed to a human
 // is delivered by the automated peer, which can then park without calling a model.
-const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: ExecutionOptions) {
+const advance = Effect.fnUntraced(function* (
+  thread: ThreadScope,
+  options: ExecutionOptions,
+  head: Queued | undefined,
+  agentEntry: boolean,
+) {
   const { run, sides } = thread
-  const head = yield* (yield* RunStore).nextQueued(thread.thread.id, run)
-  run.turns.active = queueRecipient(sides, head)
-  let reason = "queue"
+  const entry = queueRecipient(sides, undefined)
+  const promptEntry = agentEntry && entry.kind === "prompt"
+  if (agentEntry && !promptEntry && (!head || head.kind === "agent")) return idle("handler_idle", true)
+  run.turns.active = promptEntry ? entry : queueRecipient(sides, head)
+  let reason = promptEntry ? "run_agent" : "queue"
   while (true) {
     if (run.stopAtBoundary()) return run.abortEnd
     const active: SideValue = run.turns.active
-    if (active.kind === "human") return idle("awaiting_human")
-    let boundary: End | { next: SideValue; reason: string }
-    if (active.kind === "handler") {
-      const side: ToolScope<HandlerSideValue> = yield* prepareHandler(thread, active, options)
-      boundary = yield* handlerTurn(side, thread, reason === "force_turn", options.turnCap ?? 1000)
-    } else {
-      const side: SideScope = yield* prepareSide(thread, active, options)
-      const peer = sides[otherSide(active.side)]
-      thread.deliveries.begin(peer.kind === "handler" ? active.role : undefined)
-      boundary = yield* promptTurn(side, thread, options, reason !== "queue")
-      thread.deliveries.finish(peer, "next" in boundary)
-    }
+    const boundary: End | { next: SideValue; reason: string } = yield* takeTurn(thread, active, reason, options)
     run.turns.pending = undefined
     yield* thread.record("stop", boundary.reason)
     if (!("next" in boundary)) return boundary
+    if (
+      active.kind === "prompt" &&
+      boundary.reason !== "force_turn" &&
+      boundary.next.kind === "prompt" &&
+      (yield* (yield* RunStore).nextQueued(thread.thread.id, run))?.kind === "agent"
+    )
+      return idle(boundary.reason, true)
     run.turns.active = boundary.next
     reason = boundary.reason
   }
+})
+
+const prepareAgentScope = Effect.fnUntraced(function* (
+  base: Omit<ThreadScope, "delivery" | "sides">,
+  name: string,
+  admitted: boolean,
+  options: ExecutionOptions,
+) {
+  // Admission already resolved visibility. A packed private agent can be the durable target.
+  const from = admitted
+    ? (yield* Registry).definitions.find((d) => d.kind === "agent" && d.qualifiedName === name)
+    : undefined
+  const agent = yield* loadAgent(name, from)
+  const sides = yield* prepareSides(agent, base.secrets)
+  const { hooks } = yield* makeToolScope(base, { kind: "agent", agent }, yield* agentHooks(agent), options)
+  const delivery: WriteContext = {
+    threadId: base.thread.id,
+    hooks,
+    secrets: base.secrets,
+    call: undefined,
+    history: base.history,
+    origin: { kind: "flow", flowId: base.run.flowId },
+  }
+  return { ...base, delivery, sides }
 })
 
 export const prepareSteps = Effect.fnUntraced(function* (
@@ -454,35 +460,31 @@ export const prepareSteps = Effect.fnUntraced(function* (
       const executionStartSeq = (yield* (yield* MessageStore).latestMessageSeq(threadId)) + 1
       const thread = yield* (yield* ThreadStore).getThread(threadId)
       const services = yield* Effect.context<Registry | Stores>()
-      const sides = yield* prepareSides(yield* loadAgent(thread.agentId), secrets)
       const deliveries = new HandlerDeliveries()
       const history = makeHistory(threadId, {
         onInsert: (row) => deliveries.inserted(row),
         onUpdate: (message) => deliveries.updated(message),
         onDelete: (messageId) => deliveries.deleted(messageId),
       })
-      const base = { thread, services, secrets, control, history, run, sides, context: {} }
-      // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.
-      const hooks = agentHookScope(
-        {
-          ...base,
-          owner: run,
-          execution: { history, run },
-          scope: { agent: sides.agent.value.env, toolEntry: undefined, prompt: undefined },
-        },
-        yield* agentHooks(sides.agent),
-      )
-      const delivery: WriteContext = {
-        threadId,
-        hooks,
-        secrets,
-        call: undefined,
-        history,
-        origin: { kind: "flow", flowId: run.flowId },
-      }
-      const scope: ThreadScope = { ...base, ...log, delivery, deliveries, executionStartSeq }
-      return scope
+      return { thread, services, secrets, control, history, run, context: {}, ...log, deliveries, executionStartSeq }
     }),
   )
-  return { advance: Effect.flatMap(setup, (scope) => advance(scope, options)), report: log.report, stepCap }
+  const dispatch = Effect.gen(function* () {
+    if (run.stopAtBoundary()) return run.abortEnd
+    const base = yield* setup
+    const store = yield* RunStore
+    let head = yield* store.nextQueued(threadId, run)
+    const entry = head?.kind === "agent" ? head : undefined
+    if (entry) {
+      yield* store.consumeQueued(threadId, entry.seq, run)
+      run.recordTaken(entry.seq)
+      head = yield* store.nextQueued(threadId, run)
+    }
+    const name = entry?.agentName ?? run.turns.agentName ?? base.thread.agentId
+    const scope = run.turns.agents.get(name) ?? (yield* prepareAgentScope(base, name, !!entry, options))
+    run.turns.agentName = name
+    run.turns.agents.set(name, scope)
+    return yield* advance(scope, options, head, !!entry)
+  })
+  return { advance: dispatch, report: log.report, stepCap }
 })

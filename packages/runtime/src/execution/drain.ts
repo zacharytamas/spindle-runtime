@@ -115,7 +115,8 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
   let prompted = false
   while (!run.stopAtBoundary()) {
     const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
-    if (entry === undefined || queueRecipient(thread.sides, entry).side !== side.turn.side) break
+    if (entry === undefined || entry.kind === "agent" || queueRecipient(thread.sides, entry).side !== side.turn.side)
+      break
     drained = true
     if (entry.kind === "tool") {
       yield* runQueuedTool(side, thread, entry)

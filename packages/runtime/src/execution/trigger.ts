@@ -4,10 +4,10 @@ import type { Thread } from "../store/model.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
 import { newSecrets } from "./env.ts"
-import { agentHooks, type HookSet, observeHooks } from "./hooks.ts"
+import { agentHooks, type HookScope, type HookSet, observeHooks } from "./hooks.ts"
 import { type ExecutionOptions, prepareSides } from "./step.ts"
 import { ThreadSupervisor } from "./ThreadSupervisor.ts"
-import { agentHookScope, makeThreadState } from "./thread-state.ts"
+import { makeThreadState } from "./thread-state.ts"
 import { lookup } from "./turn.ts"
 
 // Hooks section 1.3 and Execution State section 1: an operation at rest has no active prompt, so the agent's hooks
@@ -33,7 +33,10 @@ const atRest = (thread: Thread, options: { readonly learn: boolean; readonly sec
       secrets,
       control: supervisor.control(thread.id),
     }
-    const hooks = agentHookScope(base, set)
+    const hooks: HookScope = {
+      set,
+      stateFor: (hook, call) => makeThreadState({ ...base, from: hook.definition, hooks, call }),
+    }
     return { hooks, secrets, state: makeThreadState({ ...base, from: agent, hooks }) }
   })
 

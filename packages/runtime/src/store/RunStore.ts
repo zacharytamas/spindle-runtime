@@ -21,7 +21,9 @@ import {
   FlowEnded,
   type Holder,
   type QueueEntry,
+  QueueEntryGone,
   type Thread,
+  ThreadBusy,
   type ThreadNotFound,
   type WriteOrigin,
 } from "./model.ts"
@@ -42,6 +44,8 @@ import {
   toThread,
 } from "./schema.ts"
 
+type DirectSettlement = { readonly watermark: number; readonly wakeSenders: boolean }
+
 type Recovery =
   | { readonly kind: "atRest"; readonly thread: Thread }
   | { readonly kind: "missingHolder"; readonly thread: Thread }
@@ -61,8 +65,11 @@ const sessionEnds = new Set([
 ])
 
 export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCursor }: Database) => {
-  const hasPending = (threadId: string) =>
-    Effect.map(sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} LIMIT 1`, (rows) => rows.length > 0)
+  const hasPending = (threadId: string, watermark = 0) =>
+    Effect.map(
+      sql`SELECT 1 FROM queue WHERE ${pending(sql, threadId)} AND seq > ${watermark} LIMIT 1`,
+      (rows) => rows.length > 0,
+    )
   const queueDisposition = Effect.fn("RunStore.queueDisposition")(function* (threadId: string, seq: number) {
     const [row] = yield* sql<{ disposition: "pending" | "failed_delivery" }>`
         SELECT disposition FROM queue WHERE thread_id = ${threadId} AND seq = ${seq}
@@ -123,18 +130,21 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCurso
     event: Parameters<typeof transition>[1],
     closing: string,
     tookEntry = false,
+    direct?: DirectSettlement,
   ) =>
     Effect.gen(function* () {
       const now = yield* nowMicros
-      yield* closeCalls(threadId, row.flow_id, closing, now)
+      if (!direct) yield* closeCalls(threadId, row.flow_id, closing, now)
       const next = transition(toStatus(row), event, now)
       if (next === undefined)
         return yield* Effect.die(new Error(`run status ${row.run_state} cannot take ${event.type}`))
       yield* release(threadId, next)
+      // New senders behind a direct call await the normal run that will take their entries.
       yield* sql`UPDATE waiting_senders SET settled_flow = ${row.flow_id}, settled_state = ${next.state},
         settled_reason = ${next.reason}, settled_since = ${next.since}, took_entry = ${Number(tookEntry)},
         finished = failed OR NOT EXISTS (SELECT 1 FROM queue WHERE seq = waiting_senders.seq)
-        WHERE thread_id = ${threadId} AND finished = 0`
+        WHERE thread_id = ${threadId} AND finished = 0
+          ${direct?.wakeSenders ? sql`AND seq <= ${direct.watermark}` : sql.literal("")}`
       return next
     })
 
@@ -203,15 +213,49 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCurso
     ),
 
     claim: Effect.fn("RunStore.claim")(
-      function* (threadId: string, claim: Claim, after?: { seq: number; flowId: string }) {
-        if (after) {
+      function* (
+        threadId: string,
+        claim: Claim,
+        after?: { seq: number; flowId: string | null } | { watermark: number },
+      ) {
+        if (after && "seq" in after) {
           const [eligible] = yield* sql`SELECT 1 FROM waiting_senders WHERE seq = ${after.seq}
-            AND settled_flow = ${after.flowId} AND finished = 0`
+            AND settled_flow IS ${after.flowId} AND finished = 0`
           if (!eligible) return false
         }
         const [row] = yield* runRows(threadId)
         if (row === undefined || row.terminated_at !== null) return false
-        return (yield* hasPending(threadId)) && (yield* claimRun(threadId, row, claim, yield* nowMicros))
+        return (
+          (yield* hasPending(threadId, after && "watermark" in after ? after.watermark : 0)) &&
+          (yield* claimRun(threadId, row, claim, yield* nowMicros))
+        )
+      },
+      sql.withTransaction,
+      unyielding,
+    ),
+
+    claimDirect: Effect.fn("RunStore.claimDirect")(
+      function* (threadId: string, claim: Claim, origin: WriteOrigin = external) {
+        const row = yield* selectRun(threadId)
+        const refusal = authorize(threadId, row, origin)
+        if (refusal) return yield* refusal
+        if (!(yield* claimRun(threadId, row, claim, yield* nowMicros))) return yield* new ThreadBusy({ threadId })
+        const [last] = yield* sql<{
+          watermark: number
+        }>`SELECT coalesce(max(seq), 0) AS watermark FROM queue WHERE ${pending(sql, threadId)}`
+        return last?.watermark ?? 0
+      },
+      sql.withTransaction,
+      unyielding,
+    ),
+
+    consumeQueued: Effect.fn("RunStore.consumeQueued")(
+      function* (threadId: string, seq: number, origin: { readonly flowId: string }) {
+        const refusal = authorize(threadId, yield* selectRun(threadId), { kind: "flow", flowId: origin.flowId })
+        if (refusal) return yield* refusal
+        const removed =
+          yield* sql`DELETE FROM queue WHERE ${pending(sql, threadId)} AND kind = 'agent' AND seq = ${seq} RETURNING seq`
+        if (!removed.length) return yield* new QueueEntryGone({ seq })
       },
       sql.withTransaction,
       unyielding,
@@ -355,6 +399,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCurso
         outcome: { readonly state: "idle" | "failed"; readonly reason: string },
         options: {
           readonly continueIfQueued: boolean
+          readonly direct?: DirectSettlement | undefined
           readonly tookEntry?: boolean
           readonly settleOnly?: boolean
           readonly atCap?: boolean
@@ -379,7 +424,14 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCurso
             return "capped" as const
           }
         }
-        yield* settleWith(threadId, row, { type: "settle", ...outcome }, options.closing, options.tookEntry)
+        yield* settleWith(
+          threadId,
+          row,
+          { type: "settle", ...outcome },
+          options.closing,
+          options.tookEntry,
+          options.direct,
+        )
         return "settled" as const
       },
       sql.withTransaction,

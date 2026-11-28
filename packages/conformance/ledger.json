@@ -4825,16 +4825,18 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:dc7d7df0": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
-			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
+			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE06 (rules 42-44) at-rest invokeTool rejects with ThreadBusy on concurrent or agent-held threads, rejects with ThreadTerminated on old/new handles, and claims from failed",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE08 (rules 54-56, 58, 59) runAgent validates inputs/handles/namespaces, rejects terminated threads, runs at rest over history, and leaves threads.agent_id unchanged"
 		],
-		"reason": "Send and queue admissions reject on a terminated thread. Direct execution through runAgent, or through invokeTool on a handle at rest, arrives in M2a, which owes its refusal on a terminated thread."
+		"reason": ""
 	},
 	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
@@ -6648,13 +6650,15 @@
 		"reason": "A value from any source but the thread is secret. Thread values and their text classification arrive with setEnv in M2b."
 	},
 	"specification:threads:39260b1a": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
-			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
+			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE01 (rules 33, 36-38, 40) invokeTool from prompt, delivery, and handler-turn hooks runs in owning flow with proper env, shared context, target uses, and no synthetic rows",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE04 (rules 41, 45-49) direct at-rest invokeTool claims running, exposes minimal ExecutionState, settles idle (direct_tool), survives control poll, and preserves session_turns"
 		],
-		"reason": "A calling tool can invoke another function and await its result. A hook and a handle at rest get an error result for the same target. The operator moved direct execution outside a calling tool to M2a on 2026-11-27."
+		"reason": ""
 	},
 	"specification:threads:c544edac": {
 		"status": "covered",
@@ -6861,12 +6865,14 @@
 		"reason": ""
 	},
 	"specification:threads:a1ac0a36": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M2a",
 		"tests": [
-			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
+			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE01 (rules 33, 36-38, 40) invokeTool from prompt, delivery, and handler-turn hooks runs in owning flow with proper env, shared context, target uses, and no synthetic rows",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE04 (rules 41, 45-49) direct at-rest invokeTool claims running, exposes minimal ExecutionState, settles idle (direct_tool), survives control poll, and preserves session_turns"
 		],
-		"reason": "invokeTool supports a calling tool and enforces its uses list. Invocation from a hook and the minimal execution at rest that the package describes arrive in M2a."
+		"reason": ""
 	},
 	"specification:threads:d0a36934": {
 		"status": "covered",
@@ -6887,16 +6893,18 @@
 		"reason": ""
 	},
 	"specification:threads:9090af10": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
 			"packages/runtime/test/cli/queue.test.ts > spindle across processes > a terminate from another process aborts the running tool, and every later admission fails",
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
-			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
+			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE06 (rules 42-44) at-rest invokeTool rejects with ThreadBusy on concurrent or agent-held threads, rejects with ThreadTerminated on old/new handles, and claims from failed",
+			"packages/runtime/test/conformance.test.ts > direct execution > DE08 (rules 54-56, 58, 59) runAgent validates inputs/handles/namespaces, rejects terminated threads, runs at rest over history, and leaves threads.agent_id unchanged"
 		],
-		"reason": "queueMessage rejects on a terminated thread. Direct execution arrives in M2a, which owes its refusal after termination."
+		"reason": ""
 	},
 	"specification:threads:b83b63ca": {
 		"status": "planned",

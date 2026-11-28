@@ -24,7 +24,7 @@ export interface WriteContext {
   readonly hooks: HookScope
   readonly secrets: Secrets
   // The hook call whose ThreadState writes, when a hook writes.
-  readonly call: HookCall | undefined
+  readonly call: Pick<HookCall, "hook" | "position" | "depth"> | undefined
   // The history of the execution that writes, when an execution writes.
   readonly history: History | undefined
   readonly callerSeq?: number

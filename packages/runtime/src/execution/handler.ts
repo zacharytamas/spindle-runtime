@@ -8,7 +8,7 @@ import type { End } from "./Execution.ts"
 import { copyMessage } from "./history.ts"
 import type { ThreadScope, ToolScope } from "./step.ts"
 import { makeThreadState } from "./thread-state.ts"
-import { invokeTool, scopeFor } from "./tools.ts"
+import { scopeFor } from "./tools.ts"
 import { type HandlerSideValue, otherSide, type Side, type SideValue } from "./turn.ts"
 
 interface Delivery {
@@ -87,7 +87,7 @@ const receive = Effect.fnUntraced(function* (scope: ToolScope<HandlerSideValue>,
   const store = yield* RunStore
   while (!thread.run.stopAtBoundary()) {
     const entry = yield* store.nextQueued(thread.thread.id, thread.run)
-    if (!entry || queueRecipient(thread.sides, entry).side !== turn.side) return
+    if (!entry || entry.kind === "agent" || queueRecipient(thread.sides, entry).side !== turn.side) return
     if (entry.kind === "message" && entry.message.role !== turn.role) {
       const delivered = yield* deliverQueued(thread, entry, turn.side)
       if (delivered) return delivered
@@ -110,13 +110,11 @@ const executeHandler = Effect.fnUntraced(function* (
   const callback = new Callback()
   const state = makeThreadState({
     ...thread,
-    execution: { history, run },
+    execution: { history, run, toolContext },
     hooks: scope.write.hooks,
     callback,
     scope: scopeFor(turn, undefined),
     from: handler,
-    invoke: (name, args, onExecute) =>
-      invokeTool(toolContext, handler, undefined, name, args, onExecute).pipe(Effect.provideContext(thread.services)),
   })
   thread.deliveries.begin(turn.role)
   const result = yield* Effect.result(

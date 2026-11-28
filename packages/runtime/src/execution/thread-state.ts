@@ -14,9 +14,10 @@ import { Registry } from "../registry/Registry.ts"
 import { toJson } from "../store/json.ts"
 import { MessageStore } from "../store/MessageStore.ts"
 import {
-  type FlowEnded,
+  FlowEnded,
   HandleExpired,
   type Thread,
+  type ThreadBusy,
   type ThreadNotFound,
   type ThreadTerminated,
   ValueNotJson,
@@ -29,14 +30,24 @@ import type { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { addSecret, type EnvScope, instanceEnv, lookupEnv, type Secrets } from "./env.ts"
 import { copyMessage, type History } from "./history.ts"
-import { type HookCall, HookExpired, type HookScope, type HookSet } from "./hooks.ts"
-import { injectMessage, redactMetadata, updateMessage } from "./messages.ts"
+import { type HookCall, HookExpired, type HookScope } from "./hooks.ts"
+import { injectMessage, redactMetadata, updateMessage, type WriteContext } from "./messages.ts"
 import { isPlain, mapStrings, redactor } from "./redact.ts"
 import type { InvalidOption } from "./ThreadSupervisor.ts"
-import { describe, failed, notRun, QueueRefused, queueTarget, redactAttachment } from "./tools.ts"
-import { type FunctionTool, type Loaded, lookup, otherSide } from "./turn.ts"
+import {
+  describe,
+  failed,
+  invokeTool,
+  notRun,
+  QueueRefused,
+  queueTarget,
+  redactAttachment,
+  type ToolContext,
+} from "./tools.ts"
+import { type FunctionTool, type Loaded, lookup, otherSide, SetupError } from "./turn.ts"
 
 interface ExecutionRecord {
+  readonly toolContext: ToolContext
   readonly history: History
   readonly run: Execution
 }
@@ -46,7 +57,19 @@ interface ExecutionRecord {
 type WriteError = ThreadNotFound | SqlError | FlowEnded | ThreadTerminated | HandleExpired
 export type AdmissionError = WriteError | ValueNotJson | InvalidOption
 
+export interface DirectCall {
+  readonly from: Definition | undefined
+  readonly name: string
+  readonly args: Record<string, unknown>
+  readonly writeCall: WriteContext["call"]
+}
+
 export interface ThreadControl {
+  readonly direct: (
+    call: DirectCall,
+    origin: WriteOrigin,
+  ) => Effect.Effect<ToolResult, WriteError | ThreadBusy | SetupError, Registry | Stores>
+  readonly runAgent: (agentName: string, origin: WriteOrigin) => Effect.Effect<void, AdmissionError, Registry | Stores>
   readonly queueMessage: (
     input: QueueMessageInput,
     secrets: Secrets,
@@ -121,13 +144,12 @@ interface StateContext {
   readonly thread: Thread
   readonly services: Context.Context<Registry | Stores>
   readonly callback?: Callback
-  readonly owner?: Execution
   readonly execution: ExecutionRecord | undefined
   readonly scope: EnvScope
   readonly from: Definition | undefined
   readonly context: Record<string, unknown>
   readonly secrets: Secrets
-  readonly invoke?: (name: string, args: Record<string, unknown>, onExecute: () => void) => Effect.Effect<ToolResult>
+  readonly writeCall?: WriteContext["call"]
   // The hooks that a message this state writes runs, the execution's set or the agent's set at rest.
   readonly hooks: HookScope
   // The hook call this state belongs to, when a hook gets it.
@@ -156,7 +178,7 @@ const executionState = (
   const state: ExecutionState = {
     flowId: record.run.flowId,
     get currentSide() {
-      return record.run.turns.active?.side ?? "a"
+      return record.run.currentSide
     },
     get stepCount() {
       return record.run.steps
@@ -176,7 +198,7 @@ const executionState = (
     forceTurn: (side) => {
       check()
       if (side !== "a" && side !== "b") throw new InvalidArguments({ message: "forceTurn takes the side a or b" })
-      record.run.turns.pending = side
+      if (record.run.directSide === undefined) record.run.turns.pending = side
     },
     stop: () => {
       check()
@@ -204,7 +226,7 @@ const executionState = (
 // method they call runs here against the services of the execution.
 const stateBridge = (state: StateContext) => {
   const { call } = state
-  const owner = state.owner ?? state.execution?.run
+  const owner = state.execution?.run
   const expired = () =>
     call?.expired === true
       ? new HookExpired({ hook: call.hook, position: call.position })
@@ -231,7 +253,18 @@ const stateBridge = (state: StateContext) => {
   const signal = owner === undefined ? undefined : { signal: owner.signal }
   const run = <A, E>(effect: Effect.Effect<A, E, Registry | Stores>): Promise<A> => {
     const refused = expired()
-    return refused === undefined ? runPromise(effect, signal) : Promise.reject(refused)
+    if (refused) return Promise.reject(refused)
+    const pending = runPromise(effect, signal)
+    if (!owner?.directSide) return pending
+    return pending.catch(async (error: unknown) => {
+      // A termination can interrupt a pre-commit hook before its write reaches SQLite.
+      if (
+        owner.signal.aborted &&
+        (await runPromise(Context.get(services, ThreadStore).getThread(state.thread.id))).terminated !== null
+      )
+        throw new FlowEnded({ threadId: state.thread.id, flowId: owner.flowId, why: "terminated" })
+      throw error
+    })
   }
   // queueTool returns void, so its work is done when it returns, and a refusal is thrown.
   const runSync = <A, E>(effect: Effect.Effect<A, E, Registry | Stores>): A => {
@@ -241,7 +274,7 @@ const stateBridge = (state: StateContext) => {
     if (Exit.isSuccess(exit)) return exit.value
     throw Cause.squash(exit.cause)
   }
-  return { check, origin, owner, run, runSync, runPromise, signal }
+  return { check, origin, run, runSync, runPromise, signal }
 }
 
 type Bridge = ReturnType<typeof stateBridge>
@@ -284,7 +317,7 @@ function messageMethods(
     threadId,
     hooks: state.hooks,
     secrets: state.secrets,
-    call: state.call,
+    call: state.call ?? state.writeCall,
     history: state.execution?.history,
     origin,
   }
@@ -390,7 +423,7 @@ function environment(state: StateContext, { run }: Bridge): Pick<ThreadState, "e
 
 function toolMethods(
   state: StateContext,
-  { check, owner, runPromise, runSync, signal, origin }: Bridge,
+  { check, runPromise, runSync, signal, origin }: Bridge,
 ): Pick<ThreadState, "invokeTool" | "queueTool"> {
   return {
     // Threads section 3.1 and Tools section 2.1. The constrained ThreadState of a tool with a uses list lets it leave
@@ -418,23 +451,35 @@ function toolMethods(
             mapStrings(plain, check, check)
             if (found) return yield* new SecretInArguments()
           }
-          yield* state.control.queueTool(target, plain, origin, state.execution?.run.turns.active?.side ?? null)
+          yield* state.control.queueTool(target, plain, origin, state.execution?.run.currentSide ?? null)
         }),
       ),
     // A nested call is pending from here, before its lookup and its validation, so the run waits for it.
-    invokeTool: async (toolName, args = {}) => {
-      check()
+    invokeTool: async (toolName, input) => {
+      const args = input === undefined && state.caller ? {} : input
       if (typeof toolName !== "string") return invalid("invokeTool takes a string name")
       if (!Predicate.isObject(args)) return invalid("invokeTool takes an object of arguments")
-      if (!owner || !state.invoke) return failed(`invokeTool(${toolName}) needs a calling tool and its uses list`)
+      check()
+      const writeCall = state.call ?? state.writeCall
+      if (!state.execution)
+        return runPromise(state.control.direct({ name: toolName, args, from: state.from, writeCall }, origin))
+      const { run: owner, toolContext } = state.execution
       const release = owner.track(`tool ${toolName}`)
       let entered = false
       try {
         if (owner.stopAtBoundary()) return notRun
         const result = await runPromise(
-          state.invoke(toolName, args, () => {
-            entered = true
-          }),
+          invokeTool(
+            toolContext,
+            state.from,
+            state.caller,
+            toolName,
+            args,
+            () => {
+              entered = true
+            },
+            writeCall,
+          ),
           signal,
         )
         return !entered && owner.stopAtBoundary() ? notRun : result
@@ -466,7 +511,7 @@ function unavailableMethods(check: () => void) {
     scheduleEffect: unavailableAsync("scheduleEffect", "M4"),
     getScheduledEffects: unavailableAsync("getScheduledEffects", "M4"),
     removeScheduledEffect: unavailableAsync("removeScheduledEffect", "M4"),
-    runAgent: unavailableAsync("runAgent", "M2"),
+
     getUserValue: unavailableAsync("getUserValue", "the Users page, which is a Draft"),
     setUserValue: unavailableAsync("setUserValue", "the Users page, which is a Draft"),
     listUserValues: unavailableAsync("listUserValues", "the Users page, which is a Draft"),
@@ -530,6 +575,16 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     ...environment(state, bridge),
     ...toolMethods(state, bridge),
     ...unavailableMethods(check),
+    runAgent: async (name) => {
+      if (typeof name !== "string" || !name.length) return invalid("runAgent takes a non-empty agent name")
+      return run(
+        Effect.gen(function* () {
+          const agent = yield* lookup("agent", name, state.from)
+          if (!agent) return yield* new SetupError({ message: `No agent named ${name} is defined` })
+          yield* state.control.runAgent(agent.qualifiedName, origin)
+        }),
+      )
+    },
     stopSession: async (options = {}) => {
       check()
       if (!state.execution) return invalid("stopSession needs an active execution")
@@ -569,23 +624,4 @@ export const makeThreadState = (state: StateContext): ThreadState => {
     user: () => run(Effect.succeed(null)),
     status: () => run(state.control.status),
   }
-}
-
-// Delivery and creation hooks inherit the mutable context of their calling scope.
-export function agentHookScope(
-  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner" | "execution" | "context">,
-  set: HookSet,
-): HookScope {
-  const hooks: HookScope = {
-    ...(base.owner && { execution: base.owner }),
-    set,
-    stateFor: (hook, call) =>
-      makeThreadState({
-        ...base,
-        from: hook.definition,
-        hooks,
-        call,
-      }),
-  }
-  return hooks
 }
