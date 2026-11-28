@@ -662,6 +662,54 @@ it.effect("rule 65: a waiting peer reads its delivery's settlement after a later
   )
 })
 
+it.effect("rule 65: a waiting peer reads its delivery's settlement even if the thread is later terminated", () => {
+  const called = gate()
+  const releaseModel = gate()
+  const queued = gate()
+  const resumeSender = gate()
+  const provider = new ScriptedProvider([
+    async () => {
+      called.release()
+      await releaseModel.opened
+      return { text: "first reply" }
+    },
+    { text: "reply to the peer" },
+  ])
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const owner = yield* ThreadSupervisor
+    const peer = yield* Effect.provide(ThreadSupervisor, yield* Layer.build(supervisorLayer()))
+    const first = yield* Effect.forkChild(owner.send(id, "first"))
+    yield* Effect.promise(() => called.opened)
+    const waiting = yield* Effect.forkChild(
+      peer.send(id, "second", {
+        onWaiting: () =>
+          Effect.promise(() => {
+            queued.release()
+            return resumeSender.opened
+          }),
+      }),
+    )
+    yield* Effect.promise(() => queued.opened)
+    releaseModel.release()
+    const delivered = yield* Fiber.join(first)
+    expect(delivered.outcome).toMatchObject({ reason: "stop_on_response", steps: 2 })
+    yield* owner.control(id).terminate({ kind: "external" })
+    resumeSender.release()
+    const result = yield* Fiber.join(waiting)
+    expect(result.status).toEqual(delivered.status)
+    expect(result.stillQueued).toBeUndefined()
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        releaseModel.release()
+        resumeSender.release()
+      }),
+    ),
+    Effect.provide(Layer.merge(registryOf(project({ provider })), Layer.provideMerge(supervisorLayer(), inMemory))),
+  )
+})
+
 it.effect(
   "rule 63: a waiting sender reclaims after an older delivery stops its run before the first model step",
   () => {

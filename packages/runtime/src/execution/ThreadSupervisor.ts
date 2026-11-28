@@ -264,12 +264,11 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 ? yield* reportingRun.settlement.await
                 : undefined
             const result = { status: settlement?.status ?? status, ...(outcome && { outcome }) }
-            if (started && disposition === undefined) return result
+            if (disposition === undefined) return result
             if (disposition === "failed_delivery")
               return { ...result, failedDelivery: true as const, stillQueued: false }
             if (terminated !== null) return yield* new ThreadTerminated({ threadId, terminated })
             if (
-              !stillQueued ||
               !settlement?.tookEntry ||
               settlement.status.reason === "aborted_by_user" ||
               settlement.status.reason === "execution_lost"
