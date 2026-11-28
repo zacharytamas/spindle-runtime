@@ -1,3 +1,5 @@
-import { defineHandler } from "@standardagents/spec"
-
-export default defineHandler({ description: "Forwards each message", execute: async () => {} })
+export default {
+  [Symbol.for("standardagents.handler")]: true,
+  description: "Forwards each message",
+  execute: async () => {},
+}

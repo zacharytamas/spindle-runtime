@@ -425,9 +425,13 @@ describe("handler crash recovery and callback lifetimes (rules 12, 20, 21, §3)"
     it.effect(`§3: releases a blocked handler callback on ${mode} before it returns`, () => {
       const entered = Latch.makeUnsafe()
       const leave = gate()
-      const wait_handler = handlerOf(async () => {
-        entered.openUnsafe()
-        await leave.opened
+      const received: Array<string | null> = []
+      const wait_handler = handlerOf(async (_state, message) => {
+        received.push(message.content)
+        if (message.content === "go") {
+          entered.openUnsafe()
+          await leave.opened
+        }
       })
       const setup = handlerProject({
         sideA: { handler: "wait_handler" },
@@ -447,7 +451,10 @@ describe("handler crash recovery and callback lifetimes (rules 12, 20, 21, §3)"
           if (mode === "control poll" || mode === "local replacement") {
             yield* runs.recoverThread(id, true)
             if (mode === "control poll") yield* TestClock.adjust("250 millis")
-            else expect((yield* supervisor.send(id, "go again")).outcome?.reason).toBe("handler_idle")
+            else {
+              expect((yield* supervisor.send(id, "go again")).outcome?.reason).toBe("handler_idle")
+              expect(received).toEqual(["go", "go again"])
+            }
           } else {
             const settlement = yield* supervisor.abort(id)
             yield* TestClock.adjust("1 millis")
