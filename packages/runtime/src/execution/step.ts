@@ -2,11 +2,12 @@ import type { LLMProviderInterface, Message, ProviderRequest, ToolResult } from 
 import { type Context, Effect, Fiber, Result } from "effect"
 import { providerFor, resolveConfig } from "../providers/config.ts"
 import type { Registry } from "../registry/Registry.ts"
+import { MessageStore } from "../store/MessageStore.ts"
 import type { Thread } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { assembleRequest, type HistoryView, promptScope } from "./assemble.ts"
+import { assembleRequest, type HistoryView, promptScope, visibleToPeer } from "./assemble.ts"
 import { type CallContext, callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { drainQueue, queueRecipient } from "./drain.ts"
 import type { End, Execution } from "./Execution.ts"
@@ -27,7 +28,6 @@ import {
   otherSide,
   type PromptSideValue,
   prepareSideValue,
-  roleOf,
   SetupError,
   type SideValue,
 } from "./turn.ts"
@@ -287,7 +287,7 @@ const storeResponse = Effect.fnUntraced(function* (side: SideScope, thread: Thre
     yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
     results.push(yield* completeCall(side, thread, seq, call, runToolCall(toolContext, call)))
   }
-  return { calls, results }
+  return { calls, results, peerSeq: visibleToPeer(assistant) ? seq : undefined }
 })
 
 const promptStep = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope, retries: number) {
@@ -348,38 +348,42 @@ const beginStep = Effect.fnUntraced(function* (
   side: SideScope,
   thread: ThreadScope,
   firstStep: boolean,
-  handedOff: boolean,
+  handoffStart: number | undefined,
 ) {
   thread.counter.step++
-  const { run, history } = thread
+  const { run } = thread
   const before = run.stopAtBoundary()
   if (before) return before
-  // The handoff itself starts the exchange. FIFO entries for this turn join its triggering message.
-  const peerRole = roleOf(otherSide(side.turn.side))
-  const handoffStart = firstStep && handedOff ? yield* history.lastFrom(peerRole) : undefined
-  const { prompted, first, count } = yield* drainQueue(side, thread)
+  const { prompted, first } = yield* drainQueue(side, thread)
   const stopped = run.stopAtBoundary()
   if (stopped || !firstStep) return stopped
-  if (!handedOff && !prompted) return idle("awaiting_human", true)
-  side.view.turnStartSeq =
-    handoffStart ?? (count > 1 && first !== undefined ? first : yield* history.lastFrom(peerRole))
+  const start = first ?? handoffStart
+  if (start === undefined || (handoffStart === undefined && !prompted)) return idle("awaiting_human", true)
+  side.view.turnStartSeq = start
 })
 
 const promptTurn = Effect.fnUntraced(function* (
   side: SideScope,
   thread: ThreadScope,
   options: ExecutionOptions,
-  handedOff: boolean,
+  handoffStart: number | undefined,
 ) {
   const { run, record } = thread
   let steps = 0
+  let firstPeerSeq: number | undefined
   while (true) {
-    const end = yield* beginStep(side, thread, steps === 0, handedOff)
+    const end = yield* beginStep(side, thread, steps === 0, handoffStart)
     if (end) return end
     const step = yield* promptStep(side, thread, options.retries ?? 2)
     if (!step || run.stopAtBoundary()) return run.abortEnd
+    firstPeerSeq ??= step.peerSeq
     const boundary = yield* afterStep(side, thread, step, ++steps, options.stepCap ?? 1000)
-    if (boundary) return boundary
+    if (boundary) {
+      if (!("next" in boundary)) return boundary
+      const peerSeq = boundary.next.side === side.turn.side ? undefined : firstPeerSeq
+      const start = peerSeq ?? (yield* (yield* MessageStore).latestMessageSeq(thread.thread.id)) + 1
+      return { ...boundary, start }
+    }
     yield* record("stop", "continue")
   }
 })
@@ -390,7 +394,7 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
   const { run, sides } = thread
   const head = yield* (yield* RunStore).nextQueued(thread.thread.id, run)
   run.turns.active = queueRecipient(sides, head)
-  let handedOff = false
+  let handoffStart: number | undefined
   while (true) {
     const active: SideValue = run.turns.active
     switch (active.kind) {
@@ -400,12 +404,17 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
         return yield* new SetupError({ message: `Spindle does not yet execute handler ${active.config.handler}` })
       case "prompt": {
         const side: SideScope = yield* prepareSide(thread, active, options)
-        const boundary: End | { next: SideValue; reason: string } = yield* promptTurn(side, thread, options, handedOff)
+        const boundary: End | { next: SideValue; reason: string; start: number } = yield* promptTurn(
+          side,
+          thread,
+          options,
+          handoffStart,
+        )
         run.turns.pending = undefined
         yield* thread.record("stop", boundary.reason)
         if (!("next" in boundary)) return boundary
         run.turns.active = boundary.next
-        handedOff = true
+        handoffStart = boundary.start
         break
       }
     }

@@ -93,11 +93,9 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
   const runStore = yield* RunStore
   let first: number | undefined
   let prompted = false
-  let count = 0
   while (!run.stopAtBoundary()) {
     const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
     if (entry === undefined || queueRecipient(thread.sides, entry).side !== side.turn.side) break
-    count += 1
     if (entry.kind === "tool") {
       const seq = yield* runQueuedTool(side, thread, entry)
       first ??= seq
@@ -110,6 +108,6 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
     yield* observe({ type: "message", message })
     if (message.role !== roleOf(side.turn.side)) prompted = true
   }
-  if (count === 0) yield* record("drain", "none")
-  return { prompted, first, count }
+  if (first === undefined) yield* record("drain", "none")
+  return { prompted, first }
 })

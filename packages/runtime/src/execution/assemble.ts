@@ -156,6 +156,9 @@ const textOf = <A extends "" | null>(message: Message, empty: A): string | A => 
     .join("\n")
 }
 
+export const visibleToPeer = (message: Message) =>
+  message.tool_calls == null || !!message.content || !!message.attachments?.length
+
 const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssistantMessage> => {
   if (!view.includeReasoning) return {}
   const details =
@@ -295,7 +298,7 @@ const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryVie
       case other: {
         for (const call of callsAt(index)) shownCalls.set(call.id, false)
         const content = textOf(message, "")
-        if (showChat && (content !== "" || message.tool_calls == null)) messages.push({ role: "user", content })
+        if (showChat && visibleToPeer(message)) messages.push({ role: "user", content })
       }
     }
   }

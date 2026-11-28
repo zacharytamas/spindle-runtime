@@ -12,8 +12,9 @@ import {
   type Setup,
   sideOf,
   stubTool,
+  using,
 } from "../../../conformance/src/scenarios/harness.ts"
-import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
+import { dualProject, forceTool, usingDual } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
 import type { HistoryView } from "../../src/execution/assemble.ts"
 import { newSecrets } from "../../src/execution/env.ts"
@@ -28,7 +29,7 @@ import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
-import { registryOf } from "../spindle-driver.ts"
+import { registryOf, spindleDriver } from "../spindle-driver.ts"
 
 const contents = (messages: ReadonlyArray<Message>) => messages.map((message) => message.content)
 
@@ -396,6 +397,113 @@ it.effect("runs the committed claim when its sender is interrupted before execut
 })
 
 describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
+  const currentOnly = { includeChat: false, includePastTools: false }
+
+  it("starts a same-side forceTurn with fresh chat and tool history", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "work", name: "work", arguments: {} }] },
+      { toolCalls: [{ id: "force", name: "again", arguments: {} }] },
+      { text: "fresh" },
+    ])
+    await using(
+      spindleDriver,
+      {
+        provider,
+        prompt: currentOnly,
+        tools: { work: stubTool("Work", "done"), again: forceTool("a") },
+      },
+      async (session, thread) => {
+        expect(await session.send(thread, "first turn")).toMatchObject({ reason: "stop_on_response", steps: 3 })
+      },
+    )
+    expect(historyOf(provider.requests[2]).map(sideOf)).toEqual([])
+  })
+
+  it("hands off the first peer-visible response even when the final response only calls a tool", async () => {
+    const providerA = new ScriptedProvider([
+      { text: "draft", toolCalls: [{ id: "save", name: "save", arguments: {} }] },
+      { toolCalls: [{ id: "submit", name: "submit", arguments: {} }] },
+    ])
+    const providerB = new ScriptedProvider([{ text: "reviewed" }])
+    await usingDual(
+      spindleDriver,
+      {
+        providerA,
+        providerB,
+        promptA: currentOnly,
+        promptB: currentOnly,
+        tools: { save: stubTool("Save", "saved"), submit: stubTool("Submit", "submitted") },
+        sideA: { stopTool: "submit" },
+        agent: { maxSessionTurns: 2 },
+      },
+      async (session, thread) => {
+        expect(await session.send(thread, "write")).toMatchObject({ reason: "max_session_turns", steps: 3 })
+      },
+    )
+    expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([["user", "draft"]])
+  })
+
+  it("keeps the triggering delivery and the note its delivery hook injects", async () => {
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    const hook = defineHook({
+      hook: "after_create_message",
+      id: "annotate",
+      execute: async (state, message) => {
+        if (message.content === "question") await state.injectMessage({ role: "user", content: "note" })
+      },
+    })
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, hooks: [hook], agent: { hooks: [hook.id] } },
+      (session, thread) => session.send(thread, "question"),
+    )
+    expect(historyOf(provider.requests[0]).map(sideOf)).toEqual([
+      ["user", "question"],
+      ["user", "note"],
+    ])
+  })
+
+  it("starts a queued tool turn at its call when the tool injects chat", async () => {
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    const annotate = defineTool({
+      description: "Add a note",
+      execute: async (state) => {
+        await state.injectMessage({ role: "user", content: "note" })
+        return ok("annotated")
+      },
+    })
+    await using(spindleDriver, { provider, prompt: currentOnly, tools: { annotate } }, async (session, thread) => {
+      const state = await session.state(thread)
+      state.queueTool("annotate", {})
+      await session.settled(thread)
+    })
+    const messages = historyOf(provider.requests[0])
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool", "user"])
+    expect(messages[0]).toMatchObject({ toolCalls: [{ name: "annotate" }] })
+    expect(messages[2]?.content).toBe("note")
+  })
+
+  it("excludes previous chat and tool calls when a queued tool starts a later run", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "old", name: "work", arguments: {} }] },
+      { text: "old answer" },
+      { text: "new answer" },
+    ])
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, tools: { work: stubTool("Work", "done") } },
+      async (session, thread) => {
+        await session.send(thread, "old question")
+        const state = await session.state(thread)
+        state.queueTool("work", {})
+        await session.settled(thread)
+      },
+    )
+    const messages = historyOf(provider.requests[2])
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
+    expect(messages[0]).toMatchObject({ toolCalls: [{ id: expect.stringMatching(/^queued-/), name: "work" }] })
+  })
+
   it.effect(
     "§5.2: HistoryView uses turnStartSeq to exclude past turns across side switches while keeping current-turn injections and synthetic filter_messages rows",
     () =>
