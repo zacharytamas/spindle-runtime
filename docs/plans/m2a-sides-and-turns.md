@@ -14,9 +14,9 @@ Milestone M2a closes all 20 M2a ledger statements, closes 5 M1 partial statement
 
 ### Order and limits
 
-- [ ] At most three pull requests are open at a time, stacked at most 2 deep.
-- [ ] Operator decisions 1 to 7 in `docs/design/sides-and-turns.md` are confirmed before `M2a-1` starts.
-- [ ] `M2a-1` starts from `main` and lands green before `M2a-2` starts from `main`. `M2a-3` starts from `main` after `M2a-2` lands.
+- [ ] Milestone 2 is one linear stack that the operator lands as a whole (decided 2026-11-27). Nothing merges before then. The order is this design pull request, the M2b design pull request, `M2a-1`, `M2a-2`, `M2a-3`, then `M2b-1` to `M2b-4`.
+- [x] Decisions 1 to 7 in `docs/design/sides-and-turns.md` are settled before `M2a-1` starts.
+- [ ] Each pull request is based on the branch below it and starts when that branch is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
 - [ ] Each pull request adds at most one migration with the next sequential number (`0007`, `0008`, `0009`).
 
 ### Roles
@@ -38,7 +38,7 @@ Milestone M2a closes all 20 M2a ledger statements, closes 5 M1 partial statement
 
 ## Side model, shared context, two prompt sides, `maxSessionTurns`, and `forceTurn` (M2a-1)
 
-Base is `main`. Introduces the typed `SideValue` union (`human`, `prompt`, `handler`), `TurnController` (ready for M2b handoffs without loop branching on tool kind), shared execution `context`, per-side step counts, durable `session_turns`, `prompt x prompt` alternating turns, `maxSessionTurns`, `forceTurn`, and O(1) `turnStartSeq` history slicing.
+Base is the M2b design branch, `m2b/design`. Introduces the typed `SideValue` union (`human`, `prompt`, `handler`), `TurnController` (ready for M2b handoffs without loop branching on tool kind), shared execution `context`, per-side step counts, durable `session_turns`, `prompt x prompt` alternating turns, `maxSessionTurns`, `forceTurn`, and O(1) `turnStartSeq` history slicing.
 
 ### Scope
 
