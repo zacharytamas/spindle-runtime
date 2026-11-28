@@ -340,7 +340,7 @@ it.effect("a forceTurn from a delivery to a human expires before queued work con
                 { holder: "waiting", flowId: "waiting" },
                 { kind: "external" },
               ),
-            )
+            ).pipe(Effect.orDie)
           : Effect.void,
     })
     yield* Effect.gen(function* () {
@@ -349,4 +349,50 @@ it.effect("a forceTurn from a delivery to a human expires before queued work con
       expect(yield* s.settled(id)).toMatchObject({ reason: "max_side_steps", steps: 2 })
     }).pipe(Effect.provide(supervisor))
   }).pipe(Effect.provide(Layer.merge(registryOf(setup), inMemory)))
+})
+
+it.effect("an abort observing a counted session cap preserves its reason, counter reset, and pending work", () => {
+  const queue = defineTool({
+    description: "Queue the next request",
+    execute: async (state) => {
+      await state.queueMessage({ role: "user", content: "next" })
+      return ok("queued")
+    },
+  })
+  const provider = new ScriptedProvider([
+    { toolCalls: [{ id: "q", name: "queue", arguments: {} }] },
+    { text: "follow-up" },
+  ])
+  const setup = project({ provider, tools: { queue }, side: { stopTool: "queue" }, agent: { maxSessionTurns: 1 } })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supervisor = yield* ThreadSupervisor
+    let observed = false
+    const delivery = yield* supervisor.send(id, "go", {
+      observe: (event) => {
+        if (event.type !== "trace" || event.entry.phase !== "stop" || event.entry.detail !== "max_session_turns")
+          return Effect.void
+        observed = true
+        return Effect.asVoid(supervisor.abort(id))
+      },
+    })
+    yield* supervisor.settled(id)
+    const sql = yield* SqlClient
+    const [row] = yield* sql<{ session_turns: number }>`SELECT session_turns FROM threads WHERE id = ${id}`
+    expect({
+      observed,
+      reason: delivery.outcome?.reason,
+      storedReason: (yield* supervisor.status(id)).reason,
+      sessionTurns: row?.session_turns,
+      pending: yield* RunStore.use((store) => store.queueLength(id)),
+      requests: provider.requests.length,
+    }).toEqual({
+      observed: true,
+      reason: "max_session_turns",
+      storedReason: "max_session_turns",
+      sessionTurns: 0,
+      pending: 1,
+      requests: 1,
+    })
+  }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
 })

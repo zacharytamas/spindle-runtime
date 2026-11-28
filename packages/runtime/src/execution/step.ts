@@ -333,9 +333,8 @@ const afterStep = Effect.fnUntraced(function* (
   const reason = forced === undefined ? stopReason(progress, side.turn.config, stepCap) : "force_turn"
   if (reason === undefined) return undefined
   if (reason === "max_total_steps") return idle(reason)
-  const sessionTurns = yield* (yield* RunStore).completeTurn(thread.thread.id, run.flowId)
-  const limit = sides.agent.value.maxSessionTurns
-  if (limit !== undefined && sessionTurns >= limit) return idle("max_session_turns")
+  const sessionEnd = yield* run.completeTurn(thread.thread.id, sides.agent.value.maxSessionTurns)
+  if (sessionEnd) return sessionEnd
   const next = sides[forced ?? otherSide(side.turn.side)]
   if (next.kind === "human") {
     const stopTool = reason === "stop_tool" ? stopToolOutcome(side.turn, calls, results, thread.redact) : undefined

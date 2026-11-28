@@ -79,6 +79,7 @@ export class Execution {
   readonly #steps = { a: 0, b: 0 }
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
   #successor: Execution | undefined
+  #sessionEnd: End | undefined
 
   constructor(flowId: string) {
     this.flowId = flowId
@@ -94,6 +95,14 @@ export class Execution {
   }
   recordStep(side: Side) {
     this.#steps[side]++
+  }
+  completeTurn(threadId: string, limit: number | undefined) {
+    return Effect.gen({ self: this }, function* () {
+      const count = yield* (yield* RunStore).completeTurn(threadId, this.flowId)
+      if (limit !== undefined && count >= limit)
+        this.#sessionEnd = { status: "idle", reason: "max_session_turns", continueIfQueued: false }
+      return this.#sessionEnd
+    }).pipe(Effect.uninterruptible)
   }
   get ended() {
     return this.#phase === "ended"
@@ -213,7 +222,7 @@ export class Execution {
         return proposed
       }
       const notificationError = yield* this.#waitForCallbacks(notify)
-      return notificationError ? failure(notificationError) : proposed
+      return this.#sessionEnd ?? (notificationError ? failure(notificationError) : proposed)
     })
   }
 
