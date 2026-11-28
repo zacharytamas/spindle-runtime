@@ -1,18 +1,22 @@
 import { describe, expect, it } from "@effect/vitest"
-import { defineTool } from "@standardagents/spec"
+import { defineHook, definePrompt, defineTool, type ThreadState } from "@standardagents/spec"
 import { Effect, Exit, Fiber, Latch, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
+import { z } from "zod"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { directProject, promptAgent } from "../../../conformance/src/scenarios/direct-execution/fixtures.ts"
 import { handlerOf, handlerProject } from "../../../conformance/src/scenarios/handlers/fixtures.ts"
-import { gate, ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
+import { attempt, gate, ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
 import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
-import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { notRun } from "../../src/execution/tools.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
 import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf, spindleDriver } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
 
@@ -479,4 +483,466 @@ describe("handler crash recovery and callback lifetimes (rules 12, 20, 21, §3)"
         )
       }).pipe(Effect.provide(Layer.merge(registry, inMemory)))
     })
+})
+
+describe("direct execution lifetimes, control poll, and crash recovery (rules 45, 50-53, 60)", () => {
+  const awaitLatchOrExit = <A, E>(latch: Latch.Latch, fiber: Fiber.Fiber<A, E>, label: string) =>
+    Effect.raceFirst(
+      latch.await,
+      Effect.flatMap(Fiber.await(fiber), (exit) =>
+        Exit.isFailure(exit)
+          ? Effect.failCause(exit.cause)
+          : Effect.die(`execution settled before ${label}: ${JSON.stringify(exit.value)}`),
+      ),
+    )
+
+  const delayClaimDirect = (entered: Latch.Latch, release: Latch.Latch) =>
+    Layer.effect(
+      RunStore,
+      Effect.gen(function* () {
+        const store = yield* RunStore
+        const wrapped = { ...store } as Record<string, unknown>
+        const original = wrapped.claimDirect
+        if (typeof original === "function") {
+          wrapped.claimDirect = (...args: ReadonlyArray<unknown>) =>
+            Effect.tap(Reflect.apply(original, store, args) as Effect.Effect<unknown, unknown>, () =>
+              Effect.andThen(entered.open, release.await),
+            )
+        }
+        return RunStore.of(wrapped as unknown as RunStore["Service"])
+      }),
+    )
+
+  it.effect(
+    "rule 45: control poll running between claimDirect and minimal execution attachment leaves the reserved claim alone",
+    () =>
+      Effect.gen(function* () {
+        const claimed = Latch.makeUnsafe()
+        const releaseClaim = Latch.makeUnsafe()
+        let toolRuns = 0
+        const work = defineTool({
+          description: "Record execution after claimDirect",
+          execute: async () => {
+            toolRuns += 1
+            return ok("claimed-and-ran")
+          },
+        })
+        const storeWithDelay = delayClaimDirect(claimed, releaseClaim).pipe(Layer.provideMerge(inMemory))
+        yield* Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          const runs = yield* RunStore
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          const direct = yield* Effect.forkChild(Effect.promise(() => rest.invokeTool("work", {})))
+          yield* awaitLatchOrExit(claimed, direct, "claimDirect committing")
+
+          // The thread is already running in SQLite while minimal Execution is not yet attached to live.
+          expect((yield* supervisor.status(id)).state).toBe("running")
+          expect(yield* runs.holderOf(id)).not.toBeNull()
+
+          // Trigger the 250ms control poll tick during the claimDirect -> attachment window.
+          yield* TestClock.adjust("250 millis")
+          expect((yield* supervisor.status(id)).state).toBe("running")
+          expect(yield* runs.holderOf(id)).not.toBeNull()
+
+          yield* releaseClaim.open
+          const result = yield* Fiber.join(direct)
+          expect(result).toEqual({ status: "success", result: "claimed-and-ran" })
+          expect(toolRuns).toBe(1)
+          expect(yield* supervisor.status(id)).toMatchObject({ state: "idle", reason: "direct_tool" })
+        }).pipe(
+          Effect.ensuring(releaseClaim.open),
+          Effect.provide(
+            Layer.merge(
+              registryOf(project({ provider: new ScriptedProvider([]), tools: { work } })),
+              Layer.provideMerge(supervisorLayer(), storeWithDelay),
+            ),
+          ),
+        )
+      }),
+  )
+
+  it.effect(
+    "rule 51: supervisor.abort during invokeTool at rest revokes handle, holds claim until callback settles, settles aborted_by_user, and resolves to CLOSING.aborted",
+    () =>
+      Effect.gen(function* () {
+        const entered = Latch.makeUnsafe()
+        const release = gate()
+        let sawAbort = false
+        let lateWrite = ""
+        const slow = defineTool({
+          description: "Hold until released after abort",
+          execute: async (state: ThreadState) => {
+            state.execution?.abortSignal.addEventListener("abort", () => {
+              sawAbort = true
+            })
+            entered.openUnsafe()
+            await release.opened
+            lateWrite = await attempt(() => state.setValue("after-abort", "no"))
+            return ok("late-return")
+          },
+        })
+        yield* Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          const threads = yield* ThreadStore
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          const direct = yield* Effect.forkChild(Effect.promise(() => rest.invokeTool("slow", {})))
+          yield* awaitLatchOrExit(entered, direct, "entering slow at-rest tool")
+
+          const settlement = yield* supervisor.abort(id)
+          expect(settlement).toBeDefined()
+          yield* TestClock.adjust("1 millis")
+          // Claim is held while the tool callback is still running.
+          expect(settlement?.isDone()).toBe(false)
+          expect((yield* supervisor.status(id)).state).toBe("running")
+          expect(direct.pollUnsafe()).toBeUndefined()
+
+          release.release()
+          const result = yield* Fiber.join(direct)
+          expect(result).toEqual({ status: "error", error: CLOSING.aborted })
+          expect(sawAbort).toBe(true)
+          expect(lateWrite).toMatch(/^(HandleExpired|ExecutionEnded|FlowEnded)$/)
+          expect(yield* supervisor.status(id)).toMatchObject({ state: "idle", reason: "aborted_by_user" })
+          expect(yield* threads.getValue(id, "after-abort")).toBeNull()
+        }).pipe(
+          Effect.ensuring(Effect.sync(release.release)),
+          Effect.provide(
+            Layer.merge(
+              registryOf(project({ provider: new ScriptedProvider([]), tools: { slow } })),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+      }),
+  )
+
+  it.effect(
+    "rule 51: supervisor.abort before tool execute entry (during async arg validation) holds claim and resolves invokeTool to notRun",
+    () =>
+      Effect.gen(function* () {
+        const inValidator = Latch.makeUnsafe()
+        const releaseValidator = gate()
+        let executed = false
+        const validated = defineTool({
+          description: "Slow async validator before execute",
+          args: z.object({ tag: z.string() }).refine(async () => {
+            inValidator.openUnsafe()
+            await releaseValidator.opened
+            return true
+          }),
+          execute: async () => {
+            executed = true
+            return ok("should-not-run")
+          },
+        })
+        yield* Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          const direct = yield* Effect.forkChild(Effect.promise(() => rest.invokeTool("validated", { tag: "a" })))
+          yield* awaitLatchOrExit(inValidator, direct, "entering async validator")
+
+          const settlement = yield* supervisor.abort(id)
+          expect(settlement).toBeDefined()
+          yield* TestClock.adjust("1 millis")
+          expect(settlement?.isDone()).toBe(false)
+
+          releaseValidator.release()
+          const result = yield* Fiber.join(direct)
+          expect(result).toEqual(notRun)
+          expect(executed).toBe(false)
+          expect(yield* supervisor.status(id)).toMatchObject({ state: "idle", reason: "aborted_by_user" })
+        }).pipe(
+          Effect.ensuring(Effect.sync(releaseValidator.release)),
+          Effect.provide(
+            Layer.merge(
+              registryOf(project({ provider: new ScriptedProvider([]), tools: { validated } })),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+      }),
+  )
+
+  it.effect(
+    "rule 52: terminate() during invokeTool at rest displaces execution immediately, refuses writes with FlowEnded, and resolves to CLOSING.terminated",
+    () =>
+      Effect.gen(function* () {
+        const inWriteHook = Latch.makeUnsafe()
+        const releaseHook = gate()
+        const releaseTool = gate()
+        const doneLate = Latch.makeUnsafe()
+        let submittedWriteTag = ""
+        let laterWriteTag = ""
+        const pauseHook = defineHook({
+          hook: "before_create_message",
+          id: "pause_direct_write",
+          execute: async (_state, message) => {
+            if (message.content === "in-flight-write") {
+              inWriteHook.openUnsafe()
+              await releaseHook.opened
+            }
+            return message
+          },
+        })
+        const stubborn = defineTool({
+          description: "Start a write, pause in hook, then attempt another write after terminate",
+          execute: async (state: ThreadState) => {
+            const pendingWrite = attempt(() => state.injectMessage({ role: "user", content: "in-flight-write" }))
+            await releaseTool.opened
+            submittedWriteTag = await pendingWrite
+            laterWriteTag = await attempt(() => state.setValue("after-term", "no"))
+            doneLate.openUnsafe()
+            return ok("late")
+          },
+        })
+        yield* Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          const messages = yield* MessageStore
+          const threads = yield* ThreadStore
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          const direct = yield* Effect.forkChild(Effect.promise(() => rest.invokeTool("stubborn", {})))
+          yield* awaitLatchOrExit(inWriteHook, direct, "entering before_create_message inside direct tool")
+
+          yield* supervisor.control(id).terminate(external)
+          // Local execution is displaced immediately and resolves invokeTool to CLOSING.terminated without waiting on tool.
+          const result = yield* Fiber.join(direct)
+          expect(result).toEqual({ status: "error", error: CLOSING.terminated })
+          expect(yield* supervisor.status(id)).toMatchObject({ state: "idle", reason: "aborted" })
+          expect((yield* threads.getThread(id)).terminated).not.toBeNull()
+
+          releaseHook.release()
+          releaseTool.release()
+          yield* doneLate.await
+          expect(submittedWriteTag).toBe("FlowEnded")
+          expect(laterWriteTag).toMatch(/^(FlowEnded|HandleExpired|ExecutionEnded)$/)
+          expect((yield* messages.getMessages(id, { order: "asc", includeSilent: true })).messages).toEqual([])
+          expect(yield* threads.getValue(id, "after-term")).toBeNull()
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              releaseHook.release()
+              releaseTool.release()
+            }),
+          ),
+          Effect.provide(
+            Layer.merge(
+              registryOf(
+                project({
+                  provider: new ScriptedProvider([]),
+                  tools: { stubborn },
+                  hooks: [pauseHook],
+                  agent: { hooks: ["pause_direct_write"] },
+                }),
+              ),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+      }),
+  )
+
+  it.effect(
+    "rule 53: dead holder recovery during invokeTool at rest settles execution_lost, removes dead holder, preserves writes and queue, and never replays the tool",
+    () =>
+      Effect.gen(function* () {
+        const entered = Latch.makeUnsafe()
+        const release = gate()
+        let toolRuns = 0
+        const gated = defineTool({
+          description: "Commit a KV value then block for crash recovery",
+          execute: async (state: ThreadState) => {
+            toolRuns += 1
+            await state.setValue("committed_before_crash", true)
+            entered.openUnsafe()
+            await release.opened
+            return ok("late")
+          },
+        })
+        yield* Effect.gen(function* () {
+          const runs = yield* RunStore
+          const threads = yield* ThreadStore
+          const sql = yield* SqlClient
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          const direct = yield* Effect.forkChild(Effect.promise(() => rest.invokeTool("gated", {})))
+          yield* awaitLatchOrExit(entered, direct, "entering gated direct tool")
+
+          yield* runs.admit(
+            id,
+            { kind: "message", message: { role: "user", content: "queued-during-direct" } },
+            { holder: "other", flowId: "other" },
+            external,
+          )
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-direct', 2147483647)`
+          yield* sql`UPDATE threads SET holder_id = 'dead-direct' WHERE id = ${id}`
+
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect((yield* threads.getThread(id)).status).toMatchObject({ state: "failed", reason: "execution_lost" })
+          expect(yield* holderRows).not.toContain("dead-direct")
+          expect(yield* threads.getValue(id, "committed_before_crash")).toBe(true)
+          expect(yield* runs.queueLength(id)).toBe(1)
+
+          release.release()
+          yield* Fiber.join(direct)
+
+          // Next trigger delivers the queued message and NEVER replays the lost direct tool.
+          expect((yield* sendMessage(id, "after-crash")).outcome).toMatchObject({
+            status: "idle",
+            reason: "stop_on_response",
+          })
+          expect(toolRuns).toBe(1)
+        }).pipe(
+          Effect.ensuring(Effect.sync(release.release)),
+          Effect.provide(
+            Layer.merge(
+              registryOf(project({ provider: new ScriptedProvider([{ text: "recovered" }]), tools: { gated } })),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+      }),
+  )
+
+  it.effect(
+    "rule 60: crash after runAgent consumeQueued closes open calls without replay; crash before consumeQueued leaves agent entry pending for next trigger",
+    () =>
+      Effect.gen(function* () {
+        // Part 1: Crash AFTER consumeQueued (inside helper agent's tool call) -> CLOSING.lost, no replay of helper.
+        const entered = Latch.makeUnsafe()
+        const release = gate()
+        let helperRuns = 0
+        const primaryProvider = new ScriptedProvider([{ text: "primary-after-crash" }])
+        const helperProvider = new ScriptedProvider([
+          () => {
+            helperRuns += 1
+            return { toolCalls: [{ id: "c_helper", name: "hold_helper", arguments: {} }] }
+          },
+        ])
+        const helper = promptAgent("helper", helperProvider, { tools: ["hold_helper"] })
+        const hold_helper = defineTool({
+          description: "Hold inside runAgent target",
+          execute: async () => {
+            entered.openUnsafe()
+            await release.opened
+            return ok("late")
+          },
+        })
+        yield* Effect.gen(function* () {
+          const runs = yield* RunStore
+          const messages = yield* MessageStore
+          const supervisor = yield* ThreadSupervisor
+          const sql = yield* SqlClient
+          const { id } = yield* createThread("assistant")
+          const rest = yield* stateAtRest(id)
+
+          yield* Effect.promise(() => rest.runAgent("helper"))
+          const settled = yield* Effect.forkChild(supervisor.settled(id))
+          yield* awaitLatchOrExit(entered, settled, "entering hold_helper inside runAgent")
+
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-after-consume', 2147483647)`
+          yield* sql`UPDATE threads SET holder_id = 'dead-after-consume' WHERE id = ${id}`
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect(yield* runs.queueLength(id)).toBe(0)
+          const results = (yield* messages.getMessages(id, { order: "asc", includeSilent: true })).messages.filter(
+            (m) => m.role === "tool",
+          )
+          expect(results).toEqual([
+            expect.objectContaining({
+              tool_call_id: "c_helper",
+              tool_status: "error",
+              content: CLOSING.lost,
+            }),
+          ])
+          release.release()
+          yield* Fiber.join(settled)
+
+          // Next send runs primary ("assistant"), NEVER replaying "helper".
+          expect((yield* sendMessage(id, "next")).outcome).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          expect(helperRuns).toBe(1)
+          expect((yield* messages.getMessages(id, { order: "asc" })).messages.at(-1)?.content).toBe(
+            "primary-after-crash",
+          )
+        }).pipe(
+          Effect.ensuring(Effect.sync(release.release)),
+          Effect.provide(
+            Layer.merge(
+              registryOf(
+                directProject({
+                  provider: primaryProvider,
+                  tools: { hold_helper },
+                  models: [helper.model],
+                  prompts: [
+                    definePrompt({
+                      name: "assistant",
+                      toolDescription: "Primary",
+                      model: "scripted",
+                      prompt: "Primary.",
+                      tools: [],
+                    }),
+                    helper.prompt,
+                  ],
+                  agents: [helper.agent],
+                }),
+              ),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+
+        // Part 2: Crash BEFORE consumeQueued leaves kind='agent' pending so next trigger runs target agent.
+        const prePrimary = new ScriptedProvider([{ text: "primary-unused" }])
+        const preHelperProvider = new ScriptedProvider([{ text: "helper-ran-after-recovery" }])
+        const preHelper = promptAgent("helper", preHelperProvider)
+        yield* Effect.gen(function* () {
+          const runs = yield* RunStore
+          const messages = yield* MessageStore
+          const sql = yield* SqlClient
+          const { id } = yield* createThread("assistant")
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-pre-consume', 2147483647)`
+          yield* sql`INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES (${id}, 'agent', ${JSON.stringify({ agentName: "helper" })}, 1)`
+          yield* sql`UPDATE threads SET run_state = 'running', holder_id = 'dead-pre-consume', flow_id = 'lost-pre-agent' WHERE id = ${id}`
+
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect(yield* runs.queueLength(id)).toBe(1)
+
+          // Next trigger consumes the pending agent entry and runs helper over the thread.
+          expect((yield* sendMessage(id, "wake")).outcome).toMatchObject({ status: "idle", reason: "stop_on_response" })
+          expect((yield* messages.getMessages(id, { order: "asc" })).messages.at(-1)).toMatchObject({
+            content: "helper-ran-after-recovery",
+            prompt: "helper_prompt",
+          })
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              registryOf(
+                directProject({
+                  provider: prePrimary,
+                  models: [preHelper.model],
+                  prompts: [
+                    definePrompt({
+                      name: "assistant",
+                      toolDescription: "Primary",
+                      model: "scripted",
+                      prompt: "Primary.",
+                      tools: [],
+                    }),
+                    preHelper.prompt,
+                  ],
+                  agents: [preHelper.agent],
+                }),
+              ),
+              Layer.provideMerge(supervisorLayer(), inMemory),
+            ),
+          ),
+        )
+      }),
+  )
 })

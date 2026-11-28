@@ -13,7 +13,7 @@ import { appendMessages } from "../scripts/store-fixtures.ts"
 import { HookTimeout } from "../src/execution/hooks.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../src/execution/trigger.ts"
-import type { Definition, Kind } from "../src/registry/definition.ts"
+import type { Definition, Kind, Package } from "../src/registry/definition.ts"
 import { Registry } from "../src/registry/Registry.ts"
 import { definitionIndex } from "../src/registry/resolve.ts"
 import { validate } from "../src/registry/validate.ts"
@@ -21,33 +21,65 @@ import { MessageStore } from "../src/store/MessageStore.ts"
 import { RunStore } from "../src/store/RunStore.ts"
 import { layer as storeLayer } from "../src/store/sqlite.ts"
 
-const definition = (kind: Kind, name: string, value: unknown): Definition => ({
+const definition = (kind: Kind, name: string, value: unknown, pkg?: Package): Definition => ({
   kind,
   name,
-  qualifiedName: name,
-  package: undefined,
-  file: `memory/${kind}s/${name}`,
-  path: "",
+  qualifiedName: pkg ? `${pkg.signature.packageId}/${name}` : name,
+  package: pkg,
+  file: pkg ? pkg.file : `memory/${kind}s/${name}`,
+  path: pkg ? `${kind}s.${name}` : "",
   value,
 })
 
+interface PackedInput {
+  readonly packageId: string
+  readonly entryAgents?: ReadonlyArray<string>
+  readonly agents?: Project["agents"]
+  readonly prompts?: Project["prompts"]
+  readonly models?: Project["models"]
+  readonly tools?: Project["tools"]
+  readonly hooks?: Project["hooks"]
+  readonly handlers?: Readonly<Record<string, unknown>>
+}
+
+const collectDefinitions = (
+  input: Pick<PackedInput, "agents" | "prompts" | "models" | "tools" | "hooks" | "handlers">,
+  pkg?: Package,
+): Array<Definition> => [
+  ...(input.agents ?? []).map((agent) => definition("agent", agent.name, agent, pkg)),
+  ...(input.prompts ?? []).map((prompt) => definition("prompt", prompt.name, prompt, pkg)),
+  ...(input.models ?? []).map((model) => definition("model", model.name, model, pkg)),
+  ...Object.entries(input.tools ?? {}).map(([name, tool]) => definition("tool", name, tool, pkg)),
+  ...(input.hooks ?? []).map((hook) => definition("hook", hook.id, hook, pkg)),
+  ...Object.entries(input.handlers ?? {}).map(([name, handler]) => definition("handler", name, handler, pkg)),
+]
+
 // The scenarios define a project in memory, so this registry holds the values without a directory.
 export const registryOf = (project: Project) => {
-  const handlers = (project as { readonly handlers?: Readonly<Record<string, unknown>> }).handlers ?? {}
-  const definitions = [
-    ...project.agents.map((agent) => definition("agent", agent.name, agent)),
-    ...project.prompts.map((prompt) => definition("prompt", prompt.name, prompt)),
-    ...project.models.map((model) => definition("model", model.name, model)),
-    ...Object.entries(project.tools ?? {}).map(([name, tool]) => definition("tool", name, tool)),
-    ...(project.hooks ?? []).map((hook) => definition("hook", hook.id, hook)),
-    ...Object.entries(handlers).map(([name, handler]) => definition("handler", name, handler)),
-  ]
+  const extended = project as Project & {
+    readonly handlers?: Readonly<Record<string, unknown>>
+    readonly packages?: ReadonlyArray<PackedInput>
+  }
+  const packages: Array<Package> = []
+  const definitions = collectDefinitions({ ...project, handlers: extended.handlers ?? {} })
+  for (const pack of extended.packages ?? []) {
+    const pkg: Package = {
+      signature: { packageId: pack.packageId, version: "1.0.0", source: "local", packedAt: 0 },
+      entryAgents: pack.entryAgents ?? [],
+      file: `memory/packed/${pack.packageId}/index.js`,
+      manifestFile: `memory/packed/${pack.packageId}/package.json`,
+      manifest: {},
+      meta: {},
+    }
+    packages.push(pkg)
+    definitions.push(...collectDefinitions(pack, pkg))
+  }
   return Layer.succeed(Registry, {
     root: "memory",
     definitions,
-    packages: [],
+    packages,
     issues: [],
-    ...definitionIndex(definitions, [], []),
+    ...definitionIndex(definitions, packages, []),
   })
 }
 
