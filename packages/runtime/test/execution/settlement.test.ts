@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest"
-import { defineTool } from "@standardagents/spec"
+import { defineHook, defineTool } from "@standardagents/spec"
 import { Deferred, Effect, Fiber, Layer, Scheduler } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { SqliteLive } from "#platform"
@@ -13,6 +13,7 @@ import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
+import { inMemory } from "../store/contract-fixtures.ts"
 
 it.effect("a refused idle settlement reaches the sender without a second settlement as failed", () =>
   Effect.gen(function* () {
@@ -309,4 +310,43 @@ it.effect("a sender whose claim first runs older work for the opposite side wait
       ),
     ),
   )
+})
+
+it.effect("a forceTurn from a delivery to a human expires before queued work continues", () => {
+  const hook = defineHook({
+    hook: "after_create_message",
+    id: "request_human",
+    execute: async (state, message) => {
+      if (message.content === "for human") state.execution?.forceTurn("b")
+    },
+  })
+  const provider = new ScriptedProvider([{ text: "first step" }, { text: "second step" }])
+  const setup = project({
+    provider,
+    hooks: [hook],
+    agent: { hooks: [hook.id] },
+    side: { stopOnResponse: false, maxSteps: 2 },
+  })
+  return Effect.gen(function* () {
+    const { id } = yield* (yield* ThreadStore).createThread({ agentId: "assistant" })
+    const runs = yield* RunStore
+    const supervisor = supervisorLayer({
+      observe: (event) =>
+        event.type === "trace" && event.entry.phase === "stop" && event.entry.detail === "awaiting_human"
+          ? Effect.asVoid(
+              runs.admit(
+                id,
+                { kind: "message", message: { role: "user", content: "for prompt" } },
+                { holder: "waiting", flowId: "waiting" },
+                { kind: "external" },
+              ),
+            )
+          : Effect.void,
+    })
+    yield* Effect.gen(function* () {
+      const s = yield* ThreadSupervisor
+      yield* s.control(id).queueMessage({ role: "assistant", content: "for human" }, newSecrets(), { kind: "external" })
+      expect(yield* s.settled(id)).toMatchObject({ reason: "max_side_steps", steps: 2 })
+    }).pipe(Effect.provide(supervisor))
+  }).pipe(Effect.provide(Layer.merge(registryOf(setup), inMemory)))
 })

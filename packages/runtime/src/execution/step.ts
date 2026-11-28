@@ -402,6 +402,7 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
       case "prompt": {
         const side: SideScope = yield* prepareSide(thread, active, options)
         const boundary: End | { next: SideValue; reason: string } = yield* promptTurn(side, thread, options, handedOff)
+        run.turns.pending = undefined
         yield* thread.record("stop", boundary.reason)
         if (!("next" in boundary)) return boundary
         run.turns.active = boundary.next
