@@ -506,17 +506,21 @@ const runWatermarkParkedOnly = async (driver: RuntimeDriver) => {
   const entered = gate()
   const release = gate()
   const tools = {
-    hold: gatedTool(entered, release),
+    first_step: stubTool("First step", "done"),
     quick: stubTool("Quick at rest", "quick-done"),
   }
   const provider = new ScriptedProvider([
-    { toolCalls: [{ id: "c1", name: "hold", arguments: {} }] },
-    { text: "turn 1 done" },
+    { toolCalls: [{ id: "c1", name: "first_step", arguments: {} }] },
+    async () => {
+      entered.release()
+      await release.opened
+      return { text: "turn 1 done" }
+    },
   ])
   await usingDirectPeer(driver, { provider, tools, agent: { maxSessionTurns: 1 } }, async (session, thread, peer) => {
     const first = quiet(session.send(thread, "go"))
     try {
-      await raceGate(entered.opened, first, "turn 1 tool")
+      await raceGate(entered.opened, first, "final model request of turn 1")
       // Queue work while turn 1 runs; maxSessionTurns: 1 sets continueIfQueued: false, parking it in the queue.
       await (await peer.state(thread)).queueMessage({ role: "user", content: "parked-before-direct" })
     } finally {
