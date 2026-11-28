@@ -106,35 +106,32 @@ export interface RunOutcome {
 // Before the first request, and before spindle run prints a line, the execution learns every secret value that the
 // turn can resolve: the provider config's, each value of a name marked secret, and the instance value of each
 // variable that the prompt or one of its tools declares.
-const learnPromptSecrets = Effect.fn("learnPromptSecrets")(function* (turn: PromptSideValue, secrets: Secrets) {
-  yield* resolveConfig(turn.model, secrets)
-  const declared = [
-    ...(turn.prompt.value.variables ?? []).map((variable) => ({ variable, scope: promptScope(turn) })),
-    ...[...turn.tools.values()].flatMap((exposed) =>
-      (exposed.tool.value.variables ?? []).map((variable) => ({ variable, scope: scopeFor(turn, exposed.entry) })),
-    ),
-  ]
-  for (const { variable } of declared) if (variable.type === "secret") secrets.names.add(variable.name)
-  const lookups = [
-    ...declared.map(({ variable, scope }) => ({ name: variable.name, scope })),
-    ...[...secrets.names].map((name) => ({ name, scope: promptScope(turn) })),
-  ]
-  // Learning reads every declared name, used or not. A value that cannot be read cannot be learned, and it must not
-  // fail a run that never asks for it. The read that a tool or a prompt asks for still fails with its own error.
-  const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
-  for (const { name, scope } of lookups) {
-    const found = yield* readable(lookupEnv(scope, name))
-    if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
-    // A definition default hides the instance value from the lookup, and that value is still the operator's secret.
-    // An instance value equal to the default is text the definition already shows.
-    const instance = yield* readable(instanceEnv(name))
-    if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
-  }
-})
+const secretScopes = (turn: PromptSideValue) => [
+  { scope: promptScope(turn), variables: turn.prompt.value.variables ?? [] },
+  ...[...turn.tools.values()].map(({ tool, entry }) => ({
+    scope: scopeFor(turn, entry),
+    variables: tool.value.variables ?? [],
+  })),
+]
 
 export const learnSecrets = Effect.fnUntraced(function* (sides: AgentSides, secrets: Secrets) {
-  for (const side of [sides.a, sides.b]) {
-    if (side.kind === "prompt") yield* learnPromptSecrets(side, secrets)
+  const prompts = [sides.a, sides.b].filter((side) => side.kind === "prompt")
+  const scopes = prompts.flatMap(secretScopes)
+  for (const turn of prompts) yield* resolveConfig(turn.model, secrets)
+  for (const { variables } of scopes)
+    for (const variable of variables) if (variable.type === "secret") secrets.names.add(variable.name)
+
+  // A read that a tool or prompt actually requests still reports its own failure.
+  const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
+  for (const { variables, scope } of scopes) {
+    const names = new Set([...secrets.names, ...variables.map((variable) => variable.name)])
+    for (const name of names) {
+      const found = yield* readable(lookupEnv(scope, name))
+      if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
+      // A definition can hide a different instance value, which still belongs to the operator.
+      const instance = yield* readable(instanceEnv(name))
+      if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
+    }
   }
 })
 

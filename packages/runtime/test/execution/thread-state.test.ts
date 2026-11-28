@@ -11,6 +11,7 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { expectTypeOf } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
@@ -278,6 +279,37 @@ describe("ThreadState", () => {
         ),
       ),
     ),
+  )
+
+  it.effect(
+    "classifies prompt and tool-entry values using secret names from either side before the first request",
+    () => {
+      const providerA = new ScriptedProvider([])
+      const providerB = new ScriptedProvider([])
+      Object.assign(providerB.factory, { configSlots: { apiKey: { type: "secret", defaultEnv: "MODEL_KEY" } } })
+      const setup = dualProject({
+        providerA,
+        providerB,
+        tools: { noop: stubTool("No operation", "ok") },
+        promptA: {
+          prompt: "System text with prompt-marker",
+          env: { SHARED_TOKEN: "prompt-marker" },
+          tools: [{ name: "noop", env: { MODEL_KEY: "entry-marker" } }],
+        },
+        promptB: {
+          variables: [{ name: "SHARED_TOKEN", type: "secret", required: false, description: "Shared token" }],
+        },
+      })
+      return Effect.gen(function* () {
+        const { id } = yield* createThread("pair")
+        const secrets = new Set<string>()
+        const { outcome } = yield* sendMessage(id, "go", { secrets, retries: 0 })
+        expect(secrets.has("prompt-marker")).toBe(true)
+        expect(secrets.has("entry-marker")).toBe(true)
+        expect(outcome?.error?.message).toContain("holds a secret value")
+        expect(providerA.requests).toHaveLength(0)
+      }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
+    },
   )
 
   // Threads section 2.3 (specification/threads.md:227-230): instanceEnv "returns `undefined` when the key is not
