@@ -1,5 +1,5 @@
 import type { Message } from "@standardagents/spec"
-import { Effect, MutableList, Result } from "effect"
+import { Effect, Result } from "effect"
 import { describeCause } from "../registry/load-error.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { Callback } from "./callback.ts"
@@ -16,10 +16,23 @@ interface Delivery {
   readonly seq: number
 }
 
+const replaceIn = (list: Array<Delivery>, message: Message) => {
+  for (let i = 0; i < list.length; i++) {
+    const entry = list[i]
+    if (entry && entry.message.id === message.id) list[i] = { seq: entry.seq, message: copyMessage(message) }
+  }
+}
+
+const removeFrom = (list: Array<Delivery>, messageId: string) => {
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.message.id === messageId) list.splice(i, 1)
+  }
+}
+
 // Only writes made during this turn can cause a handoff. Keep the committed copy
 // before injectMessage gives user code a mutable result, and publish it only on success.
 export class HandlerDeliveries {
-  readonly inbox = { a: MutableList.make<Delivery>(), b: MutableList.make<Delivery>() }
+  readonly inbox: Record<Side, Array<Delivery>> = { a: [], b: [] }
   #outgoing: Array<Delivery> = []
   #role: Message["role"] | undefined
 
@@ -30,10 +43,23 @@ export class HandlerDeliveries {
   inserted(row: Delivery) {
     if (row.message.role === this.#role) this.#outgoing.push({ seq: row.seq, message: copyMessage(row.message) })
   }
+  updated(message: Message) {
+    replaceIn(this.#outgoing, message)
+    replaceIn(this.inbox.a, message)
+    replaceIn(this.inbox.b, message)
+  }
+  deleted(messageId: string) {
+    removeFrom(this.#outgoing, messageId)
+    removeFrom(this.inbox.a, messageId)
+    removeFrom(this.inbox.b, messageId)
+  }
+  take(side: Side) {
+    return this.inbox[side].shift()
+  }
   finish(peer: SideValue, success: boolean) {
     const batch = this.#outgoing
     this.begin(undefined)
-    if (success && peer.kind === "handler") MutableList.appendAll(this.inbox[peer.side], batch)
+    if (success && peer.kind === "handler") this.inbox[peer.side].push(...batch)
     return batch
   }
 }
@@ -47,9 +73,8 @@ export interface HandlerCall {
 }
 
 const nextPeerMessage = Effect.fnUntraced(function* (thread: ThreadScope, side: Side) {
-  const inbox = thread.deliveries.inbox[side]
   const store = yield* RunStore
-  for (let row = MutableList.take(inbox); row !== MutableList.Empty; row = MutableList.take(inbox)) {
+  for (let row = thread.deliveries.take(side); row !== undefined; row = thread.deliveries.take(side)) {
     if (yield* store.advanceDelivery(thread.thread.id, thread.run.flowId, side, row.seq)) return row.message
   }
 })

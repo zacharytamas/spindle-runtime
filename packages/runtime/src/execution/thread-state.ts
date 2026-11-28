@@ -320,7 +320,13 @@ function messageMethods(
     },
     deleteMessage: (id) =>
       typeof id === "string"
-        ? run(messageStore.deleteMessage(threadId, id, origin))
+        ? run(
+            Effect.tap(messageStore.deleteMessage(threadId, id, origin), (removed) =>
+              Effect.sync(() => {
+                if (removed) write.history?.deleted(id)
+              }),
+            ),
+          )
         : invalid("deleteMessage takes a string id"),
     queueMessage: (input) => run(state.control.queueMessage(input, state.secrets, origin)),
   }

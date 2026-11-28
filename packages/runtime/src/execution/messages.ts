@@ -231,6 +231,7 @@ export const updateMessage = Effect.fn("updateMessage")(function* (
   const patch = yield* vetoHooks(write.hooks, "before_update_message", [messageId], { ...updates }, { depth })
   const redacted = redactUpdates(patch, redactor(write.secrets.values))
   const message = yield* store.updateMessage(write.threadId, messageId, redacted as MessageUpdates, write.origin)
+  write.history?.updated(message)
   yield* observeHooks(write.hooks, "after_update_message", [message], { depth })
   return message
 })

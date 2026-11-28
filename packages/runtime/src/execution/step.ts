@@ -455,7 +455,11 @@ export const prepareSteps = Effect.fnUntraced(function* (
       const services = yield* Effect.context<Registry | Stores>()
       const sides = yield* prepareSides(yield* loadAgent(thread.agentId), secrets)
       const deliveries = new HandlerDeliveries()
-      const history = makeHistory(threadId, (row) => deliveries.inserted(row))
+      const history = makeHistory(threadId, {
+        onInsert: (row) => deliveries.inserted(row),
+        onUpdate: (message) => deliveries.updated(message),
+        onDelete: (messageId) => deliveries.deleted(messageId),
+      })
       const base = { thread, services, secrets, control, history, run, sides, context: {} }
       // Inbound delivery uses the agent's hooks and environment inside the flow taking the message.
       const hooks = agentHookScope(

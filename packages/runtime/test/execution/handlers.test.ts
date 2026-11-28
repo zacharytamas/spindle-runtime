@@ -250,4 +250,41 @@ describe("handler runtime loading, turnCap, stopSession, and performance guard",
         expect([short.historyReads, long.historyReads]).toEqual([0, 0])
       }),
   )
+
+  it.effect("intra-execution updateMessage and deleteMessage keep buffered peer-handler deliveries in sync", () => {
+    const received: Array<{ id: string; content: string | null; metadata: unknown }> = []
+    let secondId = ""
+    let deletedId = ""
+    const writer = handlerOf(async (state) => {
+      const first = await state.injectMessage({ role: "assistant", content: "draft-1" })
+      await state.updateMessage(first.id, { content: "final-1", metadata: { revised: true } })
+      const removed = await state.injectMessage({ role: "assistant", content: "drop-before-handoff" })
+      await state.deleteMessage(removed.id)
+      const second = await state.injectMessage({ role: "assistant", content: "draft-2" })
+      secondId = second.id
+      const third = await state.injectMessage({ role: "assistant", content: "drop-from-inbox" })
+      deletedId = third.id
+    })
+    const reader = handlerOf(async (state, message) => {
+      received.push({ id: message.id, content: message.content, metadata: message.metadata })
+      if (message.content === "final-1") {
+        await state.updateMessage(secondId, { content: "final-2", metadata: { fromPeer: true } })
+        await state.deleteMessage(deletedId)
+      }
+    })
+    const setup = handlerProject({
+      sideA: { handler: "writer" },
+      sideB: { handler: "reader" },
+      handlers: { writer, reader },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("relay")
+      const { outcome } = yield* sendMessage(thread.id, "go")
+      expect(outcome).toMatchObject({ status: "idle", reason: "handler_idle", steps: 0 })
+      expect(received.map((m) => [m.content, m.metadata])).toEqual([
+        ["final-1", { revised: true }],
+        ["final-2", { fromPeer: true }],
+      ])
+    }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+  })
 })
