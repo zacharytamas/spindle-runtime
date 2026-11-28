@@ -56,3 +56,12 @@ export const lookupEnv = (scope: EnvScope, name: string): Effect.Effect<Resolved
 
 export const resolveEnv = (scope: EnvScope, name: string): Effect.Effect<string | undefined, SetupError> =>
   Effect.map(lookupEnv(scope, name), (found) => found?.value)
+
+const readable = <A, E>(read: Effect.Effect<A | undefined, E>) => Effect.orElseSucceed(read, () => undefined)
+
+export const learnVariable = Effect.fnUntraced(function* (scope: EnvScope, name: string, secrets: Secrets) {
+  const found = yield* readable(lookupEnv(scope, name))
+  if (found !== undefined && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
+  const fromInstance = yield* readable(instanceEnv(name))
+  if (fromInstance !== undefined) addSecret(secrets, fromInstance)
+})

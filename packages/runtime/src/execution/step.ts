@@ -215,6 +215,7 @@ const prepareToolContext = Effect.fnUntraced(function* <T extends AutomatedSide>
 ) {
   const toolContext: ToolContext<T> = {
     execution: thread.run,
+    secrets: thread.secrets,
     scope: yield* Effect.scope,
     toolTimeout: options.toolTimeout,
     turn,

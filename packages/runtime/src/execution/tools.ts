@@ -4,7 +4,7 @@ import type { Definition } from "../registry/definition.ts"
 import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
-import { type EnvScope, resolveEnv } from "./env.ts"
+import { type EnvScope, learnVariable, resolveEnv, type Secrets } from "./env.ts"
 import { isPlain } from "./redact.ts"
 import {
   type AutomatedSide,
@@ -27,6 +27,7 @@ export interface ToolContext<T extends AutomatedSide = AutomatedSide> {
   readonly scope: Scope.Scope
   readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
+  readonly secrets: Secrets
   readonly turn: T
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
@@ -105,6 +106,10 @@ export const executeTool = Effect.fn("executeTool")(function* (
 ) {
   const scope = scopeFor(context.turn, entry)
   const name = tool.qualifiedName
+  for (const variable of tool.value.variables ?? []) {
+    if (variable.type === "secret") context.secrets.names.add(variable.name)
+    yield* learnVariable(scope, variable.name, context.secrets)
+  }
   for (const variable of tool.value.variables ?? []) {
     if (!variable.required) continue
     const value = yield* Effect.result(resolveEnv(scope, variable.name))

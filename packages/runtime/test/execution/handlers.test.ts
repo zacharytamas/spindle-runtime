@@ -376,4 +376,90 @@ describe("handler runtime loading, turnCap, stopSession, and performance guard",
       Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))),
     )
   })
+
+  it.effect("handler-invoked tools register declared secrets before validation or execution", () => {
+    const secret = "handler-tool-secret-998877"
+    const leaky = defineTool({
+      description: "Declares a secret and leaks it",
+      variables: [{ name: "TOOL_SECRET", type: "secret", required: false, description: "Secret" }],
+      execute: async (state: ThreadState) => {
+        await state.injectMessage({ role: "assistant", content: `out=${secret}` })
+        return ok("done")
+      },
+    })
+    const caller = handlerOf(async (state) => {
+      await state.invokeTool("leaky", {})
+    })
+    const setup = handlerProject({
+      sideA: { handler: "caller" },
+      sideB: { human: true },
+      handlers: { caller },
+      tools: { leaky },
+      agent: { env: { TOOL_SECRET: secret } },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("relay")
+      yield* sendMessage(thread.id, "go")
+      const { messages } = yield* (yield* MessageStore).getMessages(thread.id)
+      expect(messages.map((m) => m.content)).toEqual(["out=[redacted]", "go"])
+    }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+  })
+
+  it.effect(
+    "external stateAtRest edits and deletes while after_create_message pauses take effect before queued handler dispatch",
+    () => {
+      const received: Array<{ content: string | null; metadata: unknown }> = []
+      let pausedId = ""
+      let onHookPaused: (() => void) | undefined
+      let releaseHook: (() => void) | undefined
+      const pause = defineHook({
+        hook: "after_create_message",
+        id: "pause_inbound",
+        execute: async (_state, message) => {
+          pausedId = message.id
+          onHookPaused?.()
+          await new Promise<void>((resolve) => {
+            releaseHook = resolve
+          })
+        },
+      })
+      const receiver = handlerOf(async (_state, message) => {
+        received.push({ content: message.content, metadata: message.metadata })
+      })
+      const setup = handlerProject({
+        sideA: { handler: "receiver" },
+        sideB: { human: true },
+        handlers: { receiver },
+        hooks: [pause],
+        agent: { hooks: ["pause_inbound"] },
+      })
+      return Effect.gen(function* () {
+        const thread = yield* createThread("relay")
+        const rest = yield* stateAtRest(thread.id)
+
+        const editReady = new Promise<void>((resolve) => {
+          onHookPaused = resolve
+        })
+        const first = yield* Effect.forkChild(sendMessage(thread.id, "before-ext-edit"))
+        yield* Effect.promise(() => editReady)
+        yield* Effect.promise(() => rest.updateMessage(pausedId, { content: "after-ext-edit", metadata: { ext: 1 } }))
+        releaseHook?.()
+        yield* Fiber.join(first)
+
+        const delReady = new Promise<void>((resolve) => {
+          onHookPaused = resolve
+        })
+        const second = yield* Effect.forkChild(sendMessage(thread.id, "before-ext-delete"))
+        yield* Effect.promise(() => delReady)
+        yield* Effect.promise(() => rest.deleteMessage(pausedId))
+        releaseHook?.()
+        yield* Fiber.join(second)
+
+        expect(received).toEqual([{ content: "after-ext-edit", metadata: { ext: 1 } }])
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => releaseHook?.())),
+        Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))),
+      )
+    },
+  )
 })

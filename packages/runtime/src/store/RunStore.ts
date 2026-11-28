@@ -28,6 +28,7 @@ import {
 import {
   decodeQueued,
   type MessageRow,
+  messageColumns,
   messageRow,
   type QueueRow,
   queuePayload,
@@ -36,6 +37,7 @@ import {
   type ThreadRow,
   text,
   threadColumns,
+  toMessage,
   toStatus,
   toThread,
 } from "./schema.ts"
@@ -215,21 +217,28 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls, deliveryCurso
       unyielding,
     ),
 
-    advanceDelivery: Effect.fn("RunStore.advanceDelivery")(function* (
-      threadId: string,
-      flowId: string,
-      side: "a" | "b",
-      seq: number,
-    ) {
-      const cursor = deliveryCursor(side)
-      const rows = yield* sql`UPDATE threads SET ${cursor} = ${seq}
-        WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running' AND ${cursor} < ${seq} RETURNING id`
-      if (rows.length) return true
-      const row = yield* selectRun(threadId)
-      const refusal = authorize(threadId, row, { kind: "flow", flowId })
-      if (refusal) return yield* refusal
-      return false
-    }, unyielding),
+    advanceDelivery: Effect.fn("RunStore.advanceDelivery")(
+      function* (threadId: string, flowId: string, side: "a" | "b", seq: number, messageId: string) {
+        const [message] =
+          yield* sql<MessageRow>`SELECT ${sql.literal(messageColumns)} FROM messages WHERE thread_id = ${threadId} AND id = ${messageId}`
+        if (message === undefined) {
+          const row = yield* selectRun(threadId)
+          const refusal = authorize(threadId, row, { kind: "flow", flowId })
+          if (refusal) return yield* refusal
+          return null
+        }
+        const cursor = deliveryCursor(side)
+        const rows = yield* sql`UPDATE threads SET ${cursor} = ${seq}
+          WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running' AND ${cursor} < ${seq} RETURNING id`
+        if (rows.length) return toMessage(message)
+        const row = yield* selectRun(threadId)
+        const refusal = authorize(threadId, row, { kind: "flow", flowId })
+        if (refusal) return yield* refusal
+        return null
+      },
+      sql.withTransaction,
+      unyielding,
+    ),
 
     completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string, needBoundary = true) {
       const boundary = needBoundary

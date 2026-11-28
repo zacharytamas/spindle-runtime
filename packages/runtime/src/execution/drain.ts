@@ -1,6 +1,7 @@
-import type { AttachmentRef, Message, QueueMessageInput } from "@standardagents/spec"
+import type { AttachmentRef, QueueMessageInput } from "@standardagents/spec"
 import { Effect } from "effect"
 import { Registry } from "../registry/Registry.ts"
+import { MessageStore } from "../store/MessageStore.ts"
 import type { NewMessage, Queued } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { commitMessage } from "./messages.ts"
@@ -92,16 +93,12 @@ export const deliverQueued = Effect.fnUntraced(function* (
   entry: Queued & { kind: "message" },
   deliveredTo?: "a" | "b",
 ) {
-  const changes = new Map<string, Message | null>()
-  const { message } = yield* thread.deliveries.watch(
-    changes,
-    commitMessage(thread.delivery, draftOf(entry.message), {
-      dequeue: entry.seq,
-      ...(deliveredTo && { deliveredTo }),
-    }),
-  )
+  const { message } = yield* commitMessage(thread.delivery, draftOf(entry.message), {
+    dequeue: entry.seq,
+    ...(deliveredTo && { deliveredTo }),
+  })
   yield* thread.record("drain", `message ${message.id}`)
-  const current = changes.has(message.id) ? changes.get(message.id) : message
+  const current = deliveredTo ? yield* (yield* MessageStore).getMessage(thread.thread.id, message.id) : message
   if (!current) return undefined
   yield* thread.observe({ type: "message", message: current })
   return current

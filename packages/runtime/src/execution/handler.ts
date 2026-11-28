@@ -1,7 +1,6 @@
 import type { Message } from "@standardagents/spec"
 import { Effect, Result } from "effect"
 import { describeCause } from "../registry/load-error.ts"
-import { MessageStore } from "../store/MessageStore.ts"
 import { RunStore } from "../store/RunStore.ts"
 import { Callback } from "./callback.ts"
 import { deliverQueued, queueRecipient, runQueuedTool } from "./drain.ts"
@@ -34,7 +33,6 @@ const removeFrom = (list: Array<Delivery>, messageId: string) => {
 // before injectMessage gives user code a mutable result, and publish it only on success.
 export class HandlerDeliveries {
   readonly inbox: Record<Side, Array<Delivery>> = { a: [], b: [] }
-  readonly #watchers = new Set<Map<string, Message | null>>()
   #outgoing: Array<Delivery> = []
   #role: Message["role"] | undefined
 
@@ -49,25 +47,11 @@ export class HandlerDeliveries {
     replaceIn(this.#outgoing, message)
     replaceIn(this.inbox.a, message)
     replaceIn(this.inbox.b, message)
-    for (const changes of this.#watchers) changes.set(message.id, copyMessage(message))
   }
   deleted(messageId: string) {
     removeFrom(this.#outgoing, messageId)
     removeFrom(this.inbox.a, messageId)
     removeFrom(this.inbox.b, messageId)
-    for (const changes of this.#watchers) changes.set(messageId, null)
-  }
-  watch<A, E, R>(changes: Map<string, Message | null>, effect: Effect.Effect<A, E, R>) {
-    return Effect.suspend(() => {
-      this.#watchers.add(changes)
-      return effect
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          this.#watchers.delete(changes)
-        }),
-      ),
-    )
   }
   take(side: Side) {
     return this.inbox[side].shift()
@@ -90,11 +74,9 @@ export interface HandlerCall {
 
 const nextPeerMessage = Effect.fnUntraced(function* (thread: ThreadScope, side: Side) {
   const store = yield* RunStore
-  const messages = yield* MessageStore
   for (let row = thread.deliveries.take(side); row !== undefined; row = thread.deliveries.take(side)) {
-    const current = yield* messages.getMessage(thread.thread.id, row.message.id)
-    if (current === null) continue
-    if (yield* store.advanceDelivery(thread.thread.id, thread.run.flowId, side, row.seq)) return current
+    const current = yield* store.advanceDelivery(thread.thread.id, thread.run.flowId, side, row.seq, row.message.id)
+    if (current !== null) return current
   }
 })
 
