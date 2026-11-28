@@ -148,7 +148,7 @@ Added after the review of pull request 36. Two fixes built from cases each broke
 61. A side's turn starts immediately after the last message persisted by that side's own previous turn, including that turn's tool results. Every later message is current for the side: a peer's hand-off message, a message a tool or hook injected, a drained queue entry, and a preamble a `before_create_message` hook injected. Every earlier message is past. A side with no previous turn in the thread treats the whole thread as current.
 62. Within an execution, the runtime records the `seq` that ends each side's turn when the turn ends. At the start of an execution it derives the same boundary from storage in O(1) statements, from the latest message in the side's role and the tool results that follow it. It never derives the boundary from the latest message of the peer's role.
 63. A sender whose message is still `pending` when the run it claimed or waited on settles reclaims the thread only if that run took at least one queue entry, and the settlement was not an operator abort (`aborted_by_user`), `execution_lost`, or termination. Each reclaim therefore consumes an entry, and a sender cannot reclaim without end.
-64. When rule 63 does not allow a reclaim, `send()` returns that run's outcome with `stillQueued: true`.
+64. When rule 63 does not allow a reclaim, `send()` returns that run's outcome with `stillQueued: true`. The one exception is a terminated thread. There `send()` rejects with `ThreadTerminated`, as it did before M2a and as scenario Q34 requires.
 65. When a sender waits on another run that takes its message, `send()` returns the outcome of the run that took the message, not the outcome of the run it first claimed.
 
 ---
