@@ -62,5 +62,5 @@ export const learnVariable = Effect.fnUntraced(function* (scope: EnvScope, name:
   const found = yield* Effect.orElseSucceed(lookupEnv(scope, name), () => undefined)
   if (found && (found.fromInstance || secrets.names.has(name))) addSecret(secrets, found.value)
   const instance = yield* Effect.orElseSucceed(instanceEnv(name), () => undefined)
-  if (instance !== undefined && instance !== found?.value) addSecret(secrets, instance)
+  if (instance !== undefined) addSecret(secrets, instance)
 })
