@@ -1,6 +1,6 @@
 # Sides, turns, and direct execution
 
-**Status.** Draft for milestone M2a. Written from Standard Agent Specification 0.2.0, `@standardagents/spec` 0.45.13, and Spindle at `a98fb70`. The section "Decisions the spec leaves open" separates operator choices from implementation details.
+**Status.** Settled for milestone M2a on 2026-11-27. Written from Standard Agent Specification 0.2.0, `@standardagents/spec` 0.45.13, and Spindle at `a98fb70`. The section "Decisions the spec leaves open" separates operator choices from implementation details.
 
 Milestone 1 runs one prompt side against one human side. Milestone M2a removes that assumption so Spindle runs every legal 0.2.0 side pairing, counts turns across backings, supports `forceTurn`, and supports direct execution outside a calling tool.
 
@@ -85,9 +85,9 @@ Turn counts are durable on the thread row in a new integer column `threads.sessi
 14. After all tool calls of a prompt step finish and commit, the loop evaluates boundaries in this exact order.
     1. External or cooperative stop (`stop()` or abort) ends the run `idle` (`aborted` or `aborted_by_user`) and ignores `forceTurn`.
     2. Session-terminal actions (`state.stopSession()`, and M2b `sessionStop` or `sessionFail`) end the session, reset `session_turns` to `0`, and ignore `forceTurn`.
-    3. Runtime `stepCap` (`run.steps >= stepCap`) ends the execution `idle` (`max_total_steps`) whenever the execution would otherwise continue to another step, another side, or queued work. When the turn also reaches `maxSessionTurns` and the queue is empty, `max_session_turns` wins.
-    4. If `forceTurn(target)` was called during the step, the current side's turn ends immediately, `session_turns` increments by 1, and `maxSessionTurns` and `turnCap` are checked. If neither cap fired, control moves to `target`.
-    5. Otherwise, evaluate `stopTool`, then `stopOnResponse`, then `maxSteps` (`max_side_steps`). If none fires, the current prompt side takes another step. If one fires, `session_turns` increments by 1, `maxSessionTurns` and `turnCap` are checked, and if neither cap fired, control moves to `otherSide(currentSide)`.
+    3. If `forceTurn(target)` was called during the step, the current side's turn ends immediately, `session_turns` increments by 1, and `maxSessionTurns` and `turnCap` are checked. If neither cap fired, control moves to `target`.
+    4. Otherwise, evaluate `stopTool`, then `stopOnResponse`, then `maxSteps` (`max_side_steps`). If none fires, the current prompt side takes another step. If one fires, `session_turns` increments by 1, `maxSessionTurns` and `turnCap` are checked, and if neither cap fired, control moves to `otherSide(currentSide)`.
+    5. Runtime `stepCap` is checked last, as a safety limit (`infrastructure/runtime.md` section 6). When `run.steps >= stepCap` and the execution would otherwise continue to another step, another side, or queued work, it ends `idle` (`max_total_steps`). A reason from items 2 to 4 that fired on the same step is reported instead, and `max_session_turns` wins over `max_total_steps`.
 15. When control moves to a human-backed side because of `forceTurn`, the run settles `idle` with reason `forced_human_turn`. When control moves to a human-backed side on ordinary prompt turn completion, the run settles `idle` with that prompt turn's reason (`stop_tool`, `stop_on_response`, or `max_side_steps`). When a prompt-backed side wakes with no prompt work and control belongs to a human side, the run settles `idle` with `awaiting_human`.
 16. When `forceTurn` targets a prompt-backed side (including the same side that just ran), that side starts a fresh turn with `sideSteps` reset to `0` and runs a model step even if no new message arrived.
 17. When `forceTurn` targets a handler-backed side, the runtime delivers the next undelivered inbound message on that side's perspective (such as the message the opposite side just wrote or the next pending queued message for that side). If no undelivered inbound message exists, the runtime never fabricates a message and never redelivers a prior message. It settles `idle` with reason `handler_idle`.
@@ -233,7 +233,9 @@ Every write inside a direct `invokeTool` or `runAgent` execution carries a non-n
 
 ## 4. Decisions the spec leaves open
 
-### Operator decisions
+### Decided on 2026-11-27
+
+The operator chose decisions 4 and 5. The root took the recommendation on 1, 2, 3, 6 and 7, which are readings of the spec or implementation choices. Each decision below is the rule.
 
 1. **Durable `session_turns` and whether human turns count.** Recommend storing `session_turns` durably on `threads` and counting only completed prompt turns and handler turns (not human messages), resetting to `0` on session end. Alternative is an ephemeral per-execution counter (which makes `maxSessionTurns` inert on `prompt x human`), or counting human messages too (which causes odd `maxSessionTurns` values to stop before the agent answers).
 2. **Messages delivered from a multi-step prompt turn to an opposite handler side.** Recommend delivering only the prompt turn's final persisted message (the text reply on `stopOnResponse`, or the final tool-call message on `stopTool`/`maxSteps`), plus all queued messages and peer handler injections in persistence order. Alternative is delivering every intermediate tool-call assistant message too, which would make `if (message.tool_calls) return` fire per step and consume `maxSessionTurns` on internal tool steps.
