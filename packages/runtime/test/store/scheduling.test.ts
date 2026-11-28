@@ -39,6 +39,7 @@ it.effect("every store operation prevents scheduler yields while using the conne
       {
         acquireHolder: Effect.scoped(runs.acquireHolder({ id: claim.holder, pid: 0 })),
         admit: runs.admit(id, { kind: "message", message: { role: "user", content: "go" } }, claim, external),
+        completeTurn: runs.completeTurn(id, claim.flowId),
         failedDeliveries: runs.failedDeliveries(id),
         discardFailed: runs.discardFailed(id, "2"),
         releaseSender: runs.releaseSender(1, claim.holder),

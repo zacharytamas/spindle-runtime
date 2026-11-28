@@ -18,6 +18,7 @@ import {
 import {
   type Claim,
   external,
+  FlowEnded,
   type Holder,
   type QueueEntry,
   type Thread,
@@ -45,6 +46,16 @@ type Recovery =
 
 // All connections in this process can observe claims held by its supervisors.
 const localHolders = new Set<string>()
+
+const sessionEnds = new Set([
+  "max_session_turns",
+  "state_stop_session",
+  "session_stop",
+  "session_fail",
+  "step_error",
+  "fatal_error",
+  "execution_lost",
+])
 
 export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
   const hasPending = (threadId: string) =>
@@ -100,6 +111,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
 
   const release = (threadId: string, status: ThreadStatus) =>
     sql`UPDATE threads SET run_state = ${status.state}, run_reason = ${stored(status.reason ?? null)},
+        session_turns = ${status.reason && sessionEnds.has(status.reason) ? 0 : sql.literal("session_turns")},
         run_since = ${status.since}, holder_id = NULL, flow_id = NULL WHERE id = ${threadId}`
 
   const settleWith = (threadId: string, row: RunRow, event: Parameters<typeof transition>[1], closing: string) =>
@@ -186,6 +198,14 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       sql.withTransaction,
       unyielding,
     ),
+
+    completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string) {
+      const [updated] = yield* sql<{ session_turns: number }>`UPDATE threads SET session_turns = session_turns + 1
+        WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running' RETURNING session_turns`
+      if (updated) return updated.session_turns
+      const row = yield* selectRun(threadId)
+      return yield* new FlowEnded({ threadId, flowId, why: row.terminated_at === null ? "superseded" : "terminated" })
+    }, unyielding),
 
     queueDisposition,
     releaseSender: Effect.fn("RunStore.releaseSender")(
