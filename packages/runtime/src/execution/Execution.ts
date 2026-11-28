@@ -5,8 +5,9 @@ import { RunStore } from "../store/RunStore.ts"
 import { ProviderFailure } from "./call.ts"
 import type { Callback } from "./callback.ts"
 import { CLOSING } from "./run-status.ts"
-import type { ExecutionOptions, prepareSteps, RunOutcome } from "./step.ts"
-import { SetupError, type Side } from "./turn.ts"
+import type { ExecutionOptions, prepareSteps, RunOutcome, SideScope } from "./step.ts"
+import { atRuntimeCap } from "./stop-rules.ts"
+import { type PromptSideValue, SetupError, type Side, type SideValue } from "./turn.ts"
 
 export interface End extends Pick<RunOutcome, "status" | "reason" | "error" | "stopTool"> {
   readonly continueIfQueued?: boolean
@@ -44,6 +45,19 @@ function failure(cause: Cause.Cause<{ readonly message: string }>): End | FlowEn
   return { status: "failed", reason: e instanceof SetupError ? "fatal_error" : "step_error", error }
 }
 
+// A scope is local to this execution and to the resolved side of its agent.
+class TurnController {
+  active: SideValue | undefined
+  pending: Side | undefined
+  readonly scopes = new Map<PromptSideValue, SideScope>()
+
+  takeTarget() {
+    const target = this.pending
+    this.pending = undefined
+    return target
+  }
+}
+
 export class Execution {
   readonly flowId: string
   readonly #abort = new AbortController()
@@ -61,18 +75,25 @@ export class Execution {
   #stop: Side | "user" | undefined
   // True when the stop is only the mark of a cancel. Such a run keeps its own rule for queued work at the cap.
   #stopFromCancel = false
-  #steps = 0
+  readonly turns = new TurnController()
+  readonly #steps = { a: 0, b: 0 }
   #fiber?: Fiber.Fiber<RunOutcome, SqlError | ThreadNotFound>
   #successor: Execution | undefined
 
   constructor(flowId: string) {
     this.flowId = flowId
   }
-  get steps() {
-    return this.#steps
+  get sideASteps() {
+    return this.#steps.a
   }
-  recordStep() {
-    this.#steps++
+  get sideBSteps() {
+    return this.#steps.b
+  }
+  get steps() {
+    return this.sideASteps + this.sideBSteps
+  }
+  recordStep(side: Side) {
+    this.#steps[side]++
   }
   get ended() {
     return this.#phase === "ended"
@@ -180,6 +201,22 @@ export class Execution {
     )
   }
 
+  #proposeEnd(
+    exit: Exit.Exit<End, { readonly message: string }>,
+    interrupted: boolean,
+    notify: NonNullable<ExecutionOptions["onHold"]>,
+  ) {
+    return Effect.gen({ self: this }, function* () {
+      const proposed = Exit.isSuccess(exit) ? exit.value : interrupted ? this.abortEnd : failure(exit.cause)
+      if (proposed instanceof FlowEnded) {
+        this.#abort.abort()
+        return proposed
+      }
+      const notificationError = yield* this.#waitForCallbacks(notify)
+      return notificationError ? failure(notificationError) : proposed
+    })
+  }
+
   #finish(threadId: string, steps: ReturnType<typeof prepareSteps>, onHold?: ExecutionOptions["onHold"]) {
     return Effect.gen({ self: this }, function* () {
       const store = yield* RunStore
@@ -192,23 +229,14 @@ export class Execution {
       while (true) {
         const exit = yield* Effect.exit(Effect.interruptible(advance))
         const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-        let proposed: End | FlowEnded = Exit.isSuccess(exit)
-          ? exit.value
-          : interrupted
-            ? this.abortEnd
-            : failure(exit.cause)
-        if (proposed instanceof FlowEnded) this.#abort.abort()
-        else {
-          const notificationError = yield* this.#waitForCallbacks(notify)
-          if (notificationError) proposed = failure(notificationError)
-        }
+        const proposed = yield* this.#proposeEnd(exit, interrupted, notify)
         const end: End = proposed instanceof FlowEnded ? settledAs[proposed.why] : proposed
         const { settlement, phase } = yield* this.#settle(store, threadId, proposed, stepCap)
         if (settlement === "continue") continue
         const result = settlement === "settled" ? end : settledAs[settlement]
         // A run that ended at the step cap leaves queued work for the next trigger, whatever ended its wait.
         const restart =
-          settlement === "settled" && phase === "holding" && end.status === "idle" && end.reason !== "max_total_steps"
+          settlement === "settled" && phase === "holding" && end.status === "idle" && !atRuntimeCap(end.reason)
         const brief = interrupted || phase === "holding" || phase === "dropping"
         const details = report(result, brief)
         const outcome =
@@ -240,6 +268,7 @@ export class Execution {
       return outcome
     }).pipe(
       Effect.onExit((exit) => {
+        this.turns.scopes.clear()
         remove()
         return Deferred.done(this.#done, exit)
       }),

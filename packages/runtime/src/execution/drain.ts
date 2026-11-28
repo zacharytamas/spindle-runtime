@@ -8,7 +8,7 @@ import { mapStrings } from "./redact.ts"
 import type { SideScope, ThreadScope } from "./step.ts"
 import { callStarted, completeCall, hookCall } from "./tool-lifecycle.ts"
 import { executeTool, failed, type ToolCall } from "./tools.ts"
-import { isFunctionTool, roleOf } from "./turn.ts"
+import { type AgentSides, isFunctionTool, otherSide, roleOf } from "./turn.ts"
 
 // Messages section 4: a queued message is stored with its own perspective and payload. Admission let only attachment
 // references through.
@@ -74,8 +74,16 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
         ? Effect.succeed(failed(call.problem ?? ""))
         : executeTool(toolContext, tool, exposed?.entry, entry.args),
     )
-    return message.id
+    return seq
   })
+
+// The automated peer delivers messages for a human. Until tools carry an explicit
+// owner, the first prompt side takes an unassigned queued tool (design rule 28).
+export function queueRecipient(sides: AgentSides, entry: Queued | undefined) {
+  if (entry?.kind !== "message") return sides.a.kind === "prompt" ? sides.a : sides.b
+  const target = entry.message.role === "user" ? sides.a : sides.b
+  return target.kind === "human" ? sides[otherSide(target.side)] : target
+}
 
 // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
 // leaves the queue in the transaction that stores what it delivers. The result says whether the prompt side got
@@ -83,21 +91,21 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
 export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope) {
   const { record, observe, run, delivery } = thread
   const runStore = yield* RunStore
-  let first: string | undefined
+  let first: number | undefined
   let prompted = false
   let count = 0
   while (!run.stopAtBoundary()) {
     const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
-    if (entry === undefined) break
+    if (entry === undefined || queueRecipient(thread.sides, entry).side !== side.turn.side) break
     count += 1
     if (entry.kind === "tool") {
-      const id = yield* runQueuedTool(side, thread, entry)
-      first ??= id
+      const seq = yield* runQueuedTool(side, thread, entry)
+      first ??= seq
       prompted = true
       continue
     }
-    const { message } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
-    first ??= message.id
+    const { message, seq } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
+    first ??= seq
     yield* record("drain", `message ${message.id}`)
     yield* observe({ type: "message", message })
     if (message.role !== roleOf(side.turn.side)) prompted = true

@@ -33,11 +33,9 @@ import { type HookCall, HookExpired, type HookScope, type HookSet } from "./hook
 import { injectMessage, redactMetadata, updateMessage } from "./messages.ts"
 import { isPlain, mapStrings, redactor } from "./redact.ts"
 import { describe, failed, notRun, QueueRefused, queueTarget, redactAttachment } from "./tools.ts"
-import { type FunctionTool, type Loaded, lookup, type Side } from "./turn.ts"
+import { type FunctionTool, type Loaded, lookup, otherSide } from "./turn.ts"
 
 interface ExecutionRecord {
-  readonly side: Side
-  readonly promptPath: ReadonlyArray<string>
   readonly history: History
   readonly run: Execution
 }
@@ -155,15 +153,17 @@ const executionState = (
 ): ExecutionState => {
   const state: ExecutionState = {
     flowId: record.run.flowId,
-    currentSide: record.side,
+    get currentSide() {
+      return record.run.turns.active?.side ?? "a"
+    },
     get stepCount() {
       return record.run.steps
     },
     get sideAStepCount() {
-      return record.side === "a" ? record.run.steps : 0
+      return record.run.sideASteps
     },
     get sideBStepCount() {
-      return record.side === "b" ? record.run.steps : 0
+      return record.run.sideBSteps
     },
     get stopped() {
       return record.run.stopAtBoundary() !== undefined
@@ -171,23 +171,27 @@ const executionState = (
     get messageHistory() {
       return readHistory()
     },
-    forceTurn: () => {
+    forceTurn: (side) => {
       check()
-      return notYet("execution.forceTurn", "M2")()
+      if (side !== "a" && side !== "b") throw new InvalidArguments({ message: "forceTurn takes the side a or b" })
+      record.run.turns.pending = side
     },
     stop: () => {
       check()
-      record.run.requestStop(record.side)
+      record.run.requestStop(state.currentSide)
     },
     abortSignal: record.run.signal,
-    promptPath: [...record.promptPath],
+    get promptPath() {
+      const active = record.run.turns.active
+      return active?.kind === "prompt" ? [active.prompt.qualifiedName] : []
+    },
   }
   // stoppedBy is absent until a stop, and a stop from outside comes from the side that is not running.
   Object.defineProperty(state, "stoppedBy", {
     enumerable: true,
     get: () => {
       return record.run.stopAtBoundary() !== undefined
-        ? (record.run.stoppedBy ?? (record.side === "a" ? "b" : "a"))
+        ? (record.run.stoppedBy ?? otherSide(state.currentSide))
         : undefined
     },
   })
@@ -546,11 +550,9 @@ export const makeThreadState = (state: StateContext): ThreadState => {
   }
 }
 
-// At rest a caller shares its context with the creation hooks. Each inbound delivery hook gets a fresh context.
+// Delivery and creation hooks inherit the mutable context of their calling scope.
 export function agentHookScope(
-  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner" | "execution"> & {
-    context?: Record<string, unknown>
-  },
+  base: Pick<StateContext, "thread" | "services" | "scope" | "secrets" | "control" | "owner" | "execution" | "context">,
   set: HookSet,
 ): HookScope {
   const hooks: HookScope = {
@@ -559,7 +561,6 @@ export function agentHookScope(
     stateFor: (hook, call) =>
       makeThreadState({
         ...base,
-        context: base.context ?? {},
         from: hook.definition,
         hooks,
         call,
