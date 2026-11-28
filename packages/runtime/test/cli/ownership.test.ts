@@ -21,6 +21,7 @@ import {
 } from "./processes.ts"
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const handlerFixture = ["--dir", new URL("../../../conformance/fixtures/handlers-crash", import.meta.url).pathname]
 
 const call = (name: string, args: Record<string, unknown>) => `call:${JSON.stringify([{ name, arguments: args }])}`
 
@@ -340,6 +341,51 @@ describe("spindle ownership across processes", () => {
         expect(waiting.out).toEqual([])
         yield* run.exit
         expect((yield* stored(db, thread)).messages.map((message) => message[0])).toEqual(["user", "assistant", "tool"])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "rules 20, §3: killing a process during a handler invocation settles execution_lost and never redelivers the lost message",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        yield* touch(at("hold-first"))
+        const run = yield* spindle(gate, ["run", "relay", "-m", "first", ...handlerFixture, "--db", db])
+        const thread = yield* threadIn(run)
+        yield* Effect.raceFirst(
+          until("the handler to start", exists(at("handler-entered-first"))),
+          Effect.flatMap(run.exit, (code) =>
+            Effect.die(new Error(`spindle run exited (${code}) before entering handler: ${run.err.join(" | ")}`)),
+          ),
+        )
+        const queueSecond = yield* spawn(gate, probe, [
+          "queue-message",
+          "--role",
+          "user",
+          "--content",
+          "second",
+          "--thread",
+          thread,
+          ...handlerFixture,
+          "--db",
+          db,
+        ])
+        expect(yield* queueSecond.exit).toBe(0)
+        yield* run.signal("SIGKILL")
+        yield* run.exit
+
+        const afterKill = yield* status(gate, db, thread)
+        expect([afterKill.exit, afterKill.out]).toEqual([
+          0,
+          [expect.stringMatching(/^failed execution_lost since /), "queued 1"],
+        ])
+        const [row] = yield* query(db, "SELECT side_a_delivered_seq FROM threads WHERE id = ?", [thread])
+        expect(Number(row?.side_a_delivered_seq)).toBeGreaterThan(0)
+
+        const after = yield* spindle(gate, ["send", thread, "-m", "third", ...handlerFixture, "--db", db])
+        expect(yield* after.exit).toBe(0)
+        expect(yield* lines(at("handler-log"))).toEqual(["first", "second", "third"])
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )

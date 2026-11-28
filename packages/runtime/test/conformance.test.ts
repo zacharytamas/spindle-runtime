@@ -1,4 +1,5 @@
 import { describe, it, vi } from "vitest"
+import { handlerScenarios } from "../../conformance/src/scenarios/handlers.ts"
 import { hookScenarios } from "../../conformance/src/scenarios/hooks.ts"
 import { integrityScenarios } from "../../conformance/src/scenarios/integrity.ts"
 import { messageScenarios } from "../../conformance/src/scenarios/messages.ts"
@@ -49,4 +50,8 @@ describe("integrity", () => {
 
 describe("sides", () => {
   for (const scenario of sideScenarios) it(scenario.name, () => scenario.run(spindleDriver))
+})
+
+describe("handlers", () => {
+  for (const scenario of handlerScenarios) it(scenario.name, () => scenario.run(spindleDriver))
 })

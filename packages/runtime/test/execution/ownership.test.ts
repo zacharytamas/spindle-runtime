@@ -4,6 +4,7 @@ import { Effect, Exit, Fiber, Latch, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
+import { handlerOf, handlerProject } from "../../../conformance/src/scenarios/handlers/fixtures.ts"
 import { gate, ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
 import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { CLOSING } from "../../src/execution/run-status.ts"
@@ -293,4 +294,182 @@ describe("crash between turns and mid-step on side B (rules 12, §3)", () => {
         )
       }),
   )
+})
+
+describe("handler crash recovery and callback lifetimes (rules 12, 20, 21, §3)", () => {
+  const cursorsOf = (threadId: string) =>
+    SqlClient.use((sql) =>
+      Effect.map(
+        sql<{ side_a_delivered_seq: number; side_b_delivered_seq: number; session_turns: number }>`
+          SELECT side_a_delivered_seq, side_b_delivered_seq, session_turns FROM threads WHERE id = ${threadId}`,
+        (rows) => rows[0],
+      ),
+    )
+
+  const awaitLatchOrExit = <A, E>(latch: Latch.Latch, fiber: Fiber.Fiber<A, E>, label: string) =>
+    Effect.raceFirst(
+      latch.await,
+      Effect.flatMap(Fiber.await(fiber), (exit) =>
+        Exit.isFailure(exit) ? Effect.failCause(exit.cause) : Effect.die(`execution settled before ${label}`),
+      ),
+    )
+
+  it.effect(
+    "rules 12, 20, §3: crash after handler dequeue and cursor advance settles execution_lost, resets session_turns, keeps pending queue, and never redelivers",
+    () =>
+      Effect.gen(function* () {
+        const entered = Latch.makeUnsafe()
+        const release = gate()
+        const delivered: Array<string | null> = []
+        const gated = handlerOf(async (_state, message) => {
+          delivered.push(message.content)
+          if (message.content === "lost-turn") {
+            entered.openUnsafe()
+            await release.opened
+          }
+        })
+        const setup = handlerProject({
+          sideA: { handler: "gated" },
+          sideB: { human: true },
+          handlers: { gated },
+          agent: { maxSessionTurns: 4 },
+        })
+        yield* Effect.gen(function* () {
+          const { id } = yield* createThread("relay")
+          const runs = yield* RunStore
+          const messages = yield* MessageStore
+          const sql = yield* SqlClient
+          // Complete turn 1 so session_turns = 1 before the crash.
+          expect((yield* sendMessage(id, "turn-1")).outcome).toMatchObject({ status: "idle", reason: "handler_idle" })
+          expect((yield* cursorsOf(id))?.session_turns).toBe(1)
+
+          // Start turn 2 and crash while handler is executing after dequeue + cursor advance.
+          const running = yield* Effect.forkChild(sendMessage(id, "lost-turn"))
+          yield* awaitLatchOrExit(entered, running, "entering gated handler")
+          // Queue a third message while held; its dequeue has not run.
+          yield* runs.admit(
+            id,
+            { kind: "message", message: { role: "user", content: "still-queued" } },
+            { holder: "other", flowId: "other" },
+            external,
+          )
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-handler', 2147483647)`
+          yield* sql`UPDATE threads SET holder_id = 'dead-handler' WHERE id = ${id}`
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+
+          const stored = (yield* messages.getMessages(id, { order: "asc", includeSilent: true })).messages
+          expect(stored.map((m) => m.content)).toEqual(["turn-1", "lost-turn"])
+          expect(yield* runs.queueLength(id)).toBe(1)
+          const afterCrash = yield* cursorsOf(id)
+          expect(afterCrash?.session_turns).toBe(0)
+          expect(afterCrash?.side_a_delivered_seq).toBeGreaterThan(0)
+
+          release.release()
+          yield* Fiber.join(running)
+
+          // Next trigger delivers "still-queued" and "after-crash", NEVER redelivering "lost-turn".
+          expect((yield* sendMessage(id, "after-crash")).outcome).toMatchObject({
+            status: "idle",
+            reason: "handler_idle",
+          })
+          expect(delivered).toEqual(["turn-1", "lost-turn", "still-queued", "after-crash"])
+        }).pipe(
+          Effect.ensuring(Effect.sync(release.release)),
+          Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
+        )
+      }),
+  )
+
+  it.effect(
+    "rules 20, §3: crash before handler dequeue leaves the queue entry pending and delivered_seq at 0 so the next trigger delivers it once",
+    () =>
+      Effect.gen(function* () {
+        const delivered: Array<string | null> = []
+        const record = handlerOf(async (_state, message) => {
+          delivered.push(message.content)
+        })
+        const setup = handlerProject({
+          sideA: { handler: "record" },
+          sideB: { human: true },
+          handlers: { record },
+        })
+        yield* Effect.gen(function* () {
+          const { id } = yield* createThread("relay")
+          const runs = yield* RunStore
+          const sql = yield* SqlClient
+          // Simulate a process that admitted a message and claimed the thread, then died BEFORE dequeue ran.
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-pre-dequeue', 2147483647)`
+          const admitted = yield* runs.admit(
+            id,
+            { kind: "message", message: { role: "user", content: "pre-dequeue" } },
+            { holder: "dead-pre-dequeue", flowId: "lost-before-dequeue" },
+            external,
+          )
+          expect(admitted.claimed).toBe(true)
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect(yield* runs.queueLength(id)).toBe(1)
+          expect(yield* cursorsOf(id)).toEqual({
+            side_a_delivered_seq: 0,
+            side_b_delivered_seq: 0,
+            session_turns: 0,
+          })
+
+          // Next trigger delivers "pre-dequeue" once, then "next" once.
+          expect((yield* sendMessage(id, "next")).outcome).toMatchObject({ status: "idle", reason: "handler_idle" })
+          expect(delivered).toEqual(["pre-dequeue", "next"])
+        }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
+      }),
+  )
+
+  for (const mode of ["control poll", "local replacement", "local termination", "supervisor close"] as const)
+    it.effect(`§3: releases a blocked handler callback on ${mode} before it returns`, () => {
+      const entered = Latch.makeUnsafe()
+      const leave = gate()
+      const wait_handler = handlerOf(async () => {
+        entered.openUnsafe()
+        await leave.opened
+      })
+      const setup = handlerProject({
+        sideA: { handler: "wait_handler" },
+        sideB: { human: true },
+        handlers: { wait_handler },
+      })
+      const registry = registryOf(setup)
+      return Effect.gen(function* () {
+        const scope = yield* Scope.make()
+        const service = yield* Layer.buildWithScope(supervisorLayer(), scope)
+        yield* Effect.gen(function* () {
+          const supervisor = yield* ThreadSupervisor
+          const runs = yield* RunStore
+          const { id } = yield* createThread("relay")
+          const sent = yield* Effect.forkChild(supervisor.send(id, "go"))
+          yield* awaitLatchOrExit(entered, sent, "entering wait_handler")
+          if (mode === "control poll" || mode === "local replacement") {
+            yield* runs.recoverThread(id, true)
+            if (mode === "control poll") yield* TestClock.adjust("250 millis")
+            else expect((yield* supervisor.send(id, "go again")).outcome?.reason).toBe("handler_idle")
+          } else {
+            const settlement = yield* supervisor.abort(id)
+            yield* TestClock.adjust("1 millis")
+            expect(settlement?.isDone()).toBe(false)
+            if (mode === "local termination") yield* Effect.forkChild(supervisor.control(id).terminate(external))
+            else yield* Effect.forkChild(Scope.close(scope, Exit.void))
+          }
+          yield* TestClock.adjust("1 millis")
+          expect(sent.pollUnsafe(), "the sender settled while the handler was still blocked").toBeDefined()
+          const delivery = yield* Fiber.join(sent)
+          expect(delivery.outcome?.reason).toBe(
+            mode === "supervisor close"
+              ? "aborted_by_user"
+              : mode === "local termination"
+                ? "aborted"
+                : "execution_lost",
+          )
+        }).pipe(
+          Effect.provideContext(service),
+          Effect.ensuring(Effect.sync(leave.release)),
+          Effect.ensuring(Scope.close(scope, Exit.void)),
+        )
+      }).pipe(Effect.provide(Layer.merge(registry, inMemory)))
+    })
 })

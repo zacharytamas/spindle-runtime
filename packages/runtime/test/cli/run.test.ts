@@ -552,4 +552,35 @@ describe("spindle run", () => {
       expect(yield* checkQueue).toBe(1)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
+
+  it.effect("rules 19, 22, 26, decision 5: runs handler x human and handler x handler agents through spindle run", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "spindle-handlers-" })
+      const relayDb = path.join(dir, "relay.db")
+      const okRun = yield* run(["relay", "-m", "reply", "--db", relayDb], {}, "handlers-crash")
+      expect(Exit.isSuccess(okRun.exit), okRun.err.join(" | ")).toBe(true)
+      expect(okRun.out).toEqual(["handler-replied"])
+      expect(okRun.err.at(-1)).toMatch(/^spindle: idle \(handler_idle\) after 0 steps, thread /)
+
+      const failRun = yield* run(["relay", "-m", "throw", "--db", path.join(dir, "fail.db")], {}, "handlers-crash")
+      expect(Exit.isFailure(failRun.exit)).toBe(true)
+      expect(failRun.err.some((line) => /^spindle: failed \(handler_error\) after 0 steps, thread /.test(line))).toBe(
+        true,
+      )
+
+      const pairDb = path.join(dir, "pair.db")
+      const pairRun = yield* run(["ping_pong", "-m", "go", "--db", pairDb], {}, "handlers-crash")
+      expect(Exit.isSuccess(pairRun.exit)).toBe(true)
+      expect(pairRun.err.at(-1)).toMatch(/^spindle: idle \(max_session_turns\) after 0 steps, thread /)
+      const stored = yield* storedMessages(pairDb, pairRun.err)
+      expect(stored.map((m) => [m.role, m.content])).toEqual([
+        ["user", "go"],
+        ["assistant", "a:go"],
+        ["user", "b:a:go"],
+        ["assistant", "a:b:a:go"],
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
 })

@@ -8691,5 +8691,75 @@
 		"rfc2119": false,
 		"curated": true,
 		"text": "Two models converse; each side sees itself as `assistant` and the other as `user`."
+	},
+	{
+		"id": "specification:threads/execution-state:16911055",
+		"page": "specification:threads/execution-state",
+		"line": 55,
+		"section": "2.3 Handler turns",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "During a [handler](/0.2.0/specification/handlers)-backed side's turn, `execution` is present and `currentSide` reflects that side, but no LLM request/response cycles occur: `stepCount` and the per-side step counts advance only with model steps, so a handler turn contributes zero steps."
+	},
+	{
+		"id": "specification:handlers:ec8cd3e4",
+		"page": "specification:handlers",
+		"line": 28,
+		"section": "1. Handler Definition",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The `message` parameter is the full persisted [`Message`](/0.2.0/specification/threads/messages#1-message-structure) — id, role, content, silent flag, metadata, timestamps. It is not a narrowed view: handlers are trusted definition code, like tools."
+	},
+	{
+		"id": "specification:handlers:409ce981",
+		"page": "specification:handlers",
+		"line": 52,
+		"section": "3. Execution Model",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "There are no steps, no tool-choice loop, and no model requests for this side."
+	},
+	{
+		"id": "specification:handlers:0d6ca25b",
+		"page": "specification:handlers",
+		"line": 74,
+		"section": "5. Error Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The inbound message stays persisted. Nothing is rolled back."
+	},
+	{
+		"id": "specification:handlers:15c20fb2",
+		"page": "specification:handlers",
+		"line": 75,
+		"section": "5. Error Semantics",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "The session continues: the failure does not end the session, terminate the thread, or poison the queue. The next inbound message gets a fresh handler invocation."
+	},
+	{
+		"id": "specification:handlers:295e5c90",
+		"page": "specification:handlers",
+		"line": 81,
+		"section": "6. Capabilities",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "A handler receives the full [`ThreadState`](/0.2.0/specification/threads) and may do anything tools can do:"
+	},
+	{
+		"id": "infrastructure:runtime:2178d58c",
+		"page": "infrastructure:runtime",
+		"line": 52,
+		"section": "3. Step Cycle",
+		"level": "MUST",
+		"rfc2119": false,
+		"curated": true,
+		"text": "For a handler-backed side, a turn is a single handler invocation — no context assembly, no model call, no step loop — with exactly-once, in-order delivery per thread."
 	}
 ]
