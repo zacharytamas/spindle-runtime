@@ -1654,5 +1654,17 @@
     "section": "11.1 Thread Lifecycle",
     "level": "MUST",
     "text": "**Resumption**: New execution on next message"
+  },
+  {
+    "page": "specification:threads/execution-state",
+    "section": "Execution State",
+    "level": "MUST",
+    "text": "Execution state carries step counts, the active dual-side, cancellation, and controls for stopping or forcing turns."
+  },
+  {
+    "page": "specification:agents",
+    "section": "9.2 Worker / Reviewer (prompt × prompt)",
+    "level": "MUST",
+    "text": "Two models converse; each side sees itself as `assistant` and the other as `user`."
   }
 ]

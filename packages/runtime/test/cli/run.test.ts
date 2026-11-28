@@ -7,7 +7,12 @@ import { spindle } from "../../src/cli/main.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
 
-const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
+const invoke = (
+  subcommand: "run" | "send",
+  args: ReadonlyArray<string>,
+  env: Record<string, string> = {},
+  fixture = "step-loop",
+) =>
   Effect.gen(function* () {
     const path = yield* Path.Path
     const project = yield* path.fromFileUrl(new URL(`../../../conformance/fixtures/${fixture}`, import.meta.url))
@@ -19,13 +24,16 @@ const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixt
       error: (...parts: ReadonlyArray<unknown>) => err.push(parts.join(" ")),
     }
     const argv = args.map((arg) => (arg.startsWith("@") ? path.join(project, "scripts", arg.slice(1)) : arg))
-    const exit = yield* Command.runWith(spindle, { version: "test" })(["run", "--dir", project, ...argv]).pipe(
+    const exit = yield* Command.runWith(spindle, { version: "test" })([subcommand, "--dir", project, ...argv]).pipe(
       Effect.provideService(Console.Console, capture),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
       Effect.exit,
     )
     return { exit, out, err }
   }).pipe(Effect.provide(PlatformLive))
+
+const run = (args: ReadonlyArray<string>, env: Record<string, string> = {}, fixture = "step-loop") =>
+  invoke("run", args, env, fixture)
 
 const storedMessages = (filename: string, err: ReadonlyArray<string>) =>
   Effect.gen(function* () {
@@ -444,5 +452,42 @@ describe("spindle run", () => {
       expect(err.at(-1)).toBe("spindle: The endpoint answered 401: Rejected Bearer [redacted] and [redacted]")
       expect([...out, ...err].join("\n")).not.toContain(key)
     }),
+  )
+
+  it.effect(
+    "rules 9, 10, 12: keeps session_turns durable across spindle run and spindle send and resets for a new session",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-sides-" }), "sides.db")
+        const first = yield* run(["capped", "-m", "m1", "--script", "@reply.json", "--db", db], {}, "sides")
+        expect(Exit.isSuccess(first.exit)).toBe(true)
+        expect(first.err.at(-1)).toMatch(/^spindle: idle \(stop_on_response\) after 1 step, thread /)
+        const threadId = first.err.join("\n").match(/thread ([0-9a-f-]{36})/)?.[1] ?? ""
+        const second = yield* invoke("send", [threadId, "-m", "m2", "--script", "@reply.json", "--db", db], {}, "sides")
+        expect(Exit.isSuccess(second.exit)).toBe(true)
+        expect(second.err.at(-1)).toMatch(/^spindle: idle \(max_session_turns\) after 1 step, thread /)
+        const third = yield* invoke("send", [threadId, "-m", "m3", "--script", "@reply.json", "--db", db], {}, "sides")
+        expect(Exit.isSuccess(third.exit)).toBe(true)
+        expect(third.err.at(-1)).toMatch(/^spindle: idle \(stop_on_response\) after 1 step, thread /)
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.effect("rules 1, 10, 32: runs a prompt x prompt agent through spindle run until max_session_turns", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-sides-" }), "pair.db")
+      const result = yield* run(["pair", "-m", "start", "--script", "@pair.json", "--db", db], {}, "sides")
+      expect(Exit.isSuccess(result.exit)).toBe(true)
+      expect(result.err.at(-1)).toMatch(/^spindle: idle \(max_session_turns\) after 2 steps, thread /)
+      const messages = yield* storedMessages(db, result.err)
+      expect(messages.map((m) => [m.role, m.content, m.prompt])).toEqual([
+        ["user", "start", null],
+        ["assistant", "from A", "worker"],
+        ["user", "from B", "reviewer"],
+      ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 })

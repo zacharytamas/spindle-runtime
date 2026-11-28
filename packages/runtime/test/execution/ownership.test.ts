@@ -1,12 +1,15 @@
-import { expect, it } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { defineTool } from "@standardagents/spec"
-import { Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Effect, Exit, Fiber, Latch, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { gate, ok, project, using } from "../../../conformance/src/scenarios/harness.ts"
+import { gate, ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
+import { CLOSING } from "../../src/execution/run-status.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
-import { createThread } from "../../src/execution/trigger.ts"
+import { createThread, sendMessage } from "../../src/execution/trigger.ts"
+import { MessageStore } from "../../src/store/MessageStore.ts"
 import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
 import { registryOf, spindleDriver } from "../spindle-driver.ts"
@@ -151,5 +154,143 @@ it("preserves the result prompt when termination closes a queued call", async ()
         leave.release()
       }
     },
+  )
+})
+
+describe("crash between turns and mid-step on side B (rules 12, §3)", () => {
+  const sessionTurnsOf = (threadId: string) =>
+    SqlClient.use((sql) =>
+      Effect.map(
+        sql<{ session_turns: number }>`SELECT session_turns FROM threads WHERE id = ${threadId}`,
+        (rows) => rows[0]?.session_turns,
+      ),
+    )
+
+  const awaitLatchOrExit = <A, E>(latch: Latch.Latch, fiber: Fiber.Fiber<A, E>, label: string) =>
+    Effect.raceFirst(
+      latch.await,
+      Effect.flatMap(Fiber.await(fiber), (exit) =>
+        Exit.isFailure(exit) ? Effect.failCause(exit.cause) : Effect.die(`execution settled before ${label}`),
+      ),
+    )
+
+  it.effect(
+    "rules 12, §3: dead holder recovery between side A and side B settles execution_lost with zero open calls, preserves queue, and resets session_turns",
+    () =>
+      Effect.gen(function* () {
+        const enteredB = Latch.makeUnsafe()
+        const releaseB = gate()
+        const providerA = new ScriptedProvider([{ text: "A1" }])
+        const providerB = new ScriptedProvider([
+          async () => {
+            enteredB.openUnsafe()
+            await releaseB.opened
+            return { text: "never stored" }
+          },
+        ])
+        const setup = dualProject({ providerA, providerB, agent: { maxSessionTurns: 3 } })
+        yield* Effect.gen(function* () {
+          const { id } = yield* createThread("pair")
+          const runs = yield* RunStore
+          const messages = yield* MessageStore
+          const sql = yield* SqlClient
+          const running = yield* Effect.forkChild(sendMessage(id, "start"))
+          yield* awaitLatchOrExit(enteredB, running, "entering side B")
+          // Side A completed turn 1 before side B started, so session_turns is 1.
+          expect(yield* sessionTurnsOf(id)).toBe(1)
+          // Queue a message while held, then simulate holder death (dead pid) and recover.
+          yield* runs.admit(
+            id,
+            { kind: "message", message: { role: "user", content: "still queued" } },
+            { holder: "other", flowId: "other" },
+            external,
+          )
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-between', 2147483647)`
+          yield* sql`UPDATE threads SET holder_id = 'dead-between' WHERE id = ${id}`
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect(yield* sessionTurnsOf(id)).toBe(0)
+          expect(yield* runs.queueLength(id)).toBe(1)
+          const stored = (yield* messages.getMessages(id, { order: "asc", includeSilent: true })).messages
+          expect(stored.map((m) => [m.role, m.content])).toEqual([
+            ["user", "start"],
+            ["assistant", "A1"],
+          ])
+          releaseB.release()
+          yield* Fiber.join(running)
+        }).pipe(
+          Effect.ensuring(Effect.sync(releaseB.release)),
+          Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
+        )
+      }),
+  )
+
+  it.effect(
+    "rules 12, §3: dead holder recovery mid-step on side B closes side B's open calls with CLOSING.lost and resets session_turns",
+    () =>
+      Effect.gen(function* () {
+        const enteredOpen = Latch.makeUnsafe()
+        const releaseOpen = gate()
+        const tools = {
+          b_done: stubTool("Done", "finished"),
+          b_open: defineTool({
+            description: "Hangs until dead-holder recovery",
+            execute: async () => {
+              enteredOpen.openUnsafe()
+              await releaseOpen.opened
+              return ok("late")
+            },
+          }),
+        }
+        const providerA = new ScriptedProvider([{ text: "A1" }])
+        const providerB = new ScriptedProvider([
+          {
+            toolCalls: [
+              { id: "b1", name: "b_done", arguments: {} },
+              { id: "b2", name: "b_open", arguments: {} },
+            ],
+          },
+        ])
+        const setup = dualProject({
+          providerA,
+          providerB,
+          tools,
+          promptA: { tools: [] },
+          promptB: { tools: ["b_done", "b_open"] },
+          agent: { maxSessionTurns: 3 },
+        })
+        yield* Effect.gen(function* () {
+          const { id } = yield* createThread("pair")
+          const runs = yield* RunStore
+          const messages = yield* MessageStore
+          const sql = yield* SqlClient
+          const running = yield* Effect.forkChild(sendMessage(id, "start"))
+          yield* awaitLatchOrExit(enteredOpen, running, "entering b_open")
+          expect(yield* sessionTurnsOf(id)).toBe(1)
+          yield* sql`INSERT INTO holders (id, pid) VALUES ('dead-side-b', 2147483647)`
+          yield* sql`UPDATE threads SET holder_id = 'dead-side-b' WHERE id = ${id}`
+          expect(yield* runs.recoverLost(id)).toEqual([id])
+          expect(yield* sessionTurnsOf(id)).toBe(0)
+          const history = yield* messages.history(id)
+          const bCaller = history.rows.find((row) => row.message.role === "user" && row.message.content === null)
+          const results = history.rows.filter((row) => row.message.role === "tool")
+          expect(
+            results.map((r) => [
+              r.message.tool_call_id,
+              r.message.tool_status,
+              r.message.prompt,
+              r.message.content,
+              r.callerSeq,
+            ]),
+          ).toEqual([
+            ["b1", "success", "reviewer", "finished", bCaller?.seq],
+            ["b2", "error", "reviewer", CLOSING.lost, bCaller?.seq],
+          ])
+          releaseOpen.release()
+          yield* Fiber.join(running)
+        }).pipe(
+          Effect.ensuring(Effect.sync(releaseOpen.release)),
+          Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
+        )
+      }),
   )
 })

@@ -1,12 +1,19 @@
 import { describe, expect, it } from "@effect/vitest"
-import { defineTool, type ExecutionState, type SkillsNamespace, type ThreadState } from "@standardagents/spec"
+import {
+  defineHook,
+  defineTool,
+  type ExecutionState,
+  type SkillsNamespace,
+  type ThreadState,
+} from "@standardagents/spec"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { expectTypeOf } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
-import { createThread, stateAtRest } from "../../src/execution/trigger.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf, spindleDriver } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
 
@@ -522,4 +529,84 @@ describe("ThreadState", () => {
       },
     )
   })
+
+  it.effect(
+    "rules 6, 7: state.context is shared across delivery hooks, prompt hooks, and tools without leaking into thread arguments",
+    () => {
+      const seen: Array<unknown> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "ctx_delivery",
+          execute: async (state, message) => {
+            if (message.role === "user") {
+              state.context.shirt_size = "XL"
+              state.context.fromDelivery = "yes"
+              seen.push(["delivery", state.arguments, { ...state.context }])
+            }
+            return message
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "ctx_prompt",
+          execute: async (state, messages) => {
+            if (state.execution?.stepCount === 0) {
+              state.context.fromPrompt = "yes"
+              seen.push(["prompt", state.arguments, { ...state.context }])
+            }
+            return messages
+          },
+        }),
+      ]
+      const inspect_ctx = defineTool({
+        description: "Inspect context and arguments",
+        execute: async (state: ThreadState) => {
+          state.context.fromTool = "yes"
+          seen.push(["tool", state.arguments, { ...state.context }])
+          return ok("done")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "inspect_ctx", arguments: {} }] },
+        { text: "run 1 done" },
+        { text: "run 2 done" },
+      ])
+      return Effect.gen(function* () {
+        const threads = yield* ThreadStore
+        const sql = yield* SqlClient
+        const thread = yield* threads.createThread({ agentId: "assistant", arguments: { shirt_size: "L" } })
+        yield* sendMessage(thread.id, "first")
+        const rest = yield* stateAtRest(thread.id)
+        expect(rest.arguments).toEqual({ shirt_size: "L" })
+        expect(rest.context).toEqual({})
+        expect(yield* sql<{ arguments: string }>`SELECT arguments FROM threads WHERE id = ${thread.id}`).toEqual([
+          { arguments: '{"shirt_size":"L"}' },
+        ])
+        yield* sendMessage(thread.id, "second")
+        expect(seen).toEqual([
+          ["delivery", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes" }],
+          ["prompt", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes" }],
+          ["tool", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes", fromTool: "yes" }],
+          ["delivery", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes" }],
+          ["prompt", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes" }],
+        ])
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            registryOf(
+              project({
+                provider,
+                tools: { inspect_ctx },
+                hooks,
+                agent: { hooks: ["ctx_delivery"] },
+                prompt: { hooks: ["ctx_prompt"] },
+              }),
+            ),
+            Layer.provideMerge(supervisorLayer(), inMemory),
+          ),
+        ),
+      )
+    },
+  )
 })

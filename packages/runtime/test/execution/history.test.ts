@@ -1,10 +1,21 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
 import { Effect, Fiber, Layer } from "effect"
+import * as Statement from "effect/sql/Statement"
+import { expectTypeOf } from "vitest"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import {
+  history as historyOf,
+  ok,
+  project,
+  type Setup,
+  sideOf,
+  stubTool,
+} from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
+import type { HistoryView } from "../../src/execution/assemble.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
@@ -382,4 +393,146 @@ it.effect("runs the committed claim when its sender is interrupted before execut
     expect((yield* sendMessage(thread.id, "two")).outcome?.status).toBe("idle")
     expect(provider.requests).toHaveLength(2)
   }).pipe(Effect.provide(Layer.merge(registryOf(project({ provider })), Layer.provideMerge(supervisorLayer(), store))))
+})
+
+describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
+  it.effect(
+    "§5.2: HistoryView uses turnStartSeq to exclude past turns across side switches while keeping current-turn injections and synthetic filter_messages rows",
+    () =>
+      Effect.gen(function* () {
+        expectTypeOf<HistoryView["turnStartSeq"]>().toEqualTypeOf<number>()
+        const injectTool = defineTool({
+          description: "Inject a note mid-turn",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "mid-turn note" })
+            return ok("injected")
+          },
+        })
+        const addSynthetic = defineHook({
+          hook: "filter_messages",
+          id: "add_synthetic",
+          execute: async (_state, messages) => [
+            ...messages,
+            { id: "synthetic-1", role: "assistant", content: "synthetic for B", created_at: 0 },
+          ],
+        })
+        const providerA = new ScriptedProvider([
+          { toolCalls: [{ id: "ca1", name: "inject_tool", arguments: {} }] },
+          { text: "A1" },
+          { text: "A2" },
+        ])
+        const providerB = new ScriptedProvider([{ text: "B1" }])
+        const setup = dualProject({
+          providerA,
+          providerB,
+          tools: { inject_tool: injectTool },
+          hooks: [addSynthetic],
+          promptA: { includeChat: false, includePastTools: false, tools: ["inject_tool"] },
+          promptB: { includeChat: false, includePastTools: false, hooks: ["add_synthetic"], tools: [] },
+          agent: { maxSessionTurns: 3 },
+        })
+        yield* Effect.gen(function* () {
+          const thread = yield* createThread("pair")
+          yield* appendMessages(thread.id, [
+            { role: "user", content: "old user" },
+            { role: "assistant", content: "old assistant" },
+          ])
+          const { outcome } = yield* sendMessage(thread.id, "fresh start")
+          expect(outcome).toMatchObject({ status: "idle", reason: "max_session_turns", steps: 4 })
+        }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+        // Side A step 1: old history (< turnStartSeq) excluded.
+        expect(historyOf(providerA.requests[0]).map(sideOf)).toEqual([["user", "fresh start"]])
+        // Side A step 2: mid-turn injection did not advance turnStartSeq past "fresh start".
+        expect(historyOf(providerA.requests[1]).map(sideOf)).toEqual([
+          ["user", "fresh start"],
+          ["assistant", null, ["ca1"]],
+          ["tool", "ca1"],
+          ["user", "mid-turn note"],
+        ])
+        // Side B turn 2: past history (< turnStartSeq) excluded; A1 and synthetic message (no seq) kept.
+        expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+          ["user", "A1"],
+          ["user", "synthetic for B"],
+        ])
+        // Side A turn 3: past history (< turnStartSeq) excluded; only B1 is in the current turn.
+        expect(historyOf(providerA.requests[2]).map(sideOf)).toEqual([["user", "B1"]])
+      }),
+  )
+
+  it.effect(
+    "§5.1, §5.2, §5.4, §5.6: a prompt x prompt exchange on a 1,000-message thread issues the same SQL statements and history reads as on a 10-message thread",
+    () =>
+      Effect.gen(function* () {
+        const measure = (seedCount: number) =>
+          Effect.gen(function* () {
+            const reads = { count: 0 }
+            let totalSql = 0
+            let stepSql = 0
+            const perStepSql: Array<number> = []
+            const observeSql: Statement.Transformer = (statement) => {
+              totalSql += 1
+              stepSql += 1
+              return Effect.succeed(statement)
+            }
+            const tickStep =
+              (response: {
+                readonly text?: string
+                readonly toolCalls?: ReadonlyArray<{
+                  readonly id: string
+                  readonly name: string
+                  readonly arguments: Record<string, unknown>
+                }>
+              }) =>
+              () => {
+                perStepSql.push(stepSql)
+                stepSql = 0
+                return response
+              }
+            const providerA = new ScriptedProvider([
+              tickStep({ toolCalls: [{ id: "ca1", name: "work", arguments: {} }] }),
+              tickStep({ text: "A done" }),
+            ])
+            const providerB = new ScriptedProvider([
+              tickStep({ toolCalls: [{ id: "cb1", name: "check", arguments: {} }] }),
+              tickStep({ text: "B done" }),
+            ])
+            const setup = dualProject({
+              providerA,
+              providerB,
+              tools: { work: stubTool("Work", "worked"), check: stubTool("Check", "checked") },
+              promptA: { includeChat: false, includePastTools: false, tools: ["work"] },
+              promptB: { includeChat: false, includePastTools: false, tools: ["check"] },
+              agent: { maxSessionTurns: 2 },
+            })
+            const outcome = yield* Effect.gen(function* () {
+              const thread = yield* createThread("pair")
+              yield* appendMessages(
+                thread.id,
+                Array.from({ length: seedCount }, (_, index) => ({
+                  role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+                  content: `seeded ${index}`,
+                })),
+              )
+              const { outcome } = yield* sendMessage(thread.id, "go").pipe(
+                Effect.provideService(Statement.CurrentTransformer, observeSql),
+              )
+              perStepSql.push(stepSql)
+              return outcome
+            }).pipe(
+              Effect.provide(
+                Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), countingStore(reads))),
+              ),
+            )
+            expect(outcome).toMatchObject({ status: "idle", reason: "max_session_turns", steps: 4 })
+            return { totalSql, perStepSql, historyReads: reads.count }
+          })
+
+        const short = yield* measure(10)
+        const long = yield* measure(1000)
+        expect(short.totalSql).toBeGreaterThan(0)
+        expect(long.totalSql).toBe(short.totalSql)
+        expect(long.perStepSql).toEqual(short.perStepSql)
+        expect([short.historyReads, long.historyReads]).toEqual([1, 1])
+      }),
+  )
 })
