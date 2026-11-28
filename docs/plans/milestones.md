@@ -153,7 +153,14 @@ Each has a recommendation. None is decided.
 - The client API comes before code execution.
 - At most three pull requests are open at a time.
 
+### Design questions 1 to 4 and 6, decided on 2026-11-27
+
+- Question 1. A typed thread value is secret unless its definition says otherwise, which is the spec default. `docs/design/secrets.md` sets the minimum redaction length that goes with it.
+- Questions 2 and 4. Every request to a model gets one final check after all hooks, in every role. It runs once at the end of assembly. It redacts secrets in every role, removing the milestone 1 limit where a request hook could put a secret into a message of a role other than system. It refuses a request in which a prefilter hook left an incomplete group of tool calls and results.
+- Question 3. A create hook may not change `parent_id` or `depth` when a nested prompt starts. They are runtime-owned facts like `flow_id` and `caller_seq`.
+- Question 6. One operation and everything its hooks start share a time budget only. A nested hook or tool inherits its parent's deadline. Writes have no budget.
+
 ## Decisions the operator owes
 
-- The six design questions above. Questions 1 to 4 and 6 block M2b, and question 5 blocks M4.
+- Design question 5 above, which blocks M4.
 - Whether the official client may be used to test M5, once its license is checked against the clean-room rule.
