@@ -150,10 +150,14 @@ export const HD11: Scenario = {
           "parked-at-cap",
         ])
 
-        // Thread remains open and accepts a later run.
+        // The first run takes "parked-at-cap". The waiting sender reclaims for "again" (rules 63–65).
         const resumed = await sendWith(session, thread, "again", { turnCap: 2 })
         expect(resumed).toMatchObject({ status: "idle", reason: "max_total_turns", steps: 0 })
-        expect(turnsA + turnsB).toBe(7)
+        expect(turnsA + turnsB).toBe(9)
+        expect(resumed.handlerCalls).toHaveLength(2)
+        const messages = await session.messages(thread)
+        expect(resumed.handlerCalls?.[0]?.messageId).toBe(messages.find((m) => m.content === "again")?.id)
+        expect((await session.inspect(thread)).queue).toEqual([])
       },
     )
   },
