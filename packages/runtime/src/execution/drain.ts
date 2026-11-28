@@ -80,7 +80,7 @@ export const runQueuedTool = (side: ToolScope, thread: ThreadScope, entry: Queue
 
 // A tool queued at rest belongs to the first prompt side, or the first handler if there is no prompt.
 export function queueRecipient(sides: AgentSides, entry: Queued | undefined) {
-  if (entry?.kind === "tool" && entry.side) return sides[entry.side]
+  if (entry?.kind === "tool" && entry.side && sides[entry.side].kind !== "human") return sides[entry.side]
   if (entry?.kind !== "message") {
     if (sides.a.kind === "prompt") return sides.a
     return sides.b.kind === "prompt" || sides.a.kind === "human" ? sides.b : sides.a
@@ -115,7 +115,8 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
   let prompted = false
   while (!run.stopAtBoundary()) {
     const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
-    if (entry === undefined || queueRecipient(thread.sides, entry).side !== side.turn.side) break
+    if (entry === undefined || entry.kind === "agent" || queueRecipient(thread.sides, entry).side !== side.turn.side)
+      break
     drained = true
     if (entry.kind === "tool") {
       yield* runQueuedTool(side, thread, entry)

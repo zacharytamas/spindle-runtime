@@ -110,8 +110,8 @@ export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
 const hasBacking = (side: AgentDefinition["sideA"] | undefined) =>
   side && (side.human === true || typeof side.prompt === "string" || typeof side.handler === "string")
 
-export const loadAgent = Effect.fn("loadAgent")(function* (agentName: string) {
-  const agent = yield* lookup("agent", agentName, undefined)
+export const loadAgent = Effect.fn("loadAgent")(function* (agentName: string, from?: Definition) {
+  const agent = yield* lookup("agent", agentName, from)
   if (agent === undefined) return yield* new SetupError({ message: `No agent named ${agentName} is defined` })
   for (const side of [agent.value.sideA, agent.value.sideB]) {
     if (!hasBacking(side))

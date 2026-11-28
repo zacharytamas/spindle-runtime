@@ -11,6 +11,7 @@ import resultPrompt from "./migrations/0005_result_prompt.ts"
 import waitingSenders from "./migrations/0006_waiting_senders.ts"
 import sessionTurns from "./migrations/0007_session_turns.ts"
 import handlerDelivery from "./migrations/0008_handler_delivery.ts"
+import queueAgent from "./migrations/0009_queue_agent.ts"
 import { makeRunStore, RunStore } from "./RunStore.ts"
 import { makeThreadStore, ThreadStore } from "./ThreadStore.ts"
 
@@ -24,6 +25,7 @@ const migrate = Migrator.make({})({
     "0006_waiting_senders": waitingSenders,
     "0007_session_turns": sessionTurns,
     "0008_handler_delivery": handlerDelivery,
+    "0009_queue_agent": queueAgent,
   }),
 })
 

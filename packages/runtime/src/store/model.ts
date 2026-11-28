@@ -39,6 +39,7 @@ export type NewMessage = Pick<Message, "role"> &
   >
 
 export type QueueEntry =
+  | { readonly kind: "agent"; readonly agentName: string }
   | { readonly kind: "message"; readonly message: QueueMessageInput }
   | {
       readonly kind: "tool"
@@ -98,6 +99,12 @@ export class InvalidMessagesQuery extends Data.TaggedError("InvalidMessagesQuery
 export class KeyNotWellFormed extends Data.TaggedError("KeyNotWellFormed")<{ readonly key: string }> {
   override get message() {
     return `key ${JSON.stringify(this.key)} holds a lone surrogate, so it is not well-formed Unicode and cannot be stored as UTF-8`
+  }
+}
+
+export class ThreadBusy extends Data.TaggedError("ThreadBusy")<{ readonly threadId: string }> {
+  override get message() {
+    return `thread ${this.threadId} already has a running execution`
   }
 }
 

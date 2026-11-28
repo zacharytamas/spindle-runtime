@@ -5,6 +5,7 @@ import type { NewMessage } from "../store/model.ts"
 import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { type EnvScope, learnVariable, resolveEnv, type Secrets } from "./env.ts"
+import type { WriteContext } from "./messages.ts"
 import { isPlain } from "./redact.ts"
 import {
   type AutomatedSide,
@@ -23,16 +24,18 @@ export interface ToolCall {
   readonly problem: string | undefined
 }
 
-export interface ToolContext<T extends AutomatedSide = AutomatedSide> {
+export type ToolEnvironment = AutomatedSide | { readonly kind: "agent"; readonly agent: AutomatedSide["agent"] }
+export interface ToolContext<T extends ToolEnvironment = ToolEnvironment> {
+  readonly secrets: Secrets
   readonly scope: Scope.Scope
   readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
-  readonly secrets: Secrets
   readonly turn: T
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
     entry: PromptToolConfig | undefined,
     callback: Callback,
+    writeCall: WriteContext["call"],
   ) => ThreadState
 }
 
@@ -55,7 +58,7 @@ export const notRun = Object.freeze({
 
 export const failed = (error: string): ToolResult => ({ status: "error", error })
 
-export const scopeFor = (turn: AutomatedSide, entry: PromptToolConfig | undefined): EnvScope => ({
+export const scopeFor = (turn: ToolEnvironment, entry: PromptToolConfig | undefined): EnvScope => ({
   agent: turn.agent.value.env,
   toolEntry: entry?.env,
   prompt: turn.kind === "prompt" ? turn.prompt.value.env : undefined,
@@ -106,6 +109,16 @@ export const learnToolVariables = Effect.fnUntraced(function* (
   }
 })
 
+const missingVariable = Effect.fnUntraced(function* (tool: Loaded<FunctionTool>, scope: EnvScope) {
+  for (const variable of tool.value.variables ?? []) {
+    if (!variable.required) continue
+    const value = yield* Effect.result(resolveEnv(scope, variable.name))
+    if (Result.isFailure(value)) return value.failure.message
+    if (value.success === undefined)
+      return `Tool ${tool.qualifiedName} requires variable ${variable.name}, which has no value`
+  }
+})
+
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
 export const executeTool = Effect.fn("executeTool")(function* (
@@ -114,17 +127,13 @@ export const executeTool = Effect.fn("executeTool")(function* (
   entry: PromptToolConfig | undefined,
   input: unknown,
   onExecute?: () => void,
+  writeCall?: WriteContext["call"],
 ) {
-  const scope = scopeFor(context.turn, entry)
   const name = tool.qualifiedName
+  const scope = scopeFor(context.turn, entry)
   yield* learnToolVariables(scope, tool, context.secrets)
-  for (const variable of tool.value.variables ?? []) {
-    if (!variable.required) continue
-    const value = yield* Effect.result(resolveEnv(scope, variable.name))
-    if (Result.isFailure(value)) return failed(value.failure.message)
-    if (value.success === undefined)
-      return failed(`Tool ${name} requires variable ${variable.name}, which has no value`)
-  }
+  const missing = yield* missingVariable(tool, scope)
+  if (missing) return failed(missing)
   const schema = tool.value.args ?? null
   let args: unknown
   if (schema !== null) {
@@ -146,7 +155,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
     args = parsed.success.data
   }
   const callback = new Callback()
-  const state = context.stateFor(tool, entry, callback)
+  const state = context.stateFor(tool, entry, callback, writeCall)
   const work = Effect.tryPromise({
     try: () =>
       context.execution.call(callback, `tool ${name}`, () => {
@@ -234,11 +243,12 @@ export const queueTarget = Effect.fn("queueTarget")(function* (
 // Tools section 2.1: invokeTool returns an error result for a target outside a supplied uses list.
 export const invokeTool = Effect.fn("invokeTool")(function* (
   context: ToolContext,
-  from: Definition,
+  from: Definition | undefined,
   caller: Loaded<FunctionTool> | undefined,
   name: string,
   input: unknown,
   onExecute: () => void,
+  writeCall?: WriteContext["call"],
 ) {
   const target = yield* lookup("tool", name, from)
   const outside = caller === undefined ? undefined : yield* outsideUses(caller, name, target)
@@ -248,7 +258,12 @@ export const invokeTool = Effect.fn("invokeTool")(function* (
     context.turn.kind === "prompt"
       ? [...context.turn.tools.values()].find((exposed) => exposed.tool === target)?.entry
       : undefined
-  return (yield* executeTool(context, target, entry, input, onExecute)) ?? notRun
+  const env = scopeFor(context.turn, entry)
+  for (const variable of target.value.variables ?? []) {
+    if (variable.type === "secret") context.secrets.names.add(variable.name)
+    yield* learnVariable(env, variable.name, context.secrets)
+  }
+  return (yield* executeTool(context, target, entry, input, onExecute, writeCall)) ?? notRun
 })
 
 export const redactAttachment = (item: Record<string, unknown>, redact: (text: string) => string) => ({

@@ -14,7 +14,8 @@ import {
 import { RunStore } from "../store/RunStore.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { Execution } from "./Execution.ts"
+import { directExecution } from "./direct.ts"
+import { Execution, type ExecutionWork } from "./Execution.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
 import { type AdmissionError, queuedMessage, type ThreadControl } from "./thread-state.ts"
@@ -75,6 +76,24 @@ const checkOptions = (options: ExecutionOptions) => {
   return undefined
 }
 
+type SenderState = Effect.Success<ReturnType<RunStore["Service"]["senderState"]>>
+
+function waitingForRun({ status, disposition, settlement }: SenderState) {
+  return (
+    status.state === "running" &&
+    !settlement?.finished &&
+    !(disposition === "pending" && settlement?.tookEntry === false)
+  )
+}
+
+function senderMayResume(settlement: { tookEntry: boolean; status: ThreadStatus }) {
+  return (
+    settlement.tookEntry &&
+    settlement.status.reason !== "aborted_by_user" &&
+    settlement.status.reason !== "execution_lost"
+  )
+}
+
 export const layer = (defaults: ExecutionOptions = {}) =>
   Layer.effect(
     ThreadSupervisor,
@@ -97,41 +116,60 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           Effect.map(threadStore.getThread(threadId), (thread) => thread.status),
         )
 
-      // Register an intended claim before its transaction so the poll cannot recover a flow being started.
-      const claimWith = <E>(
-        threadId: string,
-        take: (flowId: string) => Effect.Effect<boolean, E>,
-        options: ExecutionOptions,
-      ): Effect.Effect<Execution | undefined, E, Registry | Stores> =>
+      // Reserve before the transaction. A poll can see the committed claim before attach publishes it.
+      const reserve = <A, E>(take: (flowId: string) => Effect.Effect<A, E>) =>
         Effect.gen(function* () {
           const flowId = crypto.randomUUID()
           flows.add(flowId)
-          const claimed = yield* take(flowId).pipe(Effect.onError(() => Effect.sync(() => flows.delete(flowId))))
-          if (!claimed) {
-            flows.delete(flowId)
-            return undefined
-          }
-          const run = new Execution(flowId, (seq, takingRun) => {
-            if (senders.has(seq)) senders.set(seq, takingRun)
-          })
+          const value = yield* take(flowId).pipe(Effect.onError(() => Effect.sync(() => flows.delete(flowId))))
+          return { flowId, value }
+        })
+
+      const attach = (
+        threadId: string,
+        flowId: string,
+        options: ExecutionOptions,
+        prepare: (
+          threadId: string,
+          run: Execution,
+          control: ThreadControl,
+          options: ExecutionOptions,
+        ) => Effect.Effect<ExecutionWork>,
+        watermark?: number,
+      ): Effect.Effect<Execution, never, Registry | Stores> =>
+        Effect.gen(function* () {
+          const run = new Execution(
+            flowId,
+            (seq, takingRun) => {
+              if (senders.has(seq)) senders.set(seq, takingRun)
+            },
+            watermark,
+          )
           const prior = live.get(threadId)
           if (prior && !prior.ended) prior.cancel("displace")
           live.set(threadId, run)
           const settings = { ...defaults, ...options }
+          const resume = Effect.suspend(() =>
+            closing
+              ? Effect.undefined
+              : claimWith(
+                  threadId,
+                  (nextId) =>
+                    runStore
+                      .claim(
+                        threadId,
+                        { holder: holder.id, flowId: nextId },
+                        watermark === undefined ? undefined : { watermark },
+                      )
+                      .pipe(Effect.orElseSucceed(() => false)),
+                  options,
+                ),
+          )
           yield* run.start(
             threadId,
             scope,
-            prepareSteps(threadId, run, control(threadId), settings),
-            Effect.suspend(() =>
-              closing
-                ? Effect.undefined
-                : claimWith(
-                    threadId,
-                    (flowId) =>
-                      runStore.claim(threadId, { holder: holder.id, flowId }).pipe(Effect.orElseSucceed(() => false)),
-                    options,
-                  ),
-            ),
+            prepare(threadId, run, control(threadId), settings),
+            resume,
             () => {
               flows.delete(flowId)
               if (live.get(threadId) === run) live.delete(threadId)
@@ -139,6 +177,17 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             settings.onHold,
           )
           return run
+        })
+
+      const claimWith = <E>(
+        threadId: string,
+        take: (flowId: string) => Effect.Effect<boolean, E>,
+        options: ExecutionOptions,
+      ): Effect.Effect<Execution | undefined, E, Registry | Stores> =>
+        Effect.gen(function* () {
+          const { flowId, value: claimed } = yield* reserve(take)
+          if (claimed) return yield* attach(threadId, flowId, options, prepareSteps)
+          flows.delete(flowId)
         }).pipe(Effect.uninterruptible)
 
       // Runtime sections 2 and 9: the entry is durable when admission returns. An idle thread starts an execution in
@@ -183,6 +232,21 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         })
 
       const control = (threadId: string): ThreadControl => ({
+        direct: (call, origin) =>
+          Effect.gen(function* () {
+            const direct = directExecution(call)
+            yield* runStore.recoverLost(threadId)
+            const run = yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                const { flowId, value: watermark } = yield* reserve((id) =>
+                  runStore.claimDirect(threadId, { holder: holder.id, flowId: id }, origin),
+                )
+                return yield* attach(threadId, flowId, {}, direct.prepare, watermark)
+              }),
+            )
+            return yield* direct.finish(run, yield* run.settlement.await)
+          }),
+        runAgent: (agentName, origin) => Effect.asVoid(admit(threadId, { kind: "agent", agentName }, {}, origin)),
         queueMessage: (input, secrets, origin) =>
           Effect.flatMap(queuedMessage(input, secrets), (message) =>
             Effect.asVoid(admit(threadId, { kind: "message", message }, {}, origin)),
@@ -234,6 +298,21 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         }
       })
 
+      const deliveryResult = Effect.fnUntraced(function* (
+        threadId: string,
+        snapshot: SenderState,
+        reportingRun: Execution | undefined,
+      ) {
+        const { disposition, settlement, status, terminated } = snapshot
+        const outcome =
+          reportingRun && reportingRun.flowId === settlement?.flowId ? yield* reportingRun.settlement.await : undefined
+        const result = { status: settlement?.status ?? status, ...(outcome && { outcome }) }
+        if (disposition === undefined) return result
+        if (disposition === "failed_delivery") return { ...result, failedDelivery: true as const, stillQueued: false }
+        if (terminated !== null) return yield* new ThreadTerminated({ threadId, terminated })
+        if (settlement && !senderMayResume(settlement)) return { ...result, stillQueued: true }
+      })
+
       const waitForDelivery = (
         threadId: string,
         admitted: { seq: number; started: Execution | undefined },
@@ -247,18 +326,13 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const local = started ?? senders.get(admitted.seq)
             if (local) yield* local.settlement.await
             yield* runStore.recoverLost(threadId)
-            const { status, flowId, terminated, disposition, settlement } = yield* runStore.senderState(
-              threadId,
-              admitted.seq,
-            )
+            const snapshot = yield* runStore.senderState(threadId, admitted.seq)
             // No progress ends this send while its entry is still pending, even if cleanup launched a successor.
             // After progress a sender can wait on a running successor without reclaiming the thread itself.
-            const stillQueued = disposition === "pending"
-            const awaitingRun = !settlement?.finished && !(stillQueued && settlement?.tookEntry === false)
-            if (status.state === "running" && awaitingRun) {
+            if (waitingForRun(snapshot)) {
               started = undefined
               const running = live.get(threadId)
-              const active = senders.get(admitted.seq) ?? (running?.flowId === flowId ? running : undefined)
+              const active = senders.get(admitted.seq) ?? (running?.flowId === snapshot.flowId ? running : undefined)
               if (!notified) {
                 yield* notifyWaiting(threadId, active, options)
                 notified = true
@@ -270,23 +344,8 @@ export const layer = (defaults: ExecutionOptions = {}) =>
               continue
             }
 
-            const takingRun = senders.get(admitted.seq)
-            const reportingRun = takingRun ?? local ?? waited
-            const outcome =
-              reportingRun && reportingRun.flowId === settlement?.flowId
-                ? yield* reportingRun.settlement.await
-                : undefined
-            const result = { status: settlement?.status ?? status, ...(outcome && { outcome }) }
-            if (disposition === undefined) return result
-            if (disposition === "failed_delivery")
-              return { ...result, failedDelivery: true as const, stillQueued: false }
-            if (terminated !== null) return yield* new ThreadTerminated({ threadId, terminated })
-            if (
-              !settlement?.tookEntry ||
-              settlement.status.reason === "aborted_by_user" ||
-              settlement.status.reason === "execution_lost"
-            )
-              return { ...result, stillQueued }
+            const result = yield* deliveryResult(threadId, snapshot, senders.get(admitted.seq) ?? local ?? waited)
+            if (result) return result
 
             started = yield* claimWith(
               threadId,
@@ -294,7 +353,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 runStore.claim(
                   threadId,
                   { holder: holder.id, flowId },
-                  { seq: admitted.seq, flowId: settlement.flowId },
+                  { seq: admitted.seq, flowId: snapshot.settlement?.flowId ?? null },
                 ),
               options,
             )

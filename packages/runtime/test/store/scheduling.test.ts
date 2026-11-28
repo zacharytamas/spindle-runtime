@@ -15,6 +15,9 @@ it.effect("every store operation prevents scheduler yields while using the conne
     const runs = yield* RunStore
     const sql = yield* SqlClient
     const { id } = yield* threads.createThread({ agentId: "assistant" })
+    const direct = yield* threads.createThread({ agentId: "assistant" })
+    const agentRun = yield* threads.createThread({ agentId: "assistant" })
+    const { queued } = yield* runs.admit(agentRun.id, { kind: "agent", agentName: "assistant" }, claim, external)
     type Calls<Service> = Record<keyof Service, Effect.Effect<unknown, unknown>>
     const operations = [
       {
@@ -39,6 +42,8 @@ it.effect("every store operation prevents scheduler yields while using the conne
       {
         acquireHolder: Effect.scoped(runs.acquireHolder({ id: claim.holder, pid: 0 })),
         admit: runs.admit(id, { kind: "message", message: { role: "user", content: "go" } }, claim, external),
+        claimDirect: runs.claimDirect(direct.id, claim),
+        consumeQueued: runs.consumeQueued(agentRun.id, queued.seq, claim),
         advanceDelivery: runs.advanceDelivery(id, claim.flowId, "a", 1, "msg-1"),
         completeTurn: runs.completeTurn(id, claim.flowId),
         failedDeliveries: runs.failedDeliveries(id),

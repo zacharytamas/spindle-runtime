@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { definePrompt, defineTool, type ThreadState } from "@standardagents/spec"
 import { Effect, Fiber, Layer } from "effect"
+import * as Migrator from "effect/sql/Migrator"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
+import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { handlerOf, handlerProject } from "../../../conformance/src/scenarios/handlers/fixtures.ts"
 import { gate, ok, project, stubTool } from "../../../conformance/src/scenarios/harness.ts"
@@ -10,6 +12,14 @@ import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.t
 import { admitEntry, drainEntries, settleRun, startRun } from "../../scripts/store-fixtures.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import threadsMigration from "../../src/store/migrations/0001_threads.ts"
+import revisionsMigration from "../../src/store/migrations/0002_revision.ts"
+import claimsMigration from "../../src/store/migrations/0003_claims.ts"
+import admissionMigration from "../../src/store/migrations/0004_message_admission.ts"
+import resultPromptMigration from "../../src/store/migrations/0005_result_prompt.ts"
+import waitingSendersMigration from "../../src/store/migrations/0006_waiting_senders.ts"
+import sessionTurnsMigration from "../../src/store/migrations/0007_session_turns.ts"
+import handlerDeliveryMigration from "../../src/store/migrations/0008_handler_delivery.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf } from "../spindle-driver.ts"
@@ -620,6 +630,74 @@ describe("ThreadStore", () => {
           )
           expect(promptBPayloads).toEqual([{ toolName: "noop", args: { who: "prompt-b" }, side: "b" }])
         }),
+    )
+
+    it.effect(
+      "migration 0009 preserves existing queue rows, dispositions, waiting senders, high-water sequence, index, and foreign key",
+      () =>
+        withDatabaseFile((filename) =>
+          Effect.gen(function* () {
+            const migrateToV8 = Migrator.make({})({
+              loader: Migrator.fromRecord({
+                "0001_threads": threadsMigration,
+                "0002_revision": revisionsMigration,
+                "0003_claims": claimsMigration,
+                "0004_message_admission": admissionMigration,
+                "0005_result_prompt": resultPromptMigration,
+                "0006_waiting_senders": waitingSendersMigration,
+                "0007_session_turns": sessionTurnsMigration,
+                "0008_handler_delivery": handlerDeliveryMigration,
+              }),
+            })
+            const threadId = "t-upgrade-0009"
+            yield* Effect.gen(function* () {
+              const sql = yield* SqlClient
+              yield* sql`PRAGMA foreign_keys = ON`
+              yield* migrateToV8
+              yield* sql`INSERT INTO threads (id, agent_id, arguments, created_at, run_since)
+                VALUES (${threadId}, 'assistant', '{}', 1000, 1000)`
+              const msg1 = JSON.stringify({ role: "user", content: "pending-msg" })
+              const msg2 = JSON.stringify({ role: "user", content: "failed-msg" })
+              const tool3 = JSON.stringify({ toolName: "lookup", args: { q: "x" }, side: "a" })
+              const msg10 = JSON.stringify({ role: "user", content: "deleted-high" })
+              yield* sql`INSERT INTO queue (seq, thread_id, kind, payload, queued_at, disposition)
+                VALUES (1, ${threadId}, 'message', ${msg1}, 1001, 'pending'),
+                       (2, ${threadId}, 'message', ${msg2}, 1002, 'failed_delivery'),
+                       (3, ${threadId}, 'tool', ${tool3}, 1003, 'pending'),
+                       (10, ${threadId}, 'message', ${msg10}, 1010, 'pending')`
+              yield* sql`DELETE FROM queue WHERE seq = 10`
+              yield* sql`INSERT INTO holders (id, pid) VALUES ('h-upgrade', 1234)`
+              yield* sql`INSERT INTO waiting_senders (thread_id, seq, holder_id, failed)
+                VALUES (${threadId}, 1, 'h-upgrade', 0), (${threadId}, 10, 'h-upgrade', 0)`
+            }).pipe(Effect.provide(SqliteLive({ filename })))
+
+            yield* Effect.gen(function* () {
+              const sql = yield* SqlClient
+              const rows = yield* sql<{ seq: number; kind: string; disposition: string }>`
+                SELECT seq, kind, disposition FROM queue WHERE thread_id = ${threadId} ORDER BY seq`
+              expect(rows).toEqual([
+                { seq: 1, kind: "message", disposition: "pending" },
+                { seq: 2, kind: "message", disposition: "failed_delivery" },
+                { seq: 3, kind: "tool", disposition: "pending" },
+              ])
+              const senders = yield* sql<{ seq: number; failed: number }>`
+                SELECT seq, failed FROM waiting_senders WHERE thread_id = ${threadId} ORDER BY seq`
+              expect(senders).toEqual([
+                { seq: 1, failed: 0 },
+                { seq: 10, failed: 0 },
+              ])
+              const admitted = yield* admitEntry(threadId, { kind: "agent", agentName: "helper" }, claim)
+              expect(admitted.queued.seq).toBeGreaterThan(10)
+              const indexes = yield* sql<{ name: string }>`
+                SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'queue' AND name = 'queue_by_thread'`
+              expect(indexes).toHaveLength(1)
+              const fkError = yield* Effect.flip(
+                sql`INSERT INTO queue (thread_id, kind, payload, queued_at) VALUES ('missing-thread', 'agent', '{}', 2000)`,
+              )
+              expect(fkError._tag).toBe("SqlError")
+            }).pipe(Effect.provide(storeAt(filename)))
+          }),
+        ),
     )
   })
 })

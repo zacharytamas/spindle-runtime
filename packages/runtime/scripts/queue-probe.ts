@@ -20,6 +20,8 @@ const USAGE = `Usage: queue-probe <command> --dir <project> --db <file>
   create --agent <name>                          create a thread at rest and print its id
   queue-message --thread <id> --role <user|assistant> --content <text> [--silent]
   queue-tool --thread <id> --tool <name> --args <json>
+  invoke-tool --thread <id> --tool <name> --args <json>
+  run-agent --thread <id> --agent <name>
   terminate --thread <id>
   status --thread <id>
   bench [--threads <n>] [--messages <n>] [--sequential]
@@ -56,6 +58,10 @@ const act = (state: ThreadState): Promise<unknown> => {
       })
     case "queue-tool":
       return Promise.resolve().then(() => state.queueTool(required("tool"), JSON.parse(required("args"))))
+    case "invoke-tool":
+      return state.invokeTool(required("tool"), JSON.parse(required("args")))
+    case "run-agent":
+      return state.runAgent(required("agent"))
     case "terminate":
       return state.terminate()
     default:
@@ -164,7 +170,10 @@ if (command === "bench") {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
-} else if (command === "help" || !["create", "queue-message", "queue-tool", "terminate", "status"].includes(command))
+} else if (
+  command === "help" ||
+  !["create", "queue-message", "queue-tool", "invoke-tool", "run-agent", "terminate", "status"].includes(command)
+)
   console.log(USAGE)
 else {
   await Effect.runPromise(

@@ -21,10 +21,10 @@ export const peekQueued = (threadId: string) =>
 export const drainEntries = (threadId: string, flowId: string) =>
   Effect.gen(function* () {
     const messages = yield* MessageStore
-    const delivered: Queued[] = []
+    const delivered: Exclude<Queued, { kind: "agent" }>[] = []
     while (true) {
       const entry = yield* peekQueued(threadId)
-      if (!entry) return delivered
+      if (!entry || entry.kind === "agent") return delivered
       const message =
         entry.kind === "tool"
           ? { role: "assistant" as const, content: JSON.stringify({ toolName: entry.toolName, args: entry.args }) }

@@ -1,4 +1,5 @@
 import { describe, it, vi } from "vitest"
+import { directExecutionScenarios } from "../../conformance/src/scenarios/direct-execution.ts"
 import { handlerScenarios } from "../../conformance/src/scenarios/handlers.ts"
 import { hookScenarios } from "../../conformance/src/scenarios/hooks.ts"
 import { integrityScenarios } from "../../conformance/src/scenarios/integrity.ts"
@@ -54,4 +55,8 @@ describe("sides", () => {
 
 describe("handlers", () => {
   for (const scenario of handlerScenarios) it(scenario.name, () => scenario.run(spindleDriver))
+})
+
+describe("direct execution", () => {
+  for (const scenario of directExecutionScenarios) it(scenario.name, () => scenario.run(spindleDriver))
 })

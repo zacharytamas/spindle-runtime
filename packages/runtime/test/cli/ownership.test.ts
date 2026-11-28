@@ -389,6 +389,183 @@ describe("spindle ownership across processes", () => {
       }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
     60_000,
   )
+
+  it.live(
+    "rule 53: SIGKILL during invokeTool at rest settles execution_lost without replaying the tool and preserves queued work",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const created = yield* spawn(gate, probe, ["create", "--agent", "assistant", ...project, "--db", db])
+        expect(yield* created.exit).toBe(0)
+        const thread = created.out.find((line) => line.startsWith("thread "))?.slice("thread ".length) ?? ""
+        expect(thread).not.toBe("")
+
+        const direct = yield* spawn(gate, probe, [
+          "invoke-tool",
+          "--thread",
+          thread,
+          "--tool",
+          "hold",
+          "--args",
+          JSON.stringify({ name: "direct-kill" }),
+          ...project,
+          "--db",
+          db,
+        ])
+        yield* Effect.raceFirst(
+          until("the direct tool to start", exists(at("tool-entered-direct-kill"))),
+          Effect.flatMap(direct.exit, (code) =>
+            Effect.die(
+              new Error(
+                `invoke-tool exited (${code}) before entering tool: ${[...direct.out, ...direct.err].join(" | ")}`,
+              ),
+            ),
+          ),
+        )
+        const queued = yield* spawn(gate, probe, [
+          "queue-message",
+          "--thread",
+          thread,
+          "--role",
+          "user",
+          "--content",
+          "queued-during-direct",
+          ...project,
+          "--db",
+          db,
+        ])
+        expect(yield* queued.exit).toBe(0)
+
+        yield* direct.signal("SIGKILL")
+        yield* direct.exit
+
+        const afterKill = yield* status(gate, db, thread)
+        expect([afterKill.exit, afterKill.out]).toEqual([
+          0,
+          [expect.stringMatching(/^failed execution_lost since /), "queued 1"],
+        ])
+
+        const after = yield* spindle(gate, ["send", thread, "-m", "next", ...project, "--db", db])
+        expect([yield* after.exit, after.out]).toEqual([0, ["ack: queued-during-direct | next"]])
+        // The lost direct tool ran once and was never replayed.
+        expect(yield* lines(at("tool-log"))).toEqual(["direct-kill"])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "rule 60: SIGKILL during runAgent after consumeQueued settles execution_lost without replaying the target agent",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const first = yield* spindle(gate, ["run", "assistant", "-m", "seed", ...project, "--db", db])
+        expect(yield* first.exit).toBe(0)
+        const thread = yield* threadIn(first)
+
+        yield* touch(at("hold-model"))
+        const triggered = yield* spawn(gate, probe, [
+          "run-agent",
+          "--thread",
+          thread,
+          "--agent",
+          "secondary",
+          ...project,
+          "--db",
+          db,
+        ])
+        yield* Effect.raceFirst(
+          until(
+            "runAgent target model to start",
+            Effect.map(entries(gate), (names) => names.some((name) => name.startsWith("model-entered-"))),
+          ),
+          Effect.flatMap(triggered.exit, (code) =>
+            Effect.die(
+              new Error(
+                `run-agent exited (${code}) before entering model: ${[...triggered.out, ...triggered.err].join(" | ")}`,
+              ),
+            ),
+          ),
+        )
+        yield* triggered.signal("SIGKILL")
+        yield* triggered.exit
+
+        const afterKill = yield* status(gate, db, thread)
+        expect([afterKill.exit, afterKill.out]).toEqual([
+          0,
+          [expect.stringMatching(/^failed execution_lost since /), "queued 0"],
+        ])
+
+        yield* touch(at("release-model"))
+        const after = yield* spindle(gate, ["send", thread, "-m", "after-kill", ...project, "--db", db])
+        expect([yield* after.exit, after.out]).toEqual([0, ["ack: after-kill"]])
+        const replies = yield* query(
+          db,
+          "SELECT content, prompt FROM messages WHERE thread_id = ? AND role = 'assistant' ORDER BY seq",
+          [thread],
+        )
+        expect(replies.map((r) => [r.content, r.prompt])).toEqual([
+          ["ack: seed", "assistant"],
+          ["ack: after-kill", "assistant"],
+        ])
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
+
+  it.live(
+    "rule 60: SIGKILL before runAgent consumeQueued leaves the agent entry pending for the next trigger",
+    () =>
+      Effect.gen(function* () {
+        const { gate, db, at } = yield* setup
+        const run = yield* spindle(gate, [
+          "run",
+          "assistant",
+          "-m",
+          call("hold", { name: "pre-agent-kill" }),
+          ...project,
+          "--db",
+          db,
+        ])
+        const thread = yield* threadIn(run)
+        yield* until("the tool to start", exists(at("tool-entered-pre-agent-kill")))
+
+        const queued = yield* spawn(gate, probe, [
+          "run-agent",
+          "--thread",
+          thread,
+          "--agent",
+          "secondary",
+          ...project,
+          "--db",
+          db,
+        ])
+        expect(yield* queued.exit).toBe(0)
+
+        yield* run.signal("SIGKILL")
+        yield* run.exit
+
+        const afterKill = yield* status(gate, db, thread)
+        expect([afterKill.exit, afterKill.out]).toEqual([
+          0,
+          [expect.stringMatching(/^failed execution_lost since /), "queued 1"],
+        ])
+        const pending = yield* query(db, "SELECT kind FROM queue WHERE thread_id = ? AND disposition = 'pending'", [
+          thread,
+        ])
+        expect(pending).toEqual([{ kind: "agent" }])
+
+        const after = yield* spindle(gate, ["send", thread, "-m", "wake-secondary", ...project, "--db", db])
+        expect(yield* after.exit).toBe(0)
+        const replies = yield* query(
+          db,
+          "SELECT content, prompt FROM messages WHERE thread_id = ? AND role = 'assistant' AND content IS NOT NULL ORDER BY seq",
+          [thread],
+        )
+        expect(replies.at(-1)).toEqual({ content: "ack: wake-secondary", prompt: "secondary" })
+        const [row] = yield* query(db, "SELECT agent_id FROM threads WHERE id = ?", [thread])
+        expect(row?.agent_id).toBe("assistant")
+      }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+    60_000,
+  )
 })
 
 // M1c-4 rule 1: an entry marked failed_delivery is listed by status and removed only by an operator who names it.

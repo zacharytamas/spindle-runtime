@@ -198,7 +198,9 @@ export interface QueueRow {
 export const queuePayload = (entry: QueueEntry): unknown =>
   entry.kind === "message"
     ? entry.message
-    : { toolName: entry.toolName, args: entry.args, ...(entry.side !== undefined && { side: entry.side }) }
+    : entry.kind === "agent"
+      ? { agentName: entry.agentName }
+      : { toolName: entry.toolName, args: entry.args, ...(entry.side !== undefined && { side: entry.side }) }
 
 const attachment = Schema.Struct({
   type: Schema.Literal("file"),
@@ -250,6 +252,13 @@ const parsePayload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unk
 export const decodeQueued = (row: QueueRow): Queued | undefined => {
   const payload = Option.getOrUndefined(parsePayload(row.payload))
   const position = { seq: row.seq, queuedAt: row.queued_at }
+  if (
+    row.kind === "agent" &&
+    Predicate.isObject(payload) &&
+    typeof payload.agentName === "string" &&
+    payload.agentName.length > 0
+  )
+    return { ...position, kind: "agent", agentName: payload.agentName }
   if (row.kind === "message" && isQueueMessage(payload)) return { ...position, kind: "message", message: payload }
   if (row.kind === "tool" && isQueueTool(payload))
     return {
