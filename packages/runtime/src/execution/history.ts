@@ -24,21 +24,39 @@ export interface History {
   // The copy itself, which no tool or hook may get without copying it. No later write changes an array it returned, so
   // a snapshot holds what the thread held when it was taken.
   readonly read: Effect.Effect<ThreadHistory, ThreadNotFound | SqlError, MessageStore>
+  readonly since: (
+    seq: number,
+  ) => Effect.Effect<{ rows: ReadonlyArray<HistoryRow>; total: number }, ThreadNotFound | SqlError, MessageStore>
+  readonly lastFrom: (role: "assistant" | "user") => Effect.Effect<number, ThreadNotFound | SqlError, MessageStore>
   readonly inserted: (inserted: HistoryRow & { readonly revision: number | null }) => void
 }
 
 export const makeHistory = (threadId: string): History => {
-  let copy: { rows: Chunk.Chunk<HistoryRow>; revision: number } | undefined
+  let copy:
+    | { rows: Chunk.Chunk<HistoryRow>; revision: number; latest: Record<"assistant" | "user", number> }
+    | undefined
+  const snapshot = Effect.gen(function* () {
+    const store = yield* MessageStore
+    if (copy !== undefined && copy.revision === (yield* store.revision(threadId))) return copy
+    // Never cache a read inside a transaction that may roll back.
+    const read = yield* store.history(threadId)
+    const rows = Chunk.fromIterable(read.rows)
+    const latest = {
+      assistant: read.rows.findLast((row) => row.message.role === "assistant")?.seq ?? 0,
+      user: read.rows.findLast((row) => row.message.role === "user")?.seq ?? 0,
+    }
+    if (read.revision !== null) copy = { rows, revision: read.revision, latest }
+    return { rows, revision: read.revision, latest }
+  })
   return {
-    read: Effect.gen(function* () {
-      const store = yield* MessageStore
-      if (copy !== undefined && copy.revision === (yield* store.revision(threadId)))
-        return { revision: copy.revision, rows: Chunk.toReadonlyArray(copy.rows) }
-      // A read inside a caller's transaction may see writes that roll back, so the copy never keeps it.
-      const read = yield* store.history(threadId)
-      if (read.revision !== null) copy = { rows: Chunk.fromIterable(read.rows), revision: read.revision }
-      return read
-    }),
+    read: Effect.map(snapshot, ({ rows, revision }) => ({ rows: Chunk.toReadonlyArray(rows), revision })),
+    since: (seq) =>
+      Effect.map(snapshot, ({ rows }) => {
+        let start = rows.length
+        while (start > 0 && Chunk.getUnsafe(rows, start - 1).seq >= seq) start--
+        return { rows: Chunk.toReadonlyArray(Chunk.drop(rows, start)), total: rows.length }
+      }),
+    lastFrom: (role) => Effect.map(snapshot, ({ latest }) => latest[role]),
     // A revision at or below the copy's means a read after the insert already holds it. One past the copy's means
     // nobody else wrote in between. Anything else, or an insert that a caller's transaction may still roll back,
     // leaves the copy stale.
@@ -48,6 +66,10 @@ export const makeHistory = (threadId: string): History => {
       else if (revision === copy.revision + 1) {
         copy = {
           revision,
+          latest:
+            message.role === "assistant" || message.role === "user"
+              ? { ...copy.latest, [message.role]: seq }
+              : copy.latest,
           rows: Chunk.append(copy.rows, { message: copyMessage(message), seq, callerSeq }),
         }
       }
