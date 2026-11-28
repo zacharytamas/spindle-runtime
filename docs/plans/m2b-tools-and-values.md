@@ -8,16 +8,16 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 - A box is checked only when the thing it names is true on `main`.
 - The seven rules of `docs/plans/milestones.md` apply. The ones that shape this plan are short stacks, tests before the build, structure bar in every brief, and review depth by risk.
-- M2b-1, M2b-2, and M2b-3 do not depend on M2a's side model. M2b-4 depends on M2a's side model (`docs/design/sides-and-turns.md`) and lands after M2a is on `main`.
+- M2b-1, M2b-2, and M2b-3 do not depend on M2a's side model. M2b-4 depends on it (`docs/design/sides-and-turns.md`). All four sit above M2a in the milestone 2 stack.
 
 ## Program checklist
 
 ### Order and limits
 
-- [ ] At most three pull requests are open at a time.
-- [ ] M2b-1 starts from `main`. M2b-2 starts after M2b-1 lands (or stacked at depth 2 while M2b-1 is in review). M2b-3 starts after M2b-2 lands (or stacked at depth 3). None of those three depends on M2a.
-- [ ] M2b-4 starts only after both M2b-3 and M2a's side model have landed on `main`. It explicitly builds on M2a's side abstraction (`prompt`, `handler`, `human` sides passed to the step loop).
-- [ ] Only M2b-1 adds a SQLite migration. Before writing the migration file, the builder checks `packages/runtime/src/store/migrations/` on `main` and takes the next sequential migration number after any migration M2a landed.
+- [ ] Milestone 2 is one linear stack that the operator lands as a whole (decided 2026-11-27). Nothing merges before then. M2b sits above M2a, so the order is the two design pull requests, `M2a-1` to `M2a-3`, then `M2b-1` to `M2b-4`.
+- [ ] `M2b-1` is based on the `M2a-3` branch, and each later M2b pull request on the one below it. Each starts when the branch below it is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
+- [ ] `M2b-1` to `M2b-3` do not use M2a's side model, even though they sit above it in the stack. `M2b-4` does.
+- [ ] Only M2b-1 adds a SQLite migration. Before writing the migration file, the builder checks `packages/runtime/src/store/migrations/` on `main` and takes the next sequential migration number after M2a's migrations, `0007` to `0009`.
 - [ ] A pull request that lands after another is rebased onto `main` by its owner or by the root. `ledger.json`, `DIVERGENCES.md`, and `thread-state.ts` are the shared merge points.
 
 ### Roles
@@ -36,7 +36,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 ## Typed thread values, `setEnv`, and redaction floor (M2b-1)
 
-**Dependency.** None on M2a. Starts from `main`.
+**Dependency.** None on M2a's side model. Based on the `M2a-3` branch.
 
 **Review depth.** High risk (security boundary and schema migration). Failing tests written first by Gemini 4 Neon, followed by a 30-minute Gemini 4 Neon reading review after the GPT-6.2 Astra build.
 
