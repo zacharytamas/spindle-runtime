@@ -17,7 +17,7 @@ import {
   type ToolCall,
   unstorableResult,
 } from "./tools.ts"
-import type { Turn } from "./turn.ts"
+import type { PromptSideValue } from "./turn.ts"
 
 export const hookCall = (call: { readonly id: string; readonly name: string }, args: string): HookToolCall => ({
   id: call.id,
@@ -32,7 +32,7 @@ export const callStarted = (
 ) => observeHooks(hooks, "tool_call_started", [hookCall(call, call.argumentsText), progress])
 
 // Hooks section 5. A call that started in a response the loop then discarded is done too, and never ran.
-export const streamedHooks = (hooks: HookScope, turn: Turn): StreamedCalls | undefined =>
+export const streamedHooks = (hooks: HookScope, turn: PromptSideValue): StreamedCalls | undefined =>
   countHooks(hooks, "tool_call_started") > 0 || countHooks(hooks, "tool_call_done") > 0
     ? {
         progressArgument: (name) => turn.tools.get(name)?.tool.value.progressArgument,

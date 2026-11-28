@@ -14,7 +14,7 @@ import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { isRequestHistory, type RequestMessage } from "./llm-history.ts"
 import { isToolResult, readResult } from "./tools.ts"
-import { type Loaded, lookup, SetupError, type Turn } from "./turn.ts"
+import { type Loaded, lookup, type PromptSideValue, SetupError } from "./turn.ts"
 
 // Hooks section 1.2 asks for a timeout and names none. One setting covers every hook call.
 export const HookTimeout = Context.Reference<Duration.Duration>("spindle/HookTimeout", {
@@ -292,7 +292,7 @@ const selectHooks = Effect.fn("selectHooks")(function* (
 })
 
 // Prompts section 8: a non-empty prompt list is the whole set, whatever types it holds. Otherwise the agent's list is.
-export const turnHooks = (turn: Turn) => {
+export const turnHooks = (turn: PromptSideValue) => {
   const listed = turn.prompt.value.hooks ?? []
   return listed.length > 0
     ? selectHooks(listed, turn.prompt, { kind: "prompt", promptName: turn.prompt.qualifiedName })

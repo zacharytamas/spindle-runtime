@@ -6,7 +6,7 @@ import { Callback } from "./callback.ts"
 import type { Execution } from "./Execution.ts"
 import { type EnvScope, resolveEnv } from "./env.ts"
 import { isPlain } from "./redact.ts"
-import { type FunctionTool, isFunctionTool, type Loaded, lookup, type Turn } from "./turn.ts"
+import { type FunctionTool, isFunctionTool, type Loaded, lookup, type PromptSideValue } from "./turn.ts"
 
 export interface ToolCall {
   readonly id: string
@@ -20,7 +20,7 @@ export interface ToolContext {
   readonly scope: Scope.Scope
   readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
-  readonly turn: Turn
+  readonly turn: PromptSideValue
   readonly stateFor: (
     tool: Loaded<FunctionTool>,
     entry: PromptToolConfig | undefined,
@@ -47,7 +47,7 @@ export const notRun = Object.freeze({
 
 export const failed = (error: string): ToolResult => ({ status: "error", error })
 
-export const scopeFor = (turn: Turn, entry: PromptToolConfig | undefined): EnvScope => ({
+export const scopeFor = (turn: PromptSideValue, entry: PromptToolConfig | undefined): EnvScope => ({
   agent: turn.agent.value.env,
   toolEntry: entry?.env,
   prompt: turn.prompt.value.env,
@@ -282,7 +282,7 @@ export const checkedResult = (result: ToolResult): ToolResult => {
 // Runtime section 5.2: an attachment that cannot be stored is dropped, and the result becomes a tool error that
 // keeps the tool's own text and says what was dropped. A new file needs the thread file system, which arrives in M3.
 // createMessage redacts the message after Spindle adds its notes, so a secret that is a word of a note is removed too.
-export const storedResult = (turn: Turn, call: ToolCall, result: ToolResult): NewMessage => {
+export const storedResult = (turn: PromptSideValue, call: ToolCall, result: ToolResult): NewMessage => {
   const attachments: ReadonlyArray<unknown> = result.attachments ?? []
   const refs = attachments.filter(isAttachmentRef).map((item) => ({ ...item }))
   const fresh = attachments.filter(isNewAttachment)

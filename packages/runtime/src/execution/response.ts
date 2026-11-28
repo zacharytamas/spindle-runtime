@@ -5,7 +5,7 @@ import type { ModelResponse } from "./call.ts"
 import { mapStrings } from "./redact.ts"
 import type { StopToolOutcome } from "./step.ts"
 import type { ToolCall } from "./tools.ts"
-import { roleOf, type Turn } from "./turn.ts"
+import { type PromptSideValue, roleOf } from "./turn.ts"
 
 const preview = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}...` : text)
 
@@ -30,14 +30,18 @@ export const responseCalls = (response: ModelResponse): Array<ToolCall> =>
 
 // Messages section 1.3: reasoning details go back only to the model that produced them, so the message records
 // which model definition and native model that was. A later model under the same prompt name gets none.
-export const reasoningSource = (turn: Turn) => ({
+export const reasoningSource = (turn: PromptSideValue) => ({
   definition: turn.model.qualifiedName,
   model: turn.model.value.model,
 })
 
 // The response is stored as the model returned it, so the stored arguments are what the model sent and what the
 // next request shows. The tool gets them after its schema validates them, which may transform a value.
-export const responseMessage = (turn: Turn, response: ModelResponse, calls: ReadonlyArray<ToolCall>): NewMessage => {
+export const responseMessage = (
+  turn: PromptSideValue,
+  response: ModelResponse,
+  calls: ReadonlyArray<ToolCall>,
+): NewMessage => {
   const extra = Object.fromEntries(
     [...response.calls.values()].flatMap((call) =>
       call.extraContent === undefined ? [] : [[call.id, call.extraContent] as const],
@@ -69,7 +73,7 @@ export const responseMessage = (turn: Turn, response: ModelResponse, calls: Read
 
 // The runtime reads the stop property from the result before redaction, and reports the value redacted.
 export const stopToolOutcome = (
-  turn: Turn,
+  turn: PromptSideValue,
   calls: ReadonlyArray<ToolCall>,
   results: ReadonlyArray<ToolResult>,
   redact: (text: string) => string,

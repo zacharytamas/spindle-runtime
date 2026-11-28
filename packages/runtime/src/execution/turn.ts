@@ -1,5 +1,7 @@
 import type {
   AgentDefinition,
+  HandlerSide,
+  HumanSide,
   ModelDefinition,
   PromptDefinition,
   PromptSide,
@@ -40,15 +42,32 @@ export interface ExposedTool {
   readonly definition: ProviderTool
 }
 
-export interface Turn {
-  readonly agent: Loaded<AgentDefinition>
+interface SideIdentity {
   readonly side: Side
-  readonly human: Side
+  readonly role: ReturnType<typeof roleOf>
+}
+
+export interface PromptSideValue extends SideIdentity {
+  readonly kind: "prompt"
+  readonly agent: Loaded<AgentDefinition>
   readonly config: PromptSide
   readonly prompt: Loaded<PromptDefinition>
   readonly model: Loaded<ModelDefinition>
   readonly tools: ReadonlyMap<string, ExposedTool>
 }
+
+export type SideValue =
+  | PromptSideValue
+  | (SideIdentity & { readonly kind: "human"; readonly config: HumanSide })
+  | (SideIdentity & { readonly kind: "handler"; readonly config: HandlerSide })
+
+export interface AgentSides {
+  readonly agent: Loaded<AgentDefinition>
+  readonly a: SideValue
+  readonly b: SideValue
+}
+
+export const otherSide = (side: Side): Side => (side === "a" ? "b" : "a")
 
 export const isFunctionTool = (definition: Definition | undefined): definition is Loaded<FunctionTool> => {
   const value = definition?.value
@@ -75,27 +94,20 @@ export const lookup = Effect.fn("lookup")(function* <K extends Kind>(
   return resolution.definition as Loaded<Values[K]>
 })
 
-const backingOf = (side: unknown) => {
-  if (!Predicate.isObject(side)) return "nothing"
-  if (side.human === true) return "human"
-  if (typeof side.prompt === "string") return "prompt"
-  if (typeof side.handler === "string") return "handler"
-  return "nothing"
-}
-
-export const sidesOf = Effect.fn("sidesOf")(function* (agentName: string) {
+export const loadAgent = Effect.fn("loadAgent")(function* (agentName: string) {
   const agent = yield* lookup("agent", agentName, undefined)
   if (agent === undefined) return yield* new SetupError({ message: `No agent named ${agentName} is defined` })
-  const a = backingOf(agent.value.sideA)
-  const b = backingOf(agent.value.sideB)
-  if (!((a === "human" && b === "prompt") || (a === "prompt" && b === "human")))
-    return yield* new SetupError({
-      message: `Agent ${agentName} has a ${a} side A and a ${b} side B. This version of Spindle runs one prompt side against one human side.`,
-    })
-  const side: Side = a === "prompt" ? "a" : "b"
-  const config = (side === "a" ? agent.value.sideA : agent.value.sideB) as PromptSide
-  return { agent, side, human: side === "a" ? ("b" as const) : ("a" as const), config }
+  for (const side of [agent.value.sideA, agent.value.sideB]) {
+    if (!side || !(side.human === true || typeof side.prompt === "string" || typeof side.handler === "string"))
+      return yield* new SetupError({ message: `Agent ${agentName} must define a backing for both sides` })
+  }
+  if (agent.value.sideA.human && agent.value.sideB.human)
+    return yield* new SetupError({ message: `Agent ${agentName} needs an automated side` })
+  return agent
 })
+
+// A sender speaks as the human, or from B's perspective to start an automated exchange.
+export const senderSide = (agent: Loaded<AgentDefinition>): Side => (agent.value.sideA.human ? "a" : "b")
 
 const parametersOf = (args: ToolArgs | null): Record<string, unknown> => {
   if (args === null) return { type: "object", properties: {} }
@@ -164,11 +176,16 @@ const exposedStopTool = Effect.fn("exposedStopTool")(function* (
   return exposed === undefined ? config : { ...config, stopTool: exposed.name }
 })
 
-export const prepareTurn = Effect.fn("prepareTurn")(function* (agentName: string) {
-  const { agent, side, human, config } = yield* sidesOf(agentName)
+const prepareSideValue = Effect.fn("prepareSideValue")(function* (agent: Loaded<AgentDefinition>, side: Side) {
+  const config = side === "a" ? agent.value.sideA : agent.value.sideB
+  const role = roleOf(side)
+  if (config.human) return { kind: "human", side, role, config } as const
+  if (config.handler !== undefined) return { kind: "handler", side, role, config } as const
   const prompt = yield* lookup("prompt", config.prompt, agent)
   if (prompt === undefined)
-    return yield* new SetupError({ message: `Agent ${agentName} names prompt ${config.prompt}, which is not defined` })
+    return yield* new SetupError({
+      message: `Agent ${agent.qualifiedName} names prompt ${config.prompt}, which is not defined`,
+    })
   const model = yield* lookup("model", prompt.value.model, prompt)
   if (model === undefined)
     return yield* new SetupError({
@@ -182,10 +199,15 @@ export const prepareTurn = Effect.fn("prepareTurn")(function* (agentName: string
   return {
     agent,
     side,
-    human,
+    kind: "prompt",
+    role,
     config: yield* exposedStopTool(config, agent, tools),
     prompt,
     model,
     tools,
-  } satisfies Turn
+  } satisfies PromptSideValue
+})
+
+export const prepareSides = Effect.fn("prepareSides")(function* (agent: Loaded<AgentDefinition>) {
+  return { agent, a: yield* prepareSideValue(agent, "a"), b: yield* prepareSideValue(agent, "b") } satisfies AgentSides
 })
