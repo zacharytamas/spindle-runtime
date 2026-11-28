@@ -375,6 +375,7 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
   run.turns.active = queueRecipient(sides, head)
   let handoff = false
   while (true) {
+    if (run.stopAtBoundary()) return run.abortEnd
     const active: SideValue = run.turns.active
     switch (active.kind) {
       case "human":

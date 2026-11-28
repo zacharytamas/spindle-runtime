@@ -744,3 +744,27 @@ it.effect(
     )
   },
 )
+
+it.effect("a stop requested on side A's turn-ending trace ends before preparing side B", () => {
+  let bPrepared = 0
+  const providerA = new ScriptedProvider([{ text: "from A" }])
+  const providerB = {
+    factory: () => {
+      bPrepared += 1
+      throw new Error("side B provider should not be prepared after stop")
+    },
+  } as unknown as ScriptedProvider
+  const setup = dualProject({ providerA, providerB })
+  return Effect.gen(function* () {
+    const { id } = yield* createThread(setup.agents[0]!.name)
+    const supervisor = yield* ThreadSupervisor
+    const delivery = yield* supervisor.send(id, "go", {
+      observe: (event) =>
+        event.type === "trace" && event.entry.phase === "stop" && event.entry.detail === "stop_on_response"
+          ? Effect.asVoid(supervisor.stop(id))
+          : Effect.void,
+    })
+    expect(delivery.outcome).toMatchObject({ status: "idle", reason: "aborted_by_user", steps: 1 })
+    expect(bPrepared).toBe(0)
+  }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
+})
