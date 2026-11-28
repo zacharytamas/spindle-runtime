@@ -756,7 +756,7 @@ it.effect("a stop requested on side A's turn-ending trace ends before preparing 
   } as unknown as ScriptedProvider
   const setup = dualProject({ providerA, providerB })
   return Effect.gen(function* () {
-    const { id } = yield* createThread(setup.agents[0]!.name)
+    const { id } = yield* createThread(setup.agents[0]?.name ?? "pair")
     const supervisor = yield* ThreadSupervisor
     const delivery = yield* supervisor.send(id, "go", {
       observe: (event) =>
@@ -768,3 +768,72 @@ it.effect("a stop requested on side A's turn-ending trace ends before preparing 
     expect(bPrepared).toBe(0)
   }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
 })
+
+it.effect(
+  "a completed waiting peer returns immediately even while its own supervisor holds a newer blocked run",
+  () => {
+    const firstCalled = gate()
+    const releaseFirst = gate()
+    const queued = gate()
+    const resumePeer = gate()
+    const toolEntered = gate()
+    const releaseTool = gate()
+    const blocker = defineTool({
+      description: "Blocks the newer local run",
+      execute: async () => {
+        toolEntered.release()
+        await releaseTool.opened
+        return ok("unblocked")
+      },
+    })
+    const provider = new ScriptedProvider([
+      async () => {
+        firstCalled.release()
+        await releaseFirst.opened
+        return { text: "first reply" }
+      },
+      { text: "peer reply" },
+      { toolCalls: [{ id: "call-block", name: "blocker", arguments: {} }] },
+      { text: "newer reply" },
+    ])
+    const setup = project({ provider, tools: { blocker }, prompt: { tools: ["blocker"] } })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const owner = yield* ThreadSupervisor
+      const peer = yield* Effect.provide(ThreadSupervisor, yield* Layer.build(supervisorLayer()))
+      const first = yield* Effect.forkChild(owner.send(id, "first"))
+      yield* Effect.promise(() => firstCalled.opened)
+      const waiting = yield* Effect.forkChild(
+        peer.send(id, "second", {
+          onWaiting: () =>
+            Effect.promise(() => {
+              queued.release()
+              return resumePeer.opened
+            }),
+        }),
+      )
+      yield* Effect.promise(() => queued.opened)
+      releaseFirst.release()
+      const delivered = yield* Fiber.join(first)
+      expect(delivered.outcome).toMatchObject({ reason: "stop_on_response", steps: 2 })
+
+      // Start a newer run on peer itself and leave it blocked inside the tool.
+      const newer = yield* Effect.forkChild(peer.send(id, "third"))
+      yield* Effect.promise(() => toolEntered.opened)
+      resumePeer.release()
+      expect((yield* Fiber.join(waiting)).status).toEqual(delivered.status)
+
+      releaseTool.release()
+      expect((yield* Fiber.join(newer)).outcome).toMatchObject({ reason: "stop_on_response", steps: 2 })
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          releaseFirst.release()
+          resumePeer.release()
+          releaseTool.release()
+        }),
+      ),
+      Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))),
+    )
+  },
+)

@@ -237,11 +237,12 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       ) =>
         Effect.gen(function* () {
           let started = admitted.started
+          let waited: Execution | undefined
           let notified = false
           while (true) {
-            const local = started ?? senders.get(admitted.seq) ?? live.get(threadId)
+            const local = started ?? senders.get(admitted.seq)
             if (!started && !notified) {
-              yield* notifyWaiting(threadId, local, options)
+              yield* notifyWaiting(threadId, local ?? live.get(threadId), options)
               notified = true
             }
             if (local) yield* local.settlement.await
@@ -253,12 +254,15 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             const awaitingRun = !settlement?.finished && !(stillQueued && settlement?.tookEntry === false)
             if (status.state === "running" && awaitingRun) {
               started = undefined
-              if (!live.has(threadId)) yield* Effect.sleep("50 millis")
+              const active = senders.get(admitted.seq) ?? live.get(threadId)
+              waited = active
+              if (active) yield* active.settlement.await
+              else yield* Effect.sleep("50 millis")
               continue
             }
 
             const takingRun = senders.get(admitted.seq)
-            const reportingRun = takingRun ?? local
+            const reportingRun = takingRun ?? local ?? waited
             const outcome =
               reportingRun && reportingRun.flowId === settlement?.flowId
                 ? yield* reportingRun.settlement.await
