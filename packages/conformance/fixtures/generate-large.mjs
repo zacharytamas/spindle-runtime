@@ -41,7 +41,11 @@ export default { name: "model_${i}", provider, model: "fixture-model-${i}" }
 `,
   hooks: (i) => `export default { hook: "after_create_message", id: "hook_${i}", execute: async () => {} }
 `,
-  handlers: (i) => `export default { description: "Handler ${i}", execute: async () => {} }
+  handlers: (i) => `export default {
+  [Symbol.for("standardagents.handler")]: true,
+  description: "Handler ${i}",
+  execute: async () => {},
+}
 `,
   effects: (i) => `export default ["Effect ${i}", null, async () => {}]
 `,

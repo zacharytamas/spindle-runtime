@@ -13,7 +13,7 @@ export const agents = {
 }
 
 export const handlers = {
-  relay_pipe: async () => ({ execute: async () => {} }),
+  relay_pipe: async () => ({ [Symbol.for("standardagents.handler")]: true, execute: async () => {} }),
 }
 
 export const prompts = {

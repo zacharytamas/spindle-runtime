@@ -7,7 +7,7 @@ export const agents = {
 }
 
 export const handlers = {
-  gate_pipe: async () => ({ execute: async () => {} }),
+  gate_pipe: async () => ({ [Symbol.for("standardagents.handler")]: true, execute: async () => {} }),
 }
 
 export const prompts = {}

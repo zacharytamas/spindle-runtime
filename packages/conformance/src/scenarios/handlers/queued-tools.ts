@@ -63,7 +63,9 @@ export const HD13: Scenario = {
           execute: async (state: ThreadState, args: { fail?: boolean | undefined }) => {
             toolSnapshots.push(executionSnapshot(state))
             if (args.fail) return { status: "error" as const, error: "expected tool failure" }
-            return ok(`val=${await state.env("HANDLER_AGENT_ENV")}`)
+            const value = await state.env("HANDLER_AGENT_ENV")
+            expect(value).toBe(`side-${handlerSide}`)
+            return ok(`val=${value}`)
           },
         }),
       }
@@ -120,7 +122,7 @@ export const HD13: Scenario = {
           const stored = await session.messages(thread)
           expect(stored.map((m) => [m.role, m.content, m.prompt, m.tool_status, m.metadata])).toEqual([
             [expectedRole, null, null, null, { queued: true }],
-            ["tool", `val=side-${handlerSide}`, null, "success", {}],
+            ["tool", "val=[redacted]", null, "success", {}],
             [expectedRole, null, null, null, { queued: true }],
             ["tool", "expected tool failure", null, "error", {}],
           ])
@@ -137,9 +139,9 @@ export const HD13: Scenario = {
     // Part 2: on handler (side A) x prompt (side B):
     // - queueTool called from handler A records side: "a" -> owned by handler A (prompt: null, no prompt B call!)
     // - queueTool called at rest records side: null -> rule 28 picks the single prompt side B (prompt: "reviewer", prompt B runs!)
-    let handlerRuns = 0
+    const deliveredIds: Array<string> = []
     const handler_a = handlerOf(async (state, message) => {
-      handlerRuns += 1
+      deliveredIds.push(message.id)
       if (message.content === "queue-from-handler") {
         state.queueTool("ping_tool", { source: "handler-a" })
       }
@@ -174,7 +176,7 @@ export const HD13: Scenario = {
         // Handler A queues tool during its turn -> owned by side A (handler), prompt B never runs, handler A doesn't re-run.
         const outHandler = await sendWith(session, thread, "queue-from-handler")
         expect(outHandler).toMatchObject({ status: "idle", reason: "handler_idle", steps: 0, modelCalls: [] })
-        expect(handlerRuns).toBe(1)
+        expect(deliveredIds).toHaveLength(1)
         expect(providerB.requests).toHaveLength(0)
         const afterHandlerTool = await session.messages(thread)
         expect(afterHandlerTool.map((m) => [m.role, m.content, m.prompt])).toEqual([
@@ -198,8 +200,8 @@ export const HD13: Scenario = {
           ["tool", "ran:at-rest", "reviewer"],
           ["user", "B saw rest queued tool", "reviewer"],
         ])
-        // Handler A received B's reply after B's model step.
-        expect(handlerRuns).toBe(2)
+        // Rule 21 includes the synthetic caller and the model reply from B.
+        expect(deliveredIds).toEqual([all[0]?.id, all[3]?.id, all[5]?.id])
       },
     )
   },
