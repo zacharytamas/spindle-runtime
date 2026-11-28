@@ -342,9 +342,11 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
-			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches"
+			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
+			"packages/runtime/test/conformance.test.ts > sides > T07 (rules 14, §3) stops an uncapped prompt x prompt loop at stepCap when neither model stops",
+			"packages/runtime/test/conformance.test.ts > sides > T05 (rules 9, 10, 11) enforces maxSessionTurns on prompt x prompt, counts multi-step turns as one, keeps queued work pending, and resets"
 		],
-		"reason": "S19 and S20 enforce maxSteps, the runtime step cap, and the stop rules of one prompt side. M2a adds maxSessionTurns and M2b adds session tools."
+		"reason": "Prompt turns enforce side, session, and runtime step limits. Session lifecycle tools arrive in M2b."
 	},
 	"infrastructure:runtime:f448a4e6": {
 		"status": "covered",
@@ -581,14 +583,16 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:bc5ba253": {
-		"status": "partial",
-		"milestone": "M1",
+		"status": "covered",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S19 counts maxSteps per side and per turn and exposes the counters to tools",
 			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match",
-			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_total_steps matches once the execution reaches the runtime step cap"
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_total_steps matches once the execution reaches the runtime step cap",
+			"packages/runtime/test/conformance.test.ts > sides > T08 (rule 14) checks stepCap last so stopTool, stopOnResponse, maxSteps, and maxSessionTurns win on the same step",
+			"packages/runtime/test/conformance.test.ts > sides > T06 (rules 9, 10, 11, 12) enforces durable maxSessionTurns across sends and peers on prompt x human and resets for a new session"
 		],
-		"reason": "maxSteps and the runtime step cap are evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2a."
+		"reason": ""
 	},
 	"infrastructure:runtime:f4e7b1f2": {
 		"status": "planned",
@@ -1164,9 +1168,11 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
-			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > orders the rules stopTool, stopOnResponse, maxSteps, then the runtime step cap"
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > orders the rules stopTool, stopOnResponse, maxSteps, then the runtime step cap",
+			"packages/runtime/test/conformance.test.ts > sides > T07 (rules 14, §3) stops an uncapped prompt x prompt loop at stepCap when neither model stops",
+			"packages/runtime/test/conformance.test.ts > sides > T08 (rule 14) checks stepCap last so stopTool, stopOnResponse, maxSteps, and maxSessionTurns win on the same step"
 		],
-		"reason": "S20 and the stop-rule table enforce stopTool, stopOnResponse, maxSteps, and the runtime step cap of one prompt side. M2a adds maxSessionTurns and M2b adds session tools."
+		"reason": "Prompt turns apply forceTurn and stop rules before the runtime step cap. Session lifecycle tools arrive in M2b."
 	},
 	"infrastructure:runtime:43d5659d": {
 		"status": "covered",
@@ -2585,15 +2591,19 @@
 		"reason": ""
 	},
 	"specification:threads:2ea40632": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T12 (rules 6, 7) shares one mutable state.context across delivery hooks, side A, side B, and nested tools, never leaks into arguments, and resets next run"
+		],
 		"reason": ""
 	},
 	"specification:threads:c487ef3f": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T12 (rules 6, 7) shares one mutable state.context across delivery hooks, side A, side B, and nested tools, never leaks into arguments, and resets next run"
+		],
 		"reason": ""
 	},
 	"specification:threads:97affdf6": {
@@ -3741,9 +3751,11 @@
 			"packages/runtime/test/conformance.test.ts > run status > R16 settles each run with the stop reason code that applies",
 			"packages/runtime/test/conformance.test.ts > queue > Q06 starts a turn from a message queued to an idle thread, with its perspective and payload, and parks for the human",
 			"packages/runtime/test/conformance.test.ts > queue > Q11 lets the model call in flight finish when stop is called, then runs no tool and no step and settles idle",
-			"packages/runtime/test/conformance.test.ts > queue > Q23 ends an execution at the step cap although a hook queues a message on every response, and the next send delivers it"
+			"packages/runtime/test/conformance.test.ts > queue > Q23 ends an execution at the step cap although a hook queues a message on every response, and the next send delivers it",
+			"packages/runtime/test/conformance.test.ts > sides > T10 (rules 14, 15) forceTurn targeting a human side settles forced_human_turn, yields to maxSessionTurns, and is ignored by stop()",
+			"packages/runtime/test/conformance.test.ts > sides > T05 (rules 9, 10, 11) enforces maxSessionTurns on prompt x prompt, counts multi-step turns as one, keeps queued work pending, and resets"
 		],
-		"reason": "The runtime settles with stop_on_response, stop_tool, max_side_steps, awaiting_human, aborted, and aborted_by_user where they apply. The clause for clients belongs to the Thread Client API in M5, and the session and handler codes arrive with sessions and handlers in M2a."
+		"reason": "Prompt exchanges report forced_human_turn and max_session_turns. Handler and state_stop_session reasons arrive in M2a-2, session tools in M2b, and client handling of unknown codes in M5."
 	},
 	"specification:threads/execution-state:7029c151": {
 		"status": "partial",
@@ -5288,9 +5300,12 @@
 		"reason": ""
 	},
 	"specification:agents:47d9e86c": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T05 (rules 9, 10, 11) enforces maxSessionTurns on prompt x prompt, counts multi-step turns as one, keeps queued work pending, and resets",
+			"packages/runtime/test/conformance.test.ts > sides > T06 (rules 9, 10, 11, 12) enforces durable maxSessionTurns across sends and peers on prompt x human and resets for a new session"
+		],
 		"reason": ""
 	},
 	"specification:agents:afee8031": {
@@ -5413,10 +5428,13 @@
 		"reason": ""
 	},
 	"infrastructure:runtime:853d2427": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
-		"reason": "43bbb05d holds the same sentence for M1. M2a adds the case with two prompt sides."
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T01 (rules 1, 2, 4, 5, 32) alternates prompt x prompt A to B to A with reused tool call IDs and independent step counts",
+			"packages/runtime/test/conformance.test.ts > sides > T02 (rule 3) hides opposite-side tool-call-only messages without text or attachments on both sides"
+		],
+		"reason": ""
 	},
 	"infrastructure:runtime:ec3b4b7f": {
 		"status": "covered",
@@ -5765,21 +5783,27 @@
 		"reason": "The store keeps the arguments a thread was created with. M2b owes exposing them read-only on ThreadState.arguments on every run, and the arguments supplied when a thread is invoked."
 	},
 	"specification:threads:357c07d0": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T12 (rules 6, 7) shares one mutable state.context across delivery hooks, side A, side B, and nested tools, never leaks into arguments, and resets next run"
+		],
 		"reason": ""
 	},
 	"specification:threads:c2a80b35": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T12 (rules 6, 7) shares one mutable state.context across delivery hooks, side A, side B, and nested tools, never leaks into arguments, and resets next run"
+		],
 		"reason": ""
 	},
 	"specification:threads:d4e23481": {
-		"status": "planned",
+		"status": "covered",
 		"milestone": "M2a",
-		"tests": [],
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T12 (rules 6, 7) shares one mutable state.context across delivery hooks, side A, side B, and nested tools, never leaks into arguments, and resets next run"
+		],
 		"reason": ""
 	},
 	"specification:threads:b680018e": {
@@ -6153,13 +6177,14 @@
 		"reason": ""
 	},
 	"specification:agents:35afe886": {
-		"status": "partial",
-		"milestone": "M1",
+		"status": "covered",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S20 evaluates stopTool, then stopOnResponse, then maxSteps when more than one rule matches",
-			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match"
+			"packages/runtime/test/execution/stop-rules.test.ts > stop rules > max_side_steps wins over max_total_steps when both match",
+			"packages/runtime/test/conformance.test.ts > sides > T08 (rule 14) checks stepCap last so stopTool, stopOnResponse, maxSteps, and maxSessionTurns win on the same step"
 		],
-		"reason": "maxSteps is evaluated after stopTool and stopOnResponse. maxSessionTurns waits for M2a."
+		"reason": ""
 	},
 	"specification:prompts:f46d5136": {
 		"status": "covered",
@@ -6855,6 +6880,25 @@
 		"milestone": "M1",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records"
+		],
+		"reason": ""
+	},
+	"specification:threads/execution-state:0b7bee20": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T01 (rules 1, 2, 4, 5, 32) alternates prompt x prompt A to B to A with reused tool call IDs and independent step counts",
+			"packages/runtime/test/conformance.test.ts > sides > T09 (rules 14, 16) forceTurn routes to the opposite prompt side without aborting siblings and forces the same side into a fresh turn",
+			"packages/runtime/test/conformance.test.ts > sides > T10 (rules 14, 15) forceTurn targeting a human side settles forced_human_turn, yields to maxSessionTurns, and is ignored by stop()",
+			"packages/runtime/test/conformance.test.ts > sides > T11 (rules 14, §1.4, §3) forceTurn uses last-write-wins in a step and throws InvalidArguments synchronously for bad sides in tools and hooks"
+		],
+		"reason": ""
+	},
+	"specification:agents:7d581abd": {
+		"status": "covered",
+		"milestone": "M2a",
+		"tests": [
+			"packages/runtime/test/conformance.test.ts > sides > T01 (rules 1, 2, 4, 5, 32) alternates prompt x prompt A to B to A with reused tool call IDs and independent step counts"
 		],
 		"reason": ""
 	}

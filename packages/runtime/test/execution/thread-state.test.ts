@@ -1,12 +1,20 @@
 import { describe, expect, it } from "@effect/vitest"
-import { defineTool, type ExecutionState, type SkillsNamespace, type ThreadState } from "@standardagents/spec"
+import {
+  defineHook,
+  defineTool,
+  type ExecutionState,
+  type SkillsNamespace,
+  type ThreadState,
+} from "@standardagents/spec"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { expectTypeOf } from "vitest"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
 import { ok, project, stubTool, using } from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
-import { createThread, stateAtRest } from "../../src/execution/trigger.ts"
+import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
+import { ThreadStore } from "../../src/store/ThreadStore.ts"
 import { registryOf, spindleDriver } from "../spindle-driver.ts"
 import { inMemory } from "../store/contract-fixtures.ts"
 
@@ -273,6 +281,93 @@ describe("ThreadState", () => {
     ),
   )
 
+  it.effect(
+    "classifies prompt and tool-entry values using secret names from either side before the first request",
+    () => {
+      const providerA = new ScriptedProvider([])
+      const providerB = new ScriptedProvider([])
+      Object.assign(providerB.factory, { configSlots: { apiKey: { type: "secret", defaultEnv: "MODEL_KEY" } } })
+      const setup = dualProject({
+        providerA,
+        providerB,
+        tools: { noop: stubTool("No operation", "ok") },
+        promptA: {
+          prompt: "System text with prompt-marker",
+          env: { SHARED_TOKEN: "prompt-marker" },
+          tools: [{ name: "noop", env: { MODEL_KEY: "entry-marker" } }],
+        },
+        promptB: {
+          variables: [{ name: "SHARED_TOKEN", type: "secret", required: false, description: "Shared token" }],
+        },
+      })
+      return Effect.gen(function* () {
+        const { id } = yield* createThread("pair")
+        const secrets = new Set<string>()
+        const { outcome } = yield* sendMessage(id, "go", { secrets, retries: 0 })
+        expect(secrets.has("prompt-marker")).toBe(true)
+        expect(secrets.has("entry-marker")).toBe(true)
+        expect(outcome?.error?.message).toContain("holds a secret value")
+        expect(providerA.requests).toHaveLength(0)
+      }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory))))
+    },
+  )
+
+  it.effect("an at-rest writer learns the valid side's secrets when its peer cannot prepare", () => {
+    const setup = dualProject({
+      providerA: new ScriptedProvider([]),
+      providerB: new ScriptedProvider([]),
+      promptA: { variables: [{ name: "SIDE_TOKEN", type: "secret", required: false, description: "Token" }] },
+      promptB: { model: "missing" },
+    })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("pair")
+      const state = yield* stateAtRest(id)
+      yield* Effect.promise(() => state.injectMessage({ role: "user", content: "marker-one" }))
+      const stored = yield* Effect.promise(() => state.getMessages())
+      expect(stored.messages.map((message) => message.content)).toEqual(["[redacted]"])
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(setup),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(ConfigProvider.fromEnvRecord({ SIDE_TOKEN: "marker-one" })),
+        ),
+      ),
+    )
+  })
+
+  it.effect("an unreadable provider setting leaves the other settings available for redaction", () => {
+    const provider = new ScriptedProvider([])
+    Object.assign(provider.factory, {
+      configSlots: {
+        first: { type: "secret", defaultEnv: "UNREADABLE" },
+        second: { type: "secret", defaultEnv: "READABLE" },
+      },
+    })
+    return Effect.gen(function* () {
+      const { id } = yield* createThread("assistant")
+      const state = yield* stateAtRest(id)
+      const written = yield* Effect.promise(() => state.injectMessage({ role: "user", content: "marker-two" }))
+      expect(written.content).toBe("[redacted]")
+      const delivery = yield* sendMessage(id, "go")
+      expect(delivery.outcome?.error?.message).toContain("Instance environment read failed for UNREADABLE")
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          registryOf(project({ provider })),
+          Layer.provideMerge(supervisorLayer(), inMemory),
+          ConfigProvider.layer(
+            ConfigProvider.make((path) =>
+              path[0] === "UNREADABLE"
+                ? Effect.fail(new ConfigProvider.SourceError({ message: "read failed" }))
+                : Effect.succeed(path[0] === "READABLE" ? ConfigProvider.makeValue("marker-two") : undefined),
+            ),
+          ),
+        ),
+      ),
+    )
+  })
+
   // Threads section 2.3 (specification/threads.md:227-230): instanceEnv "returns `undefined` when the key is not
   // configured and rejects when the runtime cannot read its instance environment". One provider serves all three keys,
   // so the rejection comes from the failing read and from nothing else in the setup.
@@ -522,4 +617,84 @@ describe("ThreadState", () => {
       },
     )
   })
+
+  it.effect(
+    "rules 6, 7: state.context is shared across delivery hooks, prompt hooks, and tools without leaking into thread arguments",
+    () => {
+      const seen: Array<unknown> = []
+      const hooks = [
+        defineHook({
+          hook: "before_create_message",
+          id: "ctx_delivery",
+          execute: async (state, message) => {
+            if (message.role === "user") {
+              state.context.shirt_size = "XL"
+              state.context.fromDelivery = "yes"
+              seen.push(["delivery", state.arguments, { ...state.context }])
+            }
+            return message
+          },
+        }),
+        defineHook({
+          hook: "filter_messages",
+          id: "ctx_prompt",
+          execute: async (state, messages) => {
+            if (state.execution?.stepCount === 0) {
+              state.context.fromPrompt = "yes"
+              seen.push(["prompt", state.arguments, { ...state.context }])
+            }
+            return messages
+          },
+        }),
+      ]
+      const inspect_ctx = defineTool({
+        description: "Inspect context and arguments",
+        execute: async (state: ThreadState) => {
+          state.context.fromTool = "yes"
+          seen.push(["tool", state.arguments, { ...state.context }])
+          return ok("done")
+        },
+      })
+      const provider = new ScriptedProvider([
+        { toolCalls: [{ id: "c1", name: "inspect_ctx", arguments: {} }] },
+        { text: "run 1 done" },
+        { text: "run 2 done" },
+      ])
+      return Effect.gen(function* () {
+        const threads = yield* ThreadStore
+        const sql = yield* SqlClient
+        const thread = yield* threads.createThread({ agentId: "assistant", arguments: { shirt_size: "L" } })
+        yield* sendMessage(thread.id, "first")
+        const rest = yield* stateAtRest(thread.id)
+        expect(rest.arguments).toEqual({ shirt_size: "L" })
+        expect(rest.context).toEqual({})
+        expect(yield* sql<{ arguments: string }>`SELECT arguments FROM threads WHERE id = ${thread.id}`).toEqual([
+          { arguments: '{"shirt_size":"L"}' },
+        ])
+        yield* sendMessage(thread.id, "second")
+        expect(seen).toEqual([
+          ["delivery", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes" }],
+          ["prompt", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes" }],
+          ["tool", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes", fromTool: "yes" }],
+          ["delivery", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes" }],
+          ["prompt", { shirt_size: "L" }, { shirt_size: "XL", fromDelivery: "yes", fromPrompt: "yes" }],
+        ])
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            registryOf(
+              project({
+                provider,
+                tools: { inspect_ctx },
+                hooks,
+                agent: { hooks: ["ctx_delivery"] },
+                prompt: { hooks: ["ctx_prompt"] },
+              }),
+            ),
+            Layer.provideMerge(supervisorLayer(), inMemory),
+          ),
+        ),
+      )
+    },
+  )
 })

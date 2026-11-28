@@ -5,6 +5,7 @@ import { messageScenarios } from "../../conformance/src/scenarios/messages.ts"
 import { ownershipScenarios } from "../../conformance/src/scenarios/ownership.ts"
 import { queueScenarios } from "../../conformance/src/scenarios/queue.ts"
 import { runStatusScenarios } from "../../conformance/src/scenarios/run-status.ts"
+import { sideScenarios } from "../../conformance/src/scenarios/sides.ts"
 import { S22 } from "../../conformance/src/scenarios/step-loop/provider-responses.ts"
 import { stepLoopScenarios } from "../../conformance/src/scenarios/step-loop.ts"
 import { spindleDriver } from "./spindle-driver.ts"
@@ -44,4 +45,8 @@ describe("run status", () => {
 
 describe("integrity", () => {
   for (const scenario of integrityScenarios) it(scenario.name, () => scenario.run(spindleDriver))
+})
+
+describe("sides", () => {
+  for (const scenario of sideScenarios) it(scenario.name, () => scenario.run(spindleDriver))
 })

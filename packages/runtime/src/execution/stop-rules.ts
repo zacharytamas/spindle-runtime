@@ -35,3 +35,5 @@ export const STOP_RULES: ReadonlyArray<StopRule> = [
 
 export const stopReason = (step: StepFacts, side: PromptSide, stepCap: number) =>
   STOP_RULES.find((rule) => rule.applies(step, side, stepCap))?.reason
+
+export const atRuntimeCap = (reason: string) => reason === "max_session_turns" || reason === "max_total_steps"

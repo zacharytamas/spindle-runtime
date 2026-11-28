@@ -12,6 +12,7 @@ import {
   deliveryFlags,
   fail,
   holdNote,
+  isModelMessage,
   note,
   plural,
   requestText,
@@ -34,7 +35,7 @@ const printer =
     const message = event.message
     if (message.role === "tool")
       return print(`[tool result] ${message.name} ${message.tool_status}: ${message.content ?? ""}`)
-    if (message.role !== modelRole) return Effect.void
+    if (!isModelMessage(message, modelRole)) return Effect.void
     return Effect.gen(function* () {
       if (message.content !== null && message.content !== "") yield* print(message.content)
       for (const call of toolCallsOf(message)) yield* print(toolCallLine(call))
@@ -93,6 +94,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
             yield* identify(
               `${outcome.status} (${clean(outcome.reason)}) after ${plural(outcome.steps, "step")}, thread ${threadId}`,
             )
+            if (delivery.stillQueued) yield* note(stillQueued)
             if (outcome.status === "failed") return yield* fail(outcome.error?.message ?? outcome.reason)
             return
           }
@@ -103,6 +105,7 @@ export const deliver = (args: DeliveryArgs, target: { readonly agent: string } |
               `the run of thread ${threadId} ended ${clean(status.reason ?? "none")}${queuedNote}`,
               identify,
             )
+          if (delivery.stillQueued) yield* note(stillQueued)
         }),
       (role) => printer(role, args),
     )

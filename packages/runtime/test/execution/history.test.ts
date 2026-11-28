@@ -1,10 +1,22 @@
 import { describe, expect, it } from "@effect/vitest"
 import { defineHook, defineTool, type Message, type ThreadState } from "@standardagents/spec"
 import { Effect, Fiber, Layer } from "effect"
+import * as Statement from "effect/sql/Statement"
+import { expectTypeOf } from "vitest"
 import { SqliteLive } from "#platform"
 import { ScriptedProvider } from "../../../conformance/src/ScriptedProvider.ts"
-import { ok, project, type Setup } from "../../../conformance/src/scenarios/harness.ts"
+import {
+  history as historyOf,
+  ok,
+  project,
+  type Setup,
+  sideOf,
+  stubTool,
+  using,
+} from "../../../conformance/src/scenarios/harness.ts"
+import { dualProject, forceTool, usingDual } from "../../../conformance/src/scenarios/sides/fixtures.ts"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
+import type { HistoryView } from "../../src/execution/assemble.ts"
 import { newSecrets } from "../../src/execution/env.ts"
 import { copyMessage, makeHistory } from "../../src/execution/history.ts"
 import type { HookScope } from "../../src/execution/hooks.ts"
@@ -17,7 +29,7 @@ import { external } from "../../src/store/model.ts"
 import { RunStore } from "../../src/store/RunStore.ts"
 import { layer } from "../../src/store/sqlite.ts"
 import { ThreadStore } from "../../src/store/ThreadStore.ts"
-import { registryOf } from "../spindle-driver.ts"
+import { registryOf, spindleDriver } from "../spindle-driver.ts"
 
 const contents = (messages: ReadonlyArray<Message>) => messages.map((message) => message.content)
 
@@ -382,4 +394,315 @@ it.effect("runs the committed claim when its sender is interrupted before execut
     expect((yield* sendMessage(thread.id, "two")).outcome?.status).toBe("idle")
     expect(provider.requests).toHaveLength(2)
   }).pipe(Effect.provide(Layer.merge(registryOf(project({ provider })), Layer.provideMerge(supervisorLayer(), store))))
+})
+
+describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
+  const currentOnly = { includeChat: false, includePastTools: false }
+
+  it("rule 61: starts a same-side forceTurn with fresh chat and tool history", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "work", name: "work", arguments: {} }] },
+      { toolCalls: [{ id: "force", name: "again", arguments: {} }] },
+      { text: "fresh" },
+    ])
+    await using(
+      spindleDriver,
+      {
+        provider,
+        prompt: currentOnly,
+        tools: { work: stubTool("Work", "done"), again: forceTool("a") },
+      },
+      async (session, thread) => {
+        expect(await session.send(thread, "first turn")).toMatchObject({ reason: "stop_on_response", steps: 3 })
+      },
+    )
+    expect(historyOf(provider.requests[2]).map(sideOf)).toEqual([])
+  })
+
+  it("rule 61: hands off the first peer-visible response even when the final response only calls a tool", async () => {
+    const providerA = new ScriptedProvider([
+      { text: "draft", toolCalls: [{ id: "save", name: "save", arguments: {} }] },
+      { toolCalls: [{ id: "submit", name: "submit", arguments: {} }] },
+    ])
+    const providerB = new ScriptedProvider([{ text: "reviewed" }])
+    await usingDual(
+      spindleDriver,
+      {
+        providerA,
+        providerB,
+        promptA: currentOnly,
+        promptB: currentOnly,
+        tools: { save: stubTool("Save", "saved"), submit: stubTool("Submit", "submitted") },
+        sideA: { stopTool: "submit" },
+        agent: { maxSessionTurns: 2 },
+      },
+      async (session, thread) => {
+        expect(await session.send(thread, "write")).toMatchObject({ reason: "max_session_turns", steps: 3 })
+      },
+    )
+    expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+      ["assistant", "write", []],
+      ["user", "draft"],
+    ])
+  })
+
+  it("rule 61: keeps the triggering delivery and the note its delivery hook injects", async () => {
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    const hook = defineHook({
+      hook: "after_create_message",
+      id: "annotate",
+      execute: async (state, message) => {
+        if (message.content === "question") await state.injectMessage({ role: "user", content: "note" })
+      },
+    })
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, hooks: [hook], agent: { hooks: [hook.id] } },
+      (session, thread) => session.send(thread, "question"),
+    )
+    expect(historyOf(provider.requests[0]).map(sideOf)).toEqual([
+      ["user", "question"],
+      ["user", "note"],
+    ])
+  })
+
+  it("rule 61: starts a queued tool turn at its call when the tool injects chat", async () => {
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    const annotate = defineTool({
+      description: "Add a note",
+      execute: async (state) => {
+        await state.injectMessage({ role: "user", content: "note" })
+        return ok("annotated")
+      },
+    })
+    await using(spindleDriver, { provider, prompt: currentOnly, tools: { annotate } }, async (session, thread) => {
+      const state = await session.state(thread)
+      state.queueTool("annotate", {})
+      await session.settled(thread)
+    })
+    const messages = historyOf(provider.requests[0])
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool", "user"])
+    expect(messages[0]).toMatchObject({ toolCalls: [{ name: "annotate" }] })
+    expect(messages[2]?.content).toBe("note")
+  })
+
+  it("rule 61: excludes previous chat and tool calls when a queued tool starts a later run", async () => {
+    const provider = new ScriptedProvider([
+      { toolCalls: [{ id: "old", name: "work", arguments: {} }] },
+      { text: "old answer" },
+      { text: "new answer" },
+    ])
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, tools: { work: stubTool("Work", "done") } },
+      async (session, thread) => {
+        await session.send(thread, "old question")
+        const state = await session.state(thread)
+        state.queueTool("work", {})
+        await session.settled(thread)
+      },
+    )
+    const messages = historyOf(provider.requests[2])
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
+    expect(messages[0]).toMatchObject({ toolCalls: [{ id: expect.stringMatching(/^queued-/), name: "work" }] })
+  })
+
+  for (const delivery of ["queued", "injected"] as const) {
+    it(`rule 61: B sees the opening send and the ${delivery} message from A's handoff tool`, async () => {
+      const publish = defineTool({
+        description: "Send a note to the reviewer",
+        execute: async (state) => {
+          const note = { role: "assistant" as const, content: "review note" }
+          if (delivery === "queued") await state.queueMessage(note)
+          else await state.injectMessage(note)
+          return ok("sent")
+        },
+      })
+      const providerA = new ScriptedProvider([
+        { ...(delivery === "queued" && { text: "draft" }), toolCalls: [{ id: "c1", name: "publish", arguments: {} }] },
+      ])
+      const providerB = new ScriptedProvider([{ text: "reviewed" }])
+      await usingDual(
+        spindleDriver,
+        {
+          providerA,
+          providerB,
+          promptA: currentOnly,
+          promptB: currentOnly,
+          tools: { publish },
+          sideA: { stopTool: "publish" },
+          agent: { maxSessionTurns: 2 },
+        },
+        (session, thread) => session.send(thread, "write"),
+      )
+      expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+        ["assistant", "write", []],
+        ...(delivery === "queued" ? [["user", "draft"]] : []),
+        ["user", "review note"],
+      ])
+    })
+  }
+
+  it("rule 61: a preamble stored by before_create_message precedes the delivery in the request", async () => {
+    const prepend = defineHook({
+      hook: "before_create_message",
+      id: "prepend",
+      execute: async (state, message) => {
+        if (message.content === "question") await state.injectMessage({ role: "user", content: "preamble" })
+        return message
+      },
+    })
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, hooks: [prepend], agent: { hooks: [prepend.id] } },
+      (session, thread) => session.send(thread, "question"),
+    )
+    expect(historyOf(provider.requests[0]).map(sideOf)).toEqual([
+      ["user", "preamble"],
+      ["user", "question"],
+    ])
+  })
+
+  it.effect(
+    "§5.2: HistoryView uses turnStartSeq to exclude past turns across side switches while keeping current-turn injections and synthetic filter_messages rows",
+    () =>
+      Effect.gen(function* () {
+        expectTypeOf<HistoryView["turnStartSeq"]>().toEqualTypeOf<number>()
+        const injectTool = defineTool({
+          description: "Inject a note mid-turn",
+          execute: async (state: ThreadState) => {
+            await state.injectMessage({ role: "user", content: "mid-turn note" })
+            return ok("injected")
+          },
+        })
+        const addSynthetic = defineHook({
+          hook: "filter_messages",
+          id: "add_synthetic",
+          execute: async (_state, messages) => [
+            ...messages,
+            { id: "synthetic-1", role: "assistant", content: "synthetic for B", created_at: 0 },
+          ],
+        })
+        const providerA = new ScriptedProvider([
+          { toolCalls: [{ id: "ca1", name: "inject_tool", arguments: {} }] },
+          { text: "A1" },
+          { text: "A2" },
+        ])
+        const providerB = new ScriptedProvider([{ text: "B1" }])
+        const setup = dualProject({
+          providerA,
+          providerB,
+          tools: { inject_tool: injectTool },
+          hooks: [addSynthetic],
+          promptA: { includeChat: false, includePastTools: false, tools: ["inject_tool"] },
+          promptB: { includeChat: false, includePastTools: false, hooks: ["add_synthetic"], tools: [] },
+          agent: { maxSessionTurns: 3 },
+        })
+        yield* Effect.gen(function* () {
+          const thread = yield* createThread("pair")
+          yield* appendMessages(thread.id, [
+            { role: "user", content: "old user" },
+            { role: "assistant", content: "old assistant" },
+          ])
+          const { outcome } = yield* sendMessage(thread.id, "fresh start")
+          expect(outcome).toMatchObject({ status: "idle", reason: "max_session_turns", steps: 4 })
+        }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+        // Side A step 1: old history (< turnStartSeq) excluded.
+        expect(historyOf(providerA.requests[0]).map(sideOf)).toEqual([["user", "fresh start"]])
+        // Side A step 2: mid-turn injection did not advance turnStartSeq past "fresh start".
+        expect(historyOf(providerA.requests[1]).map(sideOf)).toEqual([
+          ["user", "fresh start"],
+          ["assistant", null, ["ca1"]],
+          ["tool", "ca1"],
+          ["user", "mid-turn note"],
+        ])
+        // B has no earlier turn in this execution. It sees the opening message and the injected note.
+        expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+          ["assistant", "fresh start", []],
+          ["assistant", "mid-turn note", []],
+          ["user", "A1"],
+          ["user", "synthetic for B"],
+        ])
+        // Side A turn 3: past history (< turnStartSeq) excluded; only B1 is in the current turn.
+        expect(historyOf(providerA.requests[2]).map(sideOf)).toEqual([["user", "B1"]])
+      }),
+  )
+
+  it.effect(
+    "§5.1, §5.2, §5.4, §5.6: a prompt x prompt exchange on a 1,000-message thread issues the same SQL statements and history reads as on a 10-message thread",
+    () =>
+      Effect.gen(function* () {
+        const measure = (seedCount: number) =>
+          Effect.gen(function* () {
+            const reads = { count: 0 }
+            let totalSql = 0
+            let stepSql = 0
+            const perStepSql: Array<number> = []
+            const observeSql: Statement.Transformer = (statement) => {
+              totalSql += 1
+              stepSql += 1
+              return Effect.succeed(statement)
+            }
+            const tickStep =
+              (response: {
+                readonly text?: string
+                readonly toolCalls?: ReadonlyArray<{
+                  readonly id: string
+                  readonly name: string
+                  readonly arguments: Record<string, unknown>
+                }>
+              }) =>
+              () => {
+                perStepSql.push(stepSql)
+                stepSql = 0
+                return response
+              }
+            const providerA = new ScriptedProvider([
+              tickStep({ toolCalls: [{ id: "ca1", name: "work", arguments: {} }] }),
+              tickStep({ text: "A done" }),
+            ])
+            const providerB = new ScriptedProvider([
+              tickStep({ toolCalls: [{ id: "cb1", name: "check", arguments: {} }] }),
+              tickStep({ text: "B done" }),
+            ])
+            const setup = dualProject({
+              providerA,
+              providerB,
+              tools: { work: stubTool("Work", "worked"), check: stubTool("Check", "checked") },
+              promptA: { includeChat: false, includePastTools: false, tools: ["work"] },
+              promptB: { includeChat: false, includePastTools: false, tools: ["check"] },
+              agent: { maxSessionTurns: 2 },
+            })
+            const outcome = yield* Effect.gen(function* () {
+              const thread = yield* createThread("pair")
+              yield* appendMessages(
+                thread.id,
+                Array.from({ length: seedCount }, (_, index) => ({
+                  role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+                  content: `seeded ${index}`,
+                })),
+              )
+              const { outcome } = yield* sendMessage(thread.id, "go").pipe(
+                Effect.provideService(Statement.CurrentTransformer, observeSql),
+              )
+              perStepSql.push(stepSql)
+              return outcome
+            }).pipe(
+              Effect.provide(
+                Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), countingStore(reads))),
+              ),
+            )
+            expect(outcome).toMatchObject({ status: "idle", reason: "max_session_turns", steps: 4 })
+            return { totalSql, perStepSql, historyReads: reads.count }
+          })
+
+        const short = yield* measure(10)
+        const long = yield* measure(1000)
+        expect(short.totalSql).toBeGreaterThan(0)
+        expect(long.totalSql).toBe(short.totalSql)
+        expect(long.perStepSql).toEqual(short.perStepSql)
+        expect([short.historyReads, long.historyReads]).toEqual([1, 1])
+      }),
+  )
 })

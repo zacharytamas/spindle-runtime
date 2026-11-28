@@ -18,6 +18,7 @@ import {
 import {
   type Claim,
   external,
+  FlowEnded,
   type Holder,
   type QueueEntry,
   type Thread,
@@ -30,6 +31,7 @@ import {
   messageRow,
   type QueueRow,
   queuePayload,
+  runReasonColumn,
   stored,
   type ThreadRow,
   text,
@@ -45,6 +47,16 @@ type Recovery =
 
 // All connections in this process can observe claims held by its supervisors.
 const localHolders = new Set<string>()
+
+const sessionEnds = new Set([
+  "max_session_turns",
+  "state_stop_session",
+  "session_stop",
+  "session_fail",
+  "step_error",
+  "fatal_error",
+  "execution_lost",
+])
 
 export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) => {
   const hasPending = (threadId: string) =>
@@ -100,9 +112,16 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
 
   const release = (threadId: string, status: ThreadStatus) =>
     sql`UPDATE threads SET run_state = ${status.state}, run_reason = ${stored(status.reason ?? null)},
+        session_turns = ${status.reason && sessionEnds.has(status.reason) ? 0 : sql.literal("session_turns")},
         run_since = ${status.since}, holder_id = NULL, flow_id = NULL WHERE id = ${threadId}`
 
-  const settleWith = (threadId: string, row: RunRow, event: Parameters<typeof transition>[1], closing: string) =>
+  const settleWith = (
+    threadId: string,
+    row: RunRow,
+    event: Parameters<typeof transition>[1],
+    closing: string,
+    tookEntry = false,
+  ) =>
     Effect.gen(function* () {
       const now = yield* nowMicros
       yield* closeCalls(threadId, row.flow_id, closing, now)
@@ -110,6 +129,10 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       if (next === undefined)
         return yield* Effect.die(new Error(`run status ${row.run_state} cannot take ${event.type}`))
       yield* release(threadId, next)
+      yield* sql`UPDATE waiting_senders SET settled_flow = ${row.flow_id}, settled_state = ${next.state},
+        settled_reason = ${next.reason}, settled_since = ${next.since}, took_entry = ${Number(tookEntry)},
+        finished = failed OR NOT EXISTS (SELECT 1 FROM queue WHERE seq = waiting_senders.seq)
+        WHERE thread_id = ${threadId} AND finished = 0`
       return next
     })
 
@@ -178,7 +201,12 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     ),
 
     claim: Effect.fn("RunStore.claim")(
-      function* (threadId: string, claim: Claim) {
+      function* (threadId: string, claim: Claim, after?: { seq: number; flowId: string }) {
+        if (after) {
+          const [eligible] = yield* sql`SELECT 1 FROM waiting_senders WHERE seq = ${after.seq}
+            AND settled_flow = ${after.flowId} AND finished = 0`
+          if (!eligible) return false
+        }
         const [row] = yield* runRows(threadId)
         if (row === undefined || row.terminated_at !== null) return false
         return (yield* hasPending(threadId)) && (yield* claimRun(threadId, row, claim, yield* nowMicros))
@@ -187,7 +215,53 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       unyielding,
     ),
 
+    completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string) {
+      const [updated] = yield* sql<{
+        session_turns: number
+        last_seq: number
+      }>`UPDATE threads SET session_turns = session_turns + 1
+        WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running'
+        RETURNING session_turns, (SELECT coalesce(max(seq), 0) FROM messages WHERE thread_id = ${threadId}) AS last_seq`
+      if (updated) return updated
+      const row = yield* selectRun(threadId)
+      return yield* new FlowEnded({ threadId, flowId, why: row.terminated_at === null ? "superseded" : "terminated" })
+    }, unyielding),
+
     queueDisposition,
+    senderState: Effect.fn("RunStore.senderState")(function* (threadId: string, seq: number) {
+      const rows = yield* sql<
+        Pick<ThreadRow, "terminated_at" | "run_state" | "run_since" | "run_reason"> & {
+          flow_id: string | null
+          disposition: "pending" | "failed_delivery" | null
+          settled_flow: string | null
+          settled_state: "idle" | "failed"
+          settled_reason: string
+          settled_since: number
+          took_entry: number
+          finished: number
+        }
+      >`SELECT t.terminated_at, t.run_state, t.run_since, ${sql.literal(runReasonColumn)}, t.flow_id,
+        CASE WHEN w.failed THEN 'failed_delivery' ELSE q.disposition END AS disposition,
+        w.settled_flow, w.settled_state, w.settled_reason, w.settled_since, w.took_entry, w.finished
+        FROM threads t LEFT JOIN waiting_senders w ON w.thread_id = t.id AND w.seq = ${seq}
+        LEFT JOIN queue q ON q.seq = w.seq WHERE t.id = ${threadId}`
+      const row = yield* requireThread(threadId, rows)
+      return {
+        terminated: row.terminated_at,
+        status: toStatus(row),
+        flowId: row.flow_id,
+        disposition: row.disposition ?? undefined,
+        settlement:
+          row.settled_flow === null
+            ? undefined
+            : {
+                flowId: row.settled_flow,
+                status: { state: row.settled_state, reason: row.settled_reason, since: row.settled_since },
+                tookEntry: row.took_entry === 1,
+                finished: row.finished === 1,
+              },
+      }
+    }, unyielding),
     releaseSender: Effect.fn("RunStore.releaseSender")(
       (seq: number, holder: string) => sql`DELETE FROM waiting_senders WHERE seq = ${seq} AND holder_id = ${holder}`,
       unyielding,
@@ -253,6 +327,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
         outcome: { readonly state: "idle" | "failed"; readonly reason: string },
         options: {
           readonly continueIfQueued: boolean
+          readonly tookEntry?: boolean
           readonly settleOnly?: boolean
           readonly atCap?: boolean
           readonly closing: string
@@ -271,11 +346,12 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
               row,
               { type: "settle", state: "idle", reason: "max_total_steps" },
               options.closing,
+              options.tookEntry,
             )
             return "capped" as const
           }
         }
-        yield* settleWith(threadId, row, { type: "settle", ...outcome }, options.closing)
+        yield* settleWith(threadId, row, { type: "settle", ...outcome }, options.closing, options.tookEntry)
         return "settled" as const
       },
       sql.withTransaction,

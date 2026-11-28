@@ -192,7 +192,7 @@ export const commitMessage = Effect.fn("commitMessage")(function* (
     id = original.id
   }
   // A nested write can take a checked id. Retry the insert once without replaying a hook's side effects.
-  const inserted = yield* insert(id).pipe(
+  const storeMessage = insert(id).pipe(
     Effect.catchTag("MessageIdTaken", (error) => {
       const fresh = crypto.randomUUID()
       return Effect.logWarning(
@@ -200,6 +200,13 @@ export const commitMessage = Effect.fn("commitMessage")(function* (
       ).pipe(Effect.andThen(insert(fresh)))
     }),
   )
+  const seq = policy.dequeue
+  const inserted = yield* seq === undefined
+    ? storeMessage
+    : storeMessage.pipe(
+        Effect.tap(() => Effect.sync(() => write.hooks.execution?.recordTaken(seq))),
+        Effect.uninterruptible,
+      )
   return yield* after(inserted)
 })
 

@@ -18,7 +18,7 @@ import { Execution } from "./Execution.ts"
 import { CLOSING } from "./run-status.ts"
 import { type ExecutionOptions, prepareSteps, type RunOutcome } from "./step.ts"
 import { type AdmissionError, queuedMessage, type ThreadControl } from "./thread-state.ts"
-import { roleOf, type SetupError, sidesOf } from "./turn.ts"
+import { loadAgent, roleOf, type SetupError, senderSide } from "./turn.ts"
 
 const CONTROL_POLL = Duration.millis(250)
 
@@ -87,6 +87,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       // flow is in neither has no execution behind it.
       const live = new Map<string, Execution>()
       const flows = new Set<string>()
+      const senders = new Map<number, Execution | undefined>()
 
       const statusOf = (threadId: string) =>
         Effect.andThen(
@@ -108,7 +109,9 @@ export const layer = (defaults: ExecutionOptions = {}) =>
             flows.delete(flowId)
             return undefined
           }
-          const run = new Execution(flowId)
+          const run = new Execution(flowId, (seq, takingRun) => {
+            if (senders.has(seq)) senders.set(seq, takingRun)
+          })
           const prior = live.get(threadId)
           if (prior && !prior.ended) prior.cancel("displace")
           live.set(threadId, run)
@@ -156,6 +159,7 @@ export const layer = (defaults: ExecutionOptions = {}) =>
                 (admitted) => {
                   seq = admitted.queued.seq
                   options.onAdmitted?.(seq)
+                  if (waitForDelivery) senders.set(seq, undefined)
                   return admitted.claimed
                 },
               ),
@@ -185,18 +189,6 @@ export const layer = (defaults: ExecutionOptions = {}) =>
         terminate: (origin) => terminate(threadId, origin),
       })
 
-      // Waits until no execution holds the thread. A holder in another process is watched through the store.
-      const awaitRest = (threadId: string): Effect.Effect<ThreadStatus, ThreadNotFound | SqlError> =>
-        Effect.gen(function* () {
-          while (true) {
-            const local = live.get(threadId)
-            if (local !== undefined) yield* local.settlement.await
-            const status = yield* statusOf(threadId)
-            if (status.state !== "running") return status
-            yield* Effect.sleep("50 millis")
-          }
-        })
-
       // Each poll also settles the runs whose holders died, settles a claim of this holder that has no execution
       // behind it, and interrupts an execution here whose run another process settled, by terminate or as lost.
       const tick = Effect.gen(function* () {
@@ -223,6 +215,21 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       })
       yield* Effect.forkScoped(Effect.forever(Effect.andThen(Effect.sleep(CONTROL_POLL), Effect.ignoreCause(tick))))
 
+      const notifyWaiting = Effect.fnUntraced(function* (
+        threadId: string,
+        local: Execution | undefined,
+        options: SendOptions,
+      ) {
+        if (!options.onWaiting) return
+        if (local) {
+          const operation = local.waitingOn
+          yield* options.onWaiting({ kind: "local", pid: holder.pid, ...(operation && { operation }) })
+        } else {
+          const remote = yield* runStore.holderOf(threadId)
+          if (remote) yield* options.onWaiting({ kind: "remote", pid: remote.pid })
+        }
+      })
+
       const waitForDelivery = (
         threadId: string,
         admitted: { seq: number; started: Execution | undefined },
@@ -230,76 +237,89 @@ export const layer = (defaults: ExecutionOptions = {}) =>
       ) =>
         Effect.gen(function* () {
           let started = admitted.started
+          let waited: Execution | undefined
+          let notified = false
           while (true) {
-            if (started !== undefined) {
-              const outcome = yield* started.settlement.await
-              const status = yield* statusOf(threadId)
-              const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
-              return disposition === "failed_delivery"
-                ? { outcome, status, failedDelivery: true as const, stillQueued: false }
-                : { outcome, status }
-            }
-            const local = live.get(threadId)
-            let outcome: RunOutcome | undefined
-            if (local !== undefined) {
-              if (options.onWaiting) {
-                const operation = local.waitingOn
-                yield* options.onWaiting({
-                  kind: "local",
-                  pid: holder.pid,
-                  ...(operation && { operation }),
-                })
-              }
-              outcome = yield* local.lastOutcome
-            } else {
-              const holderNow = yield* runStore.holderOf(threadId)
-              if (holderNow && options.onWaiting) yield* options.onWaiting({ kind: "remote", pid: holderNow.pid })
-            }
-            const status = yield* awaitRest(threadId).pipe(
-              Effect.onInterrupt(() =>
-                Effect.gen(function* () {
-                  if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
-                    yield* options.interruptedWhileQueued
-                }),
-              ),
+            const local = started ?? senders.get(admitted.seq)
+            if (local) yield* local.settlement.await
+            yield* runStore.recoverLost(threadId)
+            const { status, flowId, terminated, disposition, settlement } = yield* runStore.senderState(
+              threadId,
+              admitted.seq,
             )
-            const current = yield* threadStore.getThread(threadId)
-            const disposition = yield* runStore.queueDisposition(threadId, admitted.seq)
-            if (current.terminated !== null && disposition !== "failed_delivery")
-              return yield* new ThreadTerminated({ threadId, terminated: current.terminated })
+            // No progress ends this send while its entry is still pending, even if cleanup launched a successor.
+            // After progress a sender can wait on a running successor without reclaiming the thread itself.
             const stillQueued = disposition === "pending"
-            if (status.reason === "execution_lost" || !stillQueued) {
-              return {
-                status,
-                stillQueued,
-                ...(disposition === "failed_delivery" && { failedDelivery: true as const }),
-                ...(outcome && { outcome }),
+            const awaitingRun = !settlement?.finished && !(stillQueued && settlement?.tookEntry === false)
+            if (status.state === "running" && awaitingRun) {
+              started = undefined
+              const running = live.get(threadId)
+              const active = senders.get(admitted.seq) ?? (running?.flowId === flowId ? running : undefined)
+              if (!notified) {
+                yield* notifyWaiting(threadId, active, options)
+                notified = true
+                if (!active) continue
               }
+              waited = active
+              if (active) yield* active.settlement.await
+              else yield* Effect.sleep("50 millis")
+              continue
             }
+
+            const takingRun = senders.get(admitted.seq)
+            const reportingRun = takingRun ?? local ?? waited
+            const outcome =
+              reportingRun && reportingRun.flowId === settlement?.flowId
+                ? yield* reportingRun.settlement.await
+                : undefined
+            const result = { status: settlement?.status ?? status, ...(outcome && { outcome }) }
+            if (disposition === undefined) return result
+            if (disposition === "failed_delivery")
+              return { ...result, failedDelivery: true as const, stillQueued: false }
+            if (terminated !== null) return yield* new ThreadTerminated({ threadId, terminated })
+            if (
+              !settlement?.tookEntry ||
+              settlement.status.reason === "aborted_by_user" ||
+              settlement.status.reason === "execution_lost"
+            )
+              return { ...result, stillQueued }
+
             started = yield* claimWith(
               threadId,
-              (flowId) => runStore.claim(threadId, { holder: holder.id, flowId }),
+              (flowId) =>
+                runStore.claim(
+                  threadId,
+                  { holder: holder.id, flowId },
+                  { seq: admitted.seq, flowId: settlement.flowId },
+                ),
               options,
             )
           }
-        })
+        }).pipe(
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              if (options.interruptedWhileQueued && (yield* runStore.isQueued(threadId, admitted.seq)))
+                yield* options.interruptedWhileQueued
+            }),
+          ),
+        )
 
       return ThreadSupervisor.of({
         holderId: holder.id,
-        // A sender waits for the run that takes its message. When the run it waited behind stopped or failed and left
-        // the message queued, the sender claims the thread and runs it, because the message is its deliberate request.
-        // A run that was lost leaves the queue to the next trigger, and a terminated thread runs nothing.
         send: (threadId, content, options = {}) =>
           Effect.gen(function* () {
             const invalid = checkOptions(options)
             if (invalid !== undefined) return yield* invalid
             const thread = yield* threadStore.getThread(threadId)
-            const { human } = yield* sidesOf(thread.agentId)
-            const message: QueueMessageInput = { role: roleOf(human), content }
+            const agent = yield* loadAgent(thread.agentId)
+            const message: QueueMessageInput = { role: roleOf(senderSide(agent)), content }
             return yield* Effect.acquireUseRelease(
               admit(threadId, { kind: "message", message }, options, external, true),
               (admitted) => waitForDelivery(threadId, admitted, options),
-              (admitted) => Effect.asVoid(runStore.releaseSender(admitted.seq, holder.id)),
+              (admitted) => {
+                senders.delete(admitted.seq)
+                return Effect.asVoid(runStore.releaseSender(admitted.seq, holder.id))
+              },
             )
           }),
         control,

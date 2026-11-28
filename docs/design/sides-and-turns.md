@@ -141,6 +141,16 @@ Every assumption below changes in M2a.
 
 `execution/call.ts` and `execution/run-status.ts` are already side-agnostic. `call.ts` needs no structural change, and `run-status.ts` already recognizes `forced_human_turn`, `max_session_turns`, and `handler_idle`.
 
+### 1.8 Where a turn starts, and a waiting sender
+
+Added after the review of pull request 36. Two fixes built from cases each broke other cases, so these rules define both behaviors directly.
+
+61. A side's turn starts at the first message stored by the current execution after the end of that side's own previous turn in the same execution. If the side has had no turn yet in this execution, the turn starts at the first message the execution stores. Every message from that point on is current for the side: a peer's hand-off message, a message a tool or hook injected during the run, a preamble a `before_create_message` hook injected while a queue entry was drained, and the drained entry itself. Every message stored before the execution started is past, including a message injected at rest. This keeps milestone 1's behavior at an execution boundary (scenario S04), as `specification/prompts.md` describes for `includeChat: false`, where a prompt receives its system prompt and the initial user message.
+62. The runtime records the next `seq` when the execution starts, and the `seq` that ends each side's turn when that turn ends. A turn's start is the later of the two for that side. Both are kept in memory on the execution and cost no statement per step. The runtime never derives the boundary from the latest message of a role.
+63. A sender whose message is still `pending` when the run it claimed or waited on settles reclaims the thread only if that run took at least one queue entry, and the settlement was not an operator abort (`aborted_by_user`), `execution_lost`, or termination. Each reclaim therefore consumes an entry, and a sender cannot reclaim without end.
+64. When rule 63 does not allow a reclaim, `send()` returns that run's outcome with `stillQueued: true`. The one exception is a terminated thread. There `send()` rejects with `ThreadTerminated`, as it did before M2a and as scenario Q34 requires.
+65. When a sender waits on another run that takes its message, `send()` returns the outcome of the run that took the message, not the outcome of the run it first claimed.
+
 ---
 
 ## 2. Direct execution outside a calling tool
@@ -260,7 +270,7 @@ The operator chose decisions 4 and 5. The root took the recommendation on 1, 3, 
 The project keeps one performance guard. The cost of a step (and a turn) must not grow with the length of the thread.
 
 1. **One shared `History` cache per execution.** `makeHistory(threadId)` lives on `ThreadScope` and is shared by side A and side B. Switching sides never discards or re-reads the `messages` table. Each own insert appends in O(1) via `Chunk.append` and checks `threads.revision` in one primary-key lookup.
-2. **O(1) past-history boundary.** Replace `past: Set<string>` in `HistoryView` with `turnStartSeq: number`. Testing whether a stored row belongs to past history becomes `row.seq < view.turnStartSeq`, avoiding O(N) set allocation on every turn switch in `prompt x prompt`. When `includeChat` and `includePastTools` are both `false` and no `filter_messages` hook is active, `toProviderMessages` slices from the first row at or above `turnStartSeq` (found by scanning backwards from the tail in O(turn length)), avoiding touching older history rows.
+2. **O(1) past-history boundary.** Replace `past: Set<string>` in `HistoryView` with `turnStartSeq: number`. Testing whether a stored row belongs to past history becomes `row.seq < view.turnStartSeq`, avoiding O(N) set allocation on every turn switch in `prompt x prompt`. When `includeChat` and `includePastTools` are both `false` and no `filter_messages` hook is active, `toProviderMessages` slices from the first row at or above `turnStartSeq` as rule 61 defines it (found by scanning backwards from the tail in O(turn length)), avoiding touching older history rows.
 3. **Handler turns read zero history.** Dequeueing a queued message or receiving a peer side's message passes the `Message` directly without calling `MessageStore.history()`. History loads only if user code inside the handler reads `state.execution.messageHistory` or `state.getMessages()`.
 4. **O(1) turn counters and delivery cursors.** `threads.session_turns`, `threads.side_a_delivered_seq`, and `threads.side_b_delivered_seq` are integer columns on `threads`, read and updated by primary key. Spindle never counts turns or scans delivered messages with a query over `messages`.
 5. **Direct `invokeTool` reads zero history.** `claimDirect` reads the `threads` row and `max(seq)` on the indexed `queue_by_thread` index. It never reads `messages` unless the invoked tool asks for history.

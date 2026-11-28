@@ -22,6 +22,7 @@ const coerce = (value: unknown, type: unknown) => {
 }
 
 interface Resolution {
+  readonly readEnv: typeof instanceEnv
   readonly missing: Array<string>
   readonly secrets: Secrets
 }
@@ -32,7 +33,7 @@ const learn = (found: Resolution, name: string | undefined, value: unknown) => {
 }
 
 const fromSlot = Effect.fn("fromSlot")(function* (key: string, slot: ProviderConfigSlot, found: Resolution) {
-  const value = (slot.defaultEnv === undefined ? undefined : yield* instanceEnv(slot.defaultEnv)) ?? slot.default
+  const value = (slot.defaultEnv === undefined ? undefined : yield* found.readEnv(slot.defaultEnv)) ?? slot.default
   if (value === undefined && slot.required === true) found.missing.push(slot.defaultEnv ?? key)
   if (slot.type === "secret") learn(found, slot.defaultEnv, value)
   return coerce(value, slot.type)
@@ -52,7 +53,7 @@ const fromSource = (
         return source.value
       }
       const name = String(source.name)
-      const value = (yield* instanceEnv(name)) ?? source.default
+      const value = (yield* found.readEnv(name)) ?? source.default
       const required = typeof source.required === "boolean" ? source.required : slot?.required === true
       if (value === undefined && required) found.missing.push(name)
       const type = source.valueType ?? slot?.type
@@ -74,11 +75,15 @@ const fromSource = (
 const isProvider = (value: unknown): value is LLMProviderInterface =>
   Predicate.isObject(value) && typeof value.stream === "function" && typeof value.generate === "function"
 
-export const resolveConfig = Effect.fn("resolveConfig")(function* (model: Loaded<ModelDefinition>, secrets: Secrets) {
+export const resolveConfig = Effect.fn("resolveConfig")(function* (
+  model: Loaded<ModelDefinition>,
+  secrets: Secrets,
+  readEnv = instanceEnv,
+) {
   const factory = model.value.provider as ProviderFactoryWithOptions
   const slots = factory.configSlots ?? {}
   const sources: Record<string, unknown> = factory.providerDefinition?.config ?? {}
-  const found: Resolution = { missing: [], secrets }
+  const found: Resolution = { missing: [], secrets, readEnv }
   const config: Record<string, unknown> = {}
   for (const key of new Set([...Object.keys(slots), ...Object.keys(sources)])) {
     const slot = slots[key]

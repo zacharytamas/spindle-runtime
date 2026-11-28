@@ -12,13 +12,13 @@ import { Effect, Equal, Predicate, Scheduler } from "effect"
 import type { Definition } from "../registry/definition.ts"
 import { parseJson } from "../store/json.ts"
 import { type EnvScope, lookupEnv, resolveEnv, type Secrets } from "./env.ts"
-import { copyMessage } from "./history.ts"
-import { countHooks, transformHooks } from "./hooks.ts"
+import { copyMessage, type History } from "./history.ts"
+import { countHooks, type HookScope, transformHooks } from "./hooks.ts"
 import { fromLLMMessage, toLLMMessage } from "./llm-history.ts"
 import type { SideScope, ThreadScope } from "./step.ts"
-import { type Loaded, lookup, roleOf, SetupError, type Side, type Turn } from "./turn.ts"
+import { type Loaded, lookup, type PromptSideValue, roleOf, SetupError, type Side } from "./turn.ts"
 
-export const promptScope = (turn: Turn): EnvScope => ({
+export const promptScope = (turn: PromptSideValue): EnvScope => ({
   agent: turn.agent.value.env,
   toolEntry: undefined,
   prompt: turn.prompt.value.env,
@@ -28,7 +28,7 @@ export const promptScope = (turn: Turn): EnvScope => ({
 // against the variables and env of the prompt being rendered, never those of the included one. Prompts section
 // 2.1: a system prompt holds no secret. An env part may name only a variable that the rendered prompt declares as
 // text, that nothing marks secret, and that a definition supplies, and the finished text may hold no barred value.
-const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: Turn, secrets: Secrets) {
+const renderSystemPrompt = Effect.fn("renderSystemPrompt")(function* (turn: PromptSideValue, secrets: Secrets) {
   const root = turn.prompt
   const variables = root.value.variables ?? []
   const scope = promptScope(turn)
@@ -84,7 +84,7 @@ const holdsSecret = (text: string, secrets: Secrets) =>
   [...secrets.barred].some((secret) => secret !== "" && text.includes(secret))
 
 // Runs on the finished system prompt, after after_system_message, so that a hook cannot put a secret into it either.
-const checkSystemPrompt = (turn: Turn, text: string, secrets: Secrets) =>
+const checkSystemPrompt = (turn: PromptSideValue, text: string, secrets: Secrets) =>
   holdsSecret(text, secrets)
     ? Effect.fail(
         new SetupError({
@@ -107,9 +107,7 @@ const checkSystemMessages = (messages: ReadonlyArray<ProviderMessage>, secrets: 
 
 export interface HistoryView {
   readonly side: Side
-  // The ids of the messages before the one from the other side that started this turn. A message that filter_messages
-  // adds has no such id, so it belongs to the current exchange.
-  past: ReadonlySet<string>
+  turnStartSeq: number
   readonly includeChat: boolean
   readonly includePastTools: boolean
   readonly includeReasoning: boolean
@@ -158,6 +156,9 @@ const textOf = <A extends "" | null>(message: Message, empty: A): string | A => 
     .join("\n")
 }
 
+const visibleToPeer = (message: Message) =>
+  message.tool_calls == null || !!message.content || !!message.attachments?.length
+
 const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssistantMessage> => {
   if (!view.includeReasoning) return {}
   const details =
@@ -168,16 +169,6 @@ const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssis
     ...(message.reasoning_content == null ? {} : { reasoning: message.reasoning_content }),
     ...(Array.isArray(details) ? { reasoningDetails: details as Array<ProviderReasoningDetail> } : {}),
   }
-}
-
-// Read once when the execution starts, so that a message a tool injects later cannot move the start of the turn.
-export const pastOf = (history: ReadonlyArray<Message>, side: Side, firstDelivered?: string) => {
-  const other = roleOf(side === "a" ? "b" : "a")
-  const start =
-    firstDelivered !== undefined
-      ? history.findIndex((m) => m.id === firstDelivered)
-      : history.findLastIndex((message) => message.role === other)
-  return new Set(history.slice(0, Math.max(0, start)).map((message) => message.id))
 }
 
 // The chat completions format puts each result right after the message that holds its call, in the order of the
@@ -256,46 +247,59 @@ const toProviderMessages = (history: ReadonlyArray<RequestRow>, view: HistoryVie
   // Only a legacy or synthetic result needs to resolve its holder by id. A hidden holder can shadow a visible id.
   const needsIds = history.some(({ message, callerSeq }) => message.role === "tool" && callerSeq == null)
   const hiddenIds = new Map<number, Array<{ id: string }>>()
-  const parsed = history.map(({ message }, index) => {
+  const parsed = history.map(({ message, seq }, index) => {
     if (message.tool_calls == null || (message.role !== own && message.role !== other)) return NO_CALLS
-    if (message.role === own && (view.includePastTools || !view.past.has(message.id))) return toolCallsOf(message)
+    if (message.role === own && (view.includePastTools || seq === undefined || seq >= view.turnStartSeq))
+      return toolCallsOf(message)
     if (needsIds) hiddenIds.set(index, callEntries(message))
     return NO_CALLS
   })
   const callsAt = (index: number) => hiddenIds.get(index) ?? parsed[index] ?? NO_CALLS
-  const visit = ({ message, seq, callerSeq }: RequestRow, index: number) => {
-    const past = view.past.has(message.id)
-    if (message.role === "tool") {
-      const visible =
-        callerSeq == null
-          ? shownCalls.get(message.tool_call_id ?? "")
-          : shownBySeq.get(callerSeq)?.some((call) => call.id === message.tool_call_id)
-      if (!visible) return
-      const text = textOf(message, "")
-      messages.push({
-        role: "tool",
-        toolCallId: message.tool_call_id ?? "",
-        toolName: message.name ?? "",
-        content: message.tool_status === "error" ? { type: "error", error: text } : text,
-      })
-    } else if (message.role === "system") {
-      if (!past || view.includeChat) messages.push({ role: "system", content: message.content ?? "" })
-    } else if (message.role === other) {
-      for (const call of callsAt(index)) shownCalls.set(call.id, false)
-      if (!past || view.includeChat) messages.push({ role: "user", content: textOf(message, "") })
-    } else if (message.role === own) {
-      const calls = parsed[index] ?? []
-      const showCalls = calls.length > 0 && (!past || view.includePastTools)
-      if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
-      if (needsIds) for (const call of callsAt(index)) shownCalls.set(call.id, showCalls)
-      const content = !past || view.includeChat ? textOf(message, null) : null
-      if (past && !showCalls && (content ?? "") === "") return
-      messages.push({
-        role: "assistant",
-        content,
-        ...(showCalls ? { toolCalls: calls } : {}),
-        ...reasoningOf(message, view),
-      })
+  const visitResult = ({ message, callerSeq }: RequestRow) => {
+    const visible =
+      callerSeq == null
+        ? shownCalls.get(message.tool_call_id ?? "")
+        : shownBySeq.get(callerSeq)?.some((call) => call.id === message.tool_call_id)
+    if (!visible) return
+    const text = textOf(message, "")
+    messages.push({
+      role: "tool",
+      toolCallId: message.tool_call_id ?? "",
+      toolName: message.name ?? "",
+      content: message.tool_status === "error" ? { type: "error", error: text } : text,
+    })
+  }
+  const visitOwn = ({ message, seq }: RequestRow, index: number, past: boolean) => {
+    const calls = parsed[index] ?? NO_CALLS
+    const showCalls = calls.length > 0
+    if (seq !== undefined && showCalls) shownBySeq.set(seq, calls)
+    if (needsIds) for (const call of callsAt(index)) shownCalls.set(call.id, showCalls)
+    const content = !past || view.includeChat ? textOf(message, null) : null
+    if (past && !showCalls && (content ?? "") === "") return
+    messages.push({
+      role: "assistant",
+      content,
+      ...(showCalls ? { toolCalls: calls } : {}),
+      ...reasoningOf(message, view),
+    })
+  }
+  const visit = (row: RequestRow, index: number) => {
+    const { message, seq } = row
+    const past = seq !== undefined && seq < view.turnStartSeq
+    const showChat = !past || view.includeChat
+    switch (message.role) {
+      case "tool":
+        return visitResult(row)
+      case "system":
+        if (showChat) messages.push({ role: "system", content: message.content ?? "" })
+        return
+      case own:
+        return visitOwn(row, index, past)
+      case other: {
+        for (const call of callsAt(index)) shownCalls.set(call.id, false)
+        const content = textOf(message, "")
+        if (showChat && visibleToPeer(message)) messages.push({ role: "user", content })
+      }
     }
   }
   const order = requestOrder(history, callsAt)
@@ -311,7 +315,7 @@ const withoutReasoning = (message: ProviderMessage): ProviderMessage => {
 }
 
 const buildRequest = (
-  turn: Turn,
+  turn: PromptSideValue,
   system: string,
   messages: ReadonlyArray<ProviderMessage>,
   signal: AbortSignal,
@@ -355,6 +359,40 @@ const sameButId = (stored: Message, returned: Message) => {
   }
 }
 
+// No fiber may insert between taking the persisted snapshot and starting filter_messages.
+const requestHistory = Effect.fnUntraced(
+  function* (history: History, view: HistoryView, hooks: HookScope) {
+    const hasFilter = countHooks(hooks, "filter_messages") > 0
+    if (!hasFilter && !view.includeChat && !view.includePastTools) return yield* history.since(view.turnStartSeq)
+    const { rows } = yield* history.read
+    const total = rows.length
+    if (!hasFilter) return { rows, total }
+    const snapshot = rows.map((row) => row.message)
+    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
+      copyInitial: (messages) => messages.map(copyMessage),
+    })
+    if (filtered === snapshot) return { rows, total }
+    let byId: Map<string, (typeof rows)[number]> | undefined
+    let retainedIds: Set<string> | undefined
+    const mapped = filtered.map((message, index) => {
+      let row = rows[index]
+      if (row?.message.id !== message.id) {
+        byId ??= new Map(rows.map((row) => [row.message.id, row]))
+        const stored = byId.get(message.id)
+        // A caller renamed in place keeps its sequence. A copy alongside the original is new.
+        if (!stored && row && message.tool_calls != null && sameButId(row.message, message)) {
+          retainedIds ??= new Set(filtered.map((entry) => entry.id))
+          if (!retainedIds.has(row.message.id)) return row
+        }
+        row = stored
+      }
+      return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
+    })
+    return { rows: mapped, total }
+  },
+  Effect.provideService(Scheduler.PreventSchedulerYield, true),
+)
+
 export const assembleRequest = Effect.fnUntraced(function* (
   { turn, view, write: { hooks } }: SideScope,
   { history, secrets, run, record, observe }: ThreadScope,
@@ -365,40 +403,8 @@ export const assembleRequest = Effect.fnUntraced(function* (
   const system = yield* transformHooks(hooks, "after_system_message", [], rendered)
   yield* checkSystemPrompt(turn, system, secrets)
   yield* record("assemble", `after_system_message, ${countHooks(hooks, "after_system_message")} hooks`)
-  // Runtime section 4: the snapshot is the persisted history at the moment filter_messages starts, whoever
-  // wrote it. A message written later belongs to the next assembly. The scheduler may not hand the thread to
-  // another fiber between the read and the first hook, because that fiber could write a message the snapshot lacks.
-  const { rows, snapshot, filtered } = yield* Effect.gen(function* () {
-    const { rows } = yield* history.read
-    if (countHooks(hooks, "filter_messages") === 0) return { rows }
-    const snapshot = rows.map((row) => row.message)
-    const filtered = yield* transformHooks(hooks, "filter_messages", [], snapshot, {
-      copyInitial: (messages) => messages.map(copyMessage),
-    })
-    return { rows, snapshot, filtered }
-  }).pipe(Effect.provideService(Scheduler.PreventSchedulerYield, true))
-  let historyRows: ReadonlyArray<RequestRow> = rows
-  if (filtered !== undefined) {
-    if (filtered !== snapshot) {
-      let byId: Map<string, (typeof rows)[number]> | undefined
-      let retainedIds: Set<string> | undefined
-      historyRows = filtered.map((message, index) => {
-        let row = rows[index]
-        if (row?.message.id !== message.id) {
-          byId ??= new Map(rows.map((row) => [row.message.id, row]))
-          const stored = byId.get(message.id)
-          // A caller renamed in place keeps its stored position and past visibility. A copy alongside the original is new.
-          if (!stored && row && message.tool_calls != null && sameButId(row.message, message)) {
-            retainedIds ??= new Set(filtered.map((entry) => entry.id))
-            if (!retainedIds.has(row.message.id)) return row
-          }
-          row = stored
-        }
-        return row ? { message, seq: row.seq, callerSeq: row.callerSeq } : { message }
-      })
-    }
-  }
-  yield* record("assemble", `snapshot, ${rows.length} messages`)
+  const { rows: historyRows, total } = yield* requestHistory(history, view, hooks)
+  yield* record("assemble", `snapshot, ${total} messages`)
   yield* record("assemble", `filter_messages, ${countHooks(hooks, "filter_messages")} hooks`)
   const transformed = toProviderMessages(historyRows, view)
   yield* record("assemble", `transform, ${transformed.length} provider messages`)
