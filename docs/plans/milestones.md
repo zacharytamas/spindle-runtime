@@ -95,7 +95,7 @@ Not in M1c: the Ctrl-C limit of `spindle chat` under a blocked pipe, and the lon
 
 - **Scope.** A handler side. Two prompt sides. Session turns and `maxSessionTurns`. `forceTurn`. Direct execution outside a calling tool: `invokeTool` from a hook, and `invokeTool` and `runAgent` on a handle at rest. The operator moved this here from M1c on 2026-11-27.
 - **What it changes.** The step loop runs a prompt side against a human side. A side becomes a value the loop is given. The drain stores a queued tool as the prompt side's call, which a handler side cannot use.
-- **Before it starts.** A design note on sides and turns. It also settles how an execution starts from a handle at rest: its claim, its run status, and what happens to queued work and to a second caller.
+- **Before it starts.** A design note on sides and turns (`docs/design/sides-and-turns.md`) and its build plan (`docs/plans/m2a-sides-and-turns.md`). They settle how an execution starts from a handle at rest, its claim, its run status, queued work, and a second caller. Root-thread `state.stopSession()` lands in M2a, because the Handlers page needs it, and M2b no longer owes it.
 
 ### M2b, tools between sides and thread values
 
