@@ -9,7 +9,7 @@ import { newSecrets } from "./env.ts"
 import { makeHistory } from "./history.ts"
 import { agentHooks } from "./hooks.ts"
 import { CLOSING } from "./run-status.ts"
-import type { ExecutionOptions, RunOutcome } from "./step.ts"
+import { type ExecutionOptions, prepareSides, type RunOutcome } from "./step.ts"
 import type { DirectCall, ThreadControl } from "./thread-state.ts"
 import { makeToolScope } from "./tool-scope.ts"
 import { failed, invokeTool, notRun } from "./tools.ts"
@@ -39,6 +39,7 @@ export function directExecution(call: DirectCall) {
         context: {},
         secrets: newSecrets(options.secrets),
       }
+      yield* Effect.ignore(prepareSides(agent, base.secrets))
       const { toolContext } = yield* makeToolScope(base, { kind: "agent", agent }, yield* agentHooks(agent), options)
       result = yield* invokeTool(
         toolContext,

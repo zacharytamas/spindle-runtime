@@ -476,8 +476,10 @@ export const prepareSteps = Effect.fnUntraced(function* (
     let head = yield* store.nextQueued(threadId, run)
     const entry = head?.kind === "agent" ? head : undefined
     if (entry) {
-      yield* store.consumeQueued(threadId, entry.seq, run)
-      run.recordTaken(entry.seq)
+      yield* store.consumeQueued(threadId, entry.seq, run).pipe(
+        Effect.tap(() => Effect.sync(() => run.recordTaken(entry.seq))),
+        Effect.uninterruptible,
+      )
       head = yield* store.nextQueued(threadId, run)
     }
     const name = entry?.agentName ?? run.turns.agentName ?? base.thread.agentId
