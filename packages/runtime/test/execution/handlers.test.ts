@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { defineTool, type HandlerDefinition, type ThreadState } from "@standardagents/spec"
+import { defineHook, defineTool, type HandlerDefinition, type ThreadState } from "@standardagents/spec"
 import { Effect, Layer } from "effect"
 import * as Statement from "effect/sql/Statement"
 import { SqliteLive } from "#platform"
@@ -287,4 +287,44 @@ describe("handler runtime loading, turnCap, stopSession, and performance guard",
       ])
     }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
   })
+
+  it.effect(
+    "after_create_message edits and deletes on a queued inbound message take effect before handler delivery",
+    () => {
+      const received: Array<{ content: string | null; metadata: unknown }> = []
+      const revise = defineHook({
+        hook: "after_create_message",
+        id: "revise_inbound",
+        execute: async (state, message) => {
+          if (message.content === "edit-me")
+            await state.updateMessage(message.id, { content: "edited", metadata: { fromHook: true } })
+          if (message.content === "delete-me") await state.deleteMessage(message.id)
+        },
+      })
+      const receiver = handlerOf(async (_state, message) => {
+        received.push({ content: message.content, metadata: message.metadata })
+      })
+      const setup = handlerProject({
+        sideA: { handler: "receiver" },
+        sideB: { human: true },
+        handlers: { receiver },
+        hooks: [revise],
+        agent: { hooks: ["revise_inbound"] },
+      })
+      return Effect.gen(function* () {
+        const thread = yield* createThread("relay")
+        expect((yield* sendMessage(thread.id, "edit-me")).outcome).toMatchObject({
+          status: "idle",
+          reason: "handler_idle",
+          steps: 0,
+        })
+        expect((yield* sendMessage(thread.id, "delete-me")).outcome).toMatchObject({
+          status: "idle",
+          reason: "handler_idle",
+          steps: 0,
+        })
+        expect(received).toEqual([{ content: "edited", metadata: { fromHook: true } }])
+      }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+    },
+  )
 })

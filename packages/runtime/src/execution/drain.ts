@@ -1,4 +1,4 @@
-import type { AttachmentRef, QueueMessageInput } from "@standardagents/spec"
+import type { AttachmentRef, Message, QueueMessageInput } from "@standardagents/spec"
 import { Effect } from "effect"
 import { Registry } from "../registry/Registry.ts"
 import type { NewMessage, Queued } from "../store/model.ts"
@@ -92,13 +92,19 @@ export const deliverQueued = Effect.fnUntraced(function* (
   entry: Queued & { kind: "message" },
   deliveredTo?: "a" | "b",
 ) {
-  const { message } = yield* commitMessage(thread.delivery, draftOf(entry.message), {
-    dequeue: entry.seq,
-    ...(deliveredTo && { deliveredTo }),
-  })
+  const changes = new Map<string, Message | null>()
+  const { message } = yield* thread.deliveries.watch(
+    changes,
+    commitMessage(thread.delivery, draftOf(entry.message), {
+      dequeue: entry.seq,
+      ...(deliveredTo && { deliveredTo }),
+    }),
+  )
   yield* thread.record("drain", `message ${message.id}`)
-  yield* thread.observe({ type: "message", message })
-  return message
+  const current = changes.has(message.id) ? changes.get(message.id) : message
+  if (!current) return undefined
+  yield* thread.observe({ type: "message", message: current })
+  return current
 })
 
 // Runtime section 3 step 1 and section 9: queued work enters in arrival order, one entry at a time, and each entry
@@ -119,7 +125,7 @@ export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: 
       continue
     }
     const message = yield* deliverQueued(thread, entry)
-    if (message.role !== roleOf(side.turn.side)) prompted = true
+    if (message && message.role !== roleOf(side.turn.side)) prompted = true
   }
   if (!drained) yield* record("drain", "none")
   return prompted

@@ -33,6 +33,7 @@ const removeFrom = (list: Array<Delivery>, messageId: string) => {
 // before injectMessage gives user code a mutable result, and publish it only on success.
 export class HandlerDeliveries {
   readonly inbox: Record<Side, Array<Delivery>> = { a: [], b: [] }
+  readonly #watchers = new Set<Map<string, Message | null>>()
   #outgoing: Array<Delivery> = []
   #role: Message["role"] | undefined
 
@@ -47,11 +48,25 @@ export class HandlerDeliveries {
     replaceIn(this.#outgoing, message)
     replaceIn(this.inbox.a, message)
     replaceIn(this.inbox.b, message)
+    for (const changes of this.#watchers) changes.set(message.id, copyMessage(message))
   }
   deleted(messageId: string) {
     removeFrom(this.#outgoing, messageId)
     removeFrom(this.inbox.a, messageId)
     removeFrom(this.inbox.b, messageId)
+    for (const changes of this.#watchers) changes.set(messageId, null)
+  }
+  watch<A, E, R>(changes: Map<string, Message | null>, effect: Effect.Effect<A, E, R>) {
+    return Effect.suspend(() => {
+      this.#watchers.add(changes)
+      return effect
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.#watchers.delete(changes)
+        }),
+      ),
+    )
   }
   take(side: Side) {
     return this.inbox[side].shift()
@@ -87,8 +102,11 @@ const receive = Effect.fnUntraced(function* (scope: ToolScope<HandlerSideValue>,
   while (!thread.run.stopAtBoundary()) {
     const entry = yield* store.nextQueued(thread.thread.id, thread.run)
     if (!entry || queueRecipient(thread.sides, entry).side !== turn.side) return
-    if (entry.kind === "message" && entry.message.role !== turn.role)
-      return yield* deliverQueued(thread, entry, turn.side)
+    if (entry.kind === "message" && entry.message.role !== turn.role) {
+      const delivered = yield* deliverQueued(thread, entry, turn.side)
+      if (delivered) return delivered
+      continue
+    }
     if (forced) return
     if (entry.kind === "tool") yield* runQueuedTool(scope, thread, entry)
     else yield* deliverQueued(thread, entry)
