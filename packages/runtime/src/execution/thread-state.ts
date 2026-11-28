@@ -62,6 +62,7 @@ export interface DirectCall {
   readonly name: string
   readonly args: Record<string, unknown>
   readonly writeCall: WriteContext["call"]
+  readonly secrets?: Secrets
 }
 
 export interface ThreadControl {
@@ -462,7 +463,9 @@ function toolMethods(
       check()
       const writeCall = state.call ?? state.writeCall
       if (!state.execution)
-        return runPromise(state.control.direct({ name: toolName, args, from: state.from, writeCall }, origin))
+        return runPromise(
+          state.control.direct({ name: toolName, args, from: state.from, writeCall, secrets: state.secrets }, origin),
+        )
       const { run: owner, toolContext } = state.execution
       const release = owner.track(`tool ${toolName}`)
       let entered = false

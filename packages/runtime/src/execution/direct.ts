@@ -30,6 +30,8 @@ export function directExecution(call: DirectCall) {
       const agent = yield* loadAgent(thread.agentId)
       run.directSide = agent.value.sideA.human ? "b" : "a"
       const services = yield* Effect.context<Registry | Stores>()
+      const secrets = call.secrets ?? newSecrets(options.secrets)
+      if (call.secrets && options.secrets) for (const value of options.secrets) secrets.values.add(value)
       const base = {
         thread,
         control,
@@ -37,7 +39,7 @@ export function directExecution(call: DirectCall) {
         services,
         history: makeHistory(threadId),
         context: {},
-        secrets: newSecrets(options.secrets),
+        secrets,
       }
       yield* Effect.ignore(prepareSides(agent, base.secrets))
       const { toolContext } = yield* makeToolScope(base, { kind: "agent", agent }, yield* agentHooks(agent), options)
@@ -72,6 +74,7 @@ export function directExecution(call: DirectCall) {
       return Effect.fail(new SetupError({ message: outcome.error?.message ?? outcome.reason }))
     if (run.displaced === "terminated") return Effect.succeed(failed(CLOSING.terminated))
     if (run.signal.aborted) return Effect.succeed(entered ? failed(CLOSING.aborted) : notRun)
+    if (!entered && run.stopAtBoundary()) return Effect.succeed(notRun)
     return Effect.succeed(result)
   }
   return { prepare, finish }

@@ -81,3 +81,33 @@ it("rule 47: direct invokeTool at rest learns secrets declared on the thread's a
     },
   )
 })
+
+it("at-rest before_create_message hook and direct invokeTool share learned secrets in both directions", async () => {
+  const secretValue = "hook-shared-secret-112233"
+  const reader = defineTool({
+    description: "Reads a secret through state.env and returns it",
+    execute: async (state: ThreadState) => ok(`found=${(await state.env("SHARED_SECRET")) ?? ""}`),
+  })
+  const hook = defineHook({
+    id: "redact_via_tool",
+    hook: "before_create_message",
+    execute: async (state, message) => {
+      const res = await state.invokeTool("reader", {})
+      return { ...message, content: `${message.content}:${res.status === "success" ? res.result : ""}` }
+    },
+  })
+  await usingDirectPeer(
+    spindleDriver,
+    {
+      provider: new ScriptedProvider([]),
+      agent: { env: { SHARED_SECRET: secretValue }, hooks: ["redact_via_tool"] },
+      hooks: [hook],
+      tools: { reader },
+    },
+    async (owner, thread, peer) => {
+      const rest = await owner.state(thread)
+      await rest.injectMessage({ role: "user", content: "hi" })
+      expect((await peer.messages(thread)).map((message) => message.content)).toEqual(["hi:found=[redacted]"])
+    },
+  )
+})

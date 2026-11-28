@@ -30,7 +30,6 @@ export interface ToolContext<T extends ToolEnvironment = ToolEnvironment> {
   readonly scope: Scope.Scope
   readonly toolTimeout: ((qualifiedName: string) => Duration.Duration | undefined) | undefined
   readonly execution: Execution
-  readonly secrets: Secrets
   readonly turn: T
   readonly stateFor: (
     tool: Loaded<FunctionTool>,

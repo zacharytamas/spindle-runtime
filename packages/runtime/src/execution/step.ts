@@ -411,7 +411,6 @@ const advance = Effect.fnUntraced(function* (
     yield* thread.record("stop", boundary.reason)
     if (!("next" in boundary)) return boundary
     if (
-      active.kind === "prompt" &&
       boundary.reason !== "force_turn" &&
       boundary.next.kind === "prompt" &&
       (yield* (yield* RunStore).nextQueued(thread.thread.id, run))?.kind === "agent"
