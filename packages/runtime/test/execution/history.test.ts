@@ -399,7 +399,7 @@ it.effect("runs the committed claim when its sender is interrupted before execut
 describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
   const currentOnly = { includeChat: false, includePastTools: false }
 
-  it("starts a same-side forceTurn with fresh chat and tool history", async () => {
+  it("rule 61: starts a same-side forceTurn with fresh chat and tool history", async () => {
     const provider = new ScriptedProvider([
       { toolCalls: [{ id: "work", name: "work", arguments: {} }] },
       { toolCalls: [{ id: "force", name: "again", arguments: {} }] },
@@ -419,7 +419,7 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
     expect(historyOf(provider.requests[2]).map(sideOf)).toEqual([])
   })
 
-  it("hands off the first peer-visible response even when the final response only calls a tool", async () => {
+  it("rule 61: hands off the first peer-visible response even when the final response only calls a tool", async () => {
     const providerA = new ScriptedProvider([
       { text: "draft", toolCalls: [{ id: "save", name: "save", arguments: {} }] },
       { toolCalls: [{ id: "submit", name: "submit", arguments: {} }] },
@@ -440,10 +440,13 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
         expect(await session.send(thread, "write")).toMatchObject({ reason: "max_session_turns", steps: 3 })
       },
     )
-    expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([["user", "draft"]])
+    expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+      ["assistant", "write", []],
+      ["user", "draft"],
+    ])
   })
 
-  it("keeps the triggering delivery and the note its delivery hook injects", async () => {
+  it("rule 61: keeps the triggering delivery and the note its delivery hook injects", async () => {
     const provider = new ScriptedProvider([{ text: "answer" }])
     const hook = defineHook({
       hook: "after_create_message",
@@ -463,7 +466,7 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
     ])
   })
 
-  it("starts a queued tool turn at its call when the tool injects chat", async () => {
+  it("rule 61: starts a queued tool turn at its call when the tool injects chat", async () => {
     const provider = new ScriptedProvider([{ text: "answer" }])
     const annotate = defineTool({
       description: "Add a note",
@@ -483,7 +486,7 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
     expect(messages[2]?.content).toBe("note")
   })
 
-  it("excludes previous chat and tool calls when a queued tool starts a later run", async () => {
+  it("rule 61: excludes previous chat and tool calls when a queued tool starts a later run", async () => {
     const provider = new ScriptedProvider([
       { toolCalls: [{ id: "old", name: "work", arguments: {} }] },
       { text: "old answer" },
@@ -502,6 +505,63 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
     const messages = historyOf(provider.requests[2])
     expect(messages.map((message) => message.role)).toEqual(["assistant", "tool"])
     expect(messages[0]).toMatchObject({ toolCalls: [{ id: expect.stringMatching(/^queued-/), name: "work" }] })
+  })
+
+  for (const delivery of ["queued", "injected"] as const) {
+    it(`rule 61: B sees the opening send and the ${delivery} message from A's handoff tool`, async () => {
+      const publish = defineTool({
+        description: "Send a note to the reviewer",
+        execute: async (state) => {
+          const note = { role: "assistant" as const, content: "review note" }
+          if (delivery === "queued") await state.queueMessage(note)
+          else await state.injectMessage(note)
+          return ok("sent")
+        },
+      })
+      const providerA = new ScriptedProvider([
+        { ...(delivery === "queued" && { text: "draft" }), toolCalls: [{ id: "c1", name: "publish", arguments: {} }] },
+      ])
+      const providerB = new ScriptedProvider([{ text: "reviewed" }])
+      await usingDual(
+        spindleDriver,
+        {
+          providerA,
+          providerB,
+          promptA: currentOnly,
+          promptB: currentOnly,
+          tools: { publish },
+          sideA: { stopTool: "publish" },
+          agent: { maxSessionTurns: 2 },
+        },
+        (session, thread) => session.send(thread, "write"),
+      )
+      expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+        ["assistant", "write", []],
+        ...(delivery === "queued" ? [["user", "draft"]] : []),
+        ["user", "review note"],
+      ])
+    })
+  }
+
+  it("rule 61: a preamble stored by before_create_message precedes the delivery in the request", async () => {
+    const prepend = defineHook({
+      hook: "before_create_message",
+      id: "prepend",
+      execute: async (state, message) => {
+        if (message.content === "question") await state.injectMessage({ role: "user", content: "preamble" })
+        return message
+      },
+    })
+    const provider = new ScriptedProvider([{ text: "answer" }])
+    await using(
+      spindleDriver,
+      { provider, prompt: currentOnly, hooks: [prepend], agent: { hooks: [prepend.id] } },
+      (session, thread) => session.send(thread, "question"),
+    )
+    expect(historyOf(provider.requests[0]).map(sideOf)).toEqual([
+      ["user", "preamble"],
+      ["user", "question"],
+    ])
   })
 
   it.effect(
@@ -557,8 +617,10 @@ describe("turnStartSeq boundary and performance guard (rule 3, §5)", () => {
           ["tool", "ca1"],
           ["user", "mid-turn note"],
         ])
-        // Side B turn 2: past history (< turnStartSeq) excluded; A1 and synthetic message (no seq) kept.
+        // B has no earlier turn in this execution. It sees the opening message and the injected note.
         expect(historyOf(providerB.requests[0]).map(sideOf)).toEqual([
+          ["assistant", "fresh start", []],
+          ["assistant", "mid-turn note", []],
           ["user", "A1"],
           ["user", "synthetic for B"],
         ])

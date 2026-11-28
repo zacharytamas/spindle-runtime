@@ -74,7 +74,6 @@ const runQueuedTool = (side: SideScope, thread: ThreadScope, entry: Queued & { r
         ? Effect.succeed(failed(call.problem ?? ""))
         : executeTool(toolContext, tool, exposed?.entry, entry.args),
     )
-    return seq
   })
 
 // The automated peer delivers messages for a human. Until tools carry an explicit
@@ -91,23 +90,22 @@ export function queueRecipient(sides: AgentSides, entry: Queued | undefined) {
 export const drainQueue = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope) {
   const { record, observe, run, delivery } = thread
   const runStore = yield* RunStore
-  let first: number | undefined
+  let drained = false
   let prompted = false
   while (!run.stopAtBoundary()) {
     const entry = yield* runStore.nextQueued(delivery.threadId, { flowId: run.flowId })
     if (entry === undefined || queueRecipient(thread.sides, entry).side !== side.turn.side) break
+    drained = true
     if (entry.kind === "tool") {
-      const seq = yield* runQueuedTool(side, thread, entry)
-      first ??= seq
+      yield* runQueuedTool(side, thread, entry)
       prompted = true
       continue
     }
-    const { message, seq } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
-    first ??= seq
+    const { message } = yield* commitMessage(delivery, draftOf(entry.message), { dequeue: entry.seq })
     yield* record("drain", `message ${message.id}`)
     yield* observe({ type: "message", message })
     if (message.role !== roleOf(side.turn.side)) prompted = true
   }
-  if (first === undefined) yield* record("drain", "none")
-  return { prompted, first }
+  if (!drained) yield* record("drain", "none")
+  return prompted
 })

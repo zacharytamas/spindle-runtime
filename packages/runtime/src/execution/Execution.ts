@@ -96,10 +96,11 @@ export class Execution {
   recordStep(side: Side) {
     this.#steps[side]++
   }
-  completeTurn(threadId: string, limit: number | undefined) {
+  completeTurn(threadId: string, view: SideScope["view"], limit: number | undefined) {
     return Effect.gen({ self: this }, function* () {
-      const count = yield* (yield* RunStore).completeTurn(threadId, this.flowId)
-      if (limit !== undefined && count >= limit)
+      const completed = yield* (yield* RunStore).completeTurn(threadId, this.flowId)
+      view.turnStartSeq = Math.max(view.turnStartSeq, completed.last_seq + 1)
+      if (limit !== undefined && completed.session_turns >= limit)
         this.#sessionEnd = { status: "idle", reason: "max_session_turns", continueIfQueued: false }
       return this.#sessionEnd
     }).pipe(Effect.uninterruptible)

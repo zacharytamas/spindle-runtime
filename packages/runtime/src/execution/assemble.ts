@@ -156,7 +156,7 @@ const textOf = <A extends "" | null>(message: Message, empty: A): string | A => 
     .join("\n")
 }
 
-export const visibleToPeer = (message: Message) =>
+const visibleToPeer = (message: Message) =>
   message.tool_calls == null || !!message.content || !!message.attachments?.length
 
 const reasoningOf = (message: Message, view: HistoryView): Partial<ProviderAssistantMessage> => {

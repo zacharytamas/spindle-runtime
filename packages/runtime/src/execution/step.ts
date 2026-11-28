@@ -7,7 +7,7 @@ import type { Thread } from "../store/model.ts"
 import { RunStore } from "../store/RunStore.ts"
 import type { Stores } from "../store/sqlite.ts"
 import { ThreadStore } from "../store/ThreadStore.ts"
-import { assembleRequest, type HistoryView, promptScope, visibleToPeer } from "./assemble.ts"
+import { assembleRequest, type HistoryView, promptScope } from "./assemble.ts"
 import { type CallContext, callModel, type ModelCall, type ModelResponse } from "./call.ts"
 import { drainQueue, queueRecipient } from "./drain.ts"
 import type { End, Execution } from "./Execution.ts"
@@ -55,6 +55,7 @@ export interface ThreadScope {
   readonly secrets: Secrets
   readonly run: Execution
   readonly history: History
+  readonly executionStartSeq: number
   readonly delivery: WriteContext
   readonly counter: { step: number }
   readonly modelCalls: Array<ModelCall>
@@ -245,14 +246,14 @@ const prepareSide = Effect.fnUntraced(function* (
     write,
     toolContext,
     provider,
-    view: historyView(turn),
+    view: historyView(turn, thread.executionStartSeq),
     streamed: streamedHooks(hooks, turn),
   } satisfies SideScope
   run.turns.scopes.set(turn, scope)
   return scope
 })
 
-function historyView(turn: PromptSideValue) {
+function historyView(turn: PromptSideValue, turnStartSeq: number) {
   const source = reasoningSource(turn)
   const acceptsDetails = (message: Message) => {
     const stored = message.metadata?.reasoning_source as Partial<typeof source> | null | undefined
@@ -261,7 +262,7 @@ function historyView(turn: PromptSideValue) {
   const prompt = turn.prompt.value
   return {
     side: turn.side,
-    turnStartSeq: 0,
+    turnStartSeq,
     includeChat: prompt.includeChat === true,
     includePastTools: prompt.includePastTools === true,
     includeReasoning: prompt.reasoning?.include !== false,
@@ -287,7 +288,7 @@ const storeResponse = Effect.fnUntraced(function* (side: SideScope, thread: Thre
     yield* record("tools", `${call.name} ${call.id}${skipped ? " not run" : ""}`)
     results.push(yield* completeCall(side, thread, seq, call, runToolCall(toolContext, call)))
   }
-  return { calls, results, peerSeq: visibleToPeer(assistant) ? seq : undefined }
+  return { calls, results }
 })
 
 const promptStep = Effect.fnUntraced(function* (side: SideScope, thread: ThreadScope, retries: number) {
@@ -333,7 +334,7 @@ const afterStep = Effect.fnUntraced(function* (
   const reason = forced === undefined ? stopReason(progress, side.turn.config, stepCap) : "force_turn"
   if (reason === undefined) return undefined
   if (reason === "max_total_steps") return idle(reason)
-  const sessionEnd = yield* run.completeTurn(thread.thread.id, sides.agent.value.maxSessionTurns)
+  const sessionEnd = yield* run.completeTurn(thread.thread.id, side.view, sides.agent.value.maxSessionTurns)
   if (sessionEnd) return sessionEnd
   const next = sides[forced ?? otherSide(side.turn.side)]
   if (next.kind === "human") {
@@ -344,46 +345,24 @@ const afterStep = Effect.fnUntraced(function* (
   return { next, reason }
 })
 
-const beginStep = Effect.fnUntraced(function* (
-  side: SideScope,
-  thread: ThreadScope,
-  firstStep: boolean,
-  handoffStart: number | undefined,
-) {
-  thread.counter.step++
-  const { run } = thread
-  const before = run.stopAtBoundary()
-  if (before) return before
-  const { prompted, first } = yield* drainQueue(side, thread)
-  const stopped = run.stopAtBoundary()
-  if (stopped || !firstStep) return stopped
-  const start = first ?? handoffStart
-  if (start === undefined || (handoffStart === undefined && !prompted)) return idle("awaiting_human", true)
-  side.view.turnStartSeq = start
-})
-
 const promptTurn = Effect.fnUntraced(function* (
   side: SideScope,
   thread: ThreadScope,
   options: ExecutionOptions,
-  handoffStart: number | undefined,
+  handoff: boolean,
 ) {
   const { run, record } = thread
   let steps = 0
-  let firstPeerSeq: number | undefined
   while (true) {
-    const end = yield* beginStep(side, thread, steps === 0, handoffStart)
-    if (end) return end
+    thread.counter.step++
+    if (run.stopAtBoundary()) return run.abortEnd
+    const prompted = yield* drainQueue(side, thread)
+    if (run.stopAtBoundary()) return run.abortEnd
+    if (steps === 0 && !handoff && !prompted) return idle("awaiting_human", true)
     const step = yield* promptStep(side, thread, options.retries ?? 2)
     if (!step || run.stopAtBoundary()) return run.abortEnd
-    firstPeerSeq ??= step.peerSeq
     const boundary = yield* afterStep(side, thread, step, ++steps, options.stepCap ?? 1000)
-    if (boundary) {
-      if (!("next" in boundary)) return boundary
-      const peerSeq = boundary.next.side === side.turn.side ? undefined : firstPeerSeq
-      const start = peerSeq ?? (yield* (yield* MessageStore).latestMessageSeq(thread.thread.id)) + 1
-      return { ...boundary, start }
-    }
+    if (boundary) return boundary
     yield* record("stop", "continue")
   }
 })
@@ -394,7 +373,7 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
   const { run, sides } = thread
   const head = yield* (yield* RunStore).nextQueued(thread.thread.id, run)
   run.turns.active = queueRecipient(sides, head)
-  let handoffStart: number | undefined
+  let handoff = false
   while (true) {
     const active: SideValue = run.turns.active
     switch (active.kind) {
@@ -404,17 +383,12 @@ const advance = Effect.fnUntraced(function* (thread: ThreadScope, options: Execu
         return yield* new SetupError({ message: `Spindle does not yet execute handler ${active.config.handler}` })
       case "prompt": {
         const side: SideScope = yield* prepareSide(thread, active, options)
-        const boundary: End | { next: SideValue; reason: string; start: number } = yield* promptTurn(
-          side,
-          thread,
-          options,
-          handoffStart,
-        )
+        const boundary: End | { next: SideValue; reason: string } = yield* promptTurn(side, thread, options, handoff)
         run.turns.pending = undefined
         yield* thread.record("stop", boundary.reason)
         if (!("next" in boundary)) return boundary
         run.turns.active = boundary.next
-        handoffStart = boundary.start
+        handoff = true
         break
       }
     }
@@ -432,6 +406,7 @@ export const prepareSteps = Effect.fnUntraced(function* (
   const stepCap = options.stepCap ?? 1000
   const setup = yield* Effect.cached(
     Effect.gen(function* () {
+      const executionStartSeq = (yield* (yield* MessageStore).latestMessageSeq(threadId)) + 1
       const thread = yield* (yield* ThreadStore).getThread(threadId)
       const services = yield* Effect.context<Registry | Stores>()
       const sides = yield* prepareSides(yield* loadAgent(thread.agentId), secrets)
@@ -455,7 +430,7 @@ export const prepareSteps = Effect.fnUntraced(function* (
         history,
         origin: { kind: "flow", flowId: run.flowId },
       }
-      const scope: ThreadScope = { ...base, ...log, delivery }
+      const scope: ThreadScope = { ...base, ...log, delivery, executionStartSeq }
       return scope
     }),
   )

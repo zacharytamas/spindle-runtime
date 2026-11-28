@@ -200,9 +200,13 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     ),
 
     completeTurn: Effect.fn("RunStore.completeTurn")(function* (threadId: string, flowId: string) {
-      const [updated] = yield* sql<{ session_turns: number }>`UPDATE threads SET session_turns = session_turns + 1
-        WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running' RETURNING session_turns`
-      if (updated) return updated.session_turns
+      const [updated] = yield* sql<{
+        session_turns: number
+        last_seq: number
+      }>`UPDATE threads SET session_turns = session_turns + 1
+        WHERE id = ${threadId} AND flow_id = ${flowId} AND run_state = 'running'
+        RETURNING session_turns, (SELECT coalesce(max(seq), 0) FROM messages WHERE thread_id = ${threadId}) AS last_seq`
+      if (updated) return updated
       const row = yield* selectRun(threadId)
       return yield* new FlowEnded({ threadId, flowId, why: row.terminated_at === null ? "superseded" : "terminated" })
     }, unyielding),
