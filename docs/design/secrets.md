@@ -70,9 +70,9 @@ This floor changes milestone 1's no-floor rule. The updated limit is to be recor
 16. `envType(propertyName)` returns `'text'` only when `propertyName` is in `thread_env` with `type: 'text'` and no active declaration or provider config marks `propertyName` as `'secret'`.
 17. At execution start, at rest handle creation, and before CLI printing, `learnSecrets` loads every row of `thread_env` for that thread and registers every secret-classified value into the execution's `Secrets` set before step 1.
 18. When `setEnv` writes a secret-classified value during an execution, that value enters the execution's `Secrets` set before `setEnv` resolves, and any previous secret value for that key remains in `Secrets` for the rest of that execution.
-19. When a nested tool reachable only through `invokeTool` or a nested prompt tool starts, Spindle registers its `type: 'secret'` variable declarations and learns their values into the execution's `Secrets` set before user code runs.
+19. When a nested tool reachable only through `invokeTool` starts (M2b-1), or a nested prompt tool starts (M2b-3, which adds nested prompts), Spindle registers its `type: 'secret'` variable declarations and learns their values into the execution's `Secrets` set before user code runs.
 20. A provider config env source that declares neither `valueType` nor a non-secret slot `type` registers its name and resolved string value as a secret.
-21. Substring redaction replaces a secret value only when `[...secret].length >= 8` and `secret.trim() !== ""`, matching the literal string, its once-JSON-escaped spelling, and its spelling after the argument sanitization of section 2.1 rule 9, with longer secrets replaced first. Eligibility is measured on the secret as stored. So a secret first learned by a request hook after an argument was sanitized is still caught in the final check.
+21. Substring redaction replaces a secret value only when `[...secret].length >= 8` and `secret.trim() !== ""`, matching the literal string, its once-JSON-escaped spelling, and its spelling after the argument sanitization of section 2.1 rule 9, with longer secrets replaced first. Eligibility is measured on the secret as stored. The sanitized spelling is used only when it differs from the stored secret and itself meets the floor of section 1.3, so a secret that sanitizes to a short or empty string never becomes a search pattern. So a secret first learned by a request hook after an argument was sanitized is still caught in the final check.
 22. Direct `{ type: 'env', property }` interpolation in `renderSystemPrompt` refuses any secret-classified or instance-sourced variable regardless of value length, even when the value has fewer than 8 code points.
 
 ## 2. Thread arguments and prompt interpolation
@@ -121,9 +121,9 @@ Context assembly proceeds in this order for every top-level prompt and every nes
 | Role | Redacted fields | Preserved identifiers and untouched binary fields |
 |---|---|---|
 | `system` | `content` | none |
-| `user` | String `content`, or `text.text`, `image_url.image_url.url`, `file.filename`, and the `mediaType` of image and file parts in `ContentPart[]` | Base64 bytes in `image.data` and `file.data` |
+| `user` | String `content`, or `text.text`, `image_url.image_url.url`, `file.filename`, the `mediaType` of image and file parts, and the header of a `data:` URI in `image.data` or `file.data` (the part before the first comma) in `ContentPart[]` | The encoded payload after the first comma of `image.data` and `file.data` |
 | `assistant` | `content`, `reasoning`, `text` field of `text` and `summary` entries in `reasoningDetails`, and every string value and object key in `toolCalls[].arguments` and `toolCalls[].extraContent` | `toolCalls[].id`, `toolCalls[].name`, opaque `encrypted` entries in `reasoningDetails` |
-| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and the text, url, filename and `mediaType` fields of `ContentPart[]` | `toolCallId`, `toolName`, base64 bytes in `image.data` and `file.data` |
+| `tool` | String `content`, `{ type: "text", text }`, `{ type: "error", error }`, and the text, url, filename, `mediaType` and `data:` URI header fields of `ContentPart[]` | `toolCallId`, `toolName`, base64 bytes in `image.data` and `file.data` |
 
 Static tool definitions (`request.tools`) and `request.model` are not mutated, because rewriting JSON Schema property names or model identifiers would break provider calls. Developers must keep credentials in provider transport config slots, never in tool definitions or `providerOptions`.
 
