@@ -14,9 +14,9 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 ### Order and limits
 
-- [ ] Milestone 2 is one linear stack that the operator lands as a whole (decided 2026-11-27). Nothing merges before then. M2b sits above M2a, so the order is the two design pull requests, `M2a-1` to `M2a-3`, then `M2b-1` to `M2b-4`.
-- [ ] `M2b-1` is based on the `M2a-3` branch, and each later M2b pull request on the one below it. Each starts when the branch below it is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
-- [ ] `M2b-1` to `M2b-3` do not use M2a's side model, even though they sit above it in the stack. `M2b-4` does.
+- [ ] At most three pull requests are open at a time, each based on the one below it. The operator lands them, bottom first. M2b comes after M2a, so the order is the two design pull requests, `M2a-1` to `M2a-3`, then `M2b-1` to `M2b-4`.
+- [ ] Each M2b pull request is based on the open branch below it, or on `main` once that has landed. It starts when a slot is free and the branch below it is green and read. A fix to a lower branch is rebased into every branch above it, bottom first, one push at a time.
+- [ ] `M2b-1` to `M2b-3` do not use M2a's side model, even though they come after it. `M2b-4` does.
 - [ ] Only M2b-1 adds a SQLite migration. Before writing the migration file, the builder checks `packages/runtime/src/store/migrations/` on `main` and takes the next sequential migration number after M2a's migrations, `0007` to `0009`.
 - [ ] A pull request that lands after another is rebased onto `main` by its owner or by the root. `ledger.json`, `DIVERGENCES.md`, and `thread-state.ts` are the shared merge points.
 
@@ -36,7 +36,7 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 ## Typed thread values, `setEnv`, and redaction floor (M2b-1)
 
-**Dependency.** None on M2a's side model. Based on the `M2a-3` branch.
+**Dependency.** None on M2a's side model. Based on the `M2a-3` branch, or `main` once that has landed.
 
 **Review depth.** High risk (security boundary and schema migration). Failing tests written first by Gemini 4 Neon, followed by a 30-minute Gemini 4 Neon reading review after the GPT-6.2 Astra build.
 
