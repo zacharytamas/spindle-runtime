@@ -4636,14 +4636,15 @@
 		"reason": "The Users page is a Draft in spec 0.2.0."
 	},
 	"infrastructure:runtime:6e443a4c": {
-		"status": "partial",
+		"status": "covered",
 		"milestone": "M1c",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S02a presents the model's own turns as assistant and the human's as user when the human is on side B",
 			"packages/runtime/test/conformance.test.ts > queue > Q03 takes two sends to one thread in one execution, and a message queued as the run settles still reaches it",
-			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records"
+			"packages/runtime/test/conformance.test.ts > queue > Q05 settles a turn idle for the human, reads running inside it, and resumes with both earlier records",
+			"packages/runtime/test/conformance.test.ts > messages > M2 runs the agent's create hooks for a message injected at rest and makes it readable before any run"
 		],
-		"reason": "Human sends start an idle execution. A user-role injectMessage at rest persists the message but starts no execution. Runtime §2 lists injection as a trigger, while Messages §3 describes a persisted record available before the next run."
+		"reason": "A human's send starts an execution on an idle thread, and M2 shows that injectMessage at rest stores its message and starts none. Spindle reads the trigger as a user's message arriving, not as a call to injectMessage. queueMessage is the call that adds a message and starts a run. See What starts an execution when a message is added in DIVERGENCES.md."
 	},
 	"infrastructure:runtime:d0f4d8de": {
 		"status": "covered",
@@ -4792,7 +4793,7 @@
 	},
 	"infrastructure:runtime:dc7d7df0": {
 		"status": "partial",
-		"milestone": "M1c",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
@@ -4800,7 +4801,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
 			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": "Send and queue admissions reject on a terminated thread. A live thread cannot run an agent directly via runAgent or invoke a function at rest, so the terminated-thread refusal for direct execution has no working control."
+		"reason": "Send and queue admissions reject on a terminated thread. Direct execution through runAgent, or through invokeTool on a handle at rest, arrives in M2a, which owes its refusal on a terminated thread."
 	},
 	"infrastructure:runtime:3a060edd": {
 		"status": "planned",
@@ -6594,12 +6595,12 @@
 	},
 	"specification:threads:39260b1a": {
 		"status": "partial",
-		"milestone": "M1c",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > step loop > S15 accepts every legal ToolResult shape, keeps attachment references, and rejects other returns",
 			"packages/runtime/test/conformance.test.ts > step loop > S16 answers a call to an unoffered or unknown tool with an error result and enforces uses in invokeTool"
 		],
-		"reason": "A calling tool can invoke another function and await its result. A hook and a handle at rest receive an error result for the same valid target because neither gets an invocation context."
+		"reason": "A calling tool can invoke another function and await its result. A hook and a handle at rest get an error result for the same target. The operator moved direct execution outside a calling tool to M2a on 2026-11-27."
 	},
 	"specification:threads:c544edac": {
 		"status": "covered",
@@ -6807,11 +6808,11 @@
 	},
 	"specification:threads:a1ac0a36": {
 		"status": "partial",
-		"milestone": "M1c",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q10 lets queueTool and invokeTool reach a target an omitted or listing uses allows, and refuses an empty or other list"
 		],
-		"reason": "invokeTool supports a calling tool and enforces its uses list. A hook and a handle at rest cannot invoke a known target. The package also specifies a minimal execution at rest (see DIVERGENCES.md)."
+		"reason": "invokeTool supports a calling tool and enforces its uses list. Invocation from a hook and the minimal execution at rest that the package describes arrive in M2a."
 	},
 	"specification:threads:d0a36934": {
 		"status": "covered",
@@ -6833,7 +6834,7 @@
 	},
 	"specification:threads:9090af10": {
 		"status": "partial",
-		"milestone": "M1c",
+		"milestone": "M2a",
 		"tests": [
 			"packages/runtime/test/conformance.test.ts > queue > Q13 aborts a running thread that another session terminates, marks it, and refuses every later admission",
 			"packages/runtime/test/conformance.test.ts > queue > Q14 terminates a thread at rest without a run, keeps its history readable, and refuses every later admission",
@@ -6841,7 +6842,7 @@
 			"packages/runtime/test/conformance.test.ts > queue > Q34 fails a send that waited behind a run with ThreadTerminated when another session terminates the thread",
 			"packages/runtime/test/conformance.test.ts > ownership > O19 refuses an update, a delete, and a key-value write from outside on a terminated thread, and any write of an older handle"
 		],
-		"reason": "queueMessage rejects on a terminated thread. runAgent and invokeTool at rest already refuse on a live thread, so direct execution still lacks a termination-specific refusal."
+		"reason": "queueMessage rejects on a terminated thread. Direct execution arrives in M2a, which owes its refusal after termination."
 	},
 	"specification:threads:b83b63ca": {
 		"status": "planned",
