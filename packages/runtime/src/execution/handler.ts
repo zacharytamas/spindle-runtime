@@ -180,6 +180,7 @@ export const handlerTurn = Effect.fnUntraced(function* (
   if (run.stopAtBoundary()) return run.abortEnd
   if (!message) return handlerEnd(thread, forced)
   const error = yield* executeHandler(scope, thread, message)
+  yield* run.settledCallbacks
   const writes = deliveries.finish(peer, !error)
   for (const { message } of writes)
     yield* thread.observe({ type: "message", message: copyMessage(message), handlerOutput: true })

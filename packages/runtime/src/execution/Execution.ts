@@ -157,6 +157,11 @@ export class Execution {
   #releaseIfReady() {
     if (this.#phase === "dropping" || !this.#pending.size) this.#released.openUnsafe()
   }
+  get settledCallbacks() {
+    return Effect.gen({ self: this }, function* () {
+      while (this.#phase !== "dropping" && this.#pending.size) yield* this.#released.await
+    })
+  }
   get waitingOn() {
     return this.#phase === "holding" || this.#phase === "waiting" ? this.#pending.values().next().value : undefined
   }

@@ -8,7 +8,7 @@ import { commitMessage } from "./messages.ts"
 import { mapStrings } from "./redact.ts"
 import type { SideScope, ThreadScope, ToolScope } from "./step.ts"
 import { callStarted, completeCall, hookCall } from "./tool-lifecycle.ts"
-import { executeTool, failed, type ToolCall } from "./tools.ts"
+import { executeTool, failed, learnToolVariables, scopeFor, type ToolCall } from "./tools.ts"
 import { type AgentSides, isFunctionTool, otherSide, roleOf } from "./turn.ts"
 
 // Messages section 4: a queued message is stored with its own perspective and payload. Admission let only attachment
@@ -35,6 +35,7 @@ export const runQueuedTool = (side: ToolScope, thread: ThreadScope, entry: Queue
     const exposed =
       turn.kind === "prompt" ? [...turn.tools.values()].find((candidate) => candidate.tool === definition) : undefined
     const name = exposed?.name ?? definition?.name ?? entry.toolName
+    if (tool !== undefined) yield* learnToolVariables(scopeFor(turn, exposed?.entry), tool, thread.secrets)
     const argumentsText = JSON.stringify(mapStrings(entry.args, redact, redact))
     const call: ToolCall = {
       id: `queued-${crypto.randomUUID()}`,

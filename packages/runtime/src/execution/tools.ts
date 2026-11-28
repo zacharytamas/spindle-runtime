@@ -95,6 +95,17 @@ const isNewAttachment = (value: unknown): value is Record<string, unknown> =>
 
 const skipped = Symbol("skipped")
 
+export const learnToolVariables = Effect.fnUntraced(function* (
+  scope: EnvScope,
+  tool: Loaded<FunctionTool>,
+  secrets: Secrets,
+) {
+  for (const variable of tool.value.variables ?? []) {
+    if (variable.type === "secret") secrets.names.add(variable.name)
+    yield* learnVariable(scope, variable.name, secrets)
+  }
+})
+
 // Tools section 9: arguments are validated against the declared schema before execute runs, and anything the
 // tool throws or returns becomes a ToolResult rather than a failure of the loop.
 export const executeTool = Effect.fn("executeTool")(function* (
@@ -106,10 +117,7 @@ export const executeTool = Effect.fn("executeTool")(function* (
 ) {
   const scope = scopeFor(context.turn, entry)
   const name = tool.qualifiedName
-  for (const variable of tool.value.variables ?? []) {
-    if (variable.type === "secret") context.secrets.names.add(variable.name)
-    yield* learnVariable(scope, variable.name, context.secrets)
-  }
+  yield* learnToolVariables(scope, tool, context.secrets)
   for (const variable of tool.value.variables ?? []) {
     if (!variable.required) continue
     const value = yield* Effect.result(resolveEnv(scope, variable.name))

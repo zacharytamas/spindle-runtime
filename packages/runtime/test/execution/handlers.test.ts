@@ -13,7 +13,7 @@ import {
 import { attempt, ok, project } from "../../../conformance/src/scenarios/harness.ts"
 import { appendMessages } from "../../scripts/store-fixtures.ts"
 import type { ExecutionOptions } from "../../src/execution/step.ts"
-import { layer as supervisorLayer } from "../../src/execution/ThreadSupervisor.ts"
+import { layer as supervisorLayer, ThreadSupervisor } from "../../src/execution/ThreadSupervisor.ts"
 import { createThread, sendMessage, stateAtRest } from "../../src/execution/trigger.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
 import { layer as storeLayer } from "../../src/store/sqlite.ts"
@@ -462,4 +462,61 @@ describe("handler runtime loading, turnCap, stopSession, and performance guard",
       )
     },
   )
+
+  it.effect("handler-owned queued tool redacts declared agent-env secret in synthetic caller arguments", () => {
+    const secret = "queued-caller-secret-556677"
+    const echo = defineTool({
+      description: "Declares a secret",
+      variables: [{ name: "QUEUED_SECRET", type: "secret", required: false, description: "Secret" }],
+      execute: async () => ok("done"),
+    })
+    const noop = handlerOf(async () => {})
+    const setup = handlerProject({
+      sideA: { handler: "noop" },
+      sideB: { human: true },
+      handlers: { noop },
+      tools: { echo },
+      agent: { env: { QUEUED_SECRET: secret } },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("relay")
+      const rest = yield* stateAtRest(thread.id)
+      rest.queueTool("echo", { note: `token=${secret}` })
+      const supervisor = yield* ThreadSupervisor
+      yield* supervisor.settled(thread.id)
+      const { messages } = yield* (yield* MessageStore).getMessages(thread.id)
+      const caller = messages.find((m) => m.tool_calls !== null)
+      expect(caller?.tool_calls).not.toContain(secret)
+      expect(caller?.tool_calls).toContain("[redacted]")
+    }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+  })
+
+  it.effect("unawaited invokeTool inside a handler finishes before turn output is handed to the peer", () => {
+    const received: Array<string | null> = []
+    const delayed = defineTool({
+      description: "Writes a late own-role reply",
+      execute: async (state: ThreadState) => {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        await state.injectMessage({ role: "assistant", content: "from-unawaited-tool" })
+        return ok("done")
+      },
+    })
+    const sender = handlerOf(async (state) => {
+      void state.invokeTool("delayed", {})
+    })
+    const receiver = handlerOf(async (_state, message) => {
+      received.push(message.content)
+    })
+    const setup = handlerProject({
+      sideA: { handler: "sender" },
+      sideB: { handler: "receiver" },
+      handlers: { sender, receiver },
+      tools: { delayed },
+    })
+    return Effect.gen(function* () {
+      const thread = yield* createThread("relay")
+      yield* sendMessage(thread.id, "go")
+      expect(received).toEqual(["from-unawaited-tool"])
+    }).pipe(Effect.provide(Layer.merge(registryOf(setup), Layer.provideMerge(supervisorLayer(), inMemory()))))
+  })
 })
