@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Console, Effect, Exit, FileSystem, Layer, Path } from "effect"
+import { Clock, ConfigProvider, Console, Effect, Exit, Fiber, FileSystem, Layer, Path, Queue } from "effect"
 import { Command } from "effect/cli"
 import { FetchHttpClient } from "effect/http"
-import { PlatformLive, SqliteLive } from "#platform"
+import { Interrupts, PlatformLive, SqliteLive } from "#platform"
+import { gate } from "../../../conformance/src/scenarios/harness.ts"
 import { spindle } from "../../src/cli/main.ts"
 import { MessageStore } from "../../src/store/MessageStore.ts"
+import { RunStore } from "../../src/store/RunStore.ts"
 import { layer as sqliteStore } from "../../src/store/sqlite.ts"
 
 const invoke = (
@@ -12,6 +14,7 @@ const invoke = (
   args: ReadonlyArray<string>,
   env: Record<string, string> = {},
   fixture = "step-loop",
+  interrupts?: Parameters<typeof Interrupts.of>[0],
 ) =>
   Effect.gen(function* () {
     const path = yield* Path.Path
@@ -24,9 +27,11 @@ const invoke = (
       error: (...parts: ReadonlyArray<unknown>) => err.push(parts.join(" ")),
     }
     const argv = args.map((arg) => (arg.startsWith("@") ? path.join(project, "scripts", arg.slice(1)) : arg))
-    const exit = yield* Command.runWith(spindle, { version: "test" })([subcommand, "--dir", project, ...argv]).pipe(
+    const command = Command.runWith(spindle, { version: "test" })([subcommand, "--dir", project, ...argv]).pipe(
       Effect.provideService(Console.Console, capture),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
+    )
+    const exit = yield* (interrupts ? command.pipe(Effect.provideService(Interrupts, interrupts)) : command).pipe(
       Effect.exit,
     )
     return { exit, out, err }
@@ -488,6 +493,63 @@ describe("spindle run", () => {
         ["assistant", "from A", "worker"],
         ["user", "from B", "reviewer"],
       ])
+    }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
+  )
+
+  it.live("prints the still-queued notice when spindle send exits 0 after the active run stops without draining", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const db = path.join(yield* fs.makeTempDirectoryScoped({ prefix: "spindle-sides-" }), "queued.db")
+      const first = yield* run(["capped", "-m", "m1", "--script", "@reply.json", "--db", db], {}, "sides")
+      expect(Exit.isSuccess(first.exit)).toBe(true)
+      const threadId = first.err.join("\n").match(/thread ([0-9a-f-]{36})/)?.[1] ?? ""
+
+      const entered = gate()
+      const release = gate()
+      const signals = yield* Queue.unbounded<void>()
+      const interrupts = Interrupts.of({ listen: Effect.succeed(signals) })
+      const fetch = async (_input: string | URL | Request, _init?: RequestInit) => {
+        entered.release()
+        await release.opened
+        const choice = { delta: { content: "turn two" }, finish_reason: "stop" }
+        return new Response(`data: ${JSON.stringify({ choices: [choice] })}\n\ndata: [DONE]\n\n`)
+      }
+
+      const second = yield* Effect.forkChild(
+        invoke(
+          "send",
+          [threadId, "-m", "m2", "--db", db],
+          { SPINDLE_TEST_BASE_URL: "http://endpoint.test/v1" },
+          "sides",
+          interrupts,
+        ).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch as typeof globalThis.fetch)),
+      )
+      yield* Effect.promise(() => entered.opened)
+
+      const third = yield* Effect.forkChild(
+        invoke("send", [threadId, "-m", "m3", "--script", "@reply.json", "--db", db], {}, "sides"),
+      )
+
+      const checkQueue = RunStore.use((store) => store.queueLength(threadId)).pipe(
+        Effect.provide(Layer.provide(sqliteStore, SqliteLive({ filename: db }))),
+      )
+      while ((yield* checkQueue) === 0) yield* Effect.sleep("20 millis")
+
+      yield* Queue.offer(signals, undefined)
+      yield* Effect.sleep("20 millis")
+      release.release()
+      const secondResult = yield* Fiber.join(second)
+      const thirdResult = yield* Fiber.join(third)
+
+      expect(Exit.isSuccess(secondResult.exit)).toBe(true)
+      expect(secondResult.err.at(-1)).toMatch(/^spindle: idle \(aborted_by_user\) after 1 step, thread /)
+      expect(Exit.isSuccess(thirdResult.exit)).toBe(true)
+      expect(thirdResult.err).toContain(`spindle: idle (aborted_by_user), thread ${threadId}`)
+      expect(thirdResult.err).toContain(
+        "spindle: Your message is still queued and the next run of this thread will deliver it.",
+      )
+      expect(yield* checkQueue).toBe(1)
     }).pipe(Effect.scoped, Effect.provide(PlatformLive)),
   )
 })

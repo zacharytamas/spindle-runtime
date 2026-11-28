@@ -837,3 +837,69 @@ it.effect(
     )
   },
 )
+
+it.live("a waiting send ignores a stale local execution whose flow_id does not match the running thread", () => {
+  const metaStarted = gate()
+  const releaseMeta = gate()
+  const remoteStarted = gate()
+  const releaseRemote = gate()
+  const providerA = new ScriptedProvider([{ text: "first reply" }], {
+    getResponseMetadata: async () => {
+      metaStarted.release()
+      await releaseMeta.opened
+      return {}
+    },
+  })
+  const providerB = new ScriptedProvider([
+    async () => {
+      remoteStarted.release()
+      await releaseRemote.opened
+      return { text: "remote reply" }
+    },
+    { text: "delivered by remote" },
+  ])
+  return Effect.gen(function* () {
+    const { id } = yield* createThread("assistant")
+    const supA = yield* ThreadSupervisor
+    const supB = yield* Effect.provide(ThreadSupervisor, yield* Layer.build(supervisorLayer()))
+    const first = yield* Effect.forkChild(supA.send(id, "first"))
+    yield* Effect.promise(() => metaStarted.opened)
+    while ((yield* supA.status(id)).state === "running") yield* Effect.sleep("5 millis")
+
+    const remote = yield* Effect.forkChild(
+      supB.send(id, "from B").pipe(Effect.provide(registryOf(project({ provider: providerB })))),
+    )
+    yield* Effect.promise(() => remoteStarted.opened)
+
+    let seenHolder: unknown
+    const waiting = gate()
+    const second = yield* Effect.forkChild(
+      supA.send(id, "from A while meta pending", {
+        onWaiting: (holder) =>
+          Effect.sync(() => {
+            seenHolder = holder
+            waiting.release()
+          }),
+      }),
+    )
+    yield* Effect.promise(() => waiting.opened)
+    releaseRemote.release()
+    const deliveredByB = yield* Fiber.join(remote)
+    expect(deliveredByB.outcome).toMatchObject({ reason: "stop_on_response", steps: 2 })
+    expect((yield* Fiber.join(second)).status).toEqual(deliveredByB.status)
+    expect(seenHolder).toMatchObject({ kind: "remote" })
+
+    releaseMeta.release()
+    expect((yield* Fiber.join(first)).outcome).toMatchObject({ reason: "stop_on_response", steps: 1 })
+  }).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        releaseMeta.release()
+        releaseRemote.release()
+      }),
+    ),
+    Effect.provide(
+      Layer.merge(registryOf(project({ provider: providerA })), Layer.provideMerge(supervisorLayer(), inMemory)),
+    ),
+  )
+})

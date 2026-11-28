@@ -231,6 +231,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
     senderState: Effect.fn("RunStore.senderState")(function* (threadId: string, seq: number) {
       const rows = yield* sql<
         Pick<ThreadRow, "terminated_at" | "run_state" | "run_since" | "run_reason"> & {
+          flow_id: string | null
           disposition: "pending" | "failed_delivery" | null
           settled_flow: string | null
           settled_state: "idle" | "failed"
@@ -239,7 +240,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
           took_entry: number
           finished: number
         }
-      >`SELECT t.terminated_at, t.run_state, t.run_since, ${sql.literal(runReasonColumn)},
+      >`SELECT t.terminated_at, t.run_state, t.run_since, ${sql.literal(runReasonColumn)}, t.flow_id,
         CASE WHEN w.failed THEN 'failed_delivery' ELSE q.disposition END AS disposition,
         w.settled_flow, w.settled_state, w.settled_reason, w.settled_since, w.took_entry, w.finished
         FROM threads t LEFT JOIN waiting_senders w ON w.thread_id = t.id AND w.seq = ${seq}
@@ -248,6 +249,7 @@ export const makeRunStore = ({ sql, selectRun, runRows, openCalls }: Database) =
       return {
         terminated: row.terminated_at,
         status: toStatus(row),
+        flowId: row.flow_id,
         disposition: row.disposition ?? undefined,
         settlement:
           row.settled_flow === null

@@ -241,20 +241,25 @@ export const layer = (defaults: ExecutionOptions = {}) =>
           let notified = false
           while (true) {
             const local = started ?? senders.get(admitted.seq)
-            if (!started && !notified) {
-              yield* notifyWaiting(threadId, local ?? live.get(threadId), options)
-              notified = true
-            }
             if (local) yield* local.settlement.await
             yield* runStore.recoverLost(threadId)
-            const { status, terminated, disposition, settlement } = yield* runStore.senderState(threadId, admitted.seq)
+            const { status, flowId, terminated, disposition, settlement } = yield* runStore.senderState(
+              threadId,
+              admitted.seq,
+            )
             // No progress ends this send while its entry is still pending, even if cleanup launched a successor.
             // After progress a sender can wait on a running successor without reclaiming the thread itself.
             const stillQueued = disposition === "pending"
             const awaitingRun = !settlement?.finished && !(stillQueued && settlement?.tookEntry === false)
             if (status.state === "running" && awaitingRun) {
               started = undefined
-              const active = senders.get(admitted.seq) ?? live.get(threadId)
+              const running = live.get(threadId)
+              const active = senders.get(admitted.seq) ?? (running?.flowId === flowId ? running : undefined)
+              if (!notified) {
+                yield* notifyWaiting(threadId, active, options)
+                notified = true
+                if (!active) continue
+              }
               waited = active
               if (active) yield* active.settlement.await
               else yield* Effect.sleep("50 millis")
