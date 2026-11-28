@@ -60,9 +60,9 @@ This floor changes milestone 1's no-floor rule. The updated limit is to be recor
 6. `setEnv` rejects with `KeyNotWellFormed` if `propertyName` contains a lone UTF-16 surrogate, leaving `thread_env` unchanged.
 7. `setEnv` checks `WriteOrigin` inside its SQLite transaction and rejects with `FlowEnded`, `HandleExpired`, or `ThreadTerminated` when the handle or thread cannot write.
 8. `setEnv` preserves NUL bytes in `value` on both Node and Bun drivers and normalizes lone UTF-16 surrogates in `value` to `U+FFFD`, matching stored message text.
-9. `setEnv` propagates the key, value, and effective `type` recursively in the same transaction to every active descendant thread whose `terminated_at` is null.
-10. During recursive propagation, `setEnv` skips every descendant whose `terminated_at` is non-null and does not descend through it.
-11. During recursive propagation, if a descendant's agent graph declares `propertyName` with `scoped: true` on any prompt, included prompt, or tool, `setEnv` does not write `propertyName` to that descendant and does not propagate past that descendant's subtree boundary.
+9. Propagation to descendant threads is owed by M3b, because no child thread exists before it. In M2b, `setEnv` writes only the thread that owns the handle. M3b's note settles three rules from the spec. `setEnv` propagates to every active descendant in the same transaction. It skips a terminated descendant and does not descend through it. It stops at a descendant whose agent graph declares the name with `scoped: true`.
+10. Moved to M3b with rule 9.
+11. Moved to M3b with rule 9.
 12. `env(propertyName)` checks `thread_env` first, then `agent.env`, then `PromptToolConfig.env` when applicable, then `prompt.env`, and finally the runtime instance environment.
 13. `instanceEnv(propertyName)` reads only the runtime instance environment and ignores any value stored in `thread_env`, `agent.env`, `PromptToolConfig.env`, or `prompt.env`.
 14. `envType(propertyName)` returns `'secret'` when `propertyName` is absent from `thread_env`, including when a definition default or the runtime instance supplies a value.
@@ -265,7 +265,7 @@ Every entry below states what can go wrong, what Spindle must do, and any docume
 3. **Credential stored with `{ type: 'text' }` and no secret declaration.** `envType` returns `'text'`, and Spindle does not sniff patterns to guess secrecy. If those exact bytes were also learned from an actual secret source (such as `instanceEnv` or another `'secret'` key), that secret source still triggers redaction.
 4. **Short non-secret word stored with default `'secret'` type.** Calling `setEnv('GATE', 'open')` stores `type: 'secret'`. `envType('GATE')` returns `'secret'` and direct `{ type: 'env', property: 'GATE' }` interpolation is refused, while substring redaction skips `'open'` because it is shorter than 8 code points.
 5. **Secret rotation via `setEnv`.** Calling `setEnv('API_TOKEN', newToken)` without `options.type` keeps `type: 'secret'`, registers `newToken` into `Secrets`, and retains the previous value in `Secrets` for the remainder of the current execution so an earlier read cannot leak.
-6. **Malformed `setEnv` inputs or stale handle.** Invalid name, lone surrogate key, non-string value, invalid `options.type`, terminated thread, or expired/superseded handle rejects without modifying the thread or any descendant.
+6. **Malformed `setEnv` inputs or stale handle.** Invalid name, lone surrogate key, non-string value, invalid `options.type`, terminated thread, or expired/superseded handle rejects without modifying the thread.
 
 ## 7. Ledger coverage and statements found while reading
 
@@ -275,7 +275,7 @@ Every M2b ledger ID is mapped below to its governing section in this note or in 
 |---|---|---|
 | `specification:threads:4495359b` | `secrets.md` §1.2, §1.4 rule 12 | M2b-1 |
 | `specification:threads:6a7a34b7` | `secrets.md` §1.2, §1.4 rule 13 | M2b-1 |
-| `specification:threads:4e919532` | `secrets.md` §1.4 rules 1 to 11 | M2b-1 |
+| `specification:threads:4e919532` | `secrets.md` §1.4 rules 1 to 8 (settled `partial`, propagation owed by M3b per rule 9) | M2b-1 |
 | `specification:threads:274ed7a7` | `secrets.md` §1.1 (settled `deferred`) | M2b-1 |
 | `specification:tools:462ec47b` | `secrets.md` §1.1 (settled `deferred`) | M2b-1 |
 | `specification:threads:e1c56064` | `secrets.md` §2.1 rules 1 to 2 | M2b-2 |
@@ -310,8 +310,8 @@ The normative statements below appear in the pinned spec (`f462a673297faed1f849e
 6. `specification/prompts.md:159` (3.3 Sub-Prompt Tool Configuration). `includeToolCalls` defaults to `true` and controls whether the sub-prompt's tool calls and results are serialized into the result string (M2b-3).
 7. `specification/prompts.md:160` (3.3 Sub-Prompt Tool Configuration). `includeErrors` defaults to `true` and controls whether errors from the sub-prompt are serialized into the result string (M2b-3).
 8. `specification/prompts.md:161` and `164` (3.3 Sub-Prompt Tool Configuration). `initUserMessageProperty` uses the named argument property as the initial user message when invoking a sub-prompt or handoff agent (M2b-3 and M2b-4).
-9. `specification/tools.md:63` (3. Variable Declarations). `scoped: true` blocks inheritance from parent thread env for that variable name (M2b-1).
-10. `specification/tools.md:64` (3. Variable Declarations). Scoped variables still flow downward from the thread where they are declared or provided to descendants in that subtree (M2b-1).
+9. `specification/tools.md:63` (3. Variable Declarations). `scoped: true` blocks inheritance from parent thread env for that variable name (M3b).
+10. `specification/tools.md:64` (3. Variable Declarations). Scoped variables still flow downward from the thread where they are declared or provided to descendants in that subtree (M3b).
 11. `specification/agents.md:119` (4. Stop Semantics). Runtime stop evaluation order for prompt-backed sides puts session-level terminal bindings (`sessionStop` / `sessionFail`) first (M2b-4. Lines 120 to 122 are already curated).
 
 ## 8. Still open for M4

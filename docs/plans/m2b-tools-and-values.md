@@ -44,15 +44,15 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 **Shared state it may change.** New SQLite table `thread_env`, and the in-memory `Secrets` set of executions and at-rest handles.
 
-**M2b ledger IDs closed (5).** `specification:threads:4495359b`, `specification:threads:6a7a34b7`, `specification:threads:4e919532`, `specification:threads:274ed7a7` (settled `deferred`), `specification:tools:462ec47b` (settled `deferred`). Also upgrades M1 partials `specification:threads:287f2aef` and `specification:threads:a01f5667` to `covered`, and advances `specification:threads:341727f4`.
+**M2b ledger IDs closed (5).** `specification:threads:4495359b`, `specification:threads:6a7a34b7`, `specification:threads:4e919532` (settled `partial`, propagation to descendants owed by M3b), `specification:threads:274ed7a7` (settled `deferred`), `specification:tools:462ec47b` (settled `deferred`). Also upgrades M1 partials `specification:threads:287f2aef` and `specification:threads:a01f5667` to `covered`, and advances `specification:threads:341727f4`.
 
-- [ ] Gemini 4 Neon commits failing tests first covering all 22 numbered rules in `docs/design/secrets.md` section 1.4, including type defaults, preservation on overwrite, rotation retention, recursive propagation, `scoped` filtering, skipping terminated descendants, `instanceEnv` isolation from `thread_env`, declared-vs-stored type disagreements, nested-only tool secret declarations, untyped provider env sources, and the 8-code-point non-whitespace redaction floor.
+- [ ] Gemini 4 Neon commits failing tests first covering the numbered rules in `docs/design/secrets.md` section 1.4 except rules 9 to 11, which M3b owes, including type defaults, preservation on overwrite, rotation retention, `instanceEnv` isolation from `thread_env`, declared-vs-stored type disagreements, nested-only tool secret declarations, untyped provider env sources, and the 8-code-point non-whitespace redaction floor.
 - [ ] Add SQLite migration for `thread_env` (`thread_id`, `name`, `value`, `type CHECK (type IN ('text', 'secret'))`, `PRIMARY KEY (thread_id, name)` `STRICT, WITHOUT ROWID`) and fenced `ThreadStore` reads and writes.
 - [ ] Implement `ThreadState.setEnv`, update `env` precedence to read `thread_env` first, and update `envType` to return the effective thread classification and `'secret'` for non-thread and unknown names.
 - [ ] Update `learnSecrets` to load all `thread_env` rows at start, register secret declarations on nested-only tools when entered, and mark untyped provider env sources as secret.
 - [ ] Enforce the 8-code-point non-whitespace floor in `redact.ts` while keeping `{ type: 'env' }` secret-variable refusal unconditional at every length. Update `redact.test.ts`, `S26b`, `S26c`, and `S26h`.
-- [ ] Record the plain-text-at-rest rule, the 8-code-point floor, and the `envType` vs declared-text-default reading in `DIVERGENCES.md`. Add `specification/tools.md:63` and `64` to `requirements.extra.json` and cover them in `ledger.json`.
-- [ ] Gemini 4 Neon completes a 30-minute reading review verifying secret isolation, propagation transactions, and write fencing.
+- [ ] Record the plain-text-at-rest rule, the 8-code-point floor, and the `envType` vs declared-text-default reading in `DIVERGENCES.md`.
+- [ ] Gemini 4 Neon completes a 30-minute reading review verifying secret isolation and write fencing.
 
 ## Final assembly check, thread arguments, locked parentage, and inherited deadlines (M2b-2)
 
@@ -118,11 +118,13 @@ M2b closes when all 24 M2b ledger statements are settled (`covered`, or `deferre
 
 ## Close the program
 
-- [ ] Every M2b ledger statement is out of `planned` (22 `covered` and 2 `deferred` for at-rest encryption).
+- [ ] Every M2b ledger statement is out of `planned` (21 `covered`, 1 `partial` whose reason names M3b, and 2 `deferred` for at-rest encryption).
 - [ ] Every M1 partial statement that names M2b has been upgraded to `covered` or updated with its remaining later milestone.
 - [ ] `docs/plans/milestones.md` records what M2b cost, in pull requests and in days, against this plan's four.
 
 ## Not in M2b
+
+- `setEnv` propagation to descendant threads and the `scoped` boundary (`specification/tools.md:63` and `64`), owed by M3b, because no child thread exists before it.
 
 - At-rest encryption for `thread_env` (`specification:threads:274ed7a7`, `specification:tools:462ec47b`), deferred until an external key-management boundary exists.
 - Real thread filesystem resolution for `initAttachmentsProperty` and cross-thread attachment copying for `attachmentsProperty` (`specification:agents:38b9d170`), owned by M3a and M3b.
